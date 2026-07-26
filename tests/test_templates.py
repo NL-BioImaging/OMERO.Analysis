@@ -10,6 +10,8 @@ def test_center_panel_supports_expected_omero_objects():
     ).read_text(encoding="utf-8")
     assert '["image", "dataset", "plate", "screen"]' in source
     assert "data_annotation=" in source
+    assert "project_annotation=" in source
+    assert "oac-project-snapshot" in source
     assert "omeroweb_center_plugin" in source
     assert "load_plugin_content" in source
     assert "ACTIVE_OBJECT" not in source
@@ -22,6 +24,7 @@ def test_center_panel_supports_expected_omero_objects():
     assert "oac-panel-header" in panel
     assert "oac-card" in panel
     assert "supported_attachments" in panel
+    assert "project_snapshots" in panel
 
 
 def test_chat_has_no_notebook_surface_and_includes_runtime_config():

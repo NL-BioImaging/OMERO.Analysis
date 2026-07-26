@@ -22,6 +22,7 @@ export interface OmeroContext {
   can_annotate: boolean;
   max_snapshot_bytes?: number;
   selected_attachments: Attachment[];
+  selected_project_snapshot?: Attachment | null;
 }
 
 export interface Bootstrap {
@@ -48,6 +49,7 @@ export interface ProjectRecord {
   groupId: number;
   activeChatId: string;
   plotCsv: boolean;
+  sourceSnapshotAnnotationId?: number;
   createdAt: string;
   updatedAt: string;
 }

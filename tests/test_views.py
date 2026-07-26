@@ -107,3 +107,22 @@ def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
     request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = upload_token
     response = views.project_snapshots(request, "Image", 1, conn=conn)
     assert response.status_code == 201
+
+
+def test_chat_bootstrap_accepts_only_attached_project_snapshot():
+    snapshot = FakeAnnotation(
+        21,
+        "analysis.oac.zip",
+        b"PK\x03\x04snapshot",
+        namespace="nl.bioimaging.analysis-chat.project.v1",
+    )
+    obj = FakeObject(annotations=[snapshot])
+    request = with_session(
+        RequestFactory().get(
+            "/?type=Image&id=1&project_annotation=21"
+        )
+    )
+    response = views.chat(request, conn=FakeConnection(obj))
+    assert response.status_code == 200
+    assert b'"selected_project_snapshot"' in response.content
+    assert b'"annotation_id": 21' in response.content

@@ -107,9 +107,21 @@ def chat(request, conn=None, **kwargs):
                 if info.annotation_id not in seen:
                     selected.append(info.to_dict())
                     seen.add(info.annotation_id)
+            selected_project_snapshot = None
+            snapshot_value = request.GET.get("project_annotation")
+            if snapshot_value:
+                _, snapshot_info = get_direct_attachment(obj, snapshot_value)
+                if snapshot_info.kind != "project":
+                    from .errors import UnsupportedMedia
+
+                    raise UnsupportedMedia(
+                        "The selected FileAnnotation is not an Analysis Chat project"
+                    )
+                selected_project_snapshot = snapshot_info.to_dict()
             context = {
                 **object_context(object_type, object_id, obj, conn),
                 "selected_attachments": selected,
+                "selected_project_snapshot": selected_project_snapshot,
             }
         except AnalysisChatError as exc:
             return HttpResponseBadRequest(str(exc))

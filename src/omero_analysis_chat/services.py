@@ -199,6 +199,9 @@ def object_context(object_type, object_id, obj, conn=None):
         "can_annotate": can_annotate(obj),
         "max_snapshot_bytes": max_upload_bytes(),
         "attachments": attachments,
+        "project_snapshots": [
+            attachment for attachment in attachments if attachment["kind"] == "project"
+        ],
         "supported_attachments": [
             attachment for attachment in attachments if attachment["supported"]
         ],

@@ -55,4 +55,41 @@
       {% endfor %}
     </ul>
   </section>
+
+  {% if context.project_snapshots %}
+    <section class="oac-card">
+      <div class="oac-section-heading">
+        <div>
+          <span class="oac-step">2</span>
+          <h3>Resume a saved project</h3>
+        </div>
+        <span class="oac-project-count">{{ context.project_snapshots|length }} saved</span>
+      </div>
+      <p class="oac-help">
+        Select an attached Analysis Chat project. It is restored into browser
+        storage, and referenced OMERO inputs are downloaded again if needed.
+      </p>
+      <ul class="oac-attachments">
+        {% for snapshot in context.project_snapshots %}
+          <li class="oac-data-card oac-project-card">
+            <label>
+              <input type="radio"
+                     name="oac-project-snapshot"
+                     class="oac-project-snapshot"
+                     value="{{ snapshot.annotation_id }}">
+              <span class="oac-file-icon oac-project-icon" aria-hidden="true">ZIP</span>
+              <span class="oac-file-details">
+                <strong>{{ snapshot.name }}</strong>
+                <small>
+                  {{ snapshot.size }} bytes
+                  <span class="oac-annotation-id">Annotation {{ snapshot.annotation_id }}</span>
+                </small>
+              </span>
+              <span class="oac-checkmark" aria-hidden="true">&#10003;</span>
+            </label>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
 </section>

@@ -17,6 +17,12 @@ double-click actions, item menus, and right-click menus. Current chats can be
 renamed explicitly, and Python records repeat their collapse, rerun, and
 save-as-script controls above and below the code.
 
+Version 0.2.2 moves local project switching into the explorer’s OMERO parent
+folder, adds direct snapshot resume from the OMERO middle pane, and supports
+combining, copying, and deleting scripts. Copied scripts rebind missing input
+filenames to a single compatible input in their destination project and stop
+for user guidance when the binding would be ambiguous.
+
 ## Privacy and security model
 
 - Source files and Python execution stay in the browser.

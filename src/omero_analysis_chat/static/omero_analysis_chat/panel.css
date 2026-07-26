@@ -28,7 +28,8 @@
   text-transform: uppercase;
 }
 .omero-analysis-chat-center .oac-object-badge,
-.omero-analysis-chat-center .oac-selected-count {
+.omero-analysis-chat-center .oac-selected-count,
+.omero-analysis-chat-center .oac-project-count {
   background: var(--oac-accent-soft); border: 1px solid #cae3e9; border-radius: 999px;
   color: var(--oac-accent-dark); font-size: 11px; font-weight: 650; padding: 4px 9px;
 }
@@ -97,6 +98,9 @@
   align-items: center; background: #e7eef1; border-radius: 7px; color: #516a76;
   display: inline-flex; flex: 0 0 auto; font-size: 9px; font-weight: 800;
   height: 34px; justify-content: center; letter-spacing: .04em; width: 38px;
+}
+.omero-analysis-chat-center .oac-project-icon {
+  background: #f2e9d8; color: #8b6425;
 }
 .omero-analysis-chat-center .oac-file-details {
   display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0;

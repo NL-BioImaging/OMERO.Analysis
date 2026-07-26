@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode
+} from "react";
 import {
   completeChat,
   OmeroBridge,
@@ -19,8 +26,10 @@ import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
 import {
   defaultSettings,
   deleteFile as deleteStoredFile,
+  deleteScript as deleteStoredScript,
   getValue,
   listContextProjects,
+  listUserProjects,
   loadOrCreateWorkspace,
   loadWorkspace,
   newChat,
@@ -90,6 +99,31 @@ function listFiles(files: WorkspaceFile[]): string {
   );
 }
 
+export function bindScriptInputs(
+  code: string,
+  files: WorkspaceFile[]
+): { code: string; bindings: Array<{ from: string; to: string }> } {
+  const inputs = files.filter((file) => file.source !== "result" && file.state === "ready");
+  const bindings: Array<{ from: string; to: string }> = [];
+  const rebound = code.replace(/(["'])\/input\/([^"']+)\1/g, (match, quote, sourceName) => {
+    if (inputs.some((file) => file.name === sourceName)) return match;
+    const extension = sourceName.match(/(\.[^.]+)$/)?.[1]?.toLowerCase() || "";
+    const candidates = inputs.filter((file) =>
+      extension && file.name.toLowerCase().endsWith(extension)
+    );
+    if (candidates.length !== 1) {
+      throw new Error(
+        candidates.length
+          ? `Script input ${sourceName} is ambiguous: ${candidates.map((file) => file.name).join(", ")}`
+          : `Script input ${sourceName} has no compatible file in this project`
+      );
+    }
+    bindings.push({ from: sourceName, to: candidates[0].name });
+    return `${quote}/input/${candidates[0].name}${quote}`;
+  });
+  return { code: rebound, bindings };
+}
+
 function estimateTokens(value: unknown): number {
   return Math.max(1, Math.ceil(JSON.stringify(value).length / 4));
 }
@@ -144,6 +178,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
   const workspaceRef = useRef<ProjectWorkspace | null>(null);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
   const [snapshots, setSnapshots] = useState<Attachment[]>([]);
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
   const [prompt, setPrompt] = useState("");
@@ -152,6 +187,10 @@ export default function App() {
   const [status, setStatus] = useState("Preparing project…");
   const [showSettings, setShowSettings] = useState(false);
   const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
+  const [browserAtParent, setBrowserAtParent] = useState(false);
+  const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
+  const [showScriptTransfer, setShowScriptTransfer] = useState(false);
+  const [scriptTransferTarget, setScriptTransferTarget] = useState("");
   const [openFolders, setOpenFolders] = useState({
     inputs: true,
     outputs: true,
@@ -227,18 +266,49 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [savedSettings, initial] = await Promise.all([
+      const [savedSettings, baseProject] = await Promise.all([
         getValue<ProviderSettings>(settingsKey),
         loadOrCreateWorkspace(bootstrap.context)
       ]);
       if (!alive) return;
       if (savedSettings) setSettings({ ...defaultSettings, ...savedSettings });
       await bridge.connect();
+      let initial = baseProject;
+      const requestedSnapshot = bootstrap.context?.selected_project_snapshot;
+      if (requestedSnapshot) {
+        setRuntimeProgress({ percent: 8, message: "Restoring the selected OMERO project…" });
+        const localProjects = await listContextProjects(bootstrap.context);
+        const existing = localProjects.find(
+          (item) => item.sourceSnapshotAnnotationId === requestedSnapshot.annotation_id
+        );
+        if (existing) {
+          initial = await loadWorkspace(existing.id) || baseProject;
+        } else {
+          const imported = await importProject(
+            await bridge.downloadSnapshot(requestedSnapshot)
+          );
+          if (
+            bootstrap.context &&
+            (imported.project.objectType !== bootstrap.context.object_type ||
+              imported.project.objectId !== bootstrap.context.object_id)
+          ) {
+            throw new Error("The selected project belongs to a different OMERO object");
+          }
+          imported.project = {
+            ...imported.project,
+            sourceSnapshotAnnotationId: requestedSnapshot.annotation_id,
+            updatedAt: now()
+          };
+          await saveWorkspace(imported);
+          initial = imported;
+        }
+      }
       let prepared = await prepareInputs(initial);
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
       setProjects(await listContextProjects(bootstrap.context));
+      setUserProjects(await listUserProjects(bootstrap.context));
       setSnapshots(await bridge.listSnapshots());
       await startRuntime(prepared.files);
       if (alive) {
@@ -569,6 +639,8 @@ export default function App() {
   async function refreshProject() {
     if (!project) return;
     setBrowserMenu(null);
+    setProjects(await listContextProjects(bootstrap.context));
+    setUserProjects(await listUserProjects(bootstrap.context));
     await switchProject(project.id);
   }
 
@@ -660,6 +732,8 @@ export default function App() {
     const prepared = await prepareInputs(selected);
     setWorkspace(prepared);
     workspaceRef.current = prepared;
+    setBrowserAtParent(false);
+    setSelectedScriptIds(new Set());
     await restartRuntime(prepared.files, "Project loaded");
   }
 
@@ -864,9 +938,13 @@ export default function App() {
     if (call.function.name === "run_saved_script") {
       const script = current.scripts.find((item) => item.id === args.script_id);
       const version = script?.versions.find((item) => item.version === script.currentVersion);
-      return version
-        ? executeCode(version.code, chatId, promptId)
-        : toolErrorText("Saved script was not found");
+      if (!version) return toolErrorText("Saved script was not found");
+      try {
+        const bound = bindScriptInputs(version.code, current.files);
+        return executeCode(bound.code, chatId, promptId);
+      } catch (error) {
+        return toolErrorText(error);
+      }
     }
     if (call.function.name !== "run_python" || typeof args.code !== "string") {
       return toolErrorText(`Unsupported or invalid tool call: ${call.function.name}`);
@@ -1059,6 +1137,13 @@ The user has ${current.scripts.length} saved scripts. ${
     if (!current?.project.activeChatId) return;
     const version = script.versions.find((item) => item.version === script.currentVersion);
     if (!version) return;
+    let bound: ReturnType<typeof bindScriptInputs>;
+    try {
+      bound = bindScriptInputs(version.code, current.files);
+    } catch (error) {
+      setStatus(`Cannot bind ${script.name}: ${String(error)}`);
+      return;
+    }
     setBusy(true);
     turnOutputNames.current.clear();
     await runtime.beginTurn();
@@ -1066,11 +1151,14 @@ The user has ${current.scripts.length} saved scripts. ${
     appendMessage(current.project.activeChatId, {
       id: promptId,
       role: "user",
-      content: `Run saved script ${script.name} version ${script.currentVersion}`,
+      content: `Run saved script ${script.name} version ${script.currentVersion}` +
+        (bound.bindings.length
+          ? ` with project input binding ${bound.bindings.map((item) => `${item.from} → ${item.to}`).join(", ")}`
+          : ""),
       createdAt: now()
     });
     try {
-      await executeCode(version.code, current.project.activeChatId, promptId, true);
+      await executeCode(bound.code, current.project.activeChatId, promptId, true);
       setStatus(`Ran ${script.name} locally`);
     } finally {
       setBusy(false);
@@ -1091,6 +1179,156 @@ The user has ${current.scripts.length} saved scripts. ${
       setWorkspace(next);
     }
     void saveScript(updated);
+  }
+
+  async function removeScript(script: ScriptRecord) {
+    if (!window.confirm(`Delete saved script ${script.name}? Its versions will be removed from this browser project.`)) {
+      return;
+    }
+    const current = workspaceRef.current;
+    if (!current) return;
+    const updated = {
+      ...current,
+      scripts: current.scripts.filter((item) => item.id !== script.id)
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    setSelectedScriptIds((selected) => {
+      const next = new Set(selected);
+      next.delete(script.id);
+      return next;
+    });
+    await deleteStoredScript(script.id);
+    setStatus(`Deleted script ${script.name}`);
+  }
+
+  function toggleScriptSelection(scriptId: string) {
+    setSelectedScriptIds((current) => {
+      const next = new Set(current);
+      if (next.has(scriptId)) next.delete(scriptId);
+      else next.add(scriptId);
+      return next;
+    });
+  }
+
+  async function combineSelectedScripts() {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const selected = current.scripts.filter((script) => selectedScriptIds.has(script.id));
+    if (selected.length < 2) {
+      setStatus("Select at least two scripts to combine");
+      return;
+    }
+    const suggested = `${slug(selected.map((script) => script.name.replace(/\.py$/i, "")).join("-"))}.py`;
+    const requested = window.prompt("Combined script filename", suggested)?.trim();
+    if (!requested) return;
+    const stem = slug(requested.replace(/\.py$/i, ""));
+    let name = `${stem}.py`;
+    let suffix = 2;
+    while (current.scripts.some((script) => script.name.toLowerCase() === name.toLowerCase())) {
+      name = `${stem}-${suffix}.py`;
+      suffix += 1;
+    }
+    const description = window.prompt(
+      "Combined script description",
+      `Runs ${selected.map((script) => script.name).join(", ")} in sequence`
+    )?.trim() || "";
+    const code = selected.map((script) => {
+      const version = script.versions.find((item) => item.version === script.currentVersion);
+      return [
+        `# --- ${script.name} v${script.currentVersion} ---`,
+        version?.code || ""
+      ].join("\n");
+    }).join("\n\n");
+    const createdAt = now();
+    const script: ScriptRecord = {
+      id: id(),
+      projectId: current.project.id,
+      name,
+      description,
+      currentVersion: 1,
+      versions: [{
+        version: 1,
+        code,
+        codeHash: await sha256(code),
+        executionId: "",
+        createdAt
+      }],
+      createdAt,
+      updatedAt: createdAt
+    };
+    const updated = { ...current, scripts: [...current.scripts, script] };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    setSelectedScriptIds(new Set([script.id]));
+    await saveScript(script);
+    setStatus(`Combined ${selected.length} scripts as ${script.name}`);
+  }
+
+  function beginScriptTransfer(scriptIds?: string[]) {
+    const ids = scriptIds || Array.from(selectedScriptIds);
+    if (!ids.length) {
+      setStatus("Select one or more scripts to copy");
+      return;
+    }
+    setSelectedScriptIds(new Set(ids));
+    const firstTarget = userProjects.find((item) => item.id !== project?.id);
+    if (!firstTarget) {
+      setStatus("Open another OMERO Dataset, Screen, Plate, or Image once before copying scripts to it");
+      return;
+    }
+    setScriptTransferTarget(firstTarget.id);
+    setShowScriptTransfer(true);
+  }
+
+  async function copySelectedScripts() {
+    const current = workspaceRef.current;
+    if (!current || !scriptTransferTarget) return;
+    const target = await loadWorkspace(scriptTransferTarget);
+    if (!target) {
+      setStatus("The destination project is no longer available");
+      return;
+    }
+    const selected = current.scripts.filter((script) => selectedScriptIds.has(script.id));
+    if (!selected.length) return;
+    const targetNames = new Set(target.scripts.map((script) => script.name.toLowerCase()));
+    const copied: ScriptRecord[] = [];
+    for (const source of selected) {
+      const stem = source.name.replace(/\.py$/i, "");
+      let name = source.name;
+      let suffix = 2;
+      while (targetNames.has(name.toLowerCase())) {
+        name = `${stem}-copy-${suffix}.py`;
+        suffix += 1;
+      }
+      targetNames.add(name.toLowerCase());
+      const timestamp = now();
+      copied.push({
+        ...source,
+        id: id(),
+        projectId: target.project.id,
+        name,
+        description: `${source.description}${source.description ? " · " : ""}Copied from ${current.project.name}`,
+        versions: source.versions.map((version) => ({
+          ...version,
+          executionId: ""
+        })),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+    }
+    await Promise.all(copied.map(saveScript));
+    if (target.project.id === current.project.id) {
+      const updated = { ...current, scripts: [...current.scripts, ...copied] };
+      workspaceRef.current = updated;
+      setWorkspace(updated);
+    }
+    setShowScriptTransfer(false);
+    const destination = userProjects.find((item) => item.id === target.project.id);
+    setStatus(
+      `Copied ${copied.length} script${copied.length === 1 ? "" : "s"} to ${destination?.name || "the destination project"}. ` +
+      "When run there, the scripts use that project's current inputs."
+    );
   }
 
   function downloadBytes(name: string, data: ArrayBuffer | Uint8Array, type: string) {
@@ -1183,6 +1421,7 @@ The user has ${current.scripts.length} saved scripts. ${
       setWorkspace(prepared);
       workspaceRef.current = prepared;
       setProjects(await listContextProjects(bootstrap.context));
+      setUserProjects(await listUserProjects(bootstrap.context));
       await restartRuntime(prepared.files, "Imported project restored");
     } catch (error) {
       setStatus(`Project import failed: ${String(error)}`);
@@ -1207,6 +1446,7 @@ The user has ${current.scripts.length} saved scripts. ${
       setWorkspace(prepared);
       workspaceRef.current = prepared;
       setProjects(await listContextProjects(bootstrap.context));
+      setUserProjects(await listUserProjects(bootstrap.context));
       await restartRuntime(prepared.files, "OMERO project snapshot restored");
     } catch (error) {
       setStatus(`Snapshot restore failed: ${String(error)}`);
@@ -1248,9 +1488,13 @@ The user has ${current.scripts.length} saved scripts. ${
         ? [{ label: "Attach to OMERO", run: () => void attach(file) }]
         : []),
       {
-        label: "Remove from project",
+        label: "Delete output",
         danger: true,
-        run: () => void removeFile(file.id)
+        run: () => {
+          if (window.confirm(`Delete generated output ${file.name} from this browser project?`)) {
+            void removeFile(file.id);
+          }
+        }
       }
     ];
   }
@@ -1259,7 +1503,9 @@ The user has ${current.scripts.length} saved scripts. ${
     return [
       { label: "Run", run: () => void runScript(script) },
       { label: "Rename", run: () => renameScript(script) },
-      { label: "Download", run: () => downloadScript(script) }
+      { label: "Download", run: () => downloadScript(script) },
+      { label: "Copy to another project…", run: () => beginScriptTransfer([script.id]) },
+      { label: "Delete script", danger: true, run: () => void removeScript(script) }
     ];
   }
 
@@ -1311,11 +1557,7 @@ The user has ${current.scripts.length} saved scripts. ${
       )}
 
       <div className="project-toolbar">
-        <label>Project
-          <select value={project.id} onChange={(event) => void switchProject(event.target.value)}>
-            {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </label>
+        <div className="active-project-label"><span>Project</span><strong>{project.name}</strong></div>
         <label>Chat
           <select value={activeChat.id} onChange={(event) => switchChat(event.target.value)}>
             <optgroup label="Active chats">
@@ -1336,6 +1578,35 @@ The user has ${current.scripts.length} saved scripts. ${
         <input ref={importInput} hidden type="file" accept=".zip,.oac.zip" onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
         {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save project to OMERO</button>}
       </div>
+
+      {showScriptTransfer && (
+        <div className="dialog-backdrop" role="presentation">
+          <section className="script-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="script-transfer-title">
+            <h2 id="script-transfer-title">Copy scripts to another project</h2>
+            <p>
+              The copied scripts keep their code and versions. When run in the
+              destination, they automatically use that project’s current input files.
+            </p>
+            <label>Destination project
+              <select value={scriptTransferTarget} onChange={(event) => setScriptTransferTarget(event.target.value)}>
+                {userProjects.filter((item) => item.id !== project.id).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.objectType} {item.objectId} — {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <small>
+              A destination appears after you have opened that OMERO object in
+              Analysis Chat at least once.
+            </small>
+            <div className="dialog-actions">
+              <button onClick={() => setShowScriptTransfer(false)}>Cancel</button>
+              <button disabled={!scriptTransferTarget} onClick={() => void copySelectedScripts()}>Copy selected scripts</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <div className="workspace">
         <aside className="project-tree">
@@ -1359,23 +1630,61 @@ The user has ${current.scripts.length} saved scripts. ${
                 { label: "Rename current chat", run: () => renameChat(activeChat) },
                 { label: "Refresh", run: () => void refreshProject() }
               ])}
-            >⋮</button>
+            ><Icon name="more" /></button>
           </div>
           <div className="file-browser-toolbar" role="toolbar" aria-label="Project file actions">
-            <button title="Add files" aria-label="Add files" onClick={() => addFilesInput.current?.click()}>＋</button>
-            <button title="Refresh project" aria-label="Refresh project" onClick={() => void refreshProject()}>↻</button>
+            <button
+              title="Up to OMERO object projects"
+              aria-label="Up to OMERO object projects"
+              disabled={browserAtParent}
+              onClick={() => setBrowserAtParent(true)}
+            ><Icon name="up" /></button>
+            <button title="Add files" aria-label="Add files" onClick={() => addFilesInput.current?.click()}><Icon name="upload" /></button>
+            <button title="Refresh project" aria-label="Refresh project" onClick={() => void refreshProject()}><Icon name="refresh" /></button>
             <button
               title="Collapse all folders"
               aria-label="Collapse all folders"
               onClick={() => setOpenFolders({ inputs: false, outputs: false, scripts: false, snapshots: false })}
-            >⌃</button>
+            ><Icon name="collapse" /></button>
             <input ref={addFilesInput} hidden type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} />
           </div>
-          <div className="browser-path" title={project.rootPath}>
-            <span className="browser-icon root" aria-hidden="true" />
-            <span>{project.rootPath}</span>
+          <div
+            className="browser-path"
+            title={browserAtParent ? `OMERO/${project.objectType}-${project.objectId}` : project.rootPath}
+            onDoubleClick={() => setBrowserAtParent(true)}
+          >
+            <Icon name="root" />
+            <span>{browserAtParent ? `OMERO/${project.objectType}-${project.objectId}` : project.rootPath}</span>
           </div>
           <div className="browser-columns"><span>Name</span><span>Size</span></div>
+          {browserAtParent ? (
+            <ul className="browser-list project-list">
+              {projects.map((item) => (
+                <li
+                  key={item.id}
+                  className={`browser-row project-row ${item.id === project.id ? "active" : ""}`}
+                  onDoubleClick={() => void switchProject(item.id)}
+                  onContextMenu={(event) => openBrowserMenu(event, item.name, [
+                    { label: "Open project", run: () => void switchProject(item.id) }
+                  ])}
+                >
+                  <Icon name="folder" />
+                  <div className="browser-name">
+                    <strong>{item.name}</strong>
+                    <small>{item.id === project.id ? "open now" : item.sourceSnapshotAnnotationId ? `restored from Annotation ${item.sourceSnapshotAnnotationId}` : "browser-local project"}</small>
+                  </div>
+                  <span className="browser-size">{new Date(item.updatedAt).toLocaleDateString()}</span>
+                  <button
+                    className="browser-more"
+                    aria-label={`Actions for ${item.name}`}
+                    onClick={(event) => openBrowserMenu(event, item.name, [
+                      { label: "Open project", run: () => void switchProject(item.id) }
+                    ])}
+                  ><Icon name="more" /></button>
+                </li>
+              ))}
+            </ul>
+          ) : (<>
           {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Archive or download old projects.</p>}
 
           <details
@@ -1391,7 +1700,8 @@ The user has ${current.scripts.length} saved scripts. ${
                 { label: "Add files", run: () => addFilesInput.current?.click() }
               ])}
             >
-              <span className="browser-icon folder" aria-hidden="true" />
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
               <strong>inputs</strong><small>{inputFiles.length}</small>
             </summary>
             <ul className="browser-list">
@@ -1401,7 +1711,7 @@ The user has ${current.scripts.length} saved scripts. ${
                   className={`browser-row file-${file.state}`}
                   onContextMenu={(event) => openBrowserMenu(event, file.name, inputActions(file))}
                 >
-                  <span className="browser-icon file" aria-hidden="true" />
+                  <Icon name="file" />
                   <div className="browser-name">
                     <strong>{file.name}</strong>
                     <small>{file.source} · {file.state} · {file.sha256.slice(0, 10) || "unhashed"}</small>
@@ -1412,7 +1722,7 @@ The user has ${current.scripts.length} saved scripts. ${
                     className="browser-more"
                     aria-label={`Actions for ${file.name}`}
                     onClick={(event) => openBrowserMenu(event, file.name, inputActions(file))}
-                  >⋮</button>
+                  ><Icon name="more" /></button>
                   {file.state === "missing" && file.source === "local" && (
                     <input
                       id={`reselect-${file.id}`}
@@ -1442,7 +1752,8 @@ The user has ${current.scripts.length} saved scripts. ${
                 { label: "Archive chat", run: () => archiveChat(activeChat) }
               ])}
             >
-              <span className="browser-icon folder" aria-hidden="true" />
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
               <strong>chats/{slug(activeChat.title)}/outputs</strong><small>{outputFiles.length}</small>
             </summary>
             <ul className="browser-list">
@@ -1463,7 +1774,7 @@ The user has ${current.scripts.length} saved scripts. ${
                   onDoubleClick={() => downloadFile(file)}
                   onContextMenu={(event) => openBrowserMenu(event, file.name, outputActions(file))}
                 >
-                  <span className={`browser-icon ${file.type.startsWith("image/") ? "image" : "file"}`} aria-hidden="true" />
+                  <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
                   <div className="browser-name">
                     <strong>{file.name}</strong><small>{file.sha256.slice(0, 10)} · double-click to download</small>
                   </div>
@@ -1472,7 +1783,7 @@ The user has ${current.scripts.length} saved scripts. ${
                     className="browser-more"
                     aria-label={`Actions for ${file.name}`}
                     onClick={(event) => openBrowserMenu(event, file.name, outputActions(file))}
-                  >⋮</button>
+                  ><Icon name="more" /></button>
                 </li>
               ))}
             </ul>
@@ -1486,15 +1797,39 @@ The user has ${current.scripts.length} saved scripts. ${
               setOpenFolders((current) => ({ ...current, scripts: open }));
             }}
           >
-            <summary><span className="browser-icon folder" aria-hidden="true" /><strong>scripts</strong><small>{workspace.scripts.length}</small></summary>
+            <summary
+              onContextMenu={(event) => openBrowserMenu(event, "scripts/", [
+                { label: "Combine selected scripts", run: () => void combineSelectedScripts() },
+                { label: "Copy selected scripts…", run: () => beginScriptTransfer() }
+              ])}
+            >
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
+              <strong>scripts</strong><small>{workspace.scripts.length}</small>
+            </summary>
+            {workspace.scripts.length > 0 && (
+              <div className="script-selection-toolbar">
+                <span>{selectedScriptIds.size} selected</span>
+                <button disabled={selectedScriptIds.size < 2} onClick={() => void combineSelectedScripts()}>Combine</button>
+                <button disabled={!selectedScriptIds.size} onClick={() => beginScriptTransfer()}>Copy to…</button>
+              </div>
+            )}
             <ul className="browser-list">
               {workspace.scripts.map((script) => (
                 <li
                   key={script.id}
-                  className="browser-row"
+                  className="browser-row script-row"
                   onDoubleClick={() => void runScript(script)}
                   onContextMenu={(event) => openBrowserMenu(event, script.name, scriptActions(script))}
                 >
+                  <input
+                    className="script-selector"
+                    type="checkbox"
+                    aria-label={`Select ${script.name}`}
+                    checked={selectedScriptIds.has(script.id)}
+                    onChange={() => toggleScriptSelection(script.id)}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  />
                   <span className="browser-icon python" aria-hidden="true" />
                   <div className="browser-name">
                     <strong>{script.name}</strong><small>v{script.currentVersion} · {script.description || "saved Python script"}</small>
@@ -1504,7 +1839,7 @@ The user has ${current.scripts.length} saved scripts. ${
                     className="browser-more"
                     aria-label={`Actions for ${script.name}`}
                     onClick={(event) => openBrowserMenu(event, script.name, scriptActions(script))}
-                  >⋮</button>
+                  ><Icon name="more" /></button>
                 </li>
               ))}
               {!workspace.scripts.length && <li className="browser-empty">No saved scripts</li>}
@@ -1520,7 +1855,11 @@ The user has ${current.scripts.length} saved scripts. ${
                 setOpenFolders((current) => ({ ...current, snapshots: open }));
               }}
             >
-              <summary><span className="browser-icon folder" aria-hidden="true" /><strong>Resume from OMERO</strong><small>{snapshots.length}</small></summary>
+              <summary>
+                <Icon name="chevron" className="folder-chevron" />
+                <Icon name="folder" />
+                <strong>Resume from OMERO</strong><small>{snapshots.length}</small>
+              </summary>
               <ul className="browser-list">
                 {snapshots.map((snapshot) => (
                   <li
@@ -1536,12 +1875,13 @@ The user has ${current.scripts.length} saved scripts. ${
                       className="browser-more"
                       aria-label={`Actions for ${snapshot.name}`}
                       onClick={(event) => openBrowserMenu(event, snapshot.name, snapshotActions(snapshot))}
-                    >⋮</button>
+                    ><Icon name="more" /></button>
                   </li>
                 ))}
               </ul>
             </details>
           )}
+          </>)}
         </aside>
 
         {browserMenu && (
@@ -1726,4 +2066,45 @@ function Artifact({ file }: { file: WorkspaceFile }) {
   );
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
   return url ? <figure><img src={url} alt={file.name} /><figcaption>{file.name}</figcaption></figure> : null;
+}
+
+type IconName =
+  | "folder"
+  | "file"
+  | "image"
+  | "root"
+  | "up"
+  | "upload"
+  | "refresh"
+  | "collapse"
+  | "chevron"
+  | "more";
+
+function Icon({ name, className = "" }: { name: IconName; className?: string }) {
+  const paths: Record<IconName, ReactNode> = {
+    folder: <path d="M2.5 6.5h8.1l2.35-3h6.55v15H2.5z" />,
+    file: <path d="M5 2.5h8l4 4v15H5zm8 0v4h4M8 11h6M8 15h6" />,
+    image: <><rect x="3" y="4" width="18" height="16" rx="1.5" /><circle cx="9" cy="9" r="1.5" /><path d="m5 18 5-5 3 3 2-2 4 4" /></>,
+    root: <><path d="m3 11 9-7 9 7" /><path d="M5.5 10v10h13V10M10 20v-6h4v6" /></>,
+    up: <><path d="m7 10 5-5 5 5" /><path d="M12 5v13" /></>,
+    upload: <><path d="M4 16v4h16v-4" /><path d="M12 16V4m-5 5 5-5 5 5" /></>,
+    refresh: <><path d="M20 7V3l-3 3a8 8 0 1 0 2.2 8" /><path d="M20 3h-5" /></>,
+    collapse: <><path d="m7 9 5-5 5 5M7 15l5 5 5-5" /></>,
+    chevron: <path d="m9 5 7 7-7 7" />,
+    more: <><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" /></>
+  };
+  return (
+    <svg
+      className={`ui-icon icon-${name} ${className}`.trim()}
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill={name === "folder" ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {paths[name]}
+    </svg>
+  );
 }

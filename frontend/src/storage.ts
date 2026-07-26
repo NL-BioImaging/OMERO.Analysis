@@ -102,6 +102,7 @@ export const saveExecution = (value: ExecutionRecord) => putEntity("executions",
 export const saveScript = (value: ScriptRecord) => putEntity("scripts", value);
 export const deleteFile = (id: string) => deleteEntity("files", id);
 export const deleteChat = (id: string) => deleteEntity("chats", id);
+export const deleteScript = (id: string) => deleteEntity("scripts", id);
 
 export async function contextKey(context: OmeroContext | null): Promise<string> {
   return context
@@ -257,6 +258,24 @@ export async function listContextProjects(context: OmeroContext | null): Promise
   return values
     .filter((project) => project.contextKey === key || project.contextKey.startsWith(`${key}:import:`))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function listUserProjects(context: OmeroContext | null): Promise<ProjectRecord[]> {
+  if (!context) return listContextProjects(null);
+  const db = await database();
+  const tx = db.transaction("projects", "readonly");
+  const values = await requestValue(tx.objectStore("projects").getAll()) as ProjectRecord[];
+  return values
+    .filter((project) =>
+      project.userId === context.user_id &&
+      project.groupId === context.group_id
+    )
+    .sort((a, b) => {
+      const object = `${a.objectType || ""}:${a.objectId || 0}`.localeCompare(
+        `${b.objectType || ""}:${b.objectId || 0}`
+      );
+      return object || b.updatedAt.localeCompare(a.updatedAt);
+    });
 }
 
 export async function loadWorkspace(projectId: string): Promise<ProjectWorkspace | undefined> {

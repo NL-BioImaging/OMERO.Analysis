@@ -1,6 +1,7 @@
 import {
   loadOrCreateWorkspace,
   loadWorkspace,
+  listUserProjects,
   newChat,
   saveChat,
   saveProject,
@@ -40,5 +41,25 @@ describe("normalized project storage", () => {
     const migrated = await loadOrCreateWorkspace(legacyContext);
     expect(migrated.chats[0].title).toBe("Imported chat");
     expect(migrated.chats[0].messages[0].content).toBe("Old question");
+  });
+
+  it("lists destination projects for the same OMERO user and group", async () => {
+    const first = await loadOrCreateWorkspace({ ...context, object_id: 50 });
+    const second = await loadOrCreateWorkspace({
+      ...context,
+      object_type: "Screen",
+      object_id: 51,
+      name: "Other screen"
+    });
+    await loadOrCreateWorkspace({
+      ...context,
+      object_id: 52,
+      group_id: 99,
+      name: "Other group"
+    });
+    const projects = await listUserProjects({ ...context, object_id: 50 });
+    expect(projects.map((project) => project.id)).toContain(first.project.id);
+    expect(projects.map((project) => project.id)).toContain(second.project.id);
+    expect(projects.some((project) => project.groupId === 99)).toBe(false);
   });
 });

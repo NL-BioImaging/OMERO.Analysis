@@ -23,9 +23,17 @@ $(function () {
       .map(function (input) { return input.value; });
   }
 
-  function analysisUrl(type, id, annotationIds) {
+  function selectedProjectId(root) {
+    var input = root.querySelector(".oac-project-snapshot:checked");
+    return input ? input.value : null;
+  }
+
+  function analysisUrl(type, id, annotationIds, projectAnnotationId) {
     var url = chatUrl + "?type=" + encodeURIComponent(type) +
       "&id=" + encodeURIComponent(id);
+    if (projectAnnotationId) {
+      return url + "&project_annotation=" + encodeURIComponent(projectAnnotationId);
+    }
     annotationIds.forEach(function (annotationId) {
       url += "&data_annotation=" + encodeURIComponent(annotationId);
     });
@@ -34,18 +42,23 @@ $(function () {
 
   function updateSelection(root) {
     var count = selectedAnnotationIds(root).length;
+    var projectId = selectedProjectId(root);
     var countBadge = root.querySelector(".oac-selected-count");
     var status = root.querySelector(".oac-panel-status");
     var button = root.querySelector(".oac-open-chat");
     if (countBadge) countBadge.textContent = count + " selected";
     if (status) {
-      status.textContent = count
+      status.textContent = projectId
+        ? "The saved project will be restored locally and its OMERO inputs synchronized."
+        : count
         ? count + " attachment" + (count === 1 ? "" : "s") +
           " will be downloaded before chat unlocks."
         : "No OMERO data selected; you can add local files after opening the chat.";
     }
     if (button) {
-      button.innerHTML = count
+      button.innerHTML = projectId
+        ? '<span aria-hidden="true">&#8635;</span> Resume selected project'
+        : count
         ? '<span aria-hidden="true">&#8599;</span> Open with ' + count +
           " attachment" + (count === 1 ? "" : "s")
         : '<span aria-hidden="true">&#8599;</span> Open Analysis Chat';
@@ -88,7 +101,22 @@ $(function () {
 
   panel.on("change", ".oac-data-attachment", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
-    if (root) updateSelection(root);
+    if (root) {
+      root.querySelectorAll(".oac-project-snapshot").forEach(function (input) {
+        input.checked = false;
+      });
+      updateSelection(root);
+    }
+  });
+
+  panel.on("change", ".oac-project-snapshot", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    if (root) {
+      root.querySelectorAll(".oac-data-attachment").forEach(function (input) {
+        input.checked = false;
+      });
+      updateSelection(root);
+    }
   });
 
   panel.on("click", ".oac-open-chat", function (event) {
@@ -98,7 +126,8 @@ $(function () {
       analysisUrl(
         root.dataset.objectType,
         root.dataset.objectId,
-        selectedAnnotationIds(root)
+        selectedAnnotationIds(root),
+        selectedProjectId(root)
       ),
       "_blank",
       "noopener"

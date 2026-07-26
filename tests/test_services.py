@@ -18,6 +18,7 @@ from omero_analysis_chat.services import (
     direct_file_annotations,
     get_direct_attachment,
     list_attachment_dicts,
+    object_context,
     safe_filename,
     upload_project_snapshot_annotation,
     upload_result_annotation,
@@ -135,3 +136,15 @@ def test_project_snapshots_have_separate_kind_namespace_and_zip_validation():
                 "project.oac.zip", b"not-a-zip", content_type="application/zip"
             )
         )
+
+
+def test_object_context_lists_project_snapshots_separately():
+    snapshot = FakeAnnotation(
+        21,
+        "saved.oac.zip",
+        b"PK\x03\x04snapshot",
+        namespace=PROJECT_NAMESPACE,
+    )
+    context = object_context("Image", 1, FakeObject(annotations=[snapshot]))
+    assert context["project_snapshots"][0]["annotation_id"] == 21
+    assert context["supported_attachments"] == []

@@ -293,13 +293,35 @@ try {
     throw new Error(`Reused run duplicated outputs: ${outputCount} -> ${outputCountAfterReuse}`);
   }
   if (completions !== 6) throw new Error(`Expected six AI rounds; got ${completions}`);
-  const dialogAnswers = ["smoke-analysis.py", "Reusable smoke analysis", "Renamed smoke chat"];
+  const dialogAnswers = [
+    "smoke-analysis.py",
+    "Reusable smoke analysis",
+    "smoke-analysis-2.py",
+    "Second reusable smoke analysis",
+    "combined-smoke.py",
+    "Combined smoke analysis",
+    "Renamed smoke chat"
+  ];
   page.on("dialog", async (dialog) => dialog.accept(dialogAnswers.shift() || ""));
   await page.getByRole("button", { name: "Save as script" }).last().click();
   await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
-  await page.getByText("smoke-analysis.py", { exact: true }).click({ button: "right" });
+  await page.locator(".message.execution.success").last()
+    .getByRole("button", { name: "Save as script" }).first().click();
+  await page.getByText("smoke-analysis-2.py", { exact: true }).waitFor();
+  await page.getByLabel("Select smoke-analysis.py").check();
+  await page.getByLabel("Select smoke-analysis-2.py").check();
+  await page.getByRole("button", { name: "Combine" }).click();
+  await page.getByText("combined-smoke.py", { exact: true }).waitFor();
+  await page.getByText("combined-smoke.py", { exact: true }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Run" }).waitFor();
+  await page.getByRole("menuitem", { name: "Delete script" }).waitFor();
   await page.keyboard.press("Escape");
+  await page.locator(".browser-row", { hasText: "summary.csv" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete output" }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Up to OMERO object projects" }).click();
+  await page.locator(".project-row.active").waitFor();
+  await page.locator(".project-row.active").dblclick();
 
   await page.evaluate(() => {
     window.__oacDownloadPromise = null;
