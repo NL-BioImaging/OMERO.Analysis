@@ -12,6 +12,11 @@ scripts, exact-run reuse, and portable `.oac.zip` snapshots. Every project is
 autosaved in normalized IndexedDB storage so updating a chat does not rewrite
 large file blobs.
 
+Version 0.2.1 adds a compact Jupyter-style project explorer with folders,
+double-click actions, item menus, and right-click menus. Current chats can be
+renamed explicitly, and Python records repeat their collapse, rerun, and
+save-as-script controls above and below the code.
+
 ## Privacy and security model
 
 - Source files and Python execution stay in the browser.

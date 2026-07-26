@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   completeChat,
   OmeroBridge,
@@ -124,6 +124,19 @@ function projectBytes(workspace: ProjectWorkspace | null): number {
   return workspace?.files.reduce((sum, file) => sum + file.size, 0) || 0;
 }
 
+interface BrowserMenuAction {
+  label: string;
+  run: () => void;
+  danger?: boolean;
+}
+
+interface BrowserMenuState {
+  x: number;
+  y: number;
+  title: string;
+  actions: BrowserMenuAction[];
+}
+
 export default function App() {
   const bootstrap = window.OMERO_ANALYSIS_CHAT;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
@@ -138,6 +151,13 @@ export default function App() {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [status, setStatus] = useState("Preparing project…");
   const [showSettings, setShowSettings] = useState(false);
+  const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
+  const [openFolders, setOpenFolders] = useState({
+    inputs: true,
+    outputs: true,
+    scripts: true,
+    snapshots: false
+  });
   const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [runtimeProgress, setRuntimeProgress] = useState<RuntimeProgress>({
     percent: 0,
@@ -147,6 +167,7 @@ export default function App() {
   const abort = useRef<AbortController | null>(null);
   const messagesElement = useRef<HTMLDivElement | null>(null);
   const importInput = useRef<HTMLInputElement | null>(null);
+  const addFilesInput = useRef<HTMLInputElement | null>(null);
   const turnOutputNames = useRef(new Set<string>());
   workspaceRef.current = workspace;
 
@@ -184,6 +205,24 @@ export default function App() {
     });
     return () => cancelAnimationFrame(frame);
   }, [activeChat?.messages, workspace?.executions, workspace?.files]);
+
+  useEffect(() => {
+    if (!browserMenu) return;
+    const close = () => setBrowserMenu(null);
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [browserMenu]);
 
   useEffect(() => {
     let alive = true;
@@ -508,6 +547,100 @@ export default function App() {
     const title = window.prompt("Chat name", chat.title)?.trim();
     if (!title) return;
     updateChat({ ...chat, title: title.slice(0, 100), updatedAt: now() });
+  }
+
+  function openBrowserMenu(
+    event: ReactMouseEvent,
+    title: string,
+    actions: BrowserMenuAction[]
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const width = 210;
+    const height = Math.max(60, actions.length * 34 + 34);
+    setBrowserMenu({
+      x: Math.min(event.clientX, window.innerWidth - width - 8),
+      y: Math.min(event.clientY, window.innerHeight - height - 8),
+      title,
+      actions
+    });
+  }
+
+  async function refreshProject() {
+    if (!project) return;
+    setBrowserMenu(null);
+    await switchProject(project.id);
+  }
+
+  async function renameWorkspaceFile(file: WorkspaceFile) {
+    if (file.source === "omero") {
+      setStatus("OMERO attachment names are canonical and cannot be renamed locally");
+      return;
+    }
+    const requested = window.prompt("File name", file.name)?.trim();
+    if (!requested || requested === file.name) return;
+    let cleanName = requested.replace(/[\\/]/g, "_").slice(0, 180);
+    if (!cleanName || cleanName === "." || cleanName === "..") return;
+    const extension = file.name.match(/(\.[^.]+)$/)?.[1] || "";
+    if (extension && !cleanName.toLowerCase().endsWith(extension.toLowerCase())) {
+      if (/\.[^.]+$/.test(cleanName)) {
+        setStatus(`Keep the ${extension} extension when renaming ${file.name}`);
+        return;
+      }
+      cleanName += extension;
+    }
+    const current = workspaceRef.current;
+    if (!current) return;
+    const siblings = current.files.filter((item) =>
+      item.id !== file.id &&
+      item.source === file.source &&
+      item.chatId === file.chatId
+    );
+    if (siblings.some((item) => item.name.toLowerCase() === cleanName.toLowerCase())) {
+      setStatus(`A file named ${cleanName} already exists in this folder`);
+      return;
+    }
+
+    const previousStem = file.name.replace(/\.[^.]+$/, "");
+    const nextStem = cleanName.replace(/\.[^.]+$/, "");
+    const pairExtensions = file.source === "result" &&
+      /\.(png|svg|csv)$/i.test(file.name)
+      ? new Set(["png", "svg", "csv"])
+      : null;
+    const renamed = current.files.map((item) => {
+      let nextName: string | null = item.id === file.id ? cleanName : null;
+      if (
+        !nextName &&
+        pairExtensions &&
+        item.chatId === file.chatId &&
+        item.executionId === file.executionId &&
+        item.name.replace(/\.[^.]+$/, "") === previousStem &&
+        pairExtensions.has(item.name.split(".").at(-1)?.toLowerCase() || "")
+      ) {
+        nextName = `${nextStem}.${item.name.split(".").at(-1)}`;
+      }
+      return nextName
+        ? {
+            ...item,
+            name: nextName,
+            logicalPath: item.logicalPath.replace(/[^/]+$/, nextName)
+          }
+        : item;
+    });
+    const changed = renamed.filter((item, index) => item !== current.files[index]);
+    const updated = { ...current, files: renamed };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    await Promise.all(changed.map(saveFile));
+    if (file.source === "local") {
+      await restartRuntime(renamed, `Renamed input to ${cleanName}; browser Python is ready`);
+    } else {
+      setStatus(
+        changed.length > 1
+          ? `Renamed ${file.name} and its paired plot data`
+          : `Renamed ${file.name} to ${cleanName}`
+      );
+    }
   }
 
   function archiveChat(chat: ChatRecord) {
@@ -1085,6 +1218,58 @@ The user has ${current.scripts.length} saved scripts. ${
     updateProject({ ...project, plotCsv: !project.plotCsv, updatedAt: now() });
   }
 
+  function inputActions(file: WorkspaceFile): BrowserMenuAction[] {
+    const actions: BrowserMenuAction[] = [];
+    if (file.source === "local") {
+      actions.push({ label: "Rename", run: () => void renameWorkspaceFile(file) });
+    }
+    if ((file.state === "failed" || file.state === "missing") && file.annotationId) {
+      actions.push({ label: "Retry download", run: () => void retryFile(file.id) });
+    }
+    if (file.state === "missing" && file.source === "local") {
+      actions.push({
+        label: "Reselect file",
+        run: () => document.getElementById(`reselect-${file.id}`)?.click()
+      });
+    }
+    actions.push({
+      label: "Remove from project",
+      danger: true,
+      run: () => void removeFile(file.id)
+    });
+    return actions;
+  }
+
+  function outputActions(file: WorkspaceFile): BrowserMenuAction[] {
+    return [
+      { label: "Rename", run: () => void renameWorkspaceFile(file) },
+      { label: "Download", run: () => downloadFile(file) },
+      ...(bridge.canUpload
+        ? [{ label: "Attach to OMERO", run: () => void attach(file) }]
+        : []),
+      {
+        label: "Remove from project",
+        danger: true,
+        run: () => void removeFile(file.id)
+      }
+    ];
+  }
+
+  function scriptActions(script: ScriptRecord): BrowserMenuAction[] {
+    return [
+      { label: "Run", run: () => void runScript(script) },
+      { label: "Rename", run: () => renameScript(script) },
+      { label: "Download", run: () => downloadScript(script) }
+    ];
+  }
+
+  function snapshotActions(snapshot: Attachment): BrowserMenuAction[] {
+    return [{
+      label: "Resume as new project",
+      run: () => void resumeSnapshot(snapshot)
+    }];
+  }
+
   if (!workspace || !project || !activeChat) {
     return <main className="app-shell"><div className="boot-message">{status}</div></main>;
   }
@@ -1144,7 +1329,7 @@ The user has ${current.scripts.length} saved scripts. ${
           </select>
         </label>
         <button onClick={() => void newConversation()}>New chat</button>
-        <button onClick={() => renameChat(activeChat)}>Rename</button>
+        <button onClick={() => renameChat(activeChat)}>Rename chat</button>
         <button onClick={() => archiveChat(activeChat)}>Archive</button>
         <button onClick={() => void downloadArchive()}>Download project ZIP</button>
         <button onClick={() => importInput.current?.click()}>Import project ZIP</button>
@@ -1154,80 +1339,233 @@ The user has ${current.scripts.length} saved scripts. ${
 
       <div className="workspace">
         <aside className="project-tree">
-          <div className="aside-heading">
+          <div
+            className="file-browser-heading"
+            onContextMenu={(event) => openBrowserMenu(event, project.name, [
+              { label: "Add files", run: () => addFilesInput.current?.click() },
+              { label: "New chat", run: () => void newConversation() },
+              { label: "Rename current chat", run: () => renameChat(activeChat) },
+              { label: "Refresh", run: () => void refreshProject() }
+            ])}
+          >
             <div><h2>Project files</h2><small>{bytesLabel(projectBytes(workspace))} · browser {quotaPercent || "?"}%</small></div>
-            <label className="upload-button">Add files<input type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} /></label>
+            <button
+              className="browser-more"
+              aria-label="Project actions"
+              title="Project actions"
+              onClick={(event) => openBrowserMenu(event, project.name, [
+                { label: "Add files", run: () => addFilesInput.current?.click() },
+                { label: "New chat", run: () => void newConversation() },
+                { label: "Rename current chat", run: () => renameChat(activeChat) },
+                { label: "Refresh", run: () => void refreshProject() }
+              ])}
+            >⋮</button>
           </div>
+          <div className="file-browser-toolbar" role="toolbar" aria-label="Project file actions">
+            <button title="Add files" aria-label="Add files" onClick={() => addFilesInput.current?.click()}>＋</button>
+            <button title="Refresh project" aria-label="Refresh project" onClick={() => void refreshProject()}>↻</button>
+            <button
+              title="Collapse all folders"
+              aria-label="Collapse all folders"
+              onClick={() => setOpenFolders({ inputs: false, outputs: false, scripts: false, snapshots: false })}
+            >⌃</button>
+            <input ref={addFilesInput} hidden type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} />
+          </div>
+          <div className="browser-path" title={project.rootPath}>
+            <span className="browser-icon root" aria-hidden="true" />
+            <span>{project.rootPath}</span>
+          </div>
+          <div className="browser-columns"><span>Name</span><span>Size</span></div>
           {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Archive or download old projects.</p>}
 
-          <details open className="tree-folder">
-            <summary>inputs/ <small>{inputFiles.length}</small></summary>
-            <ul className="file-list">
+          <details
+            open={openFolders.inputs}
+            className="browser-folder"
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, inputs: open }));
+            }}
+          >
+            <summary
+              onContextMenu={(event) => openBrowserMenu(event, "inputs/", [
+                { label: "Add files", run: () => addFilesInput.current?.click() }
+              ])}
+            >
+              <span className="browser-icon folder" aria-hidden="true" />
+              <strong>inputs</strong><small>{inputFiles.length}</small>
+            </summary>
+            <ul className="browser-list">
               {inputFiles.map((file) => (
-                <li key={file.id} className={`file-${file.state}`}>
-                  <div><strong>{file.name}</strong><small>{bytesLabel(file.size)} · {file.source} · {file.sha256.slice(0, 10) || "unhashed"}</small></div>
-                  <span>{file.state}</span>
-                  {file.error && <p>{file.error}</p>}
-                  <div className="file-actions">
-                    {(file.state === "failed" || file.state === "missing") && file.annotationId && <button onClick={() => void retryFile(file.id)}>Retry</button>}
-                    {file.state === "missing" && file.source === "local" && <label className="mini-upload">Reselect<input type="file" onChange={(event) => void replaceMissingLocal(file, event.target.files?.[0] || null)} /></label>}
-                    <button onClick={() => void removeFile(file.id)}>Remove</button>
+                <li
+                  key={file.id}
+                  className={`browser-row file-${file.state}`}
+                  onContextMenu={(event) => openBrowserMenu(event, file.name, inputActions(file))}
+                >
+                  <span className="browser-icon file" aria-hidden="true" />
+                  <div className="browser-name">
+                    <strong>{file.name}</strong>
+                    <small>{file.source} · {file.state} · {file.sha256.slice(0, 10) || "unhashed"}</small>
+                    {file.error && <span className="browser-error">{file.error}</span>}
                   </div>
+                  <span className="browser-size">{bytesLabel(file.size)}</span>
+                  <button
+                    className="browser-more"
+                    aria-label={`Actions for ${file.name}`}
+                    onClick={(event) => openBrowserMenu(event, file.name, inputActions(file))}
+                  >⋮</button>
+                  {file.state === "missing" && file.source === "local" && (
+                    <input
+                      id={`reselect-${file.id}`}
+                      hidden
+                      type="file"
+                      onChange={(event) => void replaceMissingLocal(file, event.target.files?.[0] || null)}
+                    />
+                  )}
                 </li>
               ))}
+              {!inputFiles.length && <li className="browser-empty">No input files</li>}
             </ul>
           </details>
 
-          <details open className="tree-folder">
-            <summary>chats/{slug(activeChat.title)}/outputs/ <small>{outputFiles.length}</small></summary>
-            <div className="chat-files">
-              <span>chat.json <small>autosaved</small></span>
-              <span>chat.md <small>autosaved</small></span>
-            </div>
-            <ul className="file-list">
+          <details
+            open={openFolders.outputs}
+            className="browser-folder"
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, outputs: open }));
+            }}
+          >
+            <summary
+              onContextMenu={(event) => openBrowserMenu(event, `chats/${activeChat.title}/`, [
+                { label: "Rename chat", run: () => renameChat(activeChat) },
+                { label: "New chat", run: () => void newConversation() },
+                { label: "Archive chat", run: () => archiveChat(activeChat) }
+              ])}
+            >
+              <span className="browser-icon folder" aria-hidden="true" />
+              <strong>chats/{slug(activeChat.title)}/outputs</strong><small>{outputFiles.length}</small>
+            </summary>
+            <ul className="browser-list">
+              <li className="browser-row virtual">
+                <span className="browser-icon json" aria-hidden="true" />
+                <div className="browser-name"><strong>chat.json</strong><small>autosaved</small></div>
+                <span className="browser-size">—</span>
+              </li>
+              <li className="browser-row virtual">
+                <span className="browser-icon markdown" aria-hidden="true" />
+                <div className="browser-name"><strong>chat.md</strong><small>autosaved</small></div>
+                <span className="browser-size">—</span>
+              </li>
               {outputFiles.map((file) => (
-                <li key={file.id}>
-                  <div><strong>{file.name}</strong><small>{bytesLabel(file.size)} · {file.sha256.slice(0, 10)}</small></div>
-                  <div className="file-actions">
-                    <button onClick={() => downloadFile(file)}>Download</button>
-                    {bridge.canUpload && <button onClick={() => void attach(file)}>Attach</button>}
-                    <button onClick={() => void removeFile(file.id)}>Remove</button>
+                <li
+                  key={file.id}
+                  className="browser-row"
+                  onDoubleClick={() => downloadFile(file)}
+                  onContextMenu={(event) => openBrowserMenu(event, file.name, outputActions(file))}
+                >
+                  <span className={`browser-icon ${file.type.startsWith("image/") ? "image" : "file"}`} aria-hidden="true" />
+                  <div className="browser-name">
+                    <strong>{file.name}</strong><small>{file.sha256.slice(0, 10)} · double-click to download</small>
                   </div>
+                  <span className="browser-size">{bytesLabel(file.size)}</span>
+                  <button
+                    className="browser-more"
+                    aria-label={`Actions for ${file.name}`}
+                    onClick={(event) => openBrowserMenu(event, file.name, outputActions(file))}
+                  >⋮</button>
                 </li>
               ))}
             </ul>
           </details>
 
-          <details open className="tree-folder">
-            <summary>scripts/ <small>{workspace.scripts.length}</small></summary>
-            <ul className="file-list">
+          <details
+            open={openFolders.scripts}
+            className="browser-folder"
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, scripts: open }));
+            }}
+          >
+            <summary><span className="browser-icon folder" aria-hidden="true" /><strong>scripts</strong><small>{workspace.scripts.length}</small></summary>
+            <ul className="browser-list">
               {workspace.scripts.map((script) => (
-                <li key={script.id}>
-                  <div><strong>{script.name}</strong><small>v{script.currentVersion} · {script.description}</small></div>
-                  <div className="file-actions">
-                    <button onClick={() => void runScript(script)}>Run</button>
-                    <button onClick={() => renameScript(script)}>Rename</button>
-                    <button onClick={() => downloadScript(script)}>Download</button>
+                <li
+                  key={script.id}
+                  className="browser-row"
+                  onDoubleClick={() => void runScript(script)}
+                  onContextMenu={(event) => openBrowserMenu(event, script.name, scriptActions(script))}
+                >
+                  <span className="browser-icon python" aria-hidden="true" />
+                  <div className="browser-name">
+                    <strong>{script.name}</strong><small>v{script.currentVersion} · {script.description || "saved Python script"}</small>
                   </div>
+                  <span className="browser-size">v{script.currentVersion}</span>
+                  <button
+                    className="browser-more"
+                    aria-label={`Actions for ${script.name}`}
+                    onClick={(event) => openBrowserMenu(event, script.name, scriptActions(script))}
+                  >⋮</button>
                 </li>
               ))}
+              {!workspace.scripts.length && <li className="browser-empty">No saved scripts</li>}
             </ul>
           </details>
 
           {snapshots.length > 0 && (
-            <details className="tree-folder">
-              <summary>Resume from OMERO/ <small>{snapshots.length}</small></summary>
-              <ul className="file-list">
+            <details
+              open={openFolders.snapshots}
+              className="browser-folder"
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setOpenFolders((current) => ({ ...current, snapshots: open }));
+              }}
+            >
+              <summary><span className="browser-icon folder" aria-hidden="true" /><strong>Resume from OMERO</strong><small>{snapshots.length}</small></summary>
+              <ul className="browser-list">
                 {snapshots.map((snapshot) => (
-                  <li key={snapshot.annotation_id}>
-                    <div><strong>{snapshot.name}</strong><small>{bytesLabel(snapshot.size)} · Annotation {snapshot.annotation_id}</small></div>
-                    <button onClick={() => void resumeSnapshot(snapshot)}>Resume</button>
+                  <li
+                    key={snapshot.annotation_id}
+                    className="browser-row"
+                    onDoubleClick={() => void resumeSnapshot(snapshot)}
+                    onContextMenu={(event) => openBrowserMenu(event, snapshot.name, snapshotActions(snapshot))}
+                  >
+                    <span className="browser-icon archive" aria-hidden="true" />
+                    <div className="browser-name"><strong>{snapshot.name}</strong><small>Annotation {snapshot.annotation_id}</small></div>
+                    <span className="browser-size">{bytesLabel(snapshot.size)}</span>
+                    <button
+                      className="browser-more"
+                      aria-label={`Actions for ${snapshot.name}`}
+                      onClick={(event) => openBrowserMenu(event, snapshot.name, snapshotActions(snapshot))}
+                    >⋮</button>
                   </li>
                 ))}
               </ul>
             </details>
           )}
         </aside>
+
+        {browserMenu && (
+          <div
+            className="browser-context-menu"
+            role="menu"
+            aria-label={`Actions for ${browserMenu.title}`}
+            style={{ left: browserMenu.x, top: browserMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="context-title">{browserMenu.title}</div>
+            {browserMenu.actions.map((action) => (
+              <button
+                key={action.label}
+                role="menuitem"
+                className={action.danger ? "danger" : ""}
+                onClick={() => {
+                  setBrowserMenu(null);
+                  action.run();
+                }}
+              >{action.label}</button>
+            ))}
+          </div>
+        )}
 
         <section className="chat">
           <div className="messages" aria-live="polite" ref={messagesElement}>
@@ -1329,31 +1667,42 @@ function ExecutionCard({
   onSave: () => void;
   onRerun: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const outputs = execution.outputFileIds
     .map((fileId) => files.find((file) => file.id === fileId))
     .filter(Boolean) as WorkspaceFile[];
   const plots = execution.status === "reused"
     ? []
     : outputs.filter((file) => file.type === "image/png" || file.type === "image/svg+xml");
+  const controls = (position: "top" | "bottom") => (
+    <div className={`execution-actions ${position}`}>
+      <button
+        className="detail-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >{expanded ? "Collapse" : "Show details"}</button>
+      {["success", "reused"].includes(execution.status) && (
+        <button onClick={onSave}>Save as script</button>
+      )}
+      <button onClick={onRerun}>Rerun</button>
+      <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
+    </div>
+  );
   return (
     <article className={`message execution ${execution.status}`}>
-      <details className="execution-details">
-        <summary>
+      <section className="execution-details" data-expanded={expanded ? "true" : "false"}>
+        <div className="execution-heading">
           <span>{execution.status === "reused" ? "Reused Python run" : "Python code (local)"}</span>
-          <small>Show details</small>
-        </summary>
-        <div className="execution-content">
+          {controls("top")}
+        </div>
+        <div className="execution-content" hidden={!expanded}>
           <pre><code>{execution.code}</code></pre>
           {execution.stdout && <pre>{execution.stdout}</pre>}
           {execution.stderr && <pre className="execution-error">{execution.stderr}</pre>}
           {execution.preview != null && <Preview value={execution.preview} />}
-          <div className="execution-actions">
-            {["success", "reused"].includes(execution.status) && <button onClick={onSave}>Save as script</button>}
-            <button onClick={onRerun}>Rerun</button>
-            <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
-          </div>
+          {controls("bottom")}
         </div>
-      </details>
+      </section>
       {execution.status === "reused" && <p className="reuse-note">Reused prior execution {execution.reusedFrom?.slice(0, 8)} because code and inputs are unchanged.</p>}
       {execution.missingPlotCsv.length > 0 && <p className="plot-warning">Source CSV missing: {execution.missingPlotCsv.join(", ")}</p>}
       {plots.map((file) => <Artifact key={file.id} file={file} />)}

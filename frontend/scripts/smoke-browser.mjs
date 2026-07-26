@@ -231,7 +231,7 @@ try {
   await page.getByText("Ready — analysis runs locally in this browser").waitFor({
     timeout: 45_000
   });
-  await page.locator('.upload-button input[type="file"]').setInputFiles({
+  await page.locator('.file-browser-toolbar input[type="file"]').setInputFiles({
     name: "smoke.csv",
     mimeType: "text/csv",
     buffer: Buffer.from("group,value\na,1\nb,2\n")
@@ -256,12 +256,12 @@ try {
   await page.getByText(/25% of 1,000/).waitFor();
   await page.getByText(/session: 1,000/).waitFor();
   await page.getByText("Ready — you can ask a question").waitFor();
-  const disclosures = page.locator("details.execution-details");
+  const disclosures = page.locator("section.execution-details");
   if (await disclosures.count() < 3) {
     throw new Error("Expected collapsed Python execution disclosures");
   }
   for (let index = 0; index < await disclosures.count(); index += 1) {
-    if (await disclosures.nth(index).getAttribute("open") !== null) {
+    if (await disclosures.nth(index).getAttribute("data-expanded") !== "false") {
       throw new Error("An execution disclosure was expanded by default");
     }
   }
@@ -273,7 +273,13 @@ try {
   if (scrollState.bottom > 4 || scrollState.overflow !== "auto" || scrollState.bodyOverflow !== "hidden") {
     throw new Error(`Chat scrolling is not contained: ${JSON.stringify(scrollState)}`);
   }
-  await disclosures.last().locator("summary").click();
+  await disclosures.last().getByRole("button", { name: "Show details" }).click();
+  if (
+    await disclosures.last().getByRole("button", { name: "Collapse" }).count() !== 2 ||
+    await disclosures.last().getByRole("button", { name: "Rerun" }).count() !== 2
+  ) {
+    throw new Error("Execution controls were not duplicated above and below the code");
+  }
   await page.getByRole("columnheader", { name: "group" }).waitFor();
   const outputCount = await page.locator(".project-tree details").nth(1).locator("li").count();
   await page.getByPlaceholder("Ask a question about the loaded data…").fill(
@@ -287,10 +293,13 @@ try {
     throw new Error(`Reused run duplicated outputs: ${outputCount} -> ${outputCountAfterReuse}`);
   }
   if (completions !== 6) throw new Error(`Expected six AI rounds; got ${completions}`);
-  const dialogAnswers = ["smoke-analysis.py", "Reusable smoke analysis"];
+  const dialogAnswers = ["smoke-analysis.py", "Reusable smoke analysis", "Renamed smoke chat"];
   page.on("dialog", async (dialog) => dialog.accept(dialogAnswers.shift() || ""));
   await page.getByRole("button", { name: "Save as script" }).last().click();
   await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
+  await page.getByText("smoke-analysis.py", { exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Run" }).waitFor();
+  await page.keyboard.press("Escape");
 
   await page.evaluate(() => {
     window.__oacDownloadPromise = null;
@@ -319,6 +328,8 @@ try {
   }
   await chatSelect.selectOption(originalChatId);
   await page.getByText("Rows analyzed locally.").waitFor();
+  await page.getByRole("button", { name: "Rename chat" }).click();
+  await chatSelect.getByRole("option", { name: "Renamed smoke chat" }).waitFor({ state: "attached" });
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log(
     "Browser smoke passed: opaque iframe/worker, CSP, file transfer, fixed Azure contract, " +
