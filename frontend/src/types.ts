@@ -51,6 +51,7 @@ export interface ChatMessage {
 export interface ProviderSettings {
   apiKey: string;
   model: string;
+  contextWindow: number;
 }
 
 export interface RuntimeOutput {
@@ -58,6 +59,14 @@ export interface RuntimeOutput {
   stderr: string;
   preview: unknown;
   files: Array<{ name: string; type: string; data: ArrayBuffer }>;
+}
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  sessionTokens: number;
+  estimated: boolean;
 }
 
 declare global {

@@ -10,7 +10,9 @@ results in the chat.
 
 - Source files and Python execution stay in the browser.
 - Only prompts, generated code, schemas, bounded previews, statistics, and tool
-  output are sent to the configured AmsterdamUMC Azure endpoint.
+  output (including bounded Python errors used for automatic repair) are sent
+  to the configured AmsterdamUMC Azure endpoint. Complete source files are
+  never included in AI requests.
 - Python runs in an opaque-origin sandbox without OMERO cookies, context
   tokens, or the Azure key. Its CSP permits access only to public, self-hosted
   Pyodide runtime files.
@@ -24,8 +26,14 @@ results in the chat.
 
 DuckDB, SQLite, CSV/TSV, JSON, Excel, Parquet, NPY, and NPZ inputs are supported.
 The browser runtime includes pinned DuckDB, pandas, PyArrow, python-calamine,
-NumPy, and Matplotlib builds. CI Segmentation measurement databases receive
-automatic schema-first analysis instructions.
+NumPy, Matplotlib, SciPy, and seaborn builds. CI Segmentation measurement
+databases receive automatic schema-first analysis instructions. Recoverable
+Python, module, catalog, and SQL errors are returned to the model so it can
+correct and rerun its generated code.
+
+The chat shows API-reported input/output token usage for the latest request and
+the session total. An optional model context-window value in AI settings adds a
+percentage without assuming that every Azure deployment has the same limit.
 
 Default limits are 256 MiB per file, 512 MiB per browser workspace, 64 KiB per
 tool response, 100 preview rows, 50 preview columns, and 120 seconds per Python
@@ -48,9 +56,10 @@ python -m build --wheel
 python scripts/verify_wheel.py dist/omero_analysis_chat-*.whl
 ```
 
-`build_frontend.py` downloads only the pinned Pyodide package closure, verifies
-every upstream SHA-256 from `pyodide-lock.json`, builds the frontend, and embeds
-both in the wheel. Production does not require Node.js or a public CDN.
+`build_frontend.py` downloads the pinned Pyodide package closure plus the pinned
+seaborn wheel, verifies every upstream SHA-256, builds the frontend, and embeds
+the complete runtime in the wheel. Production does not require Node.js or a
+public CDN.
 
 ## Installation
 
@@ -87,4 +96,3 @@ POST /api/attachments/<type>/<id>/upload/
 ## License
 
 GNU Affero General Public License v3.0 or later.
-

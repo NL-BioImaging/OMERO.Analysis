@@ -92,30 +92,64 @@ await page.route(
       throw new Error("Azure api-key header was not preserved");
     }
     completions += 1;
-    const message = completions === 1
-      ? {
+    if (request.postData().includes("group,value\\na,1\\nb,2")) {
+      throw new Error("A complete source file was included in the Azure request");
+    }
+    let message;
+    if (completions === 1) {
+      message = {
           role: "assistant",
           content: null,
           tool_calls: [{
-            id: "call-smoke",
+            id: "call-failing",
             type: "function",
             function: {
               name: "run_python",
               arguments: JSON.stringify({
+                code: "import package_that_is_not_available"
+              })
+            }
+          }]
+        };
+    } else if (completions === 2) {
+      const toolMessage = payload.messages.at(-1);
+      if (
+        toolMessage?.role !== "tool" ||
+        !toolMessage.content.includes("ModuleNotFoundError") ||
+        !toolMessage.content.includes("available_packages")
+      ) {
+        throw new Error(`Python failure was not returned for repair: ${JSON.stringify(toolMessage)}`);
+      }
+      message = {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: "call-corrected",
+          type: "function",
+          function: {
+            name: "run_python",
+            arguments: JSON.stringify({
                 code: [
                   "import pandas as pd",
+                  "import seaborn as sns",
+                  "sns.set_theme()",
                   "result = pd.read_csv('/input/smoke.csv')",
                   "result.groupby('group', as_index=False)['value'].sum().to_csv('/output/summary.csv', index=False)"
                 ].join("\n")
               })
             }
           }]
-        }
-      : { role: "assistant", content: "Rows analyzed locally.", tool_calls: [] };
+      };
+    } else {
+      message = { role: "assistant", content: "Rows analyzed locally.", tool_calls: [] };
+    }
     await route.fulfill({
       status: 200,
       headers: { ...cors, "Content-Type": "application/json" },
-      body: JSON.stringify({ choices: [{ message }] })
+      body: JSON.stringify({
+        choices: [{ message }],
+        usage: { prompt_tokens: 200, completion_tokens: 50, total_tokens: 250 }
+      })
     });
   }
 );
@@ -142,6 +176,7 @@ try {
   await page.getByRole("button", { name: "AI settings" }).click();
   await page.getByLabel("Deployment/model").fill("gpt-5-smoke");
   await page.getByLabel("API key").fill("smoke-key");
+  await page.getByLabel("Model context window (optional)").fill("1000");
   await page.getByPlaceholder("Ask a question about the loaded data…").fill(
     "Show me the uploaded rows and save a summary."
   );
@@ -149,11 +184,14 @@ try {
   await page.getByText("Rows analyzed locally.").waitFor({ timeout: 120_000 });
   await page.getByText("summary.csv", { exact: true }).waitFor();
   await page.getByRole("columnheader", { name: "group" }).waitFor();
-  if (completions !== 2) throw new Error(`Expected two AI rounds; got ${completions}`);
+  await page.getByText(/Python failed locally/).waitFor();
+  await page.getByText(/25% of 1,000/).waitFor();
+  await page.getByText(/session: 750/).waitFor();
+  if (completions !== 3) throw new Error(`Expected three AI rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log(
     "Browser smoke passed: opaque iframe/worker, CSP, file transfer, fixed Azure contract, " +
-    "local Python tool execution, table preview, and generated result"
+    "local Python error repair, seaborn, token usage, table preview, and generated result"
   );
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));

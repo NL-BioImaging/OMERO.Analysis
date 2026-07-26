@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   completeChat,
   OmeroBridge,
+  toolErrorText,
   toolResultText,
   type AiMessage,
   type ToolCall
@@ -27,6 +28,7 @@ import type {
   ChatMessage,
   ProviderSettings,
   RuntimeOutput,
+  TokenUsage,
   WorkspaceFile
 } from "./types";
 
@@ -57,6 +59,20 @@ function listFiles(files: WorkspaceFile[]): string {
   );
 }
 
+function estimateTokens(value: unknown): number {
+  return Math.max(1, Math.ceil(JSON.stringify(value).length / 4));
+}
+
+function usageSummary(usage: TokenUsage | null, contextWindow: number): string {
+  if (!usage) return "Context usage appears after the first AI response.";
+  const requestTokens = usage.promptTokens + usage.completionTokens;
+  const source = usage.estimated ? "estimated" : "API reported";
+  const limit = contextWindow > 0
+    ? ` · ${Math.min(100, Math.round(requestTokens / contextWindow * 100))}% of ${contextWindow.toLocaleString()}`
+    : " · model limit not configured";
+  return `Latest request: ${usage.promptTokens.toLocaleString()} input + ${usage.completionTokens.toLocaleString()} output tokens (${source})${limit} · session: ${usage.sessionTokens.toLocaleString()}`;
+}
+
 export default function App() {
   const bootstrap = window.OMERO_ANALYSIS_CHAT;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
@@ -70,6 +86,7 @@ export default function App() {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [status, setStatus] = useState("Preparing workspace…");
   const [showSettings, setShowSettings] = useState(false);
+  const [usage, setUsage] = useState<TokenUsage | null>(null);
   const abort = useRef<AbortController | null>(null);
   filesRef.current = files;
 
@@ -88,7 +105,7 @@ export default function App() {
         getValue<PersistedWorkspace>(workspaceKey())
       ]);
       if (!alive) return;
-      if (savedSettings) setSettings(savedSettings);
+      if (savedSettings) setSettings({ ...defaultSettings, ...savedSettings });
       if (savedWorkspace) {
         setMessages(savedWorkspace.messages || []);
         setFiles((savedWorkspace.files || []).filter((file) => file.state === "ready"));
@@ -253,14 +270,22 @@ export default function App() {
 
   async function executeTool(call: ToolCall): Promise<string> {
     let args: any = {};
-    try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* handled below */ }
+    try {
+      args = JSON.parse(call.function.arguments || "{}");
+    } catch (error) {
+      return toolErrorText(`Invalid JSON tool arguments: ${String(error)}`);
+    }
     if (call.function.name === "list_workspace_files") return listFiles(filesRef.current);
     if (call.function.name === "reset_python") {
-      await runtime.reset();
-      return "Python state reset; canonical inputs restored.";
+      try {
+        await runtime.reset();
+        return "Python state reset; canonical inputs restored.";
+      } catch (error) {
+        return toolErrorText(error);
+      }
     }
     if (call.function.name !== "run_python" || typeof args.code !== "string") {
-      return `Unsupported or invalid tool call: ${call.function.name}`;
+      return toolErrorText(`Unsupported or invalid tool call: ${call.function.name}`);
     }
     setMessages((current) => [
       ...current,
@@ -269,7 +294,25 @@ export default function App() {
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
     );
-    const output = await runtime.run(args.code);
+    let output: RuntimeOutput;
+    try {
+      output = await runtime.run(args.code);
+    } catch (error) {
+      const detail = String(error instanceof Error ? error.message : error)
+        .slice(0, MAX_TOOL_TEXT);
+      setMessages((current) => [
+        ...current,
+        {
+          id: id(),
+          role: "tool",
+          content:
+            `Python failed locally. The bounded error was sent to ${PROVIDER_NAME} for an automatic correction:\n${detail}`,
+          kind: "error"
+        }
+      ]);
+      setStatus("Python error sent to AmsterdamUMC; waiting for corrected code…");
+      return toolErrorText(error);
+    }
     const generated: WorkspaceFile[] = output.files.map((file) => ({
       id: id(),
       name: file.name,
@@ -293,6 +336,7 @@ export default function App() {
           .map((file) => file.name)
       }
     ]);
+    setStatus("Python completed locally; continuing the analysis…");
     return toolResultText(output);
   }
 
@@ -313,9 +357,21 @@ export default function App() {
     ];
     try {
       for (let turn = 0; turn < 8; turn += 1) {
+        const estimatedPrompt = estimateTokens(conversation);
         const response = await completeChat(settings, conversation, abort.current.signal);
         const answer = response.choices[0]?.message;
         if (!answer) throw new Error("AmsterdamUMC returned no response");
+        const promptTokens = response.usage?.prompt_tokens ?? estimatedPrompt;
+        const completionTokens =
+          response.usage?.completion_tokens ?? estimateTokens(answer.content || answer.tool_calls || "");
+        const totalTokens = response.usage?.total_tokens ?? promptTokens + completionTokens;
+        setUsage((current) => ({
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          sessionTokens: (current?.sessionTokens || 0) + totalTokens,
+          estimated: !response.usage
+        }));
         conversation.push({
           role: "assistant",
           content: answer.content,
@@ -342,6 +398,9 @@ export default function App() {
         ]);
       }
     } finally {
+      if (!abort.current?.signal.aborted) {
+        setStatus("Ready — analysis runs locally in this browser");
+      }
       abort.current = null;
       setBusy(false);
     }
@@ -363,6 +422,7 @@ export default function App() {
     if (!confirm("Clear this browser-local conversation, files, and results?")) return;
     setMessages([]);
     setFiles([]);
+    setUsage(null);
     await deleteValue(workspaceKey());
     await runtime.start([]);
     setRuntimeReady(true);
@@ -413,6 +473,19 @@ export default function App() {
           <label>API key
             <input type="password" value={settings.apiKey} onChange={(event) => void saveSettings({ ...settings, apiKey: event.target.value })} autoComplete="off" />
           </label>
+          <label>Model context window (optional)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={settings.contextWindow || ""}
+              onChange={(event) => void saveSettings({
+                ...settings,
+                contextWindow: Math.max(0, Number(event.target.value) || 0)
+              })}
+              placeholder="Used only to calculate a percentage"
+            />
+          </label>
           <p>Temperature is fixed at <strong>{TEMPERATURE}</strong>.</p>
           <button onClick={() => void saveSettings({ ...settings, apiKey: "" })}>Forget API key</button>
         </form>
@@ -459,6 +532,10 @@ export default function App() {
             ))}
           </div>
           <div className="status" role="status">{status}</div>
+          <div className="usage-status">
+            <span>Azure receives prompts, code, bounded schemas/previews/statistics, and execution errors — never source files.</span>
+            <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
+          </div>
           {blockedFiles.length > 0 && <div className="blocker">Analysis is blocked until every selected attachment finishes downloading. Retry or remove failed files.</div>}
           {!settings.apiKey || !settings.model ? <div className="blocker">Enter the AmsterdamUMC deployment name and API key in AI settings.</div> : null}
           <div className="composer">

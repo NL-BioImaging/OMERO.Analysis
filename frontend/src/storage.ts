@@ -51,5 +51,8 @@ export interface PersistedWorkspace {
 }
 
 export const settingsKey = "provider:AmsterdamUMC";
-export const defaultSettings: ProviderSettings = { apiKey: "", model: "" };
-
+export const defaultSettings: ProviderSettings = {
+  apiKey: "",
+  model: "",
+  contextWindow: 0
+};

@@ -1,4 +1,12 @@
-import { BASE_URL, CHAT_URL, PROVIDER_NAME, TEMPERATURE, TOOLS } from "./constants";
+import { toolErrorText } from "./api";
+import {
+  BASE_URL,
+  CHAT_URL,
+  PROVIDER_NAME,
+  SYSTEM_PROMPT,
+  TEMPERATURE,
+  TOOLS
+} from "./constants";
 
 describe("AmsterdamUMC provider", () => {
   it("keeps the exact endpoint contract and fixed temperature", () => {
@@ -17,5 +25,17 @@ describe("AmsterdamUMC provider", () => {
       "reset_python"
     ]);
   });
-});
 
+  it("instructs the model to repair tool errors with the available local stack", () => {
+    expect(SYSTEM_PROMPT).toContain("Tool failures are observations");
+    expect(SYSTEM_PROMPT).toContain("seaborn");
+    expect(SYSTEM_PROMPT).toContain("CI Segmentation");
+    expect(SYSTEM_PROMPT).toMatch(
+      /Never print, preview, encode, or return a complete source\s+file/
+    );
+    const payload = toolErrorText(new Error("ModuleNotFoundError: missing"));
+    expect(payload).toContain("call run_python again");
+    expect(payload).toContain("available_packages");
+    expect(payload.length).toBeLessThanOrEqual(64 * 1024 + 30);
+  });
+});

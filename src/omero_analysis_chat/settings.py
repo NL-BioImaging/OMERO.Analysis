@@ -16,7 +16,9 @@ def _setting(name, default):
         from omeroweb.settings import omero_settings
 
         return omero_settings.get(PREFIX + name, default)
-    except (ImportError, AttributeError):
+    except Exception:
+        # A standalone Django process can have omero-web installed without the
+        # OMERO deployment environment needed to import omeroweb.settings.
         return default
 
 
@@ -39,4 +41,3 @@ def allowed_result_extensions():
     else:
         values = value
     return {str(item).strip().lower() for item in values if str(item).strip()}
-

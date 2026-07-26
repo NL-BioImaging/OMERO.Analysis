@@ -12,11 +12,23 @@ await pyodide.loadPackage([
   "numpy",
   "pandas",
   "matplotlib",
+  "scipy",
   "duckdb",
   "pyarrow",
   "python-calamine",
   "xlrd"
 ]);
+try {
+  pyodide.unpackArchive(
+    Uint8Array.from(
+      await readFile(resolve(runtime, "seaborn-0.13.2-py3-none-any.whl"))
+    ),
+    "zip",
+    { extractDir: pyodide.sitePackages }
+  );
+} catch (error) {
+  throw new Error(`Could not install vendored seaborn wheel: ${error?.message || error}`);
+}
 const result = await pyodide.runPythonAsync(`
 import json, sqlite3, zipfile
 from pathlib import Path
@@ -26,6 +38,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy
+import seaborn as sns
 
 root = Path("/tmp/oac-smoke")
 root.mkdir(parents=True, exist_ok=True)
@@ -81,11 +95,13 @@ with duckdb.connect(str(root / "data.duckdb"), read_only=True) as db:
 plt.plot(frame["value"])
 plt.savefig(root / "plot.png")
 assert (root / "plot.png").stat().st_size > 100
+sns.set_theme()
+assert scipy.__version__
 json.dumps({"rows": len(frame), "sum": float(frame["value"].sum())})
 `);
 const parsed = JSON.parse(result);
 if (parsed.rows !== 3 || parsed.sum !== 7) throw new Error(`Unexpected result: ${result}`);
 console.log(
   `Runtime smoke passed on Pyodide ${manifest.pyodide}: CSV, JSON, SQLite, ` +
-  "DuckDB, Excel, Parquet, NPY, NPZ, pandas, and Matplotlib"
+  "DuckDB, Excel, Parquet, NPY, NPZ, pandas, Matplotlib, SciPy, and seaborn"
 );

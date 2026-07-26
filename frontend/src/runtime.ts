@@ -11,6 +11,7 @@ const PACKAGES = [
   "numpy",
   "pandas",
   "matplotlib",
+  "scipy",
   "duckdb",
   "pyarrow",
   "python-calamine",
@@ -31,6 +32,12 @@ async function boot() {
   const module = await import(runtimeBase + "/pyodide.mjs");
   pyodide = await module.loadPyodide({indexURL: runtimeBase + "/"});
   await pyodide.loadPackage(${packages});
+  const micropip = pyodide.pyimport("micropip");
+  try {
+    await micropip.install(runtimeBase + "/seaborn-0.13.2-py3-none-any.whl", {deps: false});
+  } finally {
+    micropip.destroy();
+  }
   pyodide.FS.mkdirTree("/input");
   pyodide.FS.mkdirTree("/output");
 }

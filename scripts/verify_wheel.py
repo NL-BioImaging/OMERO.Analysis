@@ -15,11 +15,21 @@ REQUIRED = {
     str(STATIC / "pyodide/python_stdlib.zip"),
     str(STATIC / "pyodide/pyodide-lock.json"),
     str(STATIC / "pyodide/RUNTIME.json"),
+    str(STATIC / "pyodide/seaborn-0.13.2-py3-none-any.whl"),
     "omero_analysis_chat/templates/omero_analysis_chat/chat.html",
     "omero_analysis_chat/templates/omero_analysis_chat/panel.html",
     "omero_analysis_chat/templates/omero_analysis_chat/center_plugin.js.html",
 }
-PACKAGES = {"duckdb", "pandas", "pyarrow", "python-calamine", "matplotlib"}
+PACKAGES = {
+    "duckdb",
+    "matplotlib",
+    "pandas",
+    "pyarrow",
+    "python-calamine",
+    "scipy",
+    "seaborn",
+}
+LOCK_PACKAGES = PACKAGES - {"seaborn"}
 
 
 def main():
@@ -40,7 +50,7 @@ def main():
         absent = sorted(PACKAGES - set(runtime["packages"]))
         if absent:
             raise RuntimeError(f"Wheel runtime lacks packages: {absent}")
-        for package in PACKAGES:
+        for package in LOCK_PACKAGES:
             record = json.loads(
                 archive.read(str(STATIC / "pyodide/pyodide-lock.json"))
             )["packages"][package]
@@ -52,4 +62,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

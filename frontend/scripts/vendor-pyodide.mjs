@@ -15,6 +15,7 @@ const roots = [
   "numpy",
   "pandas",
   "matplotlib",
+  "scipy",
   "duckdb",
   "pyarrow",
   "python-calamine",
@@ -30,6 +31,14 @@ function include(name) {
   for (const dependency of record.depends || []) include(dependency);
 }
 roots.forEach(include);
+
+const extraWheels = [{
+  name: "seaborn",
+  version: "0.13.2",
+  fileName: "seaborn-0.13.2-py3-none-any.whl",
+  url: "https://files.pythonhosted.org/packages/83/11/00d3c3dfc25ad54e731d91449895a79e4bf2384dc3ac01809010ba88f6d5/seaborn-0.13.2-py3-none-any.whl",
+  sha256: "636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987"
+}];
 
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
@@ -63,11 +72,24 @@ for (const [name, record] of Object.entries(packages)) {
   await writeFile(output, bytes);
   process.stdout.write(`Vendored ${name} ${record.version}\n`);
 }
+for (const wheel of extraWheels) {
+  const response = await fetch(wheel.url);
+  if (!response.ok) throw new Error(`${response.status} downloading ${wheel.url}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const actual = createHash("sha256").update(bytes).digest("hex");
+  if (actual !== wheel.sha256) {
+    throw new Error(`Checksum mismatch for ${wheel.name}: ${actual} != ${wheel.sha256}`);
+  }
+  await writeFile(resolve(destination, wheel.fileName), bytes);
+  process.stdout.write(`Vendored ${wheel.name} ${wheel.version}\n`);
+}
 await writeFile(
   resolve(destination, "RUNTIME.json"),
   `${JSON.stringify({ pyodide: version, packages: Object.fromEntries(
-    Object.entries(packages).map(([name, value]) => [name, value.version])
+    [
+      ...Object.entries(packages).map(([name, value]) => [name, value.version]),
+      ...extraWheels.map((wheel) => [wheel.name, wheel.version])
+    ]
   ) }, null, 2)}\n`
 );
 console.log(`Vendored Pyodide ${version} with ${selected.size} packages in ${destination}`);
-

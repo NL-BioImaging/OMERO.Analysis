@@ -18,6 +18,7 @@ REQUIRED_RUNTIME = {
     "python_stdlib.zip",
     "pyodide-lock.json",
     "RUNTIME.json",
+    "seaborn-0.13.2-py3-none-any.whl",
 }
 REQUIRED_PACKAGES = {
     "duckdb",
@@ -26,6 +27,8 @@ REQUIRED_PACKAGES = {
     "pandas",
     "pyarrow",
     "python-calamine",
+    "scipy",
+    "seaborn",
     "xlrd",
 }
 
@@ -83,4 +86,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

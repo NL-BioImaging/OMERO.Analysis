@@ -1,4 +1,4 @@
-import { CHAT_URL, TEMPERATURE, TOOLS } from "./constants";
+import { CHAT_URL, MAX_TOOL_TEXT, TEMPERATURE, TOOLS } from "./constants";
 import type {
   Attachment,
   Bootstrap,
@@ -123,6 +123,11 @@ export interface AiResponse {
       tool_calls?: ToolCall[];
     };
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
 }
 
 export async function completeChat(
@@ -165,3 +170,28 @@ export function toolResultText(output: RuntimeOutput): string {
     : value;
 }
 
+export function toolErrorText(error: unknown): string {
+  const detail = String(error instanceof Error ? error.message : error)
+    .slice(0, MAX_TOOL_TEXT);
+  const value = JSON.stringify({
+    ok: false,
+    error: detail,
+    instruction:
+      "Inspect this error, correct the code or choose an available package, and call run_python again. Do not stop after a recoverable tool error.",
+    available_packages: [
+      "Python standard library",
+      "numpy",
+      "pandas",
+      "matplotlib",
+      "seaborn",
+      "scipy",
+      "duckdb",
+      "pyarrow",
+      "python-calamine",
+      "xlrd"
+    ]
+  });
+  return value.length > MAX_TOOL_TEXT
+    ? `${value.slice(0, MAX_TOOL_TEXT)}\n[tool error truncated]`
+    : value;
+}

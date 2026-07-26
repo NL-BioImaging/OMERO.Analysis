@@ -97,15 +97,18 @@ def can_annotate(obj):
 
 
 def _is_file_annotation(annotation):
+    file_protocol = all(
+        hasattr(annotation, attribute)
+        for attribute in ("getId", "getFile", "getFileInChunks")
+    )
+    if not file_protocol:
+        return False
     try:
         from omero.gateway import FileAnnotationWrapper
 
-        return isinstance(annotation, FileAnnotationWrapper)
+        return isinstance(annotation, FileAnnotationWrapper) or file_protocol
     except ImportError:
-        return all(
-            hasattr(annotation, attribute)
-            for attribute in ("getId", "getFile", "getFileInChunks")
-        )
+        return file_protocol
 
 
 @dataclass(frozen=True)
