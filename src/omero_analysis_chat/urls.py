@@ -35,4 +35,14 @@ urlpatterns = [
         views.upload_result,
         name="omero_analysis_chat_upload",
     ),
+    re_path(
+        r"^api/projects/(?P<object_type>\w+)/(?P<object_id>\d+)/snapshots/$",
+        views.project_snapshots,
+        name="omero_analysis_chat_project_snapshots",
+    ),
+    re_path(
+        r"^api/project-snapshot/(?P<annotation_id>\d+)/download/$",
+        views.download_project_snapshot,
+        name="omero_analysis_chat_project_snapshot_download",
+    ),
 ]

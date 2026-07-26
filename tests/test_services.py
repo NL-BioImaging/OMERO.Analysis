@@ -11,6 +11,7 @@ from omero_analysis_chat.errors import (
     UnsupportedMedia,
 )
 from omero_analysis_chat.services import (
+    PROJECT_NAMESPACE,
     RESULT_NAMESPACE,
     canonical_object_type,
     checked_download,
@@ -18,7 +19,9 @@ from omero_analysis_chat.services import (
     get_direct_attachment,
     list_attachment_dicts,
     safe_filename,
+    upload_project_snapshot_annotation,
     upload_result_annotation,
+    validate_project_snapshot,
     validate_result,
 )
 
@@ -105,3 +108,30 @@ def test_result_upload_requires_permission_and_uses_analysis_namespace():
     assert result["namespace"] == RESULT_NAMESPACE
     assert obj.linked == [conn.created]
 
+
+def test_project_snapshots_have_separate_kind_namespace_and_zip_validation():
+    uploaded = SimpleUploadedFile(
+        "screen-1.oac.zip",
+        b"PK\x03\x04project",
+        content_type="application/zip",
+    )
+    assert validate_project_snapshot(uploaded) == (
+        "screen-1.oac.zip",
+        "application/zip",
+    )
+    obj = FakeObject()
+    conn = FakeConnection(obj)
+    result = upload_project_snapshot_annotation(conn, obj, uploaded)
+    assert result["namespace"] == PROJECT_NAMESPACE
+    assert result["kind"] == "project"
+    assert result["supported"] is False
+    with pytest.raises(UnsupportedMedia):
+        validate_project_snapshot(
+            SimpleUploadedFile("project.zip", b"PK\x03\x04x", content_type="application/zip")
+        )
+    with pytest.raises(UnsupportedMedia):
+        validate_project_snapshot(
+            SimpleUploadedFile(
+                "project.oac.zip", b"not-a-zip", content_type="application/zip"
+            )
+        )

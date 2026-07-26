@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory
 
 from omero_analysis_chat import views
@@ -33,7 +34,12 @@ def test_context_token_reports_permissions():
     response = views.context_token(request, conn=conn)
     body = json.loads(response.content)
     assert response.status_code == 200
-    assert body["operations"] == ["context", "list", "download"]
+    assert body["operations"] == [
+        "context",
+        "list",
+        "download",
+        "snapshot_download",
+    ]
 
 
 def test_download_checks_direct_link_and_returns_private_stream():
@@ -59,3 +65,45 @@ def test_runtime_assets_reject_traversal():
     else:
         raise AssertionError("Traversal was not rejected")
 
+
+def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
+    snapshot = FakeAnnotation(
+        21,
+        "analysis.oac.zip",
+        b"PK\x03\x04snapshot",
+        namespace="nl.bioimaging.analysis-chat.project.v1",
+    )
+    obj = FakeObject(annotations=[snapshot])
+    conn = FakeConnection(obj)
+
+    list_token = token_for(conn, obj, ["list"])
+    request = with_session(RequestFactory().get("/"))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = list_token
+    response = views.project_snapshots(request, "Image", 1, conn=conn)
+    body = json.loads(response.content)
+    assert body["snapshots"][0]["kind"] == "project"
+    assert body["snapshots"][0]["supported"] is False
+
+    download_token = token_for(conn, obj, ["snapshot_download"])
+    request = with_session(RequestFactory().get("/"))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = download_token
+    response = views.download_project_snapshot(request, 21, conn=conn)
+    assert response.status_code == 200
+    assert b"".join(response.streaming_content) == b"PK\x03\x04snapshot"
+
+    upload_token = token_for(conn, obj, ["snapshot_upload"])
+    request = with_session(
+        RequestFactory().post(
+            "/",
+            data={
+                "file": SimpleUploadedFile(
+                    "saved.oac.zip",
+                    b"PK\x03\x04data",
+                    content_type="application/zip",
+                )
+            },
+        )
+    )
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = upload_token
+    response = views.project_snapshots(request, "Image", 1, conn=conn)
+    assert response.status_code == 201

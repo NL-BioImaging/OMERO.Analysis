@@ -18,11 +18,14 @@ describe("AmsterdamUMC provider", () => {
     expect(TEMPERATURE).toBe(1);
   });
 
-  it("exposes only the bounded analysis tools", () => {
+  it("exposes bounded analysis and user-approved saved-script tools", () => {
     expect(TOOLS.map((tool) => tool.function.name)).toEqual([
       "list_workspace_files",
       "run_python",
-      "reset_python"
+      "reset_python",
+      "list_saved_scripts",
+      "read_saved_script",
+      "run_saved_script"
     ]);
   });
 

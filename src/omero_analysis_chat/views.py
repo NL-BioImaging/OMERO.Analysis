@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 try:
     from omeroweb.decorators import ConnCleaningHttpResponse
@@ -24,10 +24,12 @@ from .errors import AnalysisChatError
 from .services import (
     can_annotate,
     checked_download,
+    checked_project_snapshot_download,
     get_context_object,
     get_direct_attachment,
     list_attachment_dicts,
     object_context,
+    upload_project_snapshot_annotation,
     upload_result_annotation,
 )
 from .tokens import make_context_token, validate_context_token
@@ -137,9 +139,9 @@ def context_token(request, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(
         conn, payload.get("object_type"), payload.get("object_id")
     )
-    operations = ["context", "list", "download"]
+    operations = ["context", "list", "download", "snapshot_download"]
     if can_annotate(obj):
-        operations.append("upload")
+        operations.extend(["upload", "snapshot_upload"])
     token, expires_at = make_context_token(
         request, conn, object_type, object_id, obj, operations
     )
@@ -210,3 +212,49 @@ def upload_result(request, object_type, object_id, conn=None, **kwargs):
     validate_context_token(request, conn, "upload", object_type, object_id, obj)
     result = upload_result_annotation(conn, obj, request.FILES.get("file"))
     return JsonResponse({"attachment": result}, status=201)
+
+
+@require_http_methods(["GET", "POST"])
+@login_required(setGroupContext=True)
+@api_errors
+def project_snapshots(request, object_type, object_id, conn=None, **kwargs):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    if request.method == "GET":
+        validate_context_token(request, conn, "list", object_type, object_id, obj)
+        values = [
+            value for value in list_attachment_dicts(obj) if value["kind"] == "project"
+        ]
+        return JsonResponse({"snapshots": values})
+    validate_context_token(request, conn, "snapshot_upload", object_type, object_id, obj)
+    result = upload_project_snapshot_annotation(conn, obj, request.FILES.get("file"))
+    return JsonResponse({"snapshot": result}, status=201)
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def download_project_snapshot(request, annotation_id, conn=None, **kwargs):
+    claims = validate_context_token(request, conn, "snapshot_download")
+    _, _, obj = get_context_object(
+        conn, claims["object_type"], claims["object_id"]
+    )
+    validate_context_token(
+        request,
+        conn,
+        "snapshot_download",
+        claims["object_type"],
+        claims["object_id"],
+        obj,
+    )
+    annotation, info = checked_project_snapshot_download(obj, annotation_id)
+    response = ConnCleaningHttpResponse(
+        annotation.getFileInChunks(), content_type=info.mimetype
+    )
+    response.conn = conn
+    response["Content-Length"] = str(info.size)
+    response["Content-Disposition"] = (
+        "attachment; filename*=UTF-8''" + quote(info.name, safe="")
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response

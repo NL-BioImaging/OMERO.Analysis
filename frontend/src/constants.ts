@@ -29,6 +29,11 @@ generated-code output, and error text. Never print, preview, encode, or return a
 file. Keep SQL filtering and aggregation inside the database; avoid SELECT * on large tables.
 The UI bounds table previews to 100 rows by 50 columns and textual tool output to 64 KiB.
 
+Successful Python code can be saved by the user as a versioned project script. Use
+list_saved_scripts to discover these reusable workflows, read_saved_script only when its code is
+needed for reasoning, and run_saved_script when an existing workflow directly answers the request.
+Do not repeatedly regenerate an existing saved workflow.
+
 CI Segmentation measurement databases may be DuckDB or SQLite. Start by discovering the actual
 tables/views and their columns; never assume a schema. Expected tables can include schema_info,
 measurement_runs, images, channels, label_sets, objects, intensity_measurements, and relationships.
@@ -68,6 +73,40 @@ export const TOOLS = [
       name: "reset_python",
       description: "Reset Python state and restore canonical input files.",
       parameters: { type: "object", properties: {}, additionalProperties: false }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_saved_scripts",
+      description: "List reusable versioned Python scripts saved by the user in this project.",
+      parameters: { type: "object", properties: {}, additionalProperties: false }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_saved_script",
+      description: "Read the current version of one user-approved generated Python script.",
+      parameters: {
+        type: "object",
+        properties: { script_id: { type: "string" } },
+        required: ["script_id"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_saved_script",
+      description: "Run the current version of a user-approved project script locally.",
+      parameters: {
+        type: "object",
+        properties: { script_id: { type: "string" } },
+        required: ["script_id"],
+        additionalProperties: false
+      }
     }
   }
 ] as const;

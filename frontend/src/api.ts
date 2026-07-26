@@ -83,6 +83,58 @@ export class OmeroBridge {
     const body = await readJson(response);
     return body.attachment;
   }
+
+  async listSnapshots(): Promise<Attachment[]> {
+    const context = this.bootstrap.context;
+    if (!context) return [];
+    const response = await fetch(
+      route(this.bootstrap.snapshotsTemplate, context.object_type, context.object_id),
+      {
+        credentials: "same-origin",
+        headers: { "X-OMERO-Analysis-Context": this.contextToken }
+      }
+    );
+    const body = await readJson(response);
+    return body.snapshots || [];
+  }
+
+  async uploadSnapshot(name: string, data: Uint8Array): Promise<Attachment> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO target for the project snapshot");
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([data as BlobPart], { type: "application/zip" }),
+      name
+    );
+    const response = await fetch(
+      route(this.bootstrap.snapshotUploadTemplate, context.object_type, context.object_id),
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "X-CSRFToken": csrfToken(),
+          "X-OMERO-Analysis-Context": this.contextToken
+        },
+        body: form
+      }
+    );
+    const body = await readJson(response);
+    return body.snapshot;
+  }
+
+  async downloadSnapshot(snapshot: Attachment): Promise<ArrayBuffer> {
+    const url = this.bootstrap.snapshotDownloadTemplate.replace(
+      "/1/download/",
+      `/${snapshot.annotation_id}/download/`
+    );
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: { "X-OMERO-Analysis-Context": this.contextToken }
+    });
+    if (!response.ok) throw new Error(await errorText(response));
+    return response.arrayBuffer();
+  }
 }
 
 async function errorText(response: Response): Promise<string> {

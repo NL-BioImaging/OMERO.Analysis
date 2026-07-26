@@ -16,7 +16,7 @@ docker build \
   --build-arg OMERO_WEB_IMAGE=<current-omeroweb-image> \
   --build-arg ANALYSIS_CHAT_WHEEL=dist/<wheel-file>.whl \
   --file docker/Dockerfile.omeroweb \
-  --tag local/nl-biomero-omeroweb-analysis-chat:0.1.0 \
+  --tag local/nl-biomero-omeroweb-analysis-chat:0.2.0 \
   .
 ```
 
@@ -43,4 +43,3 @@ For temporary local installation:
 .\scripts\manage-docker-plugin.ps1 install
 .\scripts\manage-docker-plugin.ps1 status
 ```
-

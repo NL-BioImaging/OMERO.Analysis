@@ -16,6 +16,7 @@ from .settings import allowed_result_extensions, max_download_bytes, max_upload_
 
 SUPPORTED_OBJECT_TYPES = ("Image", "Dataset", "Plate", "Screen")
 RESULT_NAMESPACE = "nl.bioimaging.analysis-chat.result"
+PROJECT_NAMESPACE = "nl.bioimaging.analysis-chat.project.v1"
 INPUT_EXTENSIONS = {
     ".csv",
     ".tsv",
@@ -141,6 +142,13 @@ def attachment_info(annotation):
     name = safe_filename(_plain(original.getName()))
     namespace = _plain(annotation.getNs()) if hasattr(annotation, "getNs") else None
     extension = Path(name).suffix.lower()
+    kind = (
+        "project"
+        if namespace == PROJECT_NAMESPACE
+        else "result"
+        if namespace == RESULT_NAMESPACE
+        else "attachment"
+    )
     return AttachmentInfo(
         annotation_id=int(annotation.getId()),
         file_id=int(original.getId()),
@@ -148,8 +156,8 @@ def attachment_info(annotation):
         mimetype=str(_plain(original.getMimetype()) or "application/octet-stream"),
         size=int(_plain(original.getSize()) or 0),
         namespace=namespace,
-        kind="result" if namespace == RESULT_NAMESPACE else "attachment",
-        supported=extension in INPUT_EXTENSIONS,
+        kind=kind,
+        supported=kind == "attachment" and extension in INPUT_EXTENSIONS,
     )
 
 
@@ -189,6 +197,7 @@ def object_context(object_type, object_id, obj, conn=None):
         "user_id": user_id,
         "group_id": object_group_id(obj),
         "can_annotate": can_annotate(obj),
+        "max_snapshot_bytes": max_upload_bytes(),
         "attachments": attachments,
         "supported_attachments": [
             attachment for attachment in attachments if attachment["supported"]
@@ -203,6 +212,17 @@ def checked_download(obj, annotation_id):
     if info.size > max_download_bytes():
         raise FileTooLarge(
             f"Attachment is {info.size} bytes; the limit is {max_download_bytes()}"
+        )
+    return annotation, info
+
+
+def checked_project_snapshot_download(obj, annotation_id):
+    annotation, info = get_direct_attachment(obj, annotation_id)
+    if info.kind != "project":
+        raise UnsupportedMedia(f"{info.name} is not an Analysis Chat project snapshot")
+    if info.size > max_download_bytes():
+        raise FileTooLarge(
+            f"Snapshot is {info.size} bytes; the limit is {max_download_bytes()}"
         )
     return annotation, info
 
@@ -228,10 +248,36 @@ def validate_result(uploaded_file):
     return filename, supplied or canonical or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
-def upload_result_annotation(conn, obj, uploaded_file):
+def validate_project_snapshot(uploaded_file):
+    if uploaded_file is None:
+        raise UnsupportedMedia("Multipart field 'file' is required")
+    if int(uploaded_file.size) > max_upload_bytes():
+        raise FileTooLarge(
+            f"Project snapshot is {uploaded_file.size} bytes; the limit is {max_upload_bytes()}"
+        )
+    filename = safe_filename(uploaded_file.name)
+    if not filename.lower().endswith(".oac.zip"):
+        raise UnsupportedMedia("Project snapshots must use the .oac.zip extension")
+    supplied = (uploaded_file.content_type or "").lower().split(";", 1)[0].strip()
+    if supplied and supplied not in {
+        "application/zip",
+        "application/octet-stream",
+        "application/x-zip-compressed",
+    }:
+        raise UnsupportedMedia(f"MIME type {supplied} is not allowed for a project snapshot")
+    position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
+    signature = uploaded_file.read(4)
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(position)
+    if signature not in {b"PK\x03\x04", b"PK\x05\x06"}:
+        raise UnsupportedMedia("Project snapshot is not a valid ZIP stream")
+    return filename, "application/zip"
+
+
+def _upload_annotation(conn, obj, uploaded_file, validator, namespace, description):
     if not can_annotate(obj):
         raise PermissionDenied("The active user cannot annotate the selected object")
-    filename, mimetype = validate_result(uploaded_file)
+    filename, mimetype = validator(uploaded_file)
     annotation = None
     with tempfile.TemporaryDirectory(prefix="omero-analysis-chat-") as temp_dir:
         local_path = Path(temp_dir) / filename
@@ -242,8 +288,8 @@ def upload_result_annotation(conn, obj, uploaded_file):
             annotation = conn.createFileAnnfromLocalFile(
                 str(local_path),
                 mimetype=mimetype,
-                ns=RESULT_NAMESPACE,
-                desc="Created in OMERO Analysis Chat",
+                ns=namespace,
+                desc=description,
             )
             obj.linkAnnotation(annotation)
         except Exception:
@@ -254,3 +300,25 @@ def upload_result_annotation(conn, obj, uploaded_file):
                     pass
             raise
     return attachment_info(annotation).to_dict()
+
+
+def upload_result_annotation(conn, obj, uploaded_file):
+    return _upload_annotation(
+        conn,
+        obj,
+        uploaded_file,
+        validate_result,
+        RESULT_NAMESPACE,
+        "Created in OMERO Analysis Chat",
+    )
+
+
+def upload_project_snapshot_annotation(conn, obj, uploaded_file):
+    return _upload_annotation(
+        conn,
+        obj,
+        uploaded_file,
+        validate_project_snapshot,
+        PROJECT_NAMESPACE,
+        "Portable OMERO Analysis Chat project snapshot",
+    )

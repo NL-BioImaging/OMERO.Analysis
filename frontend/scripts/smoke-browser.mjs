@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
+import { strFromU8, unzipSync } from "fflate";
 import { chromium } from "playwright-core";
 
 const root = resolve(
@@ -44,6 +45,9 @@ const server = createServer(async (request, response) => {
         attachmentsTemplate: "/unused",
         downloadTemplate: "/unused",
         uploadTemplate: "/unused",
+        snapshotsTemplate: "/unused",
+        snapshotUploadTemplate: "/unused",
+        snapshotDownloadTemplate: "/unused",
         runtimeBase: "/runtime/"
       };</script>
       <script type="module" src="/app.js"></script>`);
@@ -145,8 +149,62 @@ await page.route(
             }
           }]
       };
-    } else {
+    } else if (completions === 3) {
+      const toolMessage = payload.messages.at(-1);
+      if (
+        toolMessage?.role !== "tool" ||
+        !toolMessage.content.includes("smoke.csv") ||
+        !toolMessage.content.includes("Plot data CSV required")
+      ) {
+        throw new Error(`Missing plot CSV was not returned for repair: ${JSON.stringify(toolMessage)}`);
+      }
+      message = {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: "call-plot-csv",
+          type: "function",
+          function: {
+            name: "run_python",
+            arguments: JSON.stringify({
+              code: "result.to_csv('/output/smoke.csv', index=False)"
+            })
+          }
+        }]
+      };
+    } else if (completions === 4) {
       message = { role: "assistant", content: "Rows analyzed locally.", tool_calls: [] };
+    } else if (completions === 5) {
+      message = {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: "call-duplicate",
+          type: "function",
+          function: {
+            name: "run_python",
+            arguments: JSON.stringify({
+              code: [
+                "import pandas as pd",
+                "import seaborn as sns",
+                "import matplotlib.pyplot as plt",
+                "sns.set_theme()",
+                "result = pd.read_csv('/input/smoke.csv')",
+                "sns.barplot(data=result, x='group', y='value')",
+                "plt.savefig('/output/smoke.png')",
+                "plt.close()",
+                "result.groupby('group', as_index=False)['value'].sum().to_csv('/output/summary.csv', index=False)"
+              ].join("\n")
+            })
+          }
+        }]
+      };
+    } else {
+      const toolMessage = payload.messages.at(-1);
+      if (toolMessage?.role !== "tool" || !toolMessage.content.includes('"reused":true')) {
+        throw new Error(`Duplicate execution was not reused: ${JSON.stringify(toolMessage)}`);
+      }
+      message = { role: "assistant", content: "Reused the prior calculation.", tool_calls: [] };
     }
     await route.fulfill({
       status: 200,
@@ -173,12 +231,12 @@ try {
   await page.getByText("Ready — analysis runs locally in this browser").waitFor({
     timeout: 45_000
   });
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('.upload-button input[type="file"]').setInputFiles({
     name: "smoke.csv",
     mimeType: "text/csv",
     buffer: Buffer.from("group,value\na,1\nb,2\n")
   });
-  await page.getByText("Ready — analysis runs locally in this browser").waitFor({
+  await page.getByText("Local inputs added; browser Python is ready").waitFor({
     timeout: 45_000
   });
   await page.getByText("smoke.csv").waitFor();
@@ -186,6 +244,7 @@ try {
   await page.getByLabel("Deployment/model").fill("gpt-5-smoke");
   await page.getByLabel("API key").fill("smoke-key");
   await page.getByLabel("Model context window (optional)").fill("1000");
+  await page.getByRole("button", { name: "AI settings" }).click();
   await page.getByPlaceholder("Ask a question about the loaded data…").fill(
     "Show me the uploaded rows and save a summary."
   );
@@ -193,13 +252,13 @@ try {
   await page.getByText("Rows analyzed locally.").waitFor({ timeout: 120_000 });
   await page.getByText("summary.csv", { exact: true }).waitFor();
   await page.getByRole("img", { name: "smoke.png" }).waitFor();
-  await page.getByText(/Python failed locally/).waitFor({ state: "attached" });
+  await page.getByText(/ModuleNotFoundError/).waitFor({ state: "attached" });
   await page.getByText(/25% of 1,000/).waitFor();
-  await page.getByText(/session: 750/).waitFor();
+  await page.getByText(/session: 1,000/).waitFor();
   await page.getByText("Ready — you can ask a question").waitFor();
   const disclosures = page.locator("details.execution-details");
-  if (await disclosures.count() < 4) {
-    throw new Error("Expected collapsed Python and tool disclosures");
+  if (await disclosures.count() < 3) {
+    throw new Error("Expected collapsed Python execution disclosures");
   }
   for (let index = 0; index < await disclosures.count(); index += 1) {
     if (await disclosures.nth(index).getAttribute("open") !== null) {
@@ -216,11 +275,54 @@ try {
   }
   await disclosures.last().locator("summary").click();
   await page.getByRole("columnheader", { name: "group" }).waitFor();
-  if (completions !== 3) throw new Error(`Expected three AI rounds; got ${completions}`);
+  const outputCount = await page.locator(".project-tree details").nth(1).locator("li").count();
+  await page.getByPlaceholder("Ask a question about the loaded data…").fill(
+    "Repeat exactly the same analysis."
+  );
+  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByText("Reused the prior calculation.").waitFor({ timeout: 60_000 });
+  await page.getByText(/Reused prior execution/).waitFor();
+  const outputCountAfterReuse = await page.locator(".project-tree details").nth(1).locator("li").count();
+  if (outputCountAfterReuse !== outputCount) {
+    throw new Error(`Reused run duplicated outputs: ${outputCount} -> ${outputCountAfterReuse}`);
+  }
+  if (completions !== 6) throw new Error(`Expected six AI rounds; got ${completions}`);
+  const dialogAnswers = ["smoke-analysis.py", "Reusable smoke analysis"];
+  page.on("dialog", async (dialog) => dialog.accept(dialogAnswers.shift() || ""));
+  await page.getByRole("button", { name: "Save as script" }).last().click();
+  await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
+
+  await page.evaluate(() => {
+    window.__oacDownloadPromise = null;
+    HTMLAnchorElement.prototype.click = function captureDownload() {
+      window.__oacDownloadPromise = fetch(this.href)
+        .then((response) => response.arrayBuffer())
+        .then((buffer) => Array.from(new Uint8Array(buffer)));
+    };
+  });
+  await page.getByRole("button", { name: "Download project ZIP" }).click();
+  await page.waitForFunction(() => Boolean(window.__oacDownloadPromise));
+  const archiveBytes = await page.evaluate(() => window.__oacDownloadPromise);
+  const archiveEntries = unzipSync(new Uint8Array(archiveBytes));
+  const projectManifest = JSON.parse(strFromU8(archiveEntries["project.json"]));
+  if (JSON.stringify(projectManifest).toLowerCase().includes("smoke-key")) {
+    throw new Error("Project snapshot leaked the Azure API key");
+  }
+  if (!Object.keys(archiveEntries).some((name) => name.includes("inputs/local/"))) {
+    throw new Error("Project snapshot omitted its eligible local input");
+  }
+  const chatSelect = page.getByLabel("Chat");
+  const originalChatId = await chatSelect.inputValue();
+  await page.getByRole("button", { name: "New chat" }).click();
+  if (await chatSelect.locator("option").count() < 2) {
+    throw new Error("Named chat creation did not persist a second chat");
+  }
+  await chatSelect.selectOption(originalChatId);
+  await page.getByText("Rows analyzed locally.").waitFor();
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log(
     "Browser smoke passed: opaque iframe/worker, CSP, file transfer, fixed Azure contract, " +
-    "local Python error repair, seaborn, token usage, table preview, and generated result"
+    "local Python and plot-CSV repair, seaborn, token usage, table preview, and generated result"
   );
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));

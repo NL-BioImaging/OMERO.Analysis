@@ -23,5 +23,8 @@ describe("Python sandbox", () => {
     expect(document).toContain("Loading the browser Python engine");
     expect(document).toContain("Loading data-analysis packages");
     expect(document).toContain("Loading seaborn plotting support");
+    expect(document).toContain('message.type === \\"begin\\"');
+    expect(document).toContain('removeTree(\\"/output\\")');
+    expect(document).toContain("outputState()");
   });
 });

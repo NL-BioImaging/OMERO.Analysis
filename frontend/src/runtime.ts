@@ -17,6 +17,7 @@ const PACKAGES = [
   "python-calamine",
   "xlrd"
 ];
+export const RUNTIME_VERSION = "pyodide-314.0.3-oac-0.2";
 
 function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
@@ -52,8 +53,51 @@ async function boot() {
   pyodide.FS.mkdirTree("/output");
 }
 const ready = boot();
-function outputFiles() {
+function removeTree(dir) {
+  for (const name of pyodide.FS.readdir(dir)) {
+    if (name === "." || name === "..") continue;
+    const path = dir + "/" + name;
+    const stat = pyodide.FS.stat(path);
+    if (pyodide.FS.isDir(stat.mode)) {
+      removeTree(path);
+      pyodide.FS.rmdir(path);
+    } else {
+      pyodide.FS.unlink(path);
+    }
+  }
+}
+function outputState() {
+  const values = new Map();
+  const fingerprint = (bytes) => {
+    let hash = 2166136261;
+    for (let index = 0; index < bytes.length; index += 1) {
+      hash ^= bytes[index];
+      hash = Math.imul(hash, 16777619);
+    }
+    return String(bytes.length) + ":" + String(hash >>> 0);
+  };
+  function walk(dir) {
+    for (const name of pyodide.FS.readdir(dir)) {
+      if (name === "." || name === "..") continue;
+      const path = dir + "/" + name;
+      const stat = pyodide.FS.stat(path);
+      if (pyodide.FS.isDir(stat.mode)) walk(path);
+      else values.set(path, fingerprint(pyodide.FS.readFile(path)));
+    }
+  }
+  walk("/output");
+  return values;
+}
+function outputFiles(before) {
   const values = [];
+  const fingerprint = (bytes) => {
+    let hash = 2166136261;
+    for (let index = 0; index < bytes.length; index += 1) {
+      hash ^= bytes[index];
+      hash = Math.imul(hash, 16777619);
+    }
+    return String(bytes.length) + ":" + String(hash >>> 0);
+  };
   function walk(dir) {
     for (const name of pyodide.FS.readdir(dir)) {
       if (name === "." || name === "..") continue;
@@ -62,6 +106,7 @@ function outputFiles() {
       if (pyodide.FS.isDir(stat.mode)) walk(path);
       else {
         const bytes = pyodide.FS.readFile(path);
+        if (before.get(path) === fingerprint(bytes)) continue;
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
         values.push({name: path.slice(8), type: mime(name), data: buffer});
       }
@@ -99,17 +144,26 @@ addEventListener("message", async (event) => {
     await ready;
     if (message.type === "ping") {
       send(message.id, "ready", true);
+    } else if (message.type === "begin") {
+      removeTree("/output");
+      await pyodide.runPythonAsync(\`
+for _oac_name in list(globals()):
+    if not _oac_name.startswith("__"):
+        globals().pop(_oac_name, None)
+\`);
+      send(message.id, "begin", true);
     } else if (message.type === "file") {
       const safe = String(message.value.name).replace(/[^A-Za-z0-9._ -]/g, "_");
       pyodide.FS.writeFile("/input/" + safe, new Uint8Array(message.value.data));
       send(message.id, "file", safe);
     } else if (message.type === "run") {
+      const before = outputState();
       let stdout = "", stderr = "";
       pyodide.setStdout({batched: (text) => { stdout += text + "\\n"; }});
       pyodide.setStderr({batched: (text) => { stderr += text + "\\n"; }});
       await pyodide.runPythonAsync(message.value.code);
       const raw = await pyodide.runPythonAsync(previewCode);
-      const files = outputFiles();
+      const files = outputFiles(before);
       const transfers = files.map((file) => file.data);
       send(message.id, "result", {stdout, stderr, preview: JSON.parse(raw), files}, transfers);
     }
@@ -202,6 +256,12 @@ export class PythonRuntime {
     if (!this.readyPromise) await this.start(this.inputs);
     await this.readyPromise;
     return this.request("run", { code }, 120_000);
+  }
+
+  async beginTurn(): Promise<void> {
+    if (!this.readyPromise) await this.start(this.inputs);
+    await this.readyPromise;
+    await this.request("begin", true, 30_000);
   }
 
   async reset(): Promise<void> {

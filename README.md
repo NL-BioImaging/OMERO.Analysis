@@ -6,6 +6,12 @@ JupyterLab interface: the assistant writes visible Python, executes it in an
 isolated Pyodide sandbox, and returns bounded tables, plots, and downloadable
 results in the chat.
 
+Version 0.2 adds object-scoped browser projects with multiple named chats,
+shared immutable inputs, chat-specific outputs, versioned reusable Python
+scripts, exact-run reuse, and portable `.oac.zip` snapshots. Every project is
+autosaved in normalized IndexedDB storage so updating a chat does not rewrite
+large file blobs.
+
 ## Privacy and security model
 
 - Source files and Python execution stay in the browser.
@@ -19,6 +25,9 @@ results in the chat.
 - OMERO FileAnnotations require a logged-in session and short-lived context
   bound to the user, session, group, object, and allowed operation.
 - Result attachment is never autonomous: the user must confirm it explicitly.
+- OMERO-attached inputs are referenced by FileAnnotation ID in project
+  snapshots and are never duplicated into the ZIP. Eligible browser uploads,
+  generated outputs, chats, and scripts are embedded.
 - The API key is persisted unencrypted in the browser profile by product
   choice. The UI warns users and provides a **Forget API key** action.
 
@@ -38,6 +47,12 @@ percentage without assuming that every Azure deployment has the same limit.
 Default limits are 256 MiB per file, 512 MiB per browser workspace, 64 KiB per
 tool response, 100 preview rows, 50 preview columns, and 120 seconds per Python
 execution.
+
+Generated PNG/SVG plots can require a same-stem CSV containing their plotted
+data. The project header toggle is enabled by default, and a missing CSV is
+returned as a recoverable tool error. Python starts each user question with a
+clean namespace and output scratch directory; successful identical code on
+unchanged inputs reuses its provenance and outputs instead of running again.
 
 ## Development
 
@@ -91,6 +106,8 @@ GET  /api/context/<type>/<id>/
 GET  /api/attachments/<type>/<id>/
 GET  /api/attachment/<annotation-id>/download/
 POST /api/attachments/<type>/<id>/upload/
+GET|POST /api/projects/<type>/<id>/snapshots/
+GET  /api/project-snapshot/<annotation-id>/download/
 ```
 
 ## License
