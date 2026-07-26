@@ -18,4 +18,10 @@ describe("Python sandbox", () => {
     expect(document).not.toContain("context_token");
     expect(document).not.toContain("aumc-aicode");
   });
+
+  it("reports meaningful boot stages without weakening the sandbox", () => {
+    expect(document).toContain("Loading the browser Python engine");
+    expect(document).toContain("Loading data-analysis packages");
+    expect(document).toContain("Loading seaborn plotting support");
+  });
 });

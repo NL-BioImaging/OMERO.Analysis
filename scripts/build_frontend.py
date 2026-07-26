@@ -47,8 +47,9 @@ def run(*args):
 def validate():
     entry = STATIC / "app.js"
     stylesheet = STATIC / "app.css"
-    if not entry.is_file() or not stylesheet.is_file():
-        raise RuntimeError("Frontend build did not create app.js and app.css")
+    panel_stylesheet = STATIC / "panel.css"
+    if not entry.is_file() or not stylesheet.is_file() or not panel_stylesheet.is_file():
+        raise RuntimeError("Frontend build did not create app.js, app.css, and panel.css")
     if "Frontend bundle not built" in entry.read_text(encoding="utf-8"):
         raise RuntimeError("The placeholder frontend is still installed")
     missing = sorted(name for name in REQUIRED_RUNTIME if not (RUNTIME / name).is_file())

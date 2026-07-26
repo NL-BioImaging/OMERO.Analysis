@@ -1,4 +1,4 @@
-import type { RuntimeOutput, WorkspaceFile } from "./types";
+import type { RuntimeOutput, RuntimeProgress, WorkspaceFile } from "./types";
 
 interface Pending {
   resolve: (value: any) => void;
@@ -24,20 +24,30 @@ function runtimeWorker(runtimeBase: string): string {
   return `
 const runtimeBase = ${base};
 const send = (id, type, value, transfer = []) => postMessage({source:"oac-runtime", id, type, value}, transfer);
+const progress = (percent, message) => postMessage({
+  source: "oac-runtime",
+  type: "progress",
+  value: {percent, message}
+});
 let pyodide;
 const mime = (name) => name.endsWith(".png") ? "image/png" : name.endsWith(".svg") ? "image/svg+xml" :
   name.endsWith(".csv") ? "text/csv" : name.endsWith(".json") ? "application/json" :
   name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
 async function boot() {
+  progress(12, "Loading the browser Python engine…");
   const module = await import(runtimeBase + "/pyodide.mjs");
+  progress(28, "Starting the isolated Python runtime…");
   pyodide = await module.loadPyodide({indexURL: runtimeBase + "/"});
+  progress(48, "Loading data-analysis packages…");
   await pyodide.loadPackage(${packages});
+  progress(78, "Loading seaborn plotting support…");
   const micropip = pyodide.pyimport("micropip");
   try {
     await micropip.install(runtimeBase + "/seaborn-0.13.2-py3-none-any.whl", {deps: false});
   } finally {
     micropip.destroy();
   }
+  progress(90, "Preparing the browser workspace…");
   pyodide.FS.mkdirTree("/input");
   pyodide.FS.mkdirTree("/output");
 }
@@ -144,14 +154,20 @@ export class PythonRuntime {
   private inputs: WorkspaceFile[] = [];
   private counter = 0;
   private readyPromise: Promise<void> | null = null;
+  private onProgress: ((progress: RuntimeProgress) => void) | null = null;
 
   constructor(private readonly runtimeBase: string) {
     window.addEventListener("message", this.receive);
   }
 
-  async start(inputs: WorkspaceFile[]): Promise<void> {
+  async start(
+    inputs: WorkspaceFile[],
+    onProgress?: (progress: RuntimeProgress) => void
+  ): Promise<void> {
+    if (onProgress) this.onProgress = onProgress;
     this.inputs = inputs.filter((file) => file.state === "ready" && file.data);
     this.destroyFrame();
+    this.report({ percent: 2, message: "Creating the secure Python sandbox…" });
     const frame = document.createElement("iframe");
     frame.hidden = true;
     frame.setAttribute("sandbox", "allow-scripts");
@@ -166,11 +182,18 @@ export class PythonRuntime {
     this.frame = frame;
     this.readyPromise = (async () => {
       await loaded;
+      this.report({ percent: 8, message: "Connecting to the Python worker…" });
       await this.request("ping", true, 120_000);
-      for (const file of this.inputs) {
+      for (let index = 0; index < this.inputs.length; index += 1) {
+        const file = this.inputs[index];
+        this.report({
+          percent: 92 + Math.round(index / Math.max(1, this.inputs.length) * 7),
+          message: `Loading ${index + 1} of ${this.inputs.length} data files into Python…`
+        });
         const data = file.data!.slice(0);
         await this.request("file", { name: file.name, data }, 30_000, [data]);
       }
+      this.report({ percent: 100, message: "Browser Python is ready" });
     })();
     return this.readyPromise;
   }
@@ -182,7 +205,7 @@ export class PythonRuntime {
   }
 
   async reset(): Promise<void> {
-    return this.start(this.inputs);
+    return this.start(this.inputs, this.onProgress || undefined);
   }
 
   stop(): void {
@@ -232,6 +255,10 @@ export class PythonRuntime {
     if (event.source !== this.frame?.contentWindow) return;
     const message = event.data;
     if (!message || message.source !== "oac-runtime") return;
+    if (message.type === "progress") {
+      this.report(message.value);
+      return;
+    }
     const pending = this.pending.get(message.id);
     if (!pending) return;
     clearTimeout(pending.timer);
@@ -239,4 +266,11 @@ export class PythonRuntime {
     if (message.type === "error") pending.reject(new Error(message.value));
     else pending.resolve(message.value);
   };
+
+  private report(progress: RuntimeProgress): void {
+    this.onProgress?.({
+      percent: Math.max(0, Math.min(100, Number(progress.percent) || 0)),
+      message: String(progress.message || "Preparing browser Python…")
+    });
+  }
 }

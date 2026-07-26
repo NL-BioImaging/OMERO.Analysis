@@ -1,7 +1,10 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'omero_analysis_chat/panel.css' %}">
 <script>
 $(function () {
   "use strict";
   var panel = $("#omero_analysis_chat_panel");
+  panel.addClass("omero-analysis-chat-center");
   var panelPattern = "{% url 'omero_analysis_chat_panel' 'Image' 1 %}";
   var chatUrl = "{% url 'omero_analysis_chat_index' %}";
   var typeMap = {
@@ -31,21 +34,31 @@ $(function () {
 
   function updateSelection(root) {
     var count = selectedAnnotationIds(root).length;
+    var countBadge = root.querySelector(".oac-selected-count");
     var status = root.querySelector(".oac-panel-status");
+    var button = root.querySelector(".oac-open-chat");
+    if (countBadge) countBadge.textContent = count + " selected";
     if (status) {
       status.textContent = count
-        ? count + " attachment" + (count === 1 ? "" : "s") + " selected."
-        : "You can open an empty workspace or select attached data first.";
+        ? count + " attachment" + (count === 1 ? "" : "s") +
+          " will be downloaded before chat unlocks."
+        : "No OMERO data selected; you can add local files after opening the chat.";
+    }
+    if (button) {
+      button.innerHTML = count
+        ? '<span aria-hidden="true">&#8599;</span> Open with ' + count +
+          " attachment" + (count === 1 ? "" : "s")
+        : '<span aria-hidden="true">&#8599;</span> Open Analysis Chat';
     }
   }
 
   function renderSelection(dtype, oid) {
     var type = typeMap[String(dtype || "").toLowerCase()];
     if (!type || !oid) {
-      panel.html("<p>Select an Image, Dataset, Plate, or Screen.</p>");
+      panel.html('<div class="oac-empty-state"><strong>Select an OMERO object</strong><span>Choose an Image, Dataset, Plate, or Screen.</span></div>');
       return Promise.resolve();
     }
-    panel.html("<p>Loading Analysis Chat…</p>");
+    panel.html('<div class="oac-empty-state"><strong>Loading Analysis Chat…</strong></div>');
     return fetch(objectUrl(panelPattern, type, oid), {credentials: "same-origin"})
       .then(function (response) {
         if (!response.ok) {

@@ -28,6 +28,7 @@ import type {
   ChatMessage,
   ProviderSettings,
   RuntimeOutput,
+  RuntimeProgress,
   TokenUsage,
   WorkspaceFile
 } from "./types";
@@ -87,7 +88,12 @@ export default function App() {
   const [status, setStatus] = useState("Preparing workspace…");
   const [showSettings, setShowSettings] = useState(false);
   const [usage, setUsage] = useState<TokenUsage | null>(null);
+  const [runtimeProgress, setRuntimeProgress] = useState<RuntimeProgress>({
+    percent: 0,
+    message: "Preparing the browser workspace…"
+  });
   const abort = useRef<AbortController | null>(null);
+  const messagesElement = useRef<HTMLDivElement | null>(null);
   filesRef.current = files;
 
   const blockedFiles = files.filter((file) => file.state !== "ready");
@@ -96,6 +102,26 @@ export default function App() {
     blockedFiles.length === 0 &&
     Boolean(settings.apiKey && settings.model) &&
     !busy;
+  const composerPlaceholder = busy
+    ? "Analysis in progress — wait for the answer or press Stop…"
+    : blockedFiles.some((file) => file.state === "failed")
+      ? "Chat is blocked — retry or remove the failed data file…"
+      : blockedFiles.length
+        ? "Downloading selected data — chat will unlock when every file is ready…"
+        : !runtimeReady
+          ? `${runtimeProgress.message} (${Math.round(runtimeProgress.percent)}%) — please wait…`
+          : !settings.apiKey || !settings.model
+            ? "Configure the AmsterdamUMC deployment and API key before asking a question…"
+            : "Ask a question about the loaded data…";
+
+  useEffect(() => {
+    const element = messagesElement.current;
+    if (!element) return;
+    const frame = requestAnimationFrame(() => {
+      element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messages, files]);
 
   useEffect(() => {
     let alive = true;
@@ -131,6 +157,10 @@ export default function App() {
       if (pending.length) {
         setFiles([...readyFiles, ...pending]);
         setStatus(`Downloading 0 of ${pending.length} selected attachments…`);
+        setRuntimeProgress({
+          percent: 0,
+          message: `Downloading 0 of ${pending.length} selected attachments…`
+        });
         for (let index = 0; index < pending.length; index += 1) {
           const file = pending[index];
           const attachment = selected.find(
@@ -158,6 +188,10 @@ export default function App() {
             );
           }
           setStatus(`Downloaded ${index + 1} of ${pending.length} attachments`);
+          setRuntimeProgress({
+            percent: Math.round((index + 1) / pending.length * 100),
+            message: `Downloaded ${index + 1} of ${pending.length} selected attachments`
+          });
         }
       }
       const current = pending.length
@@ -165,16 +199,35 @@ export default function App() {
         : (savedWorkspace?.files || []).filter((file) => file.state === "ready");
       if (alive && !downloadFailed) {
         setStatus("Loading browser Python runtime…");
-        await runtime.start(current);
+        setRuntimeProgress({
+          percent: 1,
+          message: "Starting the browser Python runtime…"
+        });
+        await runtime.start(current, (progress) => {
+          if (!alive) return;
+          setRuntimeProgress(progress);
+          setStatus(progress.message);
+        });
         if (alive) {
           setRuntimeReady(true);
+          setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
           setStatus("Ready — analysis runs locally in this browser");
         }
       } else if (alive) {
+        setRuntimeProgress({
+          percent: 0,
+          message: "Download failed — retry or remove the failed file"
+        });
         setStatus("Download failed — retry or remove failed files to continue");
       }
     })().catch((error) => {
-      if (alive) setStatus(`Workspace failed: ${String(error)}`);
+      if (alive) {
+        setRuntimeProgress({
+          percent: 0,
+          message: `Workspace failed: ${String(error)}`
+        });
+        setStatus(`Workspace failed: ${String(error)}`);
+      }
     });
     return () => {
       alive = false;
@@ -189,6 +242,20 @@ export default function App() {
   async function saveSettings(next: ProviderSettings) {
     setSettings(next);
     await setValue(settingsKey, next);
+  }
+
+  function reportRuntime(progress: RuntimeProgress) {
+    setRuntimeProgress(progress);
+    setStatus(progress.message);
+  }
+
+  async function restartRuntime(next: WorkspaceFile[], finalStatus: string) {
+    setRuntimeReady(false);
+    setRuntimeProgress({ percent: 1, message: "Restarting browser Python…" });
+    await runtime.start(next, reportRuntime);
+    setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
+    setRuntimeReady(true);
+    setStatus(finalStatus);
   }
 
   async function addLocalFiles(list: FileList | null) {
@@ -221,20 +288,13 @@ export default function App() {
     }
     const next = [...files, ...additions];
     setFiles(next);
-    setRuntimeReady(false);
-    setStatus("Reloading data into browser Python…");
-    await runtime.start(next);
-    setRuntimeReady(true);
-    setStatus("Ready — analysis runs locally in this browser");
+    await restartRuntime(next, "Ready — analysis runs locally in this browser");
   }
 
   async function removeFile(fileId: string) {
     const next = files.filter((file) => file.id !== fileId);
     setFiles(next);
-    setRuntimeReady(false);
-    await runtime.start(next);
-    setRuntimeReady(true);
-    setStatus("File removed; runtime reset");
+    await restartRuntime(next, "File removed; runtime reset");
   }
 
   async function retryFile(fileId: string) {
@@ -256,9 +316,7 @@ export default function App() {
           : item
       );
       setFiles(next);
-      await runtime.start(next);
-      setRuntimeReady(true);
-      setStatus("Attachment downloaded; workspace ready");
+      await restartRuntime(next, "Attachment downloaded; workspace ready");
     } catch (error) {
       setFiles((current) =>
         current.map((item) =>
@@ -412,7 +470,9 @@ export default function App() {
     setBusy(false);
     setRuntimeReady(false);
     setStatus("Stopped; restoring the browser runtime…");
-    void runtime.start(files).then(() => {
+    setRuntimeProgress({ percent: 1, message: "Restoring browser Python…" });
+    void runtime.start(files, reportRuntime).then(() => {
+      setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
       setRuntimeReady(true);
       setStatus("Ready — analysis runs locally in this browser");
     });
@@ -424,9 +484,7 @@ export default function App() {
     setFiles([]);
     setUsage(null);
     await deleteValue(workspaceKey());
-    await runtime.start([]);
-    setRuntimeReady(true);
-    setStatus("Workspace cleared");
+    await restartRuntime([], "Workspace cleared");
   }
 
   function download(file: WorkspaceFile) {
@@ -517,20 +575,53 @@ export default function App() {
         </aside>
 
         <section className="chat">
-          <div className="messages" aria-live="polite">
+          <div className="messages" aria-live="polite" ref={messagesElement}>
             {!messages.length && <div className="welcome"><h2>What would you like to learn from these data?</h2><p>I can inspect schemas, query databases, calculate summaries, compare groups, and create plots or downloadable results.</p></div>}
-            {messages.map((message) => (
-              <article key={message.id} className={`message ${message.role} ${message.kind || ""}`}>
-                <span>{message.kind === "code" ? "Python (local)" : message.role}</span>
-                {message.code ? <pre><code>{message.code}</code></pre> : <p>{message.content}</p>}
-                {message.preview != null && <Preview value={message.preview} />}
+            {messages.map((message) => {
+              const execution = message.kind === "code" || message.role === "tool";
+              const label = message.kind === "code"
+                ? "Python code (local)"
+                : message.kind === "error"
+                  ? "Tool error"
+                  : "Tool output";
+              return (
+              <article key={message.id} className={`message ${message.role} ${message.kind || ""} ${execution ? "execution" : ""}`}>
+                {execution ? (
+                  <details className="execution-details">
+                    <summary>
+                      <span>{label}</span>
+                      <small>Show details</small>
+                    </summary>
+                    <div className="execution-content">
+                      {message.code ? <pre><code>{message.code}</code></pre> : <p>{message.content}</p>}
+                      {message.preview != null && <Preview value={message.preview} />}
+                    </div>
+                  </details>
+                ) : (
+                  <>
+                    <span>{message.role}</span>
+                    <p>{message.content}</p>
+                    {message.preview != null && <Preview value={message.preview} />}
+                  </>
+                )}
                 {message.artifacts?.map((name) => {
                   const file = files.find((item) => item.source === "result" && item.name === name);
                   return file ? <Artifact key={name} file={file} /> : null;
                 })}
               </article>
-            ))}
+              );
+            })}
           </div>
+          {!runtimeReady && (
+            <div className="runtime-progress" role="status" aria-live="polite">
+              <div>
+                <strong>{runtimeProgress.message}</strong>
+                <span>{Math.round(runtimeProgress.percent)}%</span>
+              </div>
+              <progress max="100" value={runtimeProgress.percent} />
+              <small>Please wait. The question box unlocks automatically when browser Python is ready.</small>
+            </div>
+          )}
           <div className="status" role="status">{status}</div>
           <div className="usage-status">
             <span>Azure receives prompts, code, bounded schemas/previews/statistics, and execution errors — never source files.</span>
@@ -539,9 +630,13 @@ export default function App() {
           {blockedFiles.length > 0 && <div className="blocker">Analysis is blocked until every selected attachment finishes downloading. Retry or remove failed files.</div>}
           {!settings.apiKey || !settings.model ? <div className="blocker">Enter the AmsterdamUMC deployment name and API key in AI settings.</div> : null}
           <div className="composer">
-            <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendPrompt(); } }} disabled={!canChat && !busy} placeholder="Ask a question about the loaded data…" />
+            <div className={`composer-state ${canChat ? "ready" : "waiting"}`}>
+              <span aria-hidden="true">{canChat ? "●" : "◷"}</span>
+              {canChat ? "Ready — you can ask a question" : composerPlaceholder}
+            </div>
+            <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendPrompt(); } }} disabled={!canChat} placeholder={composerPlaceholder} />
             {busy ? <button className="stop" onClick={stop}>Stop</button> : <button disabled={!canChat || !prompt.trim()} onClick={() => void sendPrompt()}>Send</button>}
-            <button disabled={busy || !runtimeReady} onClick={() => void runtime.reset().then(() => setStatus("Python state reset; inputs restored"))}>Reset Python</button>
+            <button disabled={busy || !runtimeReady} onClick={() => void restartRuntime(files, "Python state reset; inputs restored")}>Reset Python</button>
           </div>
         </section>
       </div>

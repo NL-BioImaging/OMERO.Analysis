@@ -35,6 +35,7 @@ const server = createServer(async (request, response) => {
   if (request.url === "/") {
     response.setHeader("Content-Type", "text/html");
     response.end(`<!doctype html><meta charset="utf-8"><title>Analysis Chat smoke</title>
+      <link rel="stylesheet" href="/app.css">
       <div id="root"></div>
       <script>window.OMERO_ANALYSIS_CHAT = {
         context: null,
@@ -48,8 +49,8 @@ const server = createServer(async (request, response) => {
       <script type="module" src="/app.js"></script>`);
     return;
   }
-  const relative = request.url === "/app.js"
-    ? "app.js"
+  const relative = request.url === "/app.js" || request.url === "/app.css"
+    ? request.url.slice(1)
     : request.url?.startsWith("/runtime/")
       ? `pyodide/${request.url.slice("/runtime/".length)}`
       : "";
@@ -132,8 +133,12 @@ await page.route(
                 code: [
                   "import pandas as pd",
                   "import seaborn as sns",
+                  "import matplotlib.pyplot as plt",
                   "sns.set_theme()",
                   "result = pd.read_csv('/input/smoke.csv')",
+                  "sns.barplot(data=result, x='group', y='value')",
+                  "plt.savefig('/output/smoke.png')",
+                  "plt.close()",
                   "result.groupby('group', as_index=False)['value'].sum().to_csv('/output/summary.csv', index=False)"
                 ].join("\n")
               })
@@ -161,6 +166,10 @@ page.on("requestfailed", (request) => console.log("request failed:", request.url
 page.on("pageerror", (error) => errors.push(String(error)));
 try {
   await page.goto(`http://127.0.0.1:${port}/`);
+  await page.locator(".runtime-progress progress").waitFor({ timeout: 5_000 });
+  if (!(await page.getByPlaceholder(/please wait/i).isDisabled())) {
+    throw new Error("Composer was enabled while browser Python was loading");
+  }
   await page.getByText("Ready — analysis runs locally in this browser").waitFor({
     timeout: 45_000
   });
@@ -183,10 +192,30 @@ try {
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Rows analyzed locally.").waitFor({ timeout: 120_000 });
   await page.getByText("summary.csv", { exact: true }).waitFor();
-  await page.getByRole("columnheader", { name: "group" }).waitFor();
-  await page.getByText(/Python failed locally/).waitFor();
+  await page.getByRole("img", { name: "smoke.png" }).waitFor();
+  await page.getByText(/Python failed locally/).waitFor({ state: "attached" });
   await page.getByText(/25% of 1,000/).waitFor();
   await page.getByText(/session: 750/).waitFor();
+  await page.getByText("Ready — you can ask a question").waitFor();
+  const disclosures = page.locator("details.execution-details");
+  if (await disclosures.count() < 4) {
+    throw new Error("Expected collapsed Python and tool disclosures");
+  }
+  for (let index = 0; index < await disclosures.count(); index += 1) {
+    if (await disclosures.nth(index).getAttribute("open") !== null) {
+      throw new Error("An execution disclosure was expanded by default");
+    }
+  }
+  const scrollState = await page.locator(".messages").evaluate((element) => ({
+    bottom: Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop),
+    overflow: getComputedStyle(element).overflowY,
+    bodyOverflow: getComputedStyle(document.body).overflow
+  }));
+  if (scrollState.bottom > 4 || scrollState.overflow !== "auto" || scrollState.bodyOverflow !== "hidden") {
+    throw new Error(`Chat scrolling is not contained: ${JSON.stringify(scrollState)}`);
+  }
+  await disclosures.last().locator("summary").click();
+  await page.getByRole("columnheader", { name: "group" }).waitFor();
   if (completions !== 3) throw new Error(`Expected three AI rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log(

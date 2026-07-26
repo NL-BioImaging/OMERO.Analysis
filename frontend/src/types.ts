@@ -61,6 +61,11 @@ export interface RuntimeOutput {
   files: Array<{ name: string; type: string; data: ArrayBuffer }>;
 }
 
+export interface RuntimeProgress {
+  percent: number;
+  message: string;
+}
+
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;

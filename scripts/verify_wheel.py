@@ -9,6 +9,7 @@ STATIC = PurePosixPath("omero_analysis_chat/static/omero_analysis_chat")
 REQUIRED = {
     str(STATIC / "app.js"),
     str(STATIC / "app.css"),
+    str(STATIC / "panel.css"),
     str(STATIC / "pyodide/pyodide.mjs"),
     str(STATIC / "pyodide/pyodide.asm.mjs"),
     str(STATIC / "pyodide/pyodide.asm.wasm"),

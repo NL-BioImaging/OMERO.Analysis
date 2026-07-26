@@ -181,6 +181,7 @@ def object_context(object_type, object_id, obj, conn=None):
         user_id = int(conn.getUserId()) if conn is not None else 0
     except (AttributeError, TypeError, ValueError):
         user_id = 0
+    attachments = list_attachment_dicts(obj)
     return {
         "object_type": object_type,
         "object_id": int(object_id),
@@ -188,7 +189,10 @@ def object_context(object_type, object_id, obj, conn=None):
         "user_id": user_id,
         "group_id": object_group_id(obj),
         "can_annotate": can_annotate(obj),
-        "attachments": list_attachment_dicts(obj),
+        "attachments": attachments,
+        "supported_attachments": [
+            attachment for attachment in attachments if attachment["supported"]
+        ],
     }
 
 

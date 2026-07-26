@@ -1,19 +1,58 @@
-<div class="omero-analysis-chat-panel" data-object-type="{{ context.object_type|lower }}" data-object-id="{{ context.object_id }}">
-  <h2>Analysis Chat</h2>
-  <p>Analyze tabular attachments locally in your browser with AI assistance.</p>
-  <div class="oac-attachment-list">
-    {% for attachment in context.attachments %}
-      {% if attachment.supported %}
-      <label>
-        <input type="checkbox" class="oac-data-attachment" value="{{ attachment.annotation_id }}">
-        <strong>{{ attachment.name }}</strong>
-        <small>{{ attachment.size }} bytes</small>
-      </label>
-      {% endif %}
-    {% empty %}
-      <p>No supported data attachments are directly linked to this object.</p>
-    {% endfor %}
+<section class="oac-object"
+         data-object-type="{{ context.object_type }}"
+         data-object-id="{{ context.object_id }}">
+  <header class="oac-panel-header">
+    <div>
+      <span class="oac-eyebrow">OMERO Analysis workspace</span>
+      <h2>{{ context.name }}</h2>
+      <p>{{ context.object_type }} <strong>{{ context.object_id }}</strong></p>
+    </div>
+    <span class="oac-object-badge">{{ context.object_type }}</span>
+  </header>
+
+  <div class="oac-actions">
+    <button class="oac-button oac-button-primary oac-open-chat" type="button">
+      <span aria-hidden="true">&#8599;</span> Open Analysis Chat
+    </button>
   </div>
-  <button type="button" class="oac-open-chat">Open Analysis Chat</button>
-  <p class="oac-panel-status" role="status"></p>
-</div>
+  <p class="oac-panel-status" role="status" aria-live="polite"></p>
+
+  <section class="oac-card">
+    <div class="oac-section-heading">
+      <div>
+        <span class="oac-step">1</span>
+        <h3>Select data attachments</h3>
+      </div>
+      <span class="oac-selected-count">0 selected</span>
+    </div>
+    <p class="oac-help">
+      Choose one or more directly attached databases, workbooks, or tables.
+      They are downloaded into the browser before the chat becomes available.
+    </p>
+    <ul class="oac-attachments">
+      {% for attachment in context.supported_attachments %}
+        <li class="oac-data-card">
+          <label>
+            <input type="checkbox"
+                   class="oac-data-attachment"
+                   value="{{ attachment.annotation_id }}">
+            <span class="oac-file-icon" aria-hidden="true">DATA</span>
+            <span class="oac-file-details">
+              <strong>{{ attachment.name }}</strong>
+              <small>
+                {{ attachment.mimetype }} · {{ attachment.size }} bytes
+                <span class="oac-annotation-id">Annotation {{ attachment.annotation_id }}</span>
+              </small>
+            </span>
+            <span class="oac-checkmark" aria-hidden="true">&#10003;</span>
+          </label>
+        </li>
+      {% empty %}
+        <li class="oac-empty-state">
+          <strong>No supported data attachments yet</strong>
+          <span>Open an empty Analysis Chat workspace to add browser-local files.</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+</section>

@@ -13,6 +13,15 @@ def test_center_panel_supports_expected_omero_objects():
     assert "omeroweb_center_plugin" in source
     assert "load_plugin_content" in source
     assert "ACTIVE_OBJECT" not in source
+    assert "omero_analysis_chat/panel.css" in source
+    assert 'panel.addClass("omero-analysis-chat-center")' in source
+
+    panel = (
+        ROOT / "src/omero_analysis_chat/templates/omero_analysis_chat/panel.html"
+    ).read_text(encoding="utf-8")
+    assert "oac-panel-header" in panel
+    assert "oac-card" in panel
+    assert "supported_attachments" in panel
 
 
 def test_chat_has_no_notebook_surface_and_includes_runtime_config():
