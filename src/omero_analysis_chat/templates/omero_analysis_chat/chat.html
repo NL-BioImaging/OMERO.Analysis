@@ -1,0 +1,28 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>OMERO Analysis Chat</title>
+  <link rel="stylesheet" href="{% static 'omero_analysis_chat/app.css' %}">
+</head>
+<body>
+  <div id="root"><div class="boot-message">Starting OMERO Analysis Chat…</div></div>
+  {{ context|json_script:"omero-analysis-chat-context" }}
+  <script>
+    window.OMERO_ANALYSIS_CHAT = {
+      context: JSON.parse(document.getElementById("omero-analysis-chat-context").textContent),
+      tokenUrl: "{% url 'omero_analysis_chat_token' %}",
+      contextTemplate: "{% url 'omero_analysis_chat_context' object_type='TYPE' object_id=1 %}",
+      attachmentsTemplate: "{% url 'omero_analysis_chat_attachments' object_type='TYPE' object_id=1 %}",
+      downloadTemplate: "{% url 'omero_analysis_chat_download' annotation_id=1 %}",
+      uploadTemplate: "{% url 'omero_analysis_chat_upload' object_type='TYPE' object_id=1 %}",
+      runtimeBase: "{% url 'omero_analysis_chat_runtime_asset' asset_path='ASSET' %}".replace(/ASSET$/, "")
+    };
+  </script>
+  <script type="module" src="{% static 'omero_analysis_chat/app.js' %}"></script>
+</body>
+</html>
+

@@ -1,0 +1,41 @@
+<script>
+(function () {
+  "use strict";
+  var supported = ["image", "dataset", "plate", "screen"];
+  function selectedObject() {
+    var type = String(window.WEBCLIENT && WEBCLIENT.ACTIVE_OBJECT || "").toLowerCase();
+    var id = window.WEBCLIENT && WEBCLIENT.ACTIVE_OBJECT_ID;
+    if (!supported.includes(type) || !id) return null;
+    return {type: type, id: String(id)};
+  }
+  function panelUrl(object) {
+    return "{% url 'omero_analysis_chat_panel' object_type='TYPE' object_id=1 %}"
+      .replace("TYPE", encodeURIComponent(object.type))
+      .replace("/1/", "/" + encodeURIComponent(object.id) + "/");
+  }
+  function chatUrl(object, ids) {
+    var url = "{% url 'omero_analysis_chat_index' %}?type=" +
+      encodeURIComponent(object.type) + "&id=" + encodeURIComponent(object.id);
+    ids.forEach(function (id) { url += "&data_annotation=" + encodeURIComponent(id); });
+    return url;
+  }
+  function bind(panel, object) {
+    panel.off(".analysisChat");
+    panel.on("click.analysisChat", ".oac-open-chat", function () {
+      var ids = panel.find(".oac-data-attachment:checked").map(function () { return this.value; }).get();
+      window.open(chatUrl(object, ids), "_blank", "noopener");
+    });
+  }
+  function load() {
+    var object = selectedObject();
+    var panel = $("#omero_analysis_chat_panel");
+    if (!object) {
+      panel.html("<p>Select an Image, Dataset, Plate, or Screen.</p>");
+      return;
+    }
+    panel.load(panelUrl(object), function () { bind(panel, object); });
+  }
+  $(document).on("selection_change.analysisChat", load);
+  load();
+}());
+</script>

@@ -1,0 +1,19 @@
+<div class="omero-analysis-chat-panel" data-object-type="{{ context.object_type|lower }}" data-object-id="{{ context.object_id }}">
+  <h2>Analysis Chat</h2>
+  <p>Analyze tabular attachments locally in your browser with AI assistance.</p>
+  <div class="oac-attachment-list">
+    {% for attachment in context.attachments %}
+      {% if attachment.supported %}
+      <label>
+        <input type="checkbox" class="oac-data-attachment" value="{{ attachment.annotation_id }}">
+        <strong>{{ attachment.name }}</strong>
+        <small>{{ attachment.size }} bytes</small>
+      </label>
+      {% endif %}
+    {% empty %}
+      <p>No supported data attachments are directly linked to this object.</p>
+    {% endfor %}
+  </div>
+  <button type="button" class="oac-open-chat">Open Analysis Chat</button>
+  <p class="oac-panel-status" role="status"></p>
+</div>

@@ -1,0 +1,34 @@
+{
+  "name": "omero-analysis-chat-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "node scripts/clean-output.mjs",
+    "build": "npm run clean && tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke:runtime": "node scripts/smoke-runtime.mjs",
+    "smoke:browser": "node scripts/smoke-browser.mjs",
+    "vendor:pyodide": "node scripts/vendor-pyodide.mjs"
+  },
+  "dependencies": {
+    "pyodide": "314.0.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "22.19.15",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "jsdom": "26.1.0",
+    "playwright-core": "1.62.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.3",
+    "vitest": "3.2.7"
+  }
+}

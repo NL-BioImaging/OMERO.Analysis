@@ -1,0 +1,8 @@
+# Add after FROM and before `omero web syncmedia`.
+USER root
+COPY omero_analysis_chat-*.whl /tmp/
+RUN /opt/omero/web/venv3/bin/python -m pip install --no-deps \
+        /tmp/omero_analysis_chat-*.whl \
+    && rm -f /tmp/omero_analysis_chat-*.whl
+USER omero-web
+

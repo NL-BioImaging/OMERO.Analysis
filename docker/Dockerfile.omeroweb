@@ -1,0 +1,15 @@
+ARG OMERO_WEB_IMAGE=cellularimagingcf/omeroweb:latest
+FROM ${OMERO_WEB_IMAGE}
+
+ARG ANALYSIS_CHAT_WHEEL
+USER root
+
+COPY ${ANALYSIS_CHAT_WHEEL} /tmp/
+COPY docker/90-omero-analysis-chat.omero /opt/omero/web/config/90-omero-analysis-chat.omero
+
+RUN /opt/omero/web/venv3/bin/python -m pip install --no-deps /tmp/omero_analysis_chat-*.whl \
+    && rm -f /tmp/omero_analysis_chat-*.whl \
+    && chmod 0644 /opt/omero/web/config/90-omero-analysis-chat.omero
+
+USER omero-web
+

@@ -1,0 +1,4 @@
+recursive-include src/omero_analysis_chat/templates *
+recursive-include src/omero_analysis_chat/static *
+include LICENSE README.md
+
