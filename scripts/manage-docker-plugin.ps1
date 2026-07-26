@@ -54,8 +54,9 @@ function Build-Wheel {
     }
     $wheel = Get-ChildItem (Join-Path $RepoRoot "dist\omero_analysis_chat-*.whl") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $wheel) { throw "No Analysis Chat wheel exists in dist." }
-    & $python (Join-Path $RepoRoot "scripts\verify_wheel.py") $wheel.FullName
+    $verification = & $python (Join-Path $RepoRoot "scripts\verify_wheel.py") $wheel.FullName
     if ($LASTEXITCODE -ne 0) { throw "Wheel verification failed." }
+    $verification | Write-Host
     return $wheel
 }
 
@@ -105,4 +106,3 @@ switch ($Action) {
         Show-Status
     }
 }
-
