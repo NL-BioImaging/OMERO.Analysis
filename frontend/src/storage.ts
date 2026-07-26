@@ -6,12 +6,24 @@ import type {
   ProjectWorkspace,
   ProviderSettings,
   ScriptRecord,
+  WorkflowRecord,
+  ArtifactRecord,
+  OutboundPayloadAudit,
   WorkspaceFile
 } from "./types";
 
 const DB_NAME = "omero-analysis-chat";
-const DB_VERSION = 2;
-const STORES = ["projects", "chats", "files", "executions", "scripts"] as const;
+const DB_VERSION = 3;
+const STORES = [
+  "projects",
+  "chats",
+  "files",
+  "executions",
+  "scripts",
+  "workflows",
+  "artifacts",
+  "audits"
+] as const;
 type EntityStore = typeof STORES[number];
 
 interface LegacyWorkspace {
@@ -82,6 +94,14 @@ async function putEntity<T extends { id: string }>(store: EntityStore, value: T)
   await transactionDone(tx);
 }
 
+let writeQueue: Promise<void> = Promise.resolve();
+
+function serializedWrite(operation: () => Promise<void>): Promise<void> {
+  const next = writeQueue.then(operation, operation);
+  writeQueue = next.catch(() => undefined);
+  return next;
+}
+
 async function deleteEntity(store: EntityStore, id: string): Promise<void> {
   const db = await database();
   const tx = db.transaction(store, "readwrite");
@@ -95,14 +115,42 @@ async function entitiesForProject<T>(store: Exclude<EntityStore, "projects">, pr
   return requestValue(tx.objectStore(store).index("projectId").getAll(projectId)) as Promise<T[]>;
 }
 
-export const saveProject = (value: ProjectRecord) => putEntity("projects", value);
-export const saveChat = (value: ChatRecord) => putEntity("chats", value);
-export const saveFile = (value: WorkspaceFile) => putEntity("files", value);
-export const saveExecution = (value: ExecutionRecord) => putEntity("executions", value);
-export const saveScript = (value: ScriptRecord) => putEntity("scripts", value);
-export const deleteFile = (id: string) => deleteEntity("files", id);
-export const deleteChat = (id: string) => deleteEntity("chats", id);
-export const deleteScript = (id: string) => deleteEntity("scripts", id);
+export const saveProject = (value: ProjectRecord) =>
+  serializedWrite(() => putEntity("projects", value));
+export const saveChat = (value: ChatRecord) =>
+  serializedWrite(() => putEntity("chats", value));
+export const saveFile = (value: WorkspaceFile) =>
+  serializedWrite(() => putEntity("files", value));
+export const saveExecution = (value: ExecutionRecord) =>
+  serializedWrite(() => putEntity("executions", value));
+export const saveScript = (value: ScriptRecord) =>
+  serializedWrite(() => putEntity("scripts", value));
+export const saveWorkflow = (value: WorkflowRecord) =>
+  serializedWrite(() => putEntity("workflows", value));
+export const saveArtifact = (value: ArtifactRecord) =>
+  serializedWrite(() => putEntity("artifacts", value));
+export const saveAudit = (value: OutboundPayloadAudit) =>
+  serializedWrite(() => putEntity("audits", value));
+export const deleteFile = (id: string) => serializedWrite(() => deleteEntity("files", id));
+export const deleteChat = (id: string) => serializedWrite(() => deleteEntity("chats", id));
+export const deleteScript = (id: string) => serializedWrite(() => deleteEntity("scripts", id));
+
+export async function deleteProjectCascade(projectId: string): Promise<void> {
+  await serializedWrite(async () => {
+    const db = await database();
+    const tx = db.transaction([...STORES], "readwrite");
+    for (const storeName of STORES) {
+      const store = tx.objectStore(storeName);
+      if (storeName === "projects") {
+        store.delete(projectId);
+        continue;
+      }
+      const keys = await requestValue(store.index("projectId").getAllKeys(projectId));
+      keys.forEach((key) => store.delete(key));
+    }
+    await transactionDone(tx);
+  });
+}
 
 export async function contextKey(context: OmeroContext | null): Promise<string> {
   return context
@@ -154,14 +202,23 @@ async function findProject(key: string): Promise<ProjectRecord | undefined> {
 }
 
 export async function saveWorkspace(workspace: ProjectWorkspace): Promise<void> {
-  const db = await database();
-  const tx = db.transaction([...STORES], "readwrite");
-  tx.objectStore("projects").put(workspace.project);
-  workspace.chats.forEach((value) => tx.objectStore("chats").put(value));
-  workspace.files.forEach((value) => tx.objectStore("files").put(value));
-  workspace.executions.forEach((value) => tx.objectStore("executions").put(value));
-  workspace.scripts.forEach((value) => tx.objectStore("scripts").put(value));
-  await transactionDone(tx);
+  await serializedWrite(async () => {
+    const db = await database();
+    const tx = db.transaction([...STORES], "readwrite");
+    const project = {
+      ...workspace.project,
+      revision: (workspace.project.revision || 0) + 1
+    };
+    tx.objectStore("projects").put(project);
+    workspace.chats.forEach((value) => tx.objectStore("chats").put(value));
+    workspace.files.forEach((value) => tx.objectStore("files").put(value));
+    workspace.executions.forEach((value) => tx.objectStore("executions").put(value));
+    workspace.scripts.forEach((value) => tx.objectStore("scripts").put(value));
+    workspace.workflows.forEach((value) => tx.objectStore("workflows").put(value));
+    workspace.artifacts.forEach((value) => tx.objectStore("artifacts").put(value));
+    workspace.audits.forEach((value) => tx.objectStore("audits").put(value));
+    await transactionDone(tx);
+  });
 }
 
 async function migrateLegacy(
@@ -203,7 +260,16 @@ async function migrateLegacy(
       createdAt: now
     });
   }
-  const workspace = { project, chats: [chat], files, executions: [], scripts: [] };
+  const workspace = {
+    project,
+    chats: [chat],
+    files,
+    executions: [],
+    scripts: [],
+    workflows: [],
+    artifacts: [],
+    audits: []
+  };
   await saveWorkspace(workspace);
   await setValue(`migration:v2:${key}`, { completedAt: now });
   return workspace;
@@ -231,23 +297,44 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
     };
     const migrated = await migrateLegacy(project, chat, key);
     if (migrated) return migrated;
-    const workspace = { project, chats: [chat], files: [], executions: [], scripts: [] };
+    const workspace = {
+      project,
+      chats: [chat],
+      files: [],
+      executions: [],
+      scripts: [],
+      workflows: [],
+      artifacts: [],
+      audits: []
+    };
     await saveWorkspace(workspace);
     return workspace;
   }
-  const [chats, files, executions, scripts] = await Promise.all([
+  const [chats, files, executions, scripts, workflows, artifacts, audits] = await Promise.all([
     entitiesForProject<ChatRecord>("chats", project.id),
     entitiesForProject<WorkspaceFile>("files", project.id),
     entitiesForProject<ExecutionRecord>("executions", project.id),
-    entitiesForProject<ScriptRecord>("scripts", project.id)
+    entitiesForProject<ScriptRecord>("scripts", project.id),
+    entitiesForProject<WorkflowRecord>("workflows", project.id),
+    entitiesForProject<ArtifactRecord>("artifacts", project.id),
+    entitiesForProject<OutboundPayloadAudit>("audits", project.id)
   ]);
   if (!chats.length) {
     const chat = newChat(project.id);
     project = { ...project, activeChatId: chat.id, updatedAt: new Date().toISOString() };
-    await saveWorkspace({ project, chats: [chat], files, executions, scripts });
+    await saveWorkspace({
+      project,
+      chats: [chat],
+      files,
+      executions,
+      scripts,
+      workflows,
+      artifacts,
+      audits
+    });
     chats.push(chat);
   }
-  return { project, chats, files, executions, scripts };
+  return { project, chats, files, executions, scripts, workflows, artifacts, audits };
 }
 
 export async function listContextProjects(context: OmeroContext | null): Promise<ProjectRecord[]> {
@@ -283,13 +370,16 @@ export async function loadWorkspace(projectId: string): Promise<ProjectWorkspace
   const tx = db.transaction("projects", "readonly");
   const project = await requestValue(tx.objectStore("projects").get(projectId)) as ProjectRecord | undefined;
   if (!project) return undefined;
-  const [chats, files, executions, scripts] = await Promise.all([
+  const [chats, files, executions, scripts, workflows, artifacts, audits] = await Promise.all([
     entitiesForProject<ChatRecord>("chats", project.id),
     entitiesForProject<WorkspaceFile>("files", project.id),
     entitiesForProject<ExecutionRecord>("executions", project.id),
-    entitiesForProject<ScriptRecord>("scripts", project.id)
+    entitiesForProject<ScriptRecord>("scripts", project.id),
+    entitiesForProject<WorkflowRecord>("workflows", project.id),
+    entitiesForProject<ArtifactRecord>("artifacts", project.id),
+    entitiesForProject<OutboundPayloadAudit>("audits", project.id)
   ]);
-  return { project, chats, files, executions, scripts };
+  return { project, chats, files, executions, scripts, workflows, artifacts, audits };
 }
 
 export async function storageEstimate(): Promise<{ usage: number; quota: number }> {
@@ -301,5 +391,6 @@ export const settingsKey = "provider:AmsterdamUMC";
 export const defaultSettings: ProviderSettings = {
   apiKey: "",
   model: "",
-  contextWindow: 0
+  contextWindow: 0,
+  rememberKey: false
 };

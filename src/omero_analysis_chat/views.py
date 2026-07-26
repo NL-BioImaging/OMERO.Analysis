@@ -25,12 +25,15 @@ from .services import (
     can_annotate,
     checked_download,
     checked_project_snapshot_download,
+    checked_workflow_download,
     get_context_object,
     get_direct_attachment,
     list_attachment_dicts,
+    object_hierarchy,
     object_context,
     upload_project_snapshot_annotation,
     upload_result_annotation,
+    upload_workflow_annotation,
 )
 from .tokens import make_context_token, validate_context_token
 
@@ -125,7 +128,19 @@ def chat(request, conn=None, **kwargs):
             }
         except AnalysisChatError as exc:
             return HttpResponseBadRequest(str(exc))
-    return render(request, "omero_analysis_chat/chat.html", {"context": context})
+    response = render(request, "omero_analysis_chat/chat.html", {"context": context})
+    response["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self' https://aumc-aicode-openai-swedencentral-oai.openai.azure.com; "
+        "worker-src blob:; "
+        "frame-src 'self' blob:; "
+        "object-src 'none'; base-uri 'self'; form-action 'self'"
+    )
+    response["Referrer-Policy"] = "same-origin"
+    return response
 
 
 @login_required(setGroupContext=True)
@@ -151,9 +166,9 @@ def context_token(request, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(
         conn, payload.get("object_type"), payload.get("object_id")
     )
-    operations = ["context", "list", "download", "snapshot_download"]
+    operations = ["context", "list", "download", "snapshot_download", "hierarchy"]
     if can_annotate(obj):
-        operations.extend(["upload", "snapshot_upload"])
+        operations.extend(["upload", "snapshot_upload", "workflow_upload"])
     token, expires_at = make_context_token(
         request, conn, object_type, object_id, obj, operations
     )
@@ -184,6 +199,15 @@ def attachments(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, "list", object_type, object_id, obj)
     return JsonResponse({"attachments": list_attachment_dicts(obj)})
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def hierarchy(request, object_type, object_id, conn=None, **kwargs):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    validate_context_token(request, conn, "hierarchy", object_type, object_id, obj)
+    return JsonResponse(object_hierarchy(object_type, object_id, obj))
 
 
 @require_GET
@@ -259,6 +283,50 @@ def download_project_snapshot(request, annotation_id, conn=None, **kwargs):
         obj,
     )
     annotation, info = checked_project_snapshot_download(obj, annotation_id)
+    response = ConnCleaningHttpResponse(
+        annotation.getFileInChunks(), content_type=info.mimetype
+    )
+    response.conn = conn
+    response["Content-Length"] = str(info.size)
+    response["Content-Disposition"] = (
+        "attachment; filename*=UTF-8''" + quote(info.name, safe="")
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@require_http_methods(["GET", "POST"])
+@login_required(setGroupContext=True)
+@api_errors
+def workflow_templates(request, object_type, object_id, conn=None, **kwargs):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    if request.method == "GET":
+        validate_context_token(request, conn, "list", object_type, object_id, obj)
+        values = [
+            value for value in list_attachment_dicts(obj) if value["kind"] == "workflow"
+        ]
+        return JsonResponse({"workflows": values})
+    validate_context_token(request, conn, "workflow_upload", object_type, object_id, obj)
+    result = upload_workflow_annotation(conn, obj, request.FILES.get("file"))
+    return JsonResponse({"workflow": result}, status=201)
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def download_workflow_template(request, annotation_id, conn=None, **kwargs):
+    claims = validate_context_token(request, conn, "download")
+    _, _, obj = get_context_object(conn, claims["object_type"], claims["object_id"])
+    validate_context_token(
+        request,
+        conn,
+        "download",
+        claims["object_type"],
+        claims["object_id"],
+        obj,
+    )
+    annotation, info = checked_workflow_download(obj, annotation_id)
     response = ConnCleaningHttpResponse(
         annotation.getFileInChunks(), content_type=info.mimetype
     )

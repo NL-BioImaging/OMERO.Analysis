@@ -1,0 +1,95 @@
+import { useRef, useState, type ReactNode } from "react";
+
+interface DialogState {
+  title: string;
+  description?: string;
+  value?: string;
+  confirmLabel: string;
+  danger?: boolean;
+  mode: "text" | "confirm";
+}
+
+export interface DialogController {
+  askText: (title: string, value?: string, description?: string) => Promise<string | null>;
+  confirm: (
+    title: string,
+    description: string,
+    confirmLabel?: string,
+    danger?: boolean
+  ) => Promise<boolean>;
+  element: ReactNode;
+}
+
+export function useDialogs(): DialogController {
+  const [state, setState] = useState<DialogState | null>(null);
+  const [value, setValue] = useState("");
+  const resolver = useRef<((value: string | boolean | null) => void) | null>(null);
+
+  const close = (result: string | boolean | null) => {
+    resolver.current?.(result);
+    resolver.current = null;
+    setState(null);
+  };
+
+  const askText = (title: string, initial = "", description?: string) =>
+    new Promise<string | null>((resolve) => {
+      resolver.current = resolve as (value: string | boolean | null) => void;
+      setValue(initial);
+      setState({ title, description, value: initial, confirmLabel: "Save", mode: "text" });
+    });
+
+  const confirm = (
+    title: string,
+    description: string,
+    confirmLabel = "Continue",
+    danger = false
+  ) => new Promise<boolean>((resolve) => {
+    resolver.current = resolve as (value: string | boolean | null) => void;
+    setState({ title, description, confirmLabel, danger, mode: "confirm" });
+  });
+
+  const element = state ? (
+    <div
+      className="dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close(state.mode === "confirm" ? false : null);
+      }}
+    >
+      <form
+        className="app-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-dialog-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          close(state.mode === "text" ? value.trim() || null : true);
+        }}
+      >
+        <h2 id="app-dialog-title">{state.title}</h2>
+        {state.description && <p>{state.description}</p>}
+        {state.mode === "text" && (
+          <label>
+            <span>Name</span>
+            <input
+              autoFocus
+              value={value}
+              maxLength={180}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </label>
+        )}
+        <div className="dialog-actions">
+          <button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
+            Cancel
+          </button>
+          <button className={state.danger ? "danger-button" : ""} type="submit">
+            {state.confirmLabel}
+          </button>
+        </div>
+      </form>
+    </div>
+  ) : null;
+
+  return { askText, confirm, element };
+}

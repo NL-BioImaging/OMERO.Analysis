@@ -26,5 +26,9 @@ describe("Python sandbox", () => {
     expect(document).toContain('message.type === \\"begin\\"');
     expect(document).toContain('removeTree(\\"/output\\")');
     expect(document).toContain("outputState()");
+    expect(document).toContain("Network access is disabled in Analysis Chat Python");
+    expect(document).toContain("globalThis.fetch = denyNetwork");
+    expect(document).toContain('message.type === \\"clear_inputs\\"');
+    expect(document).toContain('message.type === \\"profile\\"');
   });
 });

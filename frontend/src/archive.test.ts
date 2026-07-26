@@ -55,7 +55,10 @@ async function workspace(): Promise<ProjectWorkspace> {
       inputHashes: files.slice(0, 2).map((file) => file.sha256), runtimeVersion: "runtime",
       model: "gpt-5", createdAt
     }],
-    scripts: []
+    scripts: [],
+    workflows: [],
+    artifacts: [],
+    audits: []
   };
 }
 
@@ -76,6 +79,20 @@ describe("project archive", () => {
     expect(restored.project.id).not.toBe(source.project.id);
     expect(restored.files.find((file) => file.source === "omero")?.data).toBeUndefined();
     expect(restored.files.find((file) => file.source === "local")?.data).toBeInstanceOf(ArrayBuffer);
+
+    const rebound = await importProject(archive.data.buffer as ArrayBuffer, {
+      object_type: "Screen",
+      object_id: 101,
+      name: "Test",
+      user_id: 99,
+      group_id: 88,
+      can_annotate: true,
+      selected_attachments: []
+    });
+    expect(rebound.project.userId).toBe(99);
+    expect(rebound.project.groupId).toBe(88);
+    expect(rebound.project.contextKey).toContain("99:88:Screen:101:import:");
+    expect(rebound.project.origin?.userId).toBe(7);
   });
 
   it("omits local inputs when they make the snapshot exceed its limit", async () => {
@@ -109,5 +126,15 @@ describe("project archive", () => {
     (source.project as any).preferences = { api_key: "must-not-be-imported" };
     const credentialArchive = exportProject(source, 1024 * 1024);
     await expect(importProject(asArrayBuffer(credentialArchive.data))).rejects.toThrow(/API key/);
+
+    const bomb = zipSync({ "project.json": strToU8("{}") });
+    const view = new DataView(bomb.buffer, bomb.byteOffset, bomb.byteLength);
+    for (let offset = 0; offset < bomb.length - 46; offset += 1) {
+      if (view.getUint32(offset, true) === 0x02014b50) {
+        view.setUint32(offset + 24, 600 * 1024 * 1024, true);
+        break;
+      }
+    }
+    await expect(importProject(asArrayBuffer(bomb))).rejects.toThrow(/512 MiB/);
   });
 });

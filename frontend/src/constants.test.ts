@@ -1,4 +1,4 @@
-import { toolErrorText } from "./api";
+import { toolErrorText, toolResultText } from "./api";
 import {
   BASE_URL,
   CHAT_URL,
@@ -25,7 +25,9 @@ describe("AmsterdamUMC provider", () => {
       "reset_python",
       "list_saved_scripts",
       "read_saved_script",
-      "run_saved_script"
+      "run_saved_script",
+      "list_saved_workflows",
+      "run_saved_workflow"
     ]);
   });
 
@@ -40,5 +42,26 @@ describe("AmsterdamUMC provider", () => {
     expect(payload).toContain("call run_python again");
     expect(payload).toContain("available_packages");
     expect(payload.length).toBeLessThanOrEqual(64 * 1024 + 30);
+  });
+
+  it("never forwards local stdout or generated file contents to Azure", () => {
+    const payload = toolResultText({
+      stdout: "CANARY COMPLETE SOURCE FILE",
+      stderr: "",
+      preview: "local-only preview",
+      modelPayload: {
+        preview: { kind: "table", data: { columns: ["count"], data: [[3]] } },
+        generatedFiles: [{ name: "result.csv", size: 10, type: "text/csv" }],
+        truncated: false
+      },
+      files: [{
+        name: "result.csv",
+        type: "text/csv",
+        data: new TextEncoder().encode("secret rows").buffer
+      }]
+    });
+    expect(payload).not.toContain("CANARY");
+    expect(payload).not.toContain("secret rows");
+    expect(payload).toContain("result.csv");
   });
 });

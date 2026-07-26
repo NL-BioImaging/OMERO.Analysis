@@ -31,7 +31,8 @@ def test_chat_has_no_notebook_surface_and_includes_runtime_config():
     source = (
         ROOT / "src/omero_analysis_chat/templates/omero_analysis_chat/chat.html"
     ).read_text(encoding="utf-8")
-    assert "runtimeBase" in source
-    assert "snapshotUploadTemplate" in source
+    assert "data-runtime-base" in source
+    assert "window.OMERO_ANALYSIS_CHAT" not in source
+    assert "data-snapshot-upload-template" in source
     assert "JupyterLab" not in source
     assert "notebook" not in source.lower()

@@ -33,6 +33,9 @@ Successful Python code can be saved by the user as a versioned project script. U
 list_saved_scripts to discover these reusable workflows, read_saved_script only when its code is
 needed for reasoning, and run_saved_script when an existing workflow directly answers the request.
 Do not repeatedly regenerate an existing saved workflow.
+Saved multi-step workflows are isolated ordered script versions. Use list_saved_workflows and
+run_saved_workflow when an approved workflow matches the user's request; never create or publish
+a workflow without an explicit user action.
 
 CI Segmentation measurement databases may be DuckDB or SQLite. Start by discovering the actual
 tables/views and their columns; never assume a schema. Expected tables can include schema_info,
@@ -105,6 +108,27 @@ export const TOOLS = [
         type: "object",
         properties: { script_id: { type: "string" } },
         required: ["script_id"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_saved_workflows",
+      description: "List user-approved, versioned multi-step workflows in this project.",
+      parameters: { type: "object", properties: {}, additionalProperties: false }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_saved_workflow",
+      description: "Run one user-approved workflow locally with isolated ordered steps.",
+      parameters: {
+        type: "object",
+        properties: { workflow_id: { type: "string" } },
+        required: ["workflow_id"],
         additionalProperties: false
       }
     }

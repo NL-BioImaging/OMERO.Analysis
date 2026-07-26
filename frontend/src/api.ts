@@ -4,6 +4,7 @@ import type {
   Bootstrap,
   ProviderSettings,
   RuntimeOutput,
+  OmeroHierarchy,
   WorkspaceFile
 } from "./types";
 
@@ -42,8 +43,32 @@ export class OmeroBridge {
       })
     });
     const body = await readJson(response);
+    if (typeof body.context_token !== "string" || !Array.isArray(body.operations) ||
+        body.operations.some((value: unknown) => typeof value !== "string")) {
+      throw new Error("OMERO returned an invalid context capability");
+    }
     this.contextToken = body.context_token;
     this.operations = new Set(body.operations);
+  }
+
+  private async authorizedFetch(
+    input: RequestInfo | URL,
+    init: RequestInit = {},
+    retry = true
+  ): Promise<Response> {
+    const response = await fetch(input, {
+      ...init,
+      credentials: "same-origin",
+      headers: {
+        ...(init.headers || {}),
+        "X-OMERO-Analysis-Context": this.contextToken
+      }
+    });
+    if (retry && (response.status === 401 || response.status === 403)) {
+      await this.connect();
+      return this.authorizedFetch(input, init, false);
+    }
+    return response;
   }
 
   async download(attachment: Attachment): Promise<ArrayBuffer> {
@@ -51,10 +76,7 @@ export class OmeroBridge {
       "/1/download/",
       `/${attachment.annotation_id}/download/`
     );
-    const response = await fetch(url, {
-      credentials: "same-origin",
-      headers: { "X-OMERO-Analysis-Context": this.contextToken }
-    });
+    const response = await this.authorizedFetch(url);
     if (!response.ok) throw new Error(await errorText(response));
     return response.arrayBuffer();
   }
@@ -64,7 +86,7 @@ export class OmeroBridge {
     if (!context || !file.data) throw new Error("No OMERO target or result data");
     const form = new FormData();
     form.append("file", new Blob([file.data], { type: file.type }), file.name);
-    const response = await fetch(
+    const response = await this.authorizedFetch(
       route(
         this.bootstrap.uploadTemplate,
         context.object_type,
@@ -72,30 +94,36 @@ export class OmeroBridge {
       ),
       {
         method: "POST",
-        credentials: "same-origin",
         headers: {
-          "X-CSRFToken": csrfToken(),
-          "X-OMERO-Analysis-Context": this.contextToken
+          "X-CSRFToken": csrfToken()
         },
         body: form
       }
     );
     const body = await readJson(response);
-    return body.attachment;
+    return attachmentFrom(body.attachment);
   }
 
   async listSnapshots(): Promise<Attachment[]> {
     const context = this.bootstrap.context;
     if (!context) return [];
-    const response = await fetch(
+    const response = await this.authorizedFetch(
       route(this.bootstrap.snapshotsTemplate, context.object_type, context.object_id),
       {
-        credentials: "same-origin",
-        headers: { "X-OMERO-Analysis-Context": this.contextToken }
+        headers: {}
       }
     );
     const body = await readJson(response);
-    return body.snapshots || [];
+    return attachmentList(body.snapshots);
+  }
+
+  async hierarchy(): Promise<OmeroHierarchy | null> {
+    const context = this.bootstrap.context;
+    if (!context) return null;
+    const response = await this.authorizedFetch(
+      route(this.bootstrap.hierarchyTemplate, context.object_type, context.object_id)
+    );
+    return hierarchyFrom(await readJson(response));
   }
 
   async uploadSnapshot(name: string, data: Uint8Array): Promise<Attachment> {
@@ -107,20 +135,18 @@ export class OmeroBridge {
       new Blob([data as BlobPart], { type: "application/zip" }),
       name
     );
-    const response = await fetch(
+    const response = await this.authorizedFetch(
       route(this.bootstrap.snapshotUploadTemplate, context.object_type, context.object_id),
       {
         method: "POST",
-        credentials: "same-origin",
         headers: {
-          "X-CSRFToken": csrfToken(),
-          "X-OMERO-Analysis-Context": this.contextToken
+          "X-CSRFToken": csrfToken()
         },
         body: form
       }
     );
     const body = await readJson(response);
-    return body.snapshot;
+    return attachmentFrom(body.snapshot);
   }
 
   async downloadSnapshot(snapshot: Attachment): Promise<ArrayBuffer> {
@@ -128,10 +154,40 @@ export class OmeroBridge {
       "/1/download/",
       `/${snapshot.annotation_id}/download/`
     );
-    const response = await fetch(url, {
-      credentials: "same-origin",
-      headers: { "X-OMERO-Analysis-Context": this.contextToken }
-    });
+    const response = await this.authorizedFetch(url);
+    if (!response.ok) throw new Error(await errorText(response));
+    return response.arrayBuffer();
+  }
+
+  async listWorkflowTemplates(): Promise<Attachment[]> {
+    const context = this.bootstrap.context;
+    if (!context) return [];
+    const response = await this.authorizedFetch(
+      route(this.bootstrap.workflowTemplatesTemplate, context.object_type, context.object_id)
+    );
+    const body = await readJson(response);
+    return attachmentList(body.workflows);
+  }
+
+  async uploadWorkflowTemplate(name: string, data: Uint8Array): Promise<Attachment> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO target for the workflow template");
+    const form = new FormData();
+    form.append("file", new Blob([data as BlobPart], { type: "application/json" }), name);
+    const response = await this.authorizedFetch(
+      route(this.bootstrap.workflowTemplatesTemplate, context.object_type, context.object_id),
+      { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
+    );
+    const body = await readJson(response);
+    return attachmentFrom(body.workflow);
+  }
+
+  async downloadWorkflowTemplate(template: Attachment): Promise<ArrayBuffer> {
+    const url = this.bootstrap.workflowDownloadTemplate.replace(
+      "/1/download/",
+      `/${template.annotation_id}/download/`
+    );
+    const response = await this.authorizedFetch(url);
     if (!response.ok) throw new Error(await errorText(response));
     return response.arrayBuffer();
   }
@@ -152,6 +208,57 @@ async function readJson(response: Response): Promise<any> {
     throw new Error(body.error?.message || `${response.status} ${response.statusText}`);
   }
   return body;
+}
+
+function record(value: unknown, label: string): Record<string, any> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} is not a valid object`);
+  }
+  return value as Record<string, any>;
+}
+
+function attachmentFrom(value: unknown): Attachment {
+  const item = record(value, "OMERO attachment");
+  if (
+    !Number.isInteger(item.annotation_id) ||
+    !Number.isInteger(item.file_id) ||
+    typeof item.name !== "string" ||
+    typeof item.mimetype !== "string" ||
+    typeof item.size !== "number" ||
+    !["attachment", "result", "project", "workflow"].includes(item.kind) ||
+    typeof item.supported !== "boolean"
+  ) {
+    throw new Error("OMERO returned invalid attachment metadata");
+  }
+  return item as Attachment;
+}
+
+function attachmentList(value: unknown): Attachment[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error("OMERO returned an invalid attachment list");
+  return value.map(attachmentFrom);
+}
+
+function hierarchyFrom(value: unknown): OmeroHierarchy {
+  const body = record(value, "OMERO hierarchy");
+  const item = (input: unknown) => {
+    const candidate = record(input, "OMERO hierarchy item");
+    if (
+      typeof candidate.type !== "string" ||
+      !Number.isInteger(candidate.id) ||
+      typeof candidate.name !== "string" ||
+      typeof candidate.supported !== "boolean"
+    ) throw new Error("OMERO returned an invalid hierarchy item");
+    return candidate;
+  };
+  if (!Array.isArray(body.parents) || !Array.isArray(body.children)) {
+    throw new Error("OMERO returned an invalid hierarchy");
+  }
+  return {
+    current: item(body.current),
+    parents: body.parents.map(item),
+    children: body.children.map(item)
+  } as OmeroHierarchy;
 }
 
 export interface AiMessage {
@@ -185,7 +292,8 @@ export interface AiResponse {
 export async function completeChat(
   settings: ProviderSettings,
   messages: AiMessage[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  onDelta?: (content: string) => void
 ): Promise<AiResponse> {
   const response = await fetch(CHAT_URL, {
     method: "POST",
@@ -199,24 +307,94 @@ export async function completeChat(
       temperature: TEMPERATURE,
       messages,
       tools: TOOLS,
-      tool_choice: "auto"
+      tool_choice: "auto",
+      stream: Boolean(onDelta),
+      stream_options: onDelta ? { include_usage: true } : undefined
     })
   });
   if (!response.ok) throw new Error(await errorText(response));
-  return response.json();
+  if (!onDelta || !response.headers.get("content-type")?.includes("text/event-stream")) {
+    return aiResponseFrom(await response.json());
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("AmsterdamUMC returned an empty response stream");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let usage: AiResponse["usage"];
+  const calls = new Map<number, ToolCall>();
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const raw = line.slice(5).trim();
+      if (!raw || raw === "[DONE]") continue;
+      const event = JSON.parse(raw);
+      if (event.usage) usage = event.usage;
+      const delta = event.choices?.[0]?.delta;
+      if (delta?.content) {
+        content += delta.content;
+        onDelta(content);
+      }
+      for (const fragment of delta?.tool_calls || []) {
+        const index = Number(fragment.index || 0);
+        const current = calls.get(index) || {
+          id: "",
+          type: "function",
+          function: { name: "", arguments: "" }
+        };
+        current.id += fragment.id || "";
+        current.function.name += fragment.function?.name || "";
+        current.function.arguments += fragment.function?.arguments || "";
+        calls.set(index, current);
+      }
+    }
+    if (done) break;
+  }
+  return aiResponseFrom({
+    choices: [{
+      message: {
+        role: "assistant",
+        content: content || null,
+        tool_calls: calls.size ? Array.from(calls.values()) : undefined
+      }
+    }],
+    usage
+  });
+}
+
+function aiResponseFrom(value: unknown): AiResponse {
+  const body = record(value, "AI response");
+  if (!Array.isArray(body.choices) || !body.choices.length) {
+    throw new Error("AmsterdamUMC returned no response choices");
+  }
+  for (const choice of body.choices) {
+    const message = record(record(choice, "AI choice").message, "AI message");
+    if (message.role !== "assistant" || !(message.content == null || typeof message.content === "string")) {
+      throw new Error("AmsterdamUMC returned an invalid assistant message");
+    }
+    if (message.tool_calls != null) {
+      if (!Array.isArray(message.tool_calls)) throw new Error("AmsterdamUMC returned invalid tool calls");
+      for (const raw of message.tool_calls) {
+        const call = record(raw, "AI tool call");
+        const fn = record(call.function, "AI tool function");
+        if (
+          typeof call.id !== "string" ||
+          call.type !== "function" ||
+          typeof fn.name !== "string" ||
+          typeof fn.arguments !== "string"
+        ) throw new Error("AmsterdamUMC returned an invalid tool call");
+      }
+    }
+  }
+  return body as AiResponse;
 }
 
 export function toolResultText(output: RuntimeOutput): string {
-  const value = JSON.stringify({
-    stdout: output.stdout,
-    stderr: output.stderr,
-    preview: output.preview,
-    generated_files: output.files.map((file) => ({
-      name: file.name,
-      size: file.data.byteLength,
-      type: file.type
-    }))
-  });
+  const value = JSON.stringify(output.modelPayload);
   return value.length > 64 * 1024
     ? `${value.slice(0, 64 * 1024)}\n[tool output truncated]`
     : value;

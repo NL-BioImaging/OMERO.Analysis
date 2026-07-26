@@ -1,4 +1,5 @@
 import mimetypes
+import json
 import re
 import tempfile
 from dataclasses import asdict, dataclass
@@ -16,7 +17,9 @@ from .settings import allowed_result_extensions, max_download_bytes, max_upload_
 
 SUPPORTED_OBJECT_TYPES = ("Image", "Dataset", "Plate", "Screen")
 RESULT_NAMESPACE = "nl.bioimaging.analysis-chat.result"
-PROJECT_NAMESPACE = "nl.bioimaging.analysis-chat.project.v1"
+PROJECT_NAMESPACE = "nl.bioimaging.analysis-chat.project.v2"
+LEGACY_PROJECT_NAMESPACES = {"nl.bioimaging.analysis-chat.project.v1"}
+WORKFLOW_NAMESPACE = "nl.bioimaging.analysis-chat.workflow.v1"
 INPUT_EXTENSIONS = {
     ".csv",
     ".tsv",
@@ -144,7 +147,9 @@ def attachment_info(annotation):
     extension = Path(name).suffix.lower()
     kind = (
         "project"
-        if namespace == PROJECT_NAMESPACE
+        if namespace == PROJECT_NAMESPACE or namespace in LEGACY_PROJECT_NAMESPACES
+        else "workflow"
+        if namespace == WORKFLOW_NAMESPACE
         else "result"
         if namespace == RESULT_NAMESPACE
         else "attachment"
@@ -202,9 +207,83 @@ def object_context(object_type, object_id, obj, conn=None):
         "project_snapshots": [
             attachment for attachment in attachments if attachment["kind"] == "project"
         ],
+        "workflow_templates": [
+            attachment for attachment in attachments if attachment["kind"] == "workflow"
+        ],
         "supported_attachments": [
             attachment for attachment in attachments if attachment["supported"]
         ],
+    }
+
+
+def _object_type(value):
+    for attribute in ("OMERO_CLASS", "_obj_type"):
+        candidate = getattr(value, attribute, None)
+        if candidate:
+            return str(candidate).split(".")[-1].replace("Wrapper", "")
+    name = value.__class__.__name__.replace("Wrapper", "")
+    return name.removeprefix("BlitzGateway")
+
+
+def _hierarchy_item(value):
+    value_type = _object_type(value)
+    try:
+        name = str(_plain(value.getName()))
+    except AttributeError:
+        name = value_type
+    return {
+        "type": value_type,
+        "id": int(value.getId()),
+        "name": name,
+        "supported": value_type in SUPPORTED_OBJECT_TYPES,
+    }
+
+
+def object_hierarchy(object_type, object_id, obj):
+    """Return readable immediate relations without using webclient internals."""
+    parents = []
+    children = []
+    seen = set()
+
+    def add(target, collection):
+        if target is None:
+            return
+        item = _hierarchy_item(target)
+        key = (item["type"], item["id"])
+        if key not in seen:
+            seen.add(key)
+            collection.append(item)
+
+    for method_name in ("listParents",):
+        method = getattr(obj, method_name, None)
+        if callable(method):
+            try:
+                for value in method():
+                    add(value, parents)
+            except (AttributeError, TypeError):
+                pass
+    parent = getattr(obj, "getParent", None)
+    if callable(parent):
+        try:
+            add(parent(), parents)
+        except (AttributeError, TypeError):
+            pass
+    children_method = getattr(obj, "listChildren", None)
+    if callable(children_method):
+        try:
+            for value in children_method():
+                add(value, children)
+        except (AttributeError, TypeError):
+            pass
+    return {
+        "current": {
+            "type": object_type,
+            "id": int(object_id),
+            "name": str(_plain(obj.getName())),
+            "supported": True,
+        },
+        "parents": parents,
+        "children": children,
     }
 
 
@@ -226,6 +305,17 @@ def checked_project_snapshot_download(obj, annotation_id):
     if info.size > max_download_bytes():
         raise FileTooLarge(
             f"Snapshot is {info.size} bytes; the limit is {max_download_bytes()}"
+        )
+    return annotation, info
+
+
+def checked_workflow_download(obj, annotation_id):
+    annotation, info = get_direct_attachment(obj, annotation_id)
+    if info.kind != "workflow":
+        raise UnsupportedMedia(f"{info.name} is not an Analysis Chat workflow template")
+    if info.size > max_download_bytes():
+        raise FileTooLarge(
+            f"Workflow is {info.size} bytes; the limit is {max_download_bytes()}"
         )
     return annotation, info
 
@@ -277,6 +367,27 @@ def validate_project_snapshot(uploaded_file):
     return filename, "application/zip"
 
 
+def validate_workflow_template(uploaded_file):
+    if uploaded_file is None:
+        raise UnsupportedMedia("Multipart field 'file' is required")
+    if int(uploaded_file.size) > min(max_upload_bytes(), 4 * 1024 * 1024):
+        raise FileTooLarge("Workflow templates are limited to 4 MiB")
+    filename = safe_filename(uploaded_file.name)
+    if not filename.lower().endswith(".oac-workflow.json"):
+        raise UnsupportedMedia("Workflow templates must use .oac-workflow.json")
+    position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
+    try:
+        payload = json.load(uploaded_file)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise UnsupportedMedia("Workflow template must contain valid JSON") from exc
+    finally:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(position)
+    if payload.get("format") != "nl.bioimaging.analysis-chat.workflow.v1":
+        raise UnsupportedMedia("Unsupported workflow template format")
+    return filename, "application/json"
+
+
 def _upload_annotation(conn, obj, uploaded_file, validator, namespace, description):
     if not can_annotate(obj):
         raise PermissionDenied("The active user cannot annotate the selected object")
@@ -324,4 +435,15 @@ def upload_project_snapshot_annotation(conn, obj, uploaded_file):
         validate_project_snapshot,
         PROJECT_NAMESPACE,
         "Portable OMERO Analysis Chat project snapshot",
+    )
+
+
+def upload_workflow_annotation(conn, obj, uploaded_file):
+    return _upload_annotation(
+        conn,
+        obj,
+        uploaded_file,
+        validate_workflow_template,
+        WORKFLOW_NAMESPACE,
+        "Reusable OMERO Analysis Chat workflow template",
     )

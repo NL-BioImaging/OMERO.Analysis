@@ -3,6 +3,7 @@ import {
   loadWorkspace,
   listUserProjects,
   newChat,
+  deleteProjectCascade,
   saveChat,
   saveProject,
   setValue
@@ -61,5 +62,16 @@ describe("normalized project storage", () => {
     expect(projects.map((project) => project.id)).toContain(first.project.id);
     expect(projects.map((project) => project.id)).toContain(second.project.id);
     expect(projects.some((project) => project.groupId === 99)).toBe(false);
+  });
+
+  it("serializes rapid writes and deletes an entire project transactionally", async () => {
+    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 60 });
+    await Promise.all([
+      saveProject({ ...workspace.project, name: "first" }),
+      saveProject({ ...workspace.project, name: "latest" })
+    ]);
+    expect((await loadWorkspace(workspace.project.id))?.project.name).toBe("latest");
+    await deleteProjectCascade(workspace.project.id);
+    expect(await loadWorkspace(workspace.project.id)).toBeUndefined();
   });
 });

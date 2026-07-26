@@ -39,6 +39,7 @@ def test_context_token_reports_permissions():
         "list",
         "download",
         "snapshot_download",
+        "hierarchy",
     ]
 
 
@@ -126,3 +127,7 @@ def test_chat_bootstrap_accepts_only_attached_project_snapshot():
     assert response.status_code == 200
     assert b'"selected_project_snapshot"' in response.content
     assert b'"annotation_id": 21' in response.content
+    assert response["Content-Security-Policy"].startswith("default-src 'self'")
+    assert "aumc-aicode-openai-swedencentral-oai.openai.azure.com" in response[
+        "Content-Security-Policy"
+    ]

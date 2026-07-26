@@ -2,15 +2,20 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type {
   ChatRecord,
   ExecutionRecord,
+  OmeroContext,
   ProjectRecord,
   ProjectWorkspace,
   ScriptRecord,
+  WorkflowRecord,
+  ArtifactRecord,
+  OutboundPayloadAudit,
   WorkspaceFile
 } from "./types";
 import { sha256 } from "./storage";
 
-export const PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project";
-export const PROJECT_FORMAT_VERSION = 1;
+export const PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project.v2";
+export const LEGACY_PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project";
+export const PROJECT_FORMAT_VERSION = 2;
 export const MAX_ARCHIVE_ENTRIES = 10_000;
 export const MAX_ARCHIVE_UNCOMPRESSED = 512 * 1024 * 1024;
 
@@ -22,6 +27,9 @@ interface SnapshotManifest {
   chats: ChatRecord[];
   executions: ExecutionRecord[];
   scripts: ScriptRecord[];
+  workflows: WorkflowRecord[];
+  artifacts: ArtifactRecord[];
+  audits: OutboundPayloadAudit[];
   files: Array<Omit<WorkspaceFile, "data"> & { archivePath?: string }>;
   omittedLocalInputs: string[];
 }
@@ -51,7 +59,7 @@ function buildArchive(
 ): ArchiveResult {
   const entries: Record<string, Uint8Array> = {};
   const omittedLocalInputs: string[] = [];
-  const files = workspace.files.map((file) => {
+  const files = workspace.files.filter((file) => !file.deletedAt).map((file) => {
     const metadata: Omit<WorkspaceFile, "data"> & { archivePath?: string } = { ...file };
     delete (metadata as Partial<WorkspaceFile>).data;
     const isOmeroInput = file.source === "omero";
@@ -78,6 +86,9 @@ function buildArchive(
     chats: workspace.chats,
     executions: workspace.executions,
     scripts: workspace.scripts,
+    workflows: workspace.workflows,
+    artifacts: workspace.artifacts,
+    audits: workspace.audits.map((audit) => ({ ...audit, payload: "[omitted from snapshot]" })),
     files,
     omittedLocalInputs
   };
@@ -129,6 +140,67 @@ function validatePath(path: string): void {
   }
 }
 
+function validateArchiveDirectory(data: Uint8Array): void {
+  // Inspect the ZIP central directory before decompression so a compressed
+  // archive cannot allocate an unbounded amount of browser memory first.
+  let end = -1;
+  for (let offset = Math.max(0, data.length - 65_557); offset <= data.length - 22; offset += 1) {
+    if (
+      data[offset] === 0x50 && data[offset + 1] === 0x4b &&
+      data[offset + 2] === 0x05 && data[offset + 3] === 0x06
+    ) end = offset;
+  }
+  if (end < 0) throw new Error("Project archive has no valid ZIP directory");
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const entries = view.getUint16(end + 10, true);
+  const directorySize = view.getUint32(end + 12, true);
+  const directoryOffset = view.getUint32(end + 16, true);
+  if (entries > MAX_ARCHIVE_ENTRIES) throw new Error("Project archive contains too many entries");
+  if (directoryOffset + directorySize > data.length) throw new Error("Project archive directory is truncated");
+  let offset = directoryOffset;
+  let total = 0;
+  for (let index = 0; index < entries; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) {
+      throw new Error("Project archive contains an invalid directory entry");
+    }
+    const uncompressed = view.getUint32(offset + 24, true);
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    if (uncompressed === 0xffffffff) throw new Error("ZIP64 project archives are not supported");
+    total += uncompressed;
+    if (total > MAX_ARCHIVE_UNCOMPRESSED) {
+      throw new Error("Project archive exceeds the 512 MiB workspace limit");
+    }
+    const start = offset + 46;
+    const path = new TextDecoder().decode(data.subarray(start, start + nameLength));
+    validatePath(path);
+    offset = start + nameLength + extraLength + commentLength;
+    if (offset > directoryOffset + directorySize) throw new Error("Project archive directory is malformed");
+  }
+}
+
+function requireManifest(value: unknown): SnapshotManifest {
+  if (!value || typeof value !== "object") throw new Error("Project manifest must be an object");
+  const raw = value as Record<string, unknown>;
+  const legacy = raw.format === LEGACY_PROJECT_FORMAT && raw.version === 1;
+  const current = raw.format === PROJECT_FORMAT && raw.version === PROJECT_FORMAT_VERSION;
+  if (!legacy && !current) throw new Error("Unsupported Analysis Chat project format");
+  const manifest = value as Partial<SnapshotManifest>;
+  if (!manifest.project || !Array.isArray(manifest.chats) || !Array.isArray(manifest.files)) {
+    throw new Error("Project manifest is missing required project, chat, or file records");
+  }
+  return {
+    ...manifest,
+    workflows: Array.isArray(manifest.workflows) ? manifest.workflows : [],
+    artifacts: Array.isArray(manifest.artifacts) ? manifest.artifacts : [],
+    audits: Array.isArray(manifest.audits) ? manifest.audits : [],
+    executions: Array.isArray(manifest.executions) ? manifest.executions : [],
+    scripts: Array.isArray(manifest.scripts) ? manifest.scripts : [],
+    omittedLocalInputs: Array.isArray(manifest.omittedLocalInputs) ? manifest.omittedLocalInputs : []
+  } as SnapshotManifest;
+}
+
 function containsCredentialField(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   if (Array.isArray(value)) return value.some(containsCredentialField);
@@ -139,8 +211,13 @@ function containsCredentialField(value: unknown): boolean {
   });
 }
 
-export async function importProject(data: ArrayBuffer): Promise<ProjectWorkspace> {
-  const entries = unzipSync(new Uint8Array(data));
+export async function importProject(
+  data: ArrayBuffer,
+  currentContext: OmeroContext | null = null
+): Promise<ProjectWorkspace> {
+  const archiveBytes = new Uint8Array(data);
+  validateArchiveDirectory(archiveBytes);
+  const entries = unzipSync(archiveBytes);
   const paths = Object.keys(entries);
   if (paths.length > MAX_ARCHIVE_ENTRIES) throw new Error("Project archive contains too many entries");
   let total = 0;
@@ -151,10 +228,7 @@ export async function importProject(data: ArrayBuffer): Promise<ProjectWorkspace
   }
   const manifestBytes = entries["project.json"];
   if (!manifestBytes) throw new Error("Project archive does not contain project.json");
-  const manifest = JSON.parse(strFromU8(manifestBytes)) as SnapshotManifest;
-  if (manifest.format !== PROJECT_FORMAT || manifest.version !== PROJECT_FORMAT_VERSION) {
-    throw new Error("Unsupported Analysis Chat project format");
-  }
+  const manifest = requireManifest(JSON.parse(strFromU8(manifestBytes)));
   if (containsCredentialField(manifest)) {
     throw new Error("Project archive unexpectedly contains an API key field");
   }
@@ -164,6 +238,7 @@ export async function importProject(data: ArrayBuffer): Promise<ProjectWorkspace
   const executionIds = new Map(manifest.executions.map((execution) => [execution.id, crypto.randomUUID()]));
   const fileIds = new Map(manifest.files.map((file) => [file.id, crypto.randomUUID()]));
   const scriptIds = new Map(manifest.scripts.map((script) => [script.id, crypto.randomUUID()]));
+  const workflowIds = new Map(manifest.workflows.map((workflow) => [workflow.id, crypto.randomUUID()]));
   const now = new Date().toISOString();
   const chats = manifest.chats.map((chat) => ({
     ...chat,
@@ -217,17 +292,48 @@ export async function importProject(data: ArrayBuffer): Promise<ProjectWorkspace
     })),
     updatedAt: now
   }));
+  const workflows = manifest.workflows.map((workflow) => ({
+    ...workflow,
+    id: workflowIds.get(workflow.id)!,
+    projectId,
+    steps: workflow.steps.map((step) => ({
+      ...step,
+      id: crypto.randomUUID(),
+      scriptId: scriptIds.get(step.scriptId) || step.scriptId
+    })),
+    updatedAt: now
+  }));
+  const artifacts = manifest.artifacts.map((artifact) => ({
+    ...artifact,
+    id: crypto.randomUUID(),
+    projectId,
+    chatId: chatIds.get(artifact.chatId) || chats[0]?.id,
+    executionId: artifact.executionId ? executionIds.get(artifact.executionId) : undefined,
+    fileId: artifact.fileId ? fileIds.get(artifact.fileId) : undefined
+  })).filter((artifact) => Boolean(artifact.chatId)) as ArtifactRecord[];
   const activeChatId = chatIds.get(manifest.project.activeChatId) || chats[0]?.id;
   if (!activeChatId) throw new Error("Project archive contains no chats");
   const project: ProjectRecord = {
     ...manifest.project,
     id: projectId,
-    contextKey: `${manifest.project.contextKey}:import:${projectId}`,
+    contextKey: currentContext
+      ? `${currentContext.user_id}:${currentContext.group_id}:${currentContext.object_type}:${currentContext.object_id}:import:${projectId}`
+      : `${manifest.project.contextKey}:import:${projectId}`,
     rootPath: `${manifest.project.rootPath}--imported`,
     name: `${manifest.project.name} (imported)`,
+    objectType: currentContext?.object_type || manifest.project.objectType,
+    objectId: currentContext?.object_id || manifest.project.objectId,
+    userId: currentContext?.user_id ?? manifest.project.userId,
+    groupId: currentContext?.group_id ?? manifest.project.groupId,
+    origin: {
+      contextKey: manifest.project.contextKey,
+      userId: manifest.project.userId,
+      groupId: manifest.project.groupId,
+      snapshotAnnotationId: manifest.project.sourceSnapshotAnnotationId
+    },
     activeChatId,
     createdAt: now,
     updatedAt: now
   };
-  return { project, chats, files, executions, scripts };
+  return { project, chats, files, executions, scripts, workflows, artifacts, audits: [] };
 }

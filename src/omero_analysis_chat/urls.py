@@ -26,6 +26,11 @@ urlpatterns = [
         name="omero_analysis_chat_attachments",
     ),
     re_path(
+        r"^api/hierarchy/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
+        views.hierarchy,
+        name="omero_analysis_chat_hierarchy",
+    ),
+    re_path(
         r"^api/attachment/(?P<annotation_id>\d+)/download/$",
         views.download_attachment,
         name="omero_analysis_chat_download",
@@ -44,5 +49,15 @@ urlpatterns = [
         r"^api/project-snapshot/(?P<annotation_id>\d+)/download/$",
         views.download_project_snapshot,
         name="omero_analysis_chat_project_snapshot_download",
+    ),
+    re_path(
+        r"^api/workflows/(?P<object_type>\w+)/(?P<object_id>\d+)/templates/$",
+        views.workflow_templates,
+        name="omero_analysis_chat_workflow_templates",
+    ),
+    re_path(
+        r"^api/workflow-template/(?P<annotation_id>\d+)/download/$",
+        views.download_workflow_template,
+        name="omero_analysis_chat_workflow_download",
     ),
 ]

@@ -9,7 +9,7 @@ export interface Attachment {
   mimetype: string;
   size: number;
   namespace?: string | null;
-  kind: "attachment" | "result" | "project";
+  kind: "attachment" | "result" | "project" | "workflow";
   supported: boolean;
 }
 
@@ -30,12 +30,28 @@ export interface Bootstrap {
   tokenUrl: string;
   contextTemplate: string;
   attachmentsTemplate: string;
+  hierarchyTemplate: string;
   downloadTemplate: string;
   uploadTemplate: string;
   snapshotsTemplate: string;
   snapshotUploadTemplate: string;
   snapshotDownloadTemplate: string;
+  workflowTemplatesTemplate: string;
+  workflowDownloadTemplate: string;
   runtimeBase: string;
+}
+
+export interface HierarchyItem {
+  type: string;
+  id: number;
+  name: string;
+  supported: boolean;
+}
+
+export interface OmeroHierarchy {
+  current: HierarchyItem;
+  parents: HierarchyItem[];
+  children: HierarchyItem[];
 }
 
 export interface ProjectRecord {
@@ -50,6 +66,14 @@ export interface ProjectRecord {
   activeChatId: string;
   plotCsv: boolean;
   sourceSnapshotAnnotationId?: number;
+  origin?: {
+    contextKey: string;
+    userId: number;
+    groupId: number;
+    snapshotAnnotationId?: number;
+  };
+  revision?: number;
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +84,8 @@ export interface ChatRecord {
   title: string;
   summary: string;
   archived: boolean;
+  pinnedMessageIds?: string[];
+  deletedAt?: string;
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
@@ -81,6 +107,7 @@ export interface WorkspaceFile {
   error?: string;
   annotationId?: number;
   fileId?: number;
+  deletedAt?: string;
   createdAt: string;
 }
 
@@ -90,6 +117,7 @@ export interface ChatMessage {
   content: string;
   kind?: "text" | "error" | "execution";
   executionId?: string;
+  citationIds?: string[];
   createdAt: string;
 }
 
@@ -111,6 +139,8 @@ export interface ExecutionRecord {
   inputHashes: string[];
   runtimeVersion: string;
   model: string;
+  modelPayload?: ModelPayload;
+  deletedOutputFileIds?: string[];
   createdAt: string;
 }
 
@@ -122,6 +152,26 @@ export interface ScriptVersion {
   createdAt: string;
 }
 
+export interface InputContract {
+  formats: string[];
+  requiredFiles: Array<{
+    path: string;
+    extension: string;
+    requiredTables?: string[];
+    requiredColumns?: string[];
+  }>;
+  runtimeVersion: string;
+}
+
+export interface ParameterDefinition {
+  name: string;
+  label: string;
+  type: "string" | "number" | "boolean" | "choice";
+  defaultValue: string | number | boolean;
+  choices?: string[];
+  required: boolean;
+}
+
 export interface ScriptRecord {
   id: string;
   projectId: string;
@@ -129,20 +179,86 @@ export interface ScriptRecord {
   description: string;
   versions: ScriptVersion[];
   currentVersion: number;
+  inputContract?: InputContract;
+  parameters?: ParameterDefinition[];
+  projectBindings?: Record<string, Record<string, string>>;
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  scriptId: string;
+  scriptVersion: number;
+  name: string;
+  inputBindings: Record<string, string>;
+  parameters: Record<string, string | number | boolean>;
+}
+
+export interface WorkflowRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  version: number;
+  steps: WorkflowStep[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+
+export interface ArtifactRecord {
+  id: string;
+  projectId: string;
+  chatId: string;
+  executionId?: string;
+  fileId?: string;
+  kind: "plot" | "table" | "file" | "report";
+  title: string;
+  pinned: boolean;
+  createdAt: string;
+}
+
+export interface ModelPayload {
+  stdoutSummary?: string;
+  stderr?: string;
+  preview?: unknown;
+  generatedFiles: Array<{ name: string; size: number; type: string }>;
+  truncated: boolean;
+}
+
+export interface OutboundPayloadAudit {
+  id: string;
+  projectId: string;
+  chatId: string;
+  executionId?: string;
+  categories: string[];
+  byteLength: number;
+  payload: string;
+  createdAt: string;
+}
+
+export interface DataProfile {
+  path: string;
+  format: string;
+  size: number;
+  summary: Record<string, unknown>;
+  error?: string;
 }
 
 export interface ProviderSettings {
   apiKey: string;
   model: string;
   contextWindow: number;
+  rememberKey: boolean;
 }
 
 export interface RuntimeOutput {
   stdout: string;
   stderr: string;
   preview: unknown;
+  modelPayload: ModelPayload;
   files: Array<{ name: string; type: string; data: ArrayBuffer }>;
 }
 
@@ -165,6 +281,9 @@ export interface ProjectWorkspace {
   files: WorkspaceFile[];
   executions: ExecutionRecord[];
   scripts: ScriptRecord[];
+  workflows: WorkflowRecord[];
+  artifacts: ArtifactRecord[];
+  audits: OutboundPayloadAudit[];
 }
 
 declare global {

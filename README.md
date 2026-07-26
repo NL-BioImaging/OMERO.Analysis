@@ -6,22 +6,31 @@ JupyterLab interface: the assistant writes visible Python, executes it in an
 isolated Pyodide sandbox, and returns bounded tables, plots, and downloadable
 results in the chat.
 
-Version 0.2 adds object-scoped browser projects with multiple named chats,
+Version 0.2 introduced object-scoped browser projects with multiple named chats,
 shared immutable inputs, chat-specific outputs, versioned reusable Python
 scripts, exact-run reuse, and portable `.oac.zip` snapshots. Every project is
 autosaved in normalized IndexedDB storage so updating a chat does not rewrite
 large file blobs.
 
-Version 0.2.1 adds a compact Jupyter-style project explorer with folders,
+Version 0.2.1 added a compact Jupyter-style project explorer with folders,
 double-click actions, item menus, and right-click menus. Current chats can be
 renamed explicitly, and Python records repeat their collapse, rerun, and
 save-as-script controls above and below the code.
 
-Version 0.2.2 moves local project switching into the explorer’s OMERO parent
+Version 0.2.2 moved local project switching into the explorer’s OMERO parent
 folder, adds direct snapshot resume from the OMERO middle pane, and supports
 combining, copying, and deleting scripts. Copied scripts rebind missing input
 filenames to a single compatible input in their destination project and stop
 for user guidance when the binding would be ambiguous.
+
+Version 0.5 hardens the local-first boundary and turns reusable scripts into
+portable workflows. It adds capability renewal, revisioned serialized storage,
+v2 snapshot validation and identity rebinding, a post-boot Python network lock,
+separate local/model result envelopes with outbound-payload audits, incremental
+input synchronization, lazy package loading, local data profiles, a resizable
+artifact inspector, accessible dialogs, streaming chat, OMERO hierarchy
+navigation, workflow templates, compatibility preflight, batch execution,
+reproducibility reports, project trash, and an explicit BIOMERO handoff.
 
 ## Privacy and security model
 
@@ -31,16 +40,21 @@ for user guidance when the binding would be ambiguous.
   to the configured AmsterdamUMC Azure endpoint. Complete source files are
   never included in AI requests.
 - Python runs in an opaque-origin sandbox without OMERO cookies, context
-  tokens, or the Azure key. Its CSP permits access only to public, self-hosted
-  Pyodide runtime files.
+  tokens, or the Azure key. Runtime assets are loaded from the self-hosted
+  package set, after which browser networking APIs are disabled before user or
+  model-generated Python can run.
+- Python stdout and generated-file contents remain local. Azure receives a
+  typed, size-bounded execution envelope; every envelope is inspectable under
+  **Data sent to AI**.
 - OMERO FileAnnotations require a logged-in session and short-lived context
   bound to the user, session, group, object, and allowed operation.
 - Result attachment is never autonomous: the user must confirm it explicitly.
 - OMERO-attached inputs are referenced by FileAnnotation ID in project
   snapshots and are never duplicated into the ZIP. Eligible browser uploads,
   generated outputs, chats, and scripts are embedded.
-- The API key is persisted unencrypted in the browser profile by product
-  choice. The UI warns users and provides a **Forget API key** action.
+- The API key is session-only by default. Users may explicitly choose
+  **Remember this key**; the UI warns that remembered keys are stored
+  unencrypted and provides a **Forget API key** action.
 
 ## Supported data
 
@@ -115,10 +129,13 @@ GET  /panel/<type>/<id>/
 POST /api/context-token/
 GET  /api/context/<type>/<id>/
 GET  /api/attachments/<type>/<id>/
+GET  /api/hierarchy/<type>/<id>/
 GET  /api/attachment/<annotation-id>/download/
 POST /api/attachments/<type>/<id>/upload/
 GET|POST /api/projects/<type>/<id>/snapshots/
 GET  /api/project-snapshot/<annotation-id>/download/
+GET|POST /api/workflows/<type>/<id>/templates/
+GET  /api/workflow-template/<annotation-id>/download/
 ```
 
 ## License

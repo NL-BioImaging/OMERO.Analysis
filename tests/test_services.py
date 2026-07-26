@@ -13,17 +13,21 @@ from omero_analysis_chat.errors import (
 from omero_analysis_chat.services import (
     PROJECT_NAMESPACE,
     RESULT_NAMESPACE,
+    WORKFLOW_NAMESPACE,
     canonical_object_type,
     checked_download,
     direct_file_annotations,
     get_direct_attachment,
     list_attachment_dicts,
     object_context,
+    object_hierarchy,
     safe_filename,
     upload_project_snapshot_annotation,
     upload_result_annotation,
+    upload_workflow_annotation,
     validate_project_snapshot,
     validate_result,
+    validate_workflow_template,
 )
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
@@ -148,3 +152,50 @@ def test_object_context_lists_project_snapshots_separately():
     context = object_context("Image", 1, FakeObject(annotations=[snapshot]))
     assert context["project_snapshots"][0]["annotation_id"] == 21
     assert context["supported_attachments"] == []
+
+
+def test_workflow_templates_are_validated_and_listed_separately():
+    data = b'{"format":"nl.bioimaging.analysis-chat.workflow.v1","workflow":{},"scripts":[]}'
+    uploaded = SimpleUploadedFile(
+        "counts.oac-workflow.json", data, content_type="application/json"
+    )
+    assert validate_workflow_template(uploaded) == (
+        "counts.oac-workflow.json",
+        "application/json",
+    )
+    obj = FakeObject()
+    conn = FakeConnection(obj)
+    result = upload_workflow_annotation(conn, obj, uploaded)
+    assert result["namespace"] == WORKFLOW_NAMESPACE
+    assert result["kind"] == "workflow"
+    context = object_context("Dataset", 1, FakeObject(annotations=[conn.created]))
+    assert context["workflow_templates"][0]["kind"] == "workflow"
+    assert context["supported_attachments"] == []
+    with pytest.raises(UnsupportedMedia):
+        validate_workflow_template(
+            SimpleUploadedFile(
+                "bad.oac-workflow.json",
+                b'{"format":"other"}',
+                content_type="application/json",
+            )
+        )
+
+
+def test_hierarchy_uses_wrapper_relations_without_webclient_api():
+    parent = FakeObject(object_id=2, name="Parent")
+    parent.OMERO_CLASS = "Dataset"
+    parent.getId = lambda: 2
+    child = FakeObject(object_id=3, name="Child")
+    child.OMERO_CLASS = "Image"
+    child.getId = lambda: 3
+    obj = FakeObject()
+    obj.listParents = lambda: [parent]
+    obj.listChildren = lambda: [child]
+    hierarchy = object_hierarchy("Dataset", 1, obj)
+    assert hierarchy["parents"][0]["name"] == "Parent"
+    assert hierarchy["children"][0] == {
+        "type": "Image",
+        "id": 3,
+        "name": "Child",
+        "supported": True,
+    }

@@ -11,13 +11,9 @@ const PACKAGES = [
   "numpy",
   "pandas",
   "matplotlib",
-  "scipy",
-  "duckdb",
-  "pyarrow",
-  "python-calamine",
-  "xlrd"
+  "duckdb"
 ];
-export const RUNTIME_VERSION = "pyodide-314.0.3-oac-0.2";
+export const RUNTIME_VERSION = "pyodide-314.0.3-oac-0.5";
 
 function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
@@ -25,12 +21,16 @@ function runtimeWorker(runtimeBase: string): string {
   return `
 const runtimeBase = ${base};
 const send = (id, type, value, transfer = []) => postMessage({source:"oac-runtime", id, type, value}, transfer);
+const runtimeFetch = globalThis.fetch.bind(globalThis);
+const denyNetwork = () => Promise.reject(new Error("Network access is disabled in Analysis Chat Python"));
+const loadedPackages = new Set(${packages});
 const progress = (percent, message) => postMessage({
   source: "oac-runtime",
   type: "progress",
   value: {percent, message}
 });
 let pyodide;
+const inputSecrets = new Set();
 const mime = (name) => name.endsWith(".png") ? "image/png" : name.endsWith(".svg") ? "image/svg+xml" :
   name.endsWith(".csv") ? "text/csv" : name.endsWith(".json") ? "application/json" :
   name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
@@ -51,6 +51,29 @@ async function boot() {
   progress(90, "Preparing the browser workspace…");
   pyodide.FS.mkdirTree("/input");
   pyodide.FS.mkdirTree("/output");
+  // Package assets are loaded. Generated Python must not use the browser as a
+  // network client, even to the public plugin origin.
+  globalThis.fetch = denyNetwork;
+  globalThis.XMLHttpRequest = class { constructor() { throw new Error("Network access is disabled"); } };
+  globalThis.WebSocket = class { constructor() { throw new Error("Network access is disabled"); } };
+  globalThis.EventSource = class { constructor() { throw new Error("Network access is disabled"); } };
+}
+async function ensurePackages(code) {
+  const required = [];
+  if (/\\b(import|from)\\s+scipy\\b/.test(code)) required.push("scipy");
+  if (/\\b(import|from)\\s+pyarrow\\b|read_parquet|to_parquet/.test(code)) required.push("pyarrow");
+  if (/read_excel|engine\\s*=\\s*["']calamine|python_calamine/.test(code)) required.push("python-calamine");
+  if (/read_excel|\\.xls\\b/.test(code)) required.push("xlrd");
+  const missing = required.filter((name) => !loadedPackages.has(name));
+  if (!missing.length) return;
+  progress(55, "Loading required package" + (missing.length === 1 ? "" : "s") + ": " + missing.join(", "));
+  globalThis.fetch = runtimeFetch;
+  try {
+    await pyodide.loadPackage(missing);
+    missing.forEach((name) => loadedPackages.add(name));
+  } finally {
+    globalThis.fetch = denyNetwork;
+  }
 }
 const ready = boot();
 function removeTree(dir) {
@@ -115,6 +138,45 @@ function outputFiles(before) {
   walk("/output");
   return values;
 }
+function modelPayload(preview, stderr, files) {
+  const clean = (value, depth = 0) => {
+    if (depth > 5 || value == null || typeof value === "boolean" || typeof value === "number") return value;
+    if (typeof value === "string") return value.length > 256 ? value.slice(0, 256) + "…" : value;
+    if (Array.isArray(value)) return value.slice(0, 100).map((item) => clean(item, depth + 1));
+    if (typeof value === "object") {
+      const result = {};
+      for (const [key, child] of Object.entries(value).slice(0, 100)) {
+        result[String(key).slice(0, 128)] = clean(child, depth + 1);
+      }
+      return result;
+    }
+    return String(value).slice(0, 256);
+  };
+  let safePreview = clean(preview);
+  let serialized = JSON.stringify(safePreview);
+  for (const secret of inputSecrets) {
+    if (secret.length >= 16 && serialized.includes(secret)) {
+      safePreview = {kind: "withheld", reason: "Result matched complete source-file content"};
+      serialized = JSON.stringify(safePreview);
+      break;
+    }
+  }
+  let truncated = false;
+  if (serialized.length > 48 * 1024) {
+    safePreview = {kind: "truncated", preview: serialized.slice(0, 48 * 1024)};
+    truncated = true;
+  }
+  return {
+    stderr: String(stderr || "").slice(0, 8192),
+    preview: safePreview,
+    generatedFiles: files.map((file) => ({
+      name: file.name,
+      size: file.data.byteLength,
+      type: file.type
+    })),
+    truncated
+  };
+}
 const previewCode = \`
 import json as _oac_json, math as _oac_math
 def _oac_clean(value):
@@ -152,11 +214,78 @@ for _oac_name in list(globals()):
         globals().pop(_oac_name, None)
 \`);
       send(message.id, "begin", true);
+    } else if (message.type === "clear_inputs") {
+      removeTree("/input");
+      inputSecrets.clear();
+      send(message.id, "clear_inputs", true);
     } else if (message.type === "file") {
       const safe = String(message.value.name).replace(/[^A-Za-z0-9._ -]/g, "_");
-      pyodide.FS.writeFile("/input/" + safe, new Uint8Array(message.value.data));
+      const bytes = new Uint8Array(message.value.data);
+      pyodide.FS.writeFile("/input/" + safe, bytes);
+      if (bytes.length <= 1024 * 1024) {
+        try {
+          const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes).trim();
+          if (text.length >= 16) inputSecrets.add(text);
+        } catch {}
+        if (bytes.length <= 64 * 1024) {
+          let binary = "";
+          for (const byte of bytes) binary += String.fromCharCode(byte);
+          inputSecrets.add(btoa(binary));
+        }
+      }
       send(message.id, "file", safe);
+    } else if (message.type === "profile") {
+      const profileNames = pyodide.FS.readdir("/input").join(" ");
+      await ensurePackages(
+        profileNames +
+        (/\\.parquet\\b/i.test(profileNames) ? " read_parquet" : "") +
+        (/\\.xlsx?\\b/i.test(profileNames) ? " read_excel calamine" : "")
+      );
+      const raw = await pyodide.runPythonAsync(\`
+import json as _json
+from pathlib import Path as _Path
+_profiles = []
+for _path in sorted(_Path("/input").iterdir()):
+    _entry = {"path": str(_path), "format": _path.suffix.lower().lstrip("."), "size": _path.stat().st_size, "summary": {}}
+    try:
+        _suffix = _path.suffix.lower()
+        if _suffix in {".duckdb", ".sqlite", ".sqlite3"}:
+            if _suffix == ".duckdb":
+                import duckdb as _db
+                _con = _db.connect(str(_path), read_only=True)
+                _tables = [r[0] for r in _con.execute("SHOW TABLES").fetchall()]
+                _entry["summary"] = {"tables": [{"name": t, "columns": [{"name": r[0], "type": r[1]} for r in _con.execute(f'DESCRIBE SELECT * FROM "{t.replace(chr(34), chr(34)*2)}"').fetchall()]} for t in _tables[:100]]}
+                _con.close()
+            else:
+                import sqlite3 as _sqlite
+                _con = _sqlite.connect(f"file:{_path}?mode=ro", uri=True)
+                _tables = [r[0] for r in _con.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name").fetchall()]
+                _entry["summary"] = {"tables": [{"name": t, "columns": [{"name": r[1], "type": r[2]} for r in _con.execute(f'PRAGMA table_info("{t.replace(chr(34), chr(34)*2)}")'.replace("''", "'")).fetchall()]} for t in _tables[:100]]}
+                _con.close()
+        elif _suffix in {".csv", ".tsv", ".parquet", ".xls", ".xlsx", ".json"}:
+            import pandas as _pd
+            if _suffix == ".parquet": _frame = _pd.read_parquet(_path)
+            elif _suffix in {".xls", ".xlsx"}: _frame = _pd.read_excel(_path, engine="calamine")
+            elif _suffix == ".json": _frame = _pd.read_json(_path)
+            else: _frame = _pd.read_csv(_path, sep="\\t" if _suffix == ".tsv" else ",")
+            _entry["summary"] = {
+                "rows": int(len(_frame)),
+                "columns": [{"name": str(c), "type": str(_frame[c].dtype), "nulls": int(_frame[c].isna().sum()), "distinct": int(_frame[c].nunique(dropna=True))} for c in list(_frame.columns)[:100]]
+            }
+        elif _suffix in {".npy", ".npz"}:
+            import numpy as _np
+            _value = _np.load(_path, allow_pickle=False)
+            if hasattr(_value, "files"):
+                _entry["summary"] = {"arrays": [{"name": n, "shape": list(_value[n].shape), "dtype": str(_value[n].dtype)} for n in _value.files[:100]]}
+            else: _entry["summary"] = {"shape": list(_value.shape), "dtype": str(_value.dtype)}
+    except Exception as _error:
+        _entry["error"] = str(_error)[:1000]
+    _profiles.append(_entry)
+_json.dumps(_profiles, ensure_ascii=False)
+\`);
+      send(message.id, "profile", JSON.parse(raw));
     } else if (message.type === "run") {
+      await ensurePackages(String(message.value.code || ""));
       const before = outputState();
       let stdout = "", stderr = "";
       pyodide.setStdout({batched: (text) => { stdout += text + "\\n"; }});
@@ -164,8 +293,9 @@ for _oac_name in list(globals()):
       await pyodide.runPythonAsync(message.value.code);
       const raw = await pyodide.runPythonAsync(previewCode);
       const files = outputFiles(before);
+      const safePayload = modelPayload(JSON.parse(raw), stderr, files);
       const transfers = files.map((file) => file.data);
-      send(message.id, "result", {stdout, stderr, preview: JSON.parse(raw), files}, transfers);
+      send(message.id, "result", {stdout, stderr, preview: JSON.parse(raw), modelPayload: safePayload, files}, transfers);
     }
   } catch (error) {
     send(message.id, "error", String(error && error.stack || error));
@@ -256,6 +386,32 @@ export class PythonRuntime {
     if (!this.readyPromise) await this.start(this.inputs);
     await this.readyPromise;
     return this.request("run", { code }, 120_000);
+  }
+
+  async syncInputs(inputs: WorkspaceFile[]): Promise<void> {
+    this.inputs = inputs.filter((file) => file.state === "ready" && file.data);
+    if (!this.readyPromise) {
+      await this.start(this.inputs, this.onProgress || undefined);
+      return;
+    }
+    await this.readyPromise;
+    await this.request("clear_inputs", true, 30_000);
+    for (let index = 0; index < this.inputs.length; index += 1) {
+      const file = this.inputs[index];
+      this.report({
+        percent: 92 + Math.round(index / Math.max(1, this.inputs.length) * 7),
+        message: `Synchronizing ${index + 1} of ${this.inputs.length} input files…`
+      });
+      const data = file.data!.slice(0);
+      await this.request("file", { name: file.name, data }, 30_000, [data]);
+    }
+    this.report({ percent: 100, message: "Browser Python is ready" });
+  }
+
+  async profileInputs(): Promise<import("./types").DataProfile[]> {
+    if (!this.readyPromise) await this.start(this.inputs);
+    await this.readyPromise;
+    return this.request("profile", true, 120_000);
   }
 
   async beginTurn(): Promise<void> {

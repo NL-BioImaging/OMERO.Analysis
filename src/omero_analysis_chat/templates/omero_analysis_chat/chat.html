@@ -9,22 +9,22 @@
   <link rel="stylesheet" href="{% static 'omero_analysis_chat/app.css' %}">
 </head>
 <body>
-  <div id="root"><div class="boot-message">Starting OMERO Analysis Chat…</div></div>
+  <div id="root"
+       data-token-url="{% url 'omero_analysis_chat_token' %}"
+       data-context-template="{% url 'omero_analysis_chat_context' object_type='TYPE' object_id=1 %}"
+       data-attachments-template="{% url 'omero_analysis_chat_attachments' object_type='TYPE' object_id=1 %}"
+       data-hierarchy-template="{% url 'omero_analysis_chat_hierarchy' object_type='TYPE' object_id=1 %}"
+       data-download-template="{% url 'omero_analysis_chat_download' annotation_id=1 %}"
+       data-upload-template="{% url 'omero_analysis_chat_upload' object_type='TYPE' object_id=1 %}"
+       data-snapshots-template="{% url 'omero_analysis_chat_project_snapshots' object_type='TYPE' object_id=1 %}"
+       data-snapshot-upload-template="{% url 'omero_analysis_chat_project_snapshots' object_type='TYPE' object_id=1 %}"
+       data-snapshot-download-template="{% url 'omero_analysis_chat_project_snapshot_download' annotation_id=1 %}"
+       data-workflow-templates-template="{% url 'omero_analysis_chat_workflow_templates' object_type='TYPE' object_id=1 %}"
+       data-workflow-download-template="{% url 'omero_analysis_chat_workflow_download' annotation_id=1 %}"
+       data-runtime-base="{% url 'omero_analysis_chat_runtime_asset' asset_path='ASSET' %}">
+    <div class="boot-message">Starting OMERO Analysis Chat…</div>
+  </div>
   {{ context|json_script:"omero-analysis-chat-context" }}
-  <script>
-    window.OMERO_ANALYSIS_CHAT = {
-      context: JSON.parse(document.getElementById("omero-analysis-chat-context").textContent),
-      tokenUrl: "{% url 'omero_analysis_chat_token' %}",
-      contextTemplate: "{% url 'omero_analysis_chat_context' object_type='TYPE' object_id=1 %}",
-      attachmentsTemplate: "{% url 'omero_analysis_chat_attachments' object_type='TYPE' object_id=1 %}",
-      downloadTemplate: "{% url 'omero_analysis_chat_download' annotation_id=1 %}",
-      uploadTemplate: "{% url 'omero_analysis_chat_upload' object_type='TYPE' object_id=1 %}",
-      snapshotsTemplate: "{% url 'omero_analysis_chat_project_snapshots' object_type='TYPE' object_id=1 %}",
-      snapshotUploadTemplate: "{% url 'omero_analysis_chat_project_snapshots' object_type='TYPE' object_id=1 %}",
-      snapshotDownloadTemplate: "{% url 'omero_analysis_chat_project_snapshot_download' annotation_id=1 %}",
-      runtimeBase: "{% url 'omero_analysis_chat_runtime_asset' asset_path='ASSET' %}".replace(/ASSET$/, "")
-    };
-  </script>
   <script type="module" src="{% static 'omero_analysis_chat/app.js' %}"></script>
 </body>
 </html>

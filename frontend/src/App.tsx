@@ -4,7 +4,8 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode
+  type ReactNode,
+  type CSSProperties
 } from "react";
 import {
   completeChat,
@@ -25,8 +26,8 @@ import {
 import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
 import {
   defaultSettings,
+  deleteProjectCascade,
   deleteFile as deleteStoredFile,
-  deleteScript as deleteStoredScript,
   getValue,
   listContextProjects,
   listUserProjects,
@@ -38,6 +39,9 @@ import {
   saveFile,
   saveProject,
   saveScript,
+  saveWorkflow,
+  saveAudit,
+  saveArtifact,
   saveWorkspace,
   settingsKey,
   setValue,
@@ -46,6 +50,7 @@ import {
 } from "./storage";
 import type {
   Attachment,
+  DataProfile,
   ChatMessage,
   ChatRecord,
   ExecutionRecord,
@@ -55,9 +60,17 @@ import type {
   RuntimeOutput,
   RuntimeProgress,
   ScriptRecord,
+  WorkflowRecord,
+  OutboundPayloadAudit,
+  ArtifactRecord,
+  InputContract,
+  OmeroHierarchy,
   TokenUsage,
   WorkspaceFile
 } from "./types";
+import { useDialogs } from "./components/Dialogs";
+import { ExecutionCard } from "./components/ExecutionCard";
+import { ArtifactInspector, ComposerPanel } from "./components/WorkspacePanels";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -86,9 +99,23 @@ function titleFromPrompt(value: string): string {
   return concise ? concise.charAt(0).toUpperCase() + concise.slice(1) : "New analysis";
 }
 
+function inputContractFromCode(code: string): InputContract {
+  const paths = Array.from(code.matchAll(/["']\/input\/([^"']+)["']/g), (match) => match[1]);
+  const unique = Array.from(new Set(paths));
+  return {
+    formats: Array.from(new Set(unique.map((path) => path.split(".").at(-1)?.toLowerCase() || "")))
+      .filter(Boolean),
+    requiredFiles: unique.map((path) => ({
+      path,
+      extension: path.match(/(\.[^.]+)$/)?.[1]?.toLowerCase() || ""
+    })),
+    runtimeVersion: RUNTIME_VERSION
+  };
+}
+
 function listFiles(files: WorkspaceFile[]): string {
   return JSON.stringify(
-    files.map((file) => ({
+    files.filter((file) => !file.deletedAt).map((file) => ({
       path: file.source === "result" ? `/output/${file.name}` : `/input/${file.name}`,
       logical_path: file.logicalPath,
       sha256: file.sha256,
@@ -128,16 +155,6 @@ function estimateTokens(value: unknown): number {
   return Math.max(1, Math.ceil(JSON.stringify(value).length / 4));
 }
 
-function usageSummary(usage: TokenUsage | null, contextWindow: number): string {
-  if (!usage) return "Context usage appears after the first AI response.";
-  const requestTokens = usage.promptTokens + usage.completionTokens;
-  const source = usage.estimated ? "estimated" : "API reported";
-  const limit = contextWindow > 0
-    ? ` · ${Math.min(100, Math.round(requestTokens / contextWindow * 100))}% of ${contextWindow.toLocaleString()}`
-    : " · model limit not configured";
-  return `Latest request: ${usage.promptTokens.toLocaleString()} input + ${usage.completionTokens.toLocaleString()} output tokens (${source})${limit} · session: ${usage.sessionTokens.toLocaleString()}`;
-}
-
 function compactSummary(messages: ChatMessage[]): string {
   return messages
     .filter((message) => message.kind !== "execution")
@@ -155,7 +172,8 @@ function bytesLabel(value: number): string {
 }
 
 function projectBytes(workspace: ProjectWorkspace | null): number {
-  return workspace?.files.reduce((sum, file) => sum + file.size, 0) || 0;
+  return workspace?.files.filter((file) => !file.deletedAt)
+    .reduce((sum, file) => sum + file.size, 0) || 0;
 }
 
 interface BrowserMenuAction {
@@ -175,15 +193,26 @@ export default function App() {
   const bootstrap = window.OMERO_ANALYSIS_CHAT;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
   const runtime = useMemo(() => new PythonRuntime(bootstrap.runtimeBase), [bootstrap]);
+  const dialogs = useDialogs();
   const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
   const workspaceRef = useRef<ProjectWorkspace | null>(null);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
   const [snapshots, setSnapshots] = useState<Attachment[]>([]);
+  const [hierarchy, setHierarchy] = useState<OmeroHierarchy | null>(null);
+  const [workflowTemplates, setWorkflowTemplates] = useState<Attachment[]>([]);
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [analysisPhase, setAnalysisPhase] = useState<"ready" | "planning" | "running" | "checking" | "repairing">("ready");
   const [runtimeReady, setRuntimeReady] = useState(false);
+  const runtimeStarted = useRef(false);
+  const [profiles, setProfiles] = useState<DataProfile[]>([]);
+  const [selectedArtifactFileId, setSelectedArtifactFileId] = useState<string | null>(null);
+  const [explorerWidth, setExplorerWidth] = useState(320);
+  const [artifactOpen, setArtifactOpen] = useState(true);
+  const [explorerQuery, setExplorerQuery] = useState("");
   const [status, setStatus] = useState("Preparing project…");
   const [showSettings, setShowSettings] = useState(false);
   const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
@@ -195,6 +224,8 @@ export default function App() {
     inputs: true,
     outputs: true,
     scripts: true,
+    workflows: true,
+    trash: false,
     snapshots: false
   });
   const [usage, setUsage] = useState<TokenUsage | null>(null);
@@ -213,11 +244,24 @@ export default function App() {
   const project = workspace?.project || null;
   const chats = workspace?.chats || [];
   const activeChat = chats.find((chat) => chat.id === project?.activeChatId) || chats[0] || null;
-  const inputFiles = (workspace?.files || []).filter((file) => file.source !== "result");
+  const inputFiles = (workspace?.files || []).filter(
+    (file) => file.source !== "result" && !file.deletedAt
+  );
   const outputFiles = (workspace?.files || []).filter(
-    (file) => file.source === "result" && file.chatId === activeChat?.id
+    (file) => file.source === "result" && file.chatId === activeChat?.id && !file.deletedAt
   );
   const blockedFiles = inputFiles.filter((file) => file.state !== "ready");
+  const selectedArtifactFile = workspace?.files.find(
+    (file) => file.id === selectedArtifactFileId && !file.deletedAt
+  ) || outputFiles.at(-1) || null;
+  const matchesExplorer = (value: string) =>
+    !explorerQuery.trim() || value.toLowerCase().includes(explorerQuery.trim().toLowerCase());
+  const visibleInputs = inputFiles.filter((file) => matchesExplorer(file.name));
+  const visibleOutputs = outputFiles.filter((file) => matchesExplorer(file.name));
+  const trashedFiles = (workspace?.files || []).filter((file) => Boolean(file.deletedAt));
+  const activeScripts = (workspace?.scripts || []).filter((script) => !script.deletedAt);
+  const trashedScripts = (workspace?.scripts || []).filter((script) => Boolean(script.deletedAt));
+  const trashedWorkflows = (workspace?.workflows || []).filter((workflow) => Boolean(workflow.deletedAt));
   const canChat =
     Boolean(activeChat) &&
     runtimeReady &&
@@ -273,6 +317,7 @@ export default function App() {
       if (!alive) return;
       if (savedSettings) setSettings({ ...defaultSettings, ...savedSettings });
       await bridge.connect();
+      setHierarchy(await bridge.hierarchy());
       let initial = baseProject;
       const requestedSnapshot = bootstrap.context?.selected_project_snapshot;
       if (requestedSnapshot) {
@@ -285,7 +330,8 @@ export default function App() {
           initial = await loadWorkspace(existing.id) || baseProject;
         } else {
           const imported = await importProject(
-            await bridge.downloadSnapshot(requestedSnapshot)
+            await bridge.downloadSnapshot(requestedSnapshot),
+            bootstrap.context
           );
           if (
             bootstrap.context &&
@@ -310,7 +356,9 @@ export default function App() {
       setProjects(await listContextProjects(bootstrap.context));
       setUserProjects(await listUserProjects(bootstrap.context));
       setSnapshots(await bridge.listSnapshots());
+      setWorkflowTemplates(await bridge.listWorkflowTemplates());
       await startRuntime(prepared.files);
+      setProfiles(await runtime.profileInputs());
       if (alive) {
         setRuntimeReady(true);
         setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
@@ -413,14 +461,20 @@ export default function App() {
   async function startRuntime(files: WorkspaceFile[]) {
     setRuntimeReady(false);
     setRuntimeProgress({ percent: 1, message: "Starting browser Python…" });
-    await runtime.start(
-      files.filter((file) => file.source !== "result" && file.state === "ready"),
-      reportRuntime
+    const inputs = files.filter(
+      (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
     );
+    if (runtimeStarted.current) {
+      await runtime.syncInputs(inputs);
+    } else {
+      await runtime.start(inputs, reportRuntime);
+      runtimeStarted.current = true;
+    }
   }
 
   async function restartRuntime(files: WorkspaceFile[], finalStatus: string) {
     await startRuntime(files);
+    setProfiles(await runtime.profileInputs());
     setRuntimeReady(true);
     setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
     setStatus(finalStatus);
@@ -464,6 +518,13 @@ export default function App() {
     void saveChat(updatedChat);
   }
 
+  function togglePinnedMessage(chat: ChatRecord, messageId: string) {
+    const values = new Set(chat.pinnedMessageIds || []);
+    if (values.has(messageId)) values.delete(messageId);
+    else values.add(messageId);
+    updateChat({ ...chat, pinnedMessageIds: Array.from(values), updatedAt: now() });
+  }
+
   function upsertExecution(execution: ExecutionRecord) {
     const current = workspaceRef.current;
     if (!current) return;
@@ -493,9 +554,28 @@ export default function App() {
     values.forEach((value) => void saveFile(value));
   }
 
+  function upsertAudit(audit: OutboundPayloadAudit) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const updated = { ...current, audits: [...current.audits, audit] };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    void saveAudit(audit);
+  }
+
+  function upsertArtifacts(artifacts: ArtifactRecord[]) {
+    if (!artifacts.length) return;
+    const current = workspaceRef.current;
+    if (!current) return;
+    const updated = { ...current, artifacts: [...current.artifacts, ...artifacts] };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    artifacts.forEach((artifact) => void saveArtifact(artifact));
+  }
+
   async function saveSettings(next: ProviderSettings) {
     setSettings(next);
-    await setValue(settingsKey, next);
+    await setValue(settingsKey, next.rememberKey ? next : { ...next, apiKey: "" });
   }
 
   async function addLocalFiles(list: FileList | null) {
@@ -548,14 +628,18 @@ export default function App() {
     if (!workspace) return;
     const file = workspace.files.find((item) => item.id === fileId);
     if (!file) return;
+    if (file.source === "result") {
+      const tombstone = { ...file, deletedAt: now() };
+      upsertFiles([tombstone]);
+      setStatus(`Moved ${file.name} to project trash; provenance is preserved`);
+      return;
+    }
     const nextFiles = workspace.files.filter((item) => item.id !== fileId);
     const updated = { ...workspace, files: nextFiles };
     workspaceRef.current = updated;
     setWorkspace(updated);
     await deleteStoredFile(fileId);
-    if (file.source !== "result") {
-      await restartRuntime(nextFiles, "Input removed; browser Python was reset");
-    }
+    await restartRuntime(nextFiles, "Input removed; browser Python was reset");
     setStorage(await storageEstimate());
   }
 
@@ -613,8 +697,12 @@ export default function App() {
     setUsage(null);
   }
 
-  function renameChat(chat: ChatRecord) {
-    const title = window.prompt("Chat name", chat.title)?.trim();
+  async function renameChat(chat: ChatRecord) {
+    const title = (await dialogs.askText(
+      "Rename chat",
+      chat.title,
+      "The chat folder and exported transcript use this name."
+    ))?.trim();
     if (!title) return;
     updateChat({ ...chat, title: title.slice(0, 100), updatedAt: now() });
   }
@@ -636,6 +724,20 @@ export default function App() {
     });
   }
 
+  function beginExplorerResize(event: ReactMouseEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = explorerWidth;
+    const move = (moveEvent: MouseEvent) =>
+      setExplorerWidth(Math.max(250, Math.min(520, startWidth + moveEvent.clientX - startX)));
+    const stop = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", stop);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", stop);
+  }
+
   async function refreshProject() {
     if (!project) return;
     setBrowserMenu(null);
@@ -644,12 +746,33 @@ export default function App() {
     await switchProject(project.id);
   }
 
+  async function removeLocalProject(target: ProjectRecord) {
+    if (target.id === project?.id) {
+      setStatus("Open another local project before deleting this one");
+      return;
+    }
+    if (!await dialogs.confirm(
+      "Delete browser-local project?",
+      `${target.name} and its local chats, scripts, workflows, and outputs will be permanently removed. OMERO attachments are unchanged.`,
+      "Delete local project",
+      true
+    )) return;
+    await deleteProjectCascade(target.id);
+    setProjects(await listContextProjects(bootstrap.context));
+    setUserProjects(await listUserProjects(bootstrap.context));
+    setStatus(`Deleted browser-local project ${target.name}`);
+  }
+
   async function renameWorkspaceFile(file: WorkspaceFile) {
     if (file.source === "omero") {
       setStatus("OMERO attachment names are canonical and cannot be renamed locally");
       return;
     }
-    const requested = window.prompt("File name", file.name)?.trim();
+    const requested = (await dialogs.askText(
+      "Rename file",
+      file.name,
+      "The file extension must remain unchanged."
+    ))?.trim();
     if (!requested || requested === file.name) return;
     let cleanName = requested.replace(/[\\/]/g, "_").slice(0, 180);
     if (!cleanName || cleanName === "." || cleanName === "..") return;
@@ -748,7 +871,7 @@ export default function App() {
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
     const inputHashes = current.files
-      .filter((file) => file.source !== "result" && file.state === "ready")
+      .filter((file) => file.source !== "result" && file.state === "ready" && !file.deletedAt)
       .map((file) => file.sha256)
       .sort();
     const cacheKey = await sha256(
@@ -826,12 +949,14 @@ export default function App() {
 
     let output: RuntimeOutput;
     try {
+      setAnalysisPhase("running");
       output = await runtime.run(normalizedCode);
     } catch (error) {
       const detail = String(error instanceof Error ? error.message : error).slice(0, MAX_TOOL_TEXT);
       const failed = { ...execution, status: "failed" as const, stderr: detail };
       upsertExecution(failed);
       setStatus("Python error sent to AmsterdamUMC; waiting for corrected code…");
+      setAnalysisPhase("repairing");
       return toolErrorText(error);
     }
 
@@ -856,6 +981,17 @@ export default function App() {
       turnOutputNames.current.add(file.name);
     }
     upsertFiles(generated);
+    upsertArtifacts(generated.map((file) => ({
+      id: id(),
+      projectId: current.project.id,
+      chatId,
+      executionId: execution.id,
+      fileId: file.id,
+      kind: file.type.startsWith("image/") ? "plot" : "file",
+      title: file.name,
+      pinned: false,
+      createdAt: now()
+    })));
 
     const missing = current.project.plotCsv
       ? Array.from(turnOutputNames.current)
@@ -868,10 +1004,22 @@ export default function App() {
       stdout: output.stdout,
       stderr: output.stderr,
       preview: output.preview,
+      modelPayload: output.modelPayload,
       outputFileIds: generated.map((file) => file.id),
       missingPlotCsv: missing
     };
     upsertExecution(completed);
+    const modelPayloadText = JSON.stringify(output.modelPayload);
+    upsertAudit({
+      id: id(),
+      projectId: current.project.id,
+      chatId,
+      executionId: execution.id,
+      categories: ["bounded-preview", "generated-file-metadata", ...(output.modelPayload.stderr ? ["error"] : [])],
+      byteLength: new TextEncoder().encode(modelPayloadText).byteLength,
+      payload: modelPayloadText,
+      createdAt: now()
+    });
 
     if (!missing.length) {
       const latest = workspaceRef.current;
@@ -891,6 +1039,7 @@ export default function App() {
     }
 
     setStatus("Python completed locally; continuing the analysis…");
+    setAnalysisPhase(missing.length ? "repairing" : "checking");
     if (missing.length) {
       return toolErrorText(
         `Plot data CSV required. Create ${missing.map((name) => name.replace(/\.(png|svg)$/i, ".csv")).join(", ")} containing the data used for the plot. Do not regenerate unrelated analysis.`
@@ -919,7 +1068,7 @@ export default function App() {
       }
     }
     if (call.function.name === "list_saved_scripts") {
-      return JSON.stringify(current.scripts.map((script) => ({
+      return JSON.stringify(current.scripts.filter((script) => !script.deletedAt).map((script) => ({
         id: script.id,
         name: script.name,
         description: script.description,
@@ -928,7 +1077,7 @@ export default function App() {
       })));
     }
     if (call.function.name === "read_saved_script") {
-      const script = current.scripts.find((item) => item.id === args.script_id);
+      const script = current.scripts.find((item) => item.id === args.script_id && !item.deletedAt);
       if (!script) return toolErrorText("Saved script was not found");
       const version = script.versions.find((item) => item.version === script.currentVersion);
       return version
@@ -936,7 +1085,7 @@ export default function App() {
         : toolErrorText("Saved script has no readable current version");
     }
     if (call.function.name === "run_saved_script") {
-      const script = current.scripts.find((item) => item.id === args.script_id);
+      const script = current.scripts.find((item) => item.id === args.script_id && !item.deletedAt);
       const version = script?.versions.find((item) => item.version === script.currentVersion);
       if (!version) return toolErrorText("Saved script was not found");
       try {
@@ -945,6 +1094,40 @@ export default function App() {
       } catch (error) {
         return toolErrorText(error);
       }
+    }
+    if (call.function.name === "list_saved_workflows") {
+      return JSON.stringify(current.workflows.filter((workflow) => !workflow.deletedAt).map((workflow) => ({
+        id: workflow.id,
+        name: workflow.name,
+        description: workflow.description,
+        version: workflow.version,
+        steps: workflow.steps.map((step) => step.name)
+      })));
+    }
+    if (call.function.name === "run_saved_workflow") {
+      const workflow = current.workflows.find(
+        (item) => item.id === args.workflow_id && !item.deletedAt
+      );
+      if (!workflow) return toolErrorText("Saved workflow was not found");
+      const results: string[] = [];
+      for (const step of workflow.steps) {
+        const latest = workspaceRef.current!;
+        const script = latest.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
+        const version = script?.versions.find((item) => item.version === step.scriptVersion);
+        if (!version) return toolErrorText(`Workflow step ${step.name} is unavailable`);
+        try {
+          await runtime.beginTurn();
+          const bound = bindScriptInputs(version.code, latest.files);
+          results.push(await executeCode(bound.code, chatId, promptId));
+        } catch (error) {
+          return toolErrorText(`Workflow step ${step.name} failed: ${String(error)}`);
+        }
+      }
+      return JSON.stringify({
+        workflow: workflow.name,
+        steps: workflow.steps.length,
+        results
+      }).slice(0, MAX_TOOL_TEXT);
     }
     if (call.function.name !== "run_python" || typeof args.code !== "string") {
       return toolErrorText(`Unsupported or invalid tool call: ${call.function.name}`);
@@ -959,6 +1142,7 @@ export default function App() {
     if (!text || !canChat || !current || !chat) return;
     setPrompt("");
     setBusy(true);
+    setAnalysisPhase("planning");
     abort.current = new AbortController();
     turnOutputNames.current.clear();
     await runtime.beginTurn();
@@ -987,16 +1171,23 @@ export default function App() {
     if (estimateTokens(ordinary) > threshold) {
       currentChat = { ...currentChat, summary: compactSummary(ordinary), updatedAt: now() };
       updateChat(currentChat);
+      setStatus("Older conversation context was compacted; pinned items and the latest six exchanges were retained");
     }
     const dynamicPrompt = `${SYSTEM_PROMPT}
 
 Project root: ${current.project.rootPath}
-The user has ${current.scripts.length} saved scripts. ${
+The user has ${current.scripts.filter((script) => !script.deletedAt).length} saved scripts. ${
   current.project.plotCsv
     ? "Plot CSV mode is ON: every PNG or SVG must have a same-stem CSV containing its plotted data."
     : "Plot CSV mode is OFF."
 }`;
-    const history = ordinary.slice(-12);
+    const pinnedIds = new Set(currentChat.pinnedMessageIds || []);
+    const history = [
+      ...ordinary.filter((message) => pinnedIds.has(message.id)),
+      ...ordinary.slice(-12)
+    ].filter((message, index, values) =>
+      values.findIndex((candidate) => candidate.id === message.id) === index
+    );
     const conversation: AiMessage[] = [
       { role: "system", content: dynamicPrompt },
       ...(currentChat.summary ? [{ role: "system" as const, content: `Earlier conversation summary:\n${currentChat.summary}` }] : []),
@@ -1007,7 +1198,12 @@ The user has ${current.scripts.length} saved scripts. ${
     try {
       for (let turn = 0; turn < 8; turn += 1) {
         const estimatedPrompt = estimateTokens(conversation);
-        const response = await completeChat(settings, conversation, abort.current.signal);
+        const response = await completeChat(
+          settings,
+          conversation,
+          abort.current.signal,
+          (partial) => setStreamingText(partial)
+        );
         const answer = response.choices[0]?.message;
         if (!answer) throw new Error("AmsterdamUMC returned no response");
         const promptTokens = response.usage?.prompt_tokens ?? estimatedPrompt;
@@ -1023,18 +1219,25 @@ The user has ${current.scripts.length} saved scripts. ${
         }));
         conversation.push({ role: "assistant", content: answer.content, tool_calls: answer.tool_calls });
         if (answer.content) {
+          const citationIds = (workspaceRef.current?.executions || [])
+            .filter((execution) => execution.promptId === promptId)
+            .map((execution) => execution.id);
           appendMessage(chat.id, {
             id: id(),
             role: "assistant",
             content: answer.content,
+            citationIds,
             createdAt: now()
           });
         }
+        setStreamingText("");
         if (!answer.tool_calls?.length) break;
+        setAnalysisPhase(turn ? "repairing" : "running");
         for (const call of answer.tool_calls) {
           const result = await executeTool(call, chat.id, promptId);
           conversation.push({ role: "tool", tool_call_id: call.id, content: result });
         }
+        setAnalysisPhase("checking");
         if (turn === 7) throw new Error("The analysis exceeded eight tool rounds");
       }
     } catch (error) {
@@ -1050,6 +1253,8 @@ The user has ${current.scripts.length} saved scripts. ${
     } finally {
       if (!abort.current?.signal.aborted) setStatus("Ready — analysis runs locally in this browser");
       abort.current = null;
+      setStreamingText("");
+      setAnalysisPhase("ready");
       setBusy(false);
       setStorage(await storageEstimate());
     }
@@ -1079,14 +1284,20 @@ The user has ${current.scripts.length} saved scripts. ${
     ) || execution.code;
     const scriptHash = await sha256(scriptCode);
     const suggested = `${slug(promptMessage?.content || "analysis-script")}.py`;
-    const name = window.prompt("Script filename", suggested)?.trim();
+    const name = (await dialogs.askText(
+      "Save as reusable script",
+      suggested,
+      "Scripts are versioned and can be copied to compatible OMERO projects."
+    ))?.trim();
     if (!name) return;
     const safeName = `${slug(name.replace(/\.py$/i, ""))}.py`;
-    const description = window.prompt(
+    const description = (await dialogs.askText(
       "Script description",
       promptMessage?.content.slice(0, 180) || "Reusable Analysis Chat workflow"
-    )?.trim() || "";
-    const existing = current.scripts.find((script) => script.name.toLowerCase() === safeName.toLowerCase());
+    ))?.trim() || "";
+    const existing = current.scripts.find((script) =>
+      !script.deletedAt && script.name.toLowerCase() === safeName.toLowerCase()
+    );
     const script: ScriptRecord = existing
       ? {
         ...existing,
@@ -1106,6 +1317,8 @@ The user has ${current.scripts.length} saved scripts. ${
         projectId: current.project.id,
         name: safeName,
         description,
+        inputContract: inputContractFromCode(scriptCode),
+        parameters: [],
         currentVersion: 1,
         versions: [{
           version: 1,
@@ -1117,6 +1330,7 @@ The user has ${current.scripts.length} saved scripts. ${
         createdAt: now(),
         updatedAt: now()
       };
+    script.inputContract = inputContractFromCode(scriptCode);
     const latest = workspaceRef.current;
     if (latest) {
       const updated = {
@@ -1165,8 +1379,8 @@ The user has ${current.scripts.length} saved scripts. ${
     }
   }
 
-  function renameScript(script: ScriptRecord) {
-    const name = window.prompt("Script filename", script.name)?.trim();
+  async function renameScript(script: ScriptRecord) {
+    const name = (await dialogs.askText("Rename script", script.name))?.trim();
     if (!name) return;
     const updated = { ...script, name: `${slug(name.replace(/\.py$/i, ""))}.py`, updatedAt: now() };
     const current = workspaceRef.current;
@@ -1182,14 +1396,20 @@ The user has ${current.scripts.length} saved scripts. ${
   }
 
   async function removeScript(script: ScriptRecord) {
-    if (!window.confirm(`Delete saved script ${script.name}? Its versions will be removed from this browser project.`)) {
+    if (!await dialogs.confirm(
+      "Delete saved script?",
+      `${script.name} and all of its versions will be moved out of the active project.`,
+      "Delete script",
+      true
+    )) {
       return;
     }
     const current = workspaceRef.current;
     if (!current) return;
+    const deleted = { ...script, deletedAt: now(), updatedAt: now() };
     const updated = {
       ...current,
-      scripts: current.scripts.filter((item) => item.id !== script.id)
+      scripts: current.scripts.map((item) => item.id === script.id ? deleted : item)
     };
     workspaceRef.current = updated;
     setWorkspace(updated);
@@ -1198,8 +1418,8 @@ The user has ${current.scripts.length} saved scripts. ${
       next.delete(script.id);
       return next;
     });
-    await deleteStoredScript(script.id);
-    setStatus(`Deleted script ${script.name}`);
+    await saveScript(deleted);
+    setStatus(`Moved script ${script.name} to trash`);
   }
 
   function toggleScriptSelection(scriptId: string) {
@@ -1214,55 +1434,321 @@ The user has ${current.scripts.length} saved scripts. ${
   async function combineSelectedScripts() {
     const current = workspaceRef.current;
     if (!current) return;
-    const selected = current.scripts.filter((script) => selectedScriptIds.has(script.id));
+    const selected = current.scripts.filter((script) => !script.deletedAt && selectedScriptIds.has(script.id));
     if (selected.length < 2) {
       setStatus("Select at least two scripts to combine");
       return;
     }
-    const suggested = `${slug(selected.map((script) => script.name.replace(/\.py$/i, "")).join("-"))}.py`;
-    const requested = window.prompt("Combined script filename", suggested)?.trim();
+    const suggested = slug(selected.map((script) => script.name.replace(/\.py$/i, "")).join("-"));
+    const requested = (await dialogs.askText(
+      "Workflow name",
+      suggested,
+      "The selected scripts will become isolated, ordered workflow steps."
+    ))?.trim();
     if (!requested) return;
-    const stem = slug(requested.replace(/\.py$/i, ""));
-    let name = `${stem}.py`;
+    const stem = slug(requested);
+    let name = stem;
     let suffix = 2;
-    while (current.scripts.some((script) => script.name.toLowerCase() === name.toLowerCase())) {
-      name = `${stem}-${suffix}.py`;
+    while (current.workflows.some((workflow) =>
+      !workflow.deletedAt && workflow.name.toLowerCase() === name.toLowerCase()
+    )) {
+      name = `${stem}-${suffix}`;
       suffix += 1;
     }
-    const description = window.prompt(
-      "Combined script description",
+    const description = (await dialogs.askText(
+      "Workflow description",
       `Runs ${selected.map((script) => script.name).join(", ")} in sequence`
-    )?.trim() || "";
-    const code = selected.map((script) => {
-      const version = script.versions.find((item) => item.version === script.currentVersion);
-      return [
-        `# --- ${script.name} v${script.currentVersion} ---`,
-        version?.code || ""
-      ].join("\n");
-    }).join("\n\n");
+    ))?.trim() || "";
     const createdAt = now();
-    const script: ScriptRecord = {
+    const workflow: WorkflowRecord = {
       id: id(),
       projectId: current.project.id,
       name,
       description,
-      currentVersion: 1,
-      versions: [{
-        version: 1,
-        code,
-        codeHash: await sha256(code),
-        executionId: "",
-        createdAt
-      }],
+      version: 1,
+      steps: selected.map((script) => ({
+        id: id(),
+        scriptId: script.id,
+        scriptVersion: script.currentVersion,
+        name: script.name,
+        inputBindings: {},
+        parameters: {}
+      })),
       createdAt,
       updatedAt: createdAt
     };
-    const updated = { ...current, scripts: [...current.scripts, script] };
+    const updated = { ...current, workflows: [...current.workflows, workflow] };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    setSelectedScriptIds(new Set([script.id]));
-    await saveScript(script);
-    setStatus(`Combined ${selected.length} scripts as ${script.name}`);
+    setSelectedScriptIds(new Set());
+    await saveWorkflow(workflow);
+    setStatus(`Created workflow ${workflow.name} with ${selected.length} isolated steps`);
+  }
+
+  async function runWorkflow(workflow: WorkflowRecord) {
+    const current = workspaceRef.current;
+    if (!current?.project.activeChatId || busy) return;
+    setBusy(true);
+    const chatId = current.project.activeChatId;
+    const promptId = id();
+    appendMessage(chatId, {
+      id: promptId,
+      role: "user",
+      content: `Run workflow ${workflow.name} version ${workflow.version}`,
+      createdAt: now()
+    });
+    try {
+      let availableInputs = current.files.filter(
+        (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
+      );
+      for (let index = 0; index < workflow.steps.length; index += 1) {
+        const step = workflow.steps[index];
+        const latest = workspaceRef.current!;
+        const script = latest.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
+        const version = script?.versions.find((item) => item.version === step.scriptVersion);
+        if (!script || !version) throw new Error(`Workflow step ${step.name} is unavailable`);
+        setStatus(`Workflow ${workflow.name}: step ${index + 1} of ${workflow.steps.length}`);
+        await runtime.beginTurn();
+        turnOutputNames.current.clear();
+        const bound = bindScriptInputs(version.code, availableInputs);
+        await executeCode(bound.code, chatId, promptId, true);
+        const produced = workspaceRef.current!.files.filter(
+          (file) => file.source === "result" && file.executionId &&
+            workspaceRef.current!.executions.some(
+              (execution) => execution.id === file.executionId && execution.promptId === promptId
+            ) && !file.deletedAt
+        );
+        availableInputs = [...availableInputs, ...produced];
+        if (index < workflow.steps.length - 1) await runtime.syncInputs(availableInputs);
+      }
+      await runtime.syncInputs(current.files.filter(
+        (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
+      ));
+      setStatus(`Workflow ${workflow.name} completed`);
+    } catch (error) {
+      appendMessage(chatId, {
+        id: id(),
+        role: "assistant",
+        content: `Workflow stopped: ${String(error)}`,
+        kind: "error",
+        createdAt: now()
+      });
+      setStatus(`Workflow ${workflow.name} failed`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeWorkflow(workflow: WorkflowRecord) {
+    if (!await dialogs.confirm(
+      "Delete workflow?",
+      `${workflow.name} will be moved to project trash. Its source scripts remain available.`,
+      "Delete workflow",
+      true
+    )) return;
+    const current = workspaceRef.current;
+    if (!current) return;
+    const deleted = { ...workflow, deletedAt: now(), updatedAt: now() };
+    const updated = {
+      ...current,
+      workflows: current.workflows.map((item) => item.id === workflow.id ? deleted : item)
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    await saveWorkflow(deleted);
+    setStatus(`Moved workflow ${workflow.name} to project trash`);
+  }
+
+  async function restoreTrashedFile(file: WorkspaceFile) {
+    const restored = { ...file, deletedAt: undefined };
+    upsertFiles([restored]);
+    await saveFile(restored);
+    setStatus(`Restored ${file.name}`);
+  }
+
+  async function restoreTrashedScript(script: ScriptRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const restored = { ...script, deletedAt: undefined, updatedAt: now() };
+    const next = {
+      ...current,
+      scripts: current.scripts.map((item) => item.id === script.id ? restored : item)
+    };
+    workspaceRef.current = next;
+    setWorkspace(next);
+    await saveScript(restored);
+  }
+
+  async function restoreTrashedWorkflow(workflow: WorkflowRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const restored = { ...workflow, deletedAt: undefined, updatedAt: now() };
+    const updated = {
+      ...current,
+      workflows: current.workflows.map((item) => item.id === workflow.id ? restored : item)
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    await saveWorkflow(restored);
+    setStatus(`Restored workflow ${workflow.name}`);
+  }
+
+  async function publishWorkflow(workflow: WorkflowRecord) {
+    const current = workspaceRef.current;
+    if (!current || !bridge.canUpload) return;
+    const scriptIds = new Set(workflow.steps.map((step) => step.scriptId));
+    const payload = {
+      format: "nl.bioimaging.analysis-chat.workflow.v1",
+      exportedAt: now(),
+      workflow,
+      scripts: current.scripts.filter((script) => !script.deletedAt && scriptIds.has(script.id))
+    };
+    const name = `${slug(workflow.name)}.oac-workflow.json`;
+    const result = await bridge.uploadWorkflowTemplate(
+      name,
+      new TextEncoder().encode(JSON.stringify(payload, null, 2))
+    );
+    setWorkflowTemplates((values) => [...values, result]);
+    setStatus(`Published workflow template as FileAnnotation ${result.annotation_id}`);
+  }
+
+  async function importWorkflowTemplate(template: Attachment) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    try {
+      const payload = JSON.parse(
+        new TextDecoder().decode(await bridge.downloadWorkflowTemplate(template))
+      );
+      if (
+        payload.format !== "nl.bioimaging.analysis-chat.workflow.v1" ||
+        !payload.workflow ||
+        !Array.isArray(payload.scripts)
+      ) throw new Error("Unsupported workflow template");
+      const scriptIds = new Map<string, string>();
+      const scripts: ScriptRecord[] = payload.scripts.map((script: ScriptRecord) => {
+        const scriptId = id();
+        scriptIds.set(script.id, scriptId);
+        return {
+          ...script,
+          id: scriptId,
+          projectId: current.project.id,
+          name: `${script.name.replace(/\.py$/i, "")}-template.py`,
+          createdAt: now(),
+          updatedAt: now()
+        };
+      });
+      const workflow: WorkflowRecord = {
+        ...payload.workflow,
+        id: id(),
+        projectId: current.project.id,
+        name: `${payload.workflow.name}-template`,
+        steps: payload.workflow.steps.map((step: WorkflowRecord["steps"][number]) => ({
+          ...step,
+          id: id(),
+          scriptId: scriptIds.get(step.scriptId) || step.scriptId
+        })),
+        createdAt: now(),
+        updatedAt: now()
+      };
+      await Promise.all([...scripts.map(saveScript), saveWorkflow(workflow)]);
+      const updated = {
+        ...current,
+        scripts: [...current.scripts, ...scripts],
+        workflows: [...current.workflows, workflow]
+      };
+      workspaceRef.current = updated;
+      setWorkspace(updated);
+      setStatus(`Imported workflow template ${workflow.name}`);
+    } catch (error) {
+      setStatus(`Workflow template import failed: ${String(error)}`);
+    }
+  }
+
+  async function batchRunWorkflow(workflow: WorkflowRecord) {
+    const source = workspaceRef.current;
+    if (!source || busy) return;
+    const targets = userProjects.filter((item) => item.id !== source.project.id);
+    if (!targets.length) {
+      setStatus("Open the destination OMERO objects in Analysis Chat once before batch execution");
+      return;
+    }
+    if (!await dialogs.confirm(
+      "Batch-run workflow?",
+      `${workflow.name} will run locally on the compatible browser projects for: ${targets.map((item) => `${item.objectType} ${item.objectId} (${item.name})`).join(", ")}. Incompatible projects will be skipped.`,
+      "Run compatible projects"
+    )) return;
+    setBusy(true);
+    const completed: string[] = [];
+    const skipped: string[] = [];
+    try {
+      for (const targetRecord of targets) {
+        const target = await loadWorkspace(targetRecord.id);
+        if (!target) continue;
+        const preparedSteps: string[] = [];
+        try {
+          for (const step of workflow.steps) {
+            const script = source.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
+            const version = script?.versions.find((item) => item.version === step.scriptVersion);
+            if (!version) throw new Error(`Missing ${step.name}`);
+            preparedSteps.push(bindScriptInputs(version.code, target.files).code);
+          }
+        } catch {
+          skipped.push(targetRecord.name);
+          continue;
+        }
+        try {
+          const chat = newChat(target.project.id, `${workflow.name} batch run`);
+          target.project = { ...target.project, activeChatId: chat.id, updatedAt: now() };
+          target.chats = [...target.chats, chat];
+          workspaceRef.current = target;
+          setWorkspace(target);
+          await runtime.syncInputs(target.files.filter(
+            (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
+          ));
+          const promptId = id();
+          appendMessage(chat.id, {
+            id: promptId,
+            role: "user",
+            content: `Batch run workflow ${workflow.name} on ${targetRecord.objectType} ${targetRecord.objectId}`,
+            createdAt: now()
+          });
+          for (const code of preparedSteps) {
+            await runtime.beginTurn();
+            turnOutputNames.current.clear();
+            await executeCode(code, chat.id, promptId, true);
+          }
+          await saveWorkspace(workspaceRef.current!);
+          completed.push(targetRecord.name);
+        } catch (error) {
+          const failed = workspaceRef.current;
+          if (failed?.project.id === target.project.id) {
+            const failedChat = failed.chats.find((chat) => chat.id === failed.project.activeChatId);
+            if (failedChat) {
+              appendMessage(failedChat.id, {
+                id: id(),
+                role: "assistant",
+                kind: "error",
+                content: `Batch workflow failed for this object: ${String(error)}`,
+                createdAt: now()
+              });
+              await saveWorkspace(workspaceRef.current!);
+            }
+          }
+          skipped.push(targetRecord.name);
+        }
+      }
+    } finally {
+      workspaceRef.current = source;
+      setWorkspace(source);
+      await runtime.syncInputs(source.files.filter(
+        (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
+      ));
+      setBusy(false);
+    }
+    setStatus(
+      `Batch workflow completed for ${completed.length} project(s)` +
+      (skipped.length ? `; incompatible: ${skipped.join(", ")}` : "")
+    );
   }
 
   function beginScriptTransfer(scriptIds?: string[]) {
@@ -1289,9 +1775,24 @@ The user has ${current.scripts.length} saved scripts. ${
       setStatus("The destination project is no longer available");
       return;
     }
-    const selected = current.scripts.filter((script) => selectedScriptIds.has(script.id));
+    const selected = current.scripts.filter((script) => !script.deletedAt && selectedScriptIds.has(script.id));
     if (!selected.length) return;
-    const targetNames = new Set(target.scripts.map((script) => script.name.toLowerCase()));
+    const compatibility = new Map<string, Record<string, string>>();
+    for (const source of selected) {
+      const version = source.versions.find((item) => item.version === source.currentVersion);
+      if (!version) continue;
+      try {
+        const bound = bindScriptInputs(version.code, target.files);
+        compatibility.set(
+          source.id,
+          Object.fromEntries(bound.bindings.map((binding) => [binding.from, binding.to]))
+        );
+      } catch (error) {
+        setStatus(`Copy blocked by compatibility preflight for ${source.name}: ${String(error)}`);
+        return;
+      }
+    }
+    const targetNames = new Set(target.scripts.filter((script) => !script.deletedAt).map((script) => script.name.toLowerCase()));
     const copied: ScriptRecord[] = [];
     for (const source of selected) {
       const stem = source.name.replace(/\.py$/i, "");
@@ -1309,6 +1810,10 @@ The user has ${current.scripts.length} saved scripts. ${
         projectId: target.project.id,
         name,
         description: `${source.description}${source.description ? " · " : ""}Copied from ${current.project.name}`,
+        projectBindings: {
+          ...(source.projectBindings || {}),
+          [target.project.id]: compatibility.get(source.id) || {}
+        },
         versions: source.versions.map((version) => ({
           ...version,
           executionId: ""
@@ -1350,8 +1855,55 @@ The user has ${current.scripts.length} saved scripts. ${
     if (version) downloadBytes(script.name, new TextEncoder().encode(version.code), "text/x-python");
   }
 
+  function downloadReproducibilityReport() {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const chat = current.chats.find((item) => item.id === current.project.activeChatId);
+    if (!chat) return;
+    const executions = current.executions.filter((item) => item.chatId === chat.id);
+    const lines = [
+      `# ${chat.title}`,
+      "",
+      `OMERO object: ${current.project.objectType || "Local"} ${current.project.objectId || ""}`,
+      `Project: ${current.project.name}`,
+      `Generated: ${now()}`,
+      `Runtime: ${RUNTIME_VERSION}`,
+      "",
+      "## Inputs",
+      ...current.files.filter((file) => file.source !== "result" && !file.deletedAt)
+        .map((file) => `- ${file.name} — ${file.sha256} — ${file.size} bytes`),
+      "",
+      "## Conversation",
+      ...chat.messages.filter((message) => message.kind !== "execution")
+        .flatMap((message) => [`### ${message.role}`, "", message.content, ""]),
+      "## Executions",
+      ...executions.flatMap((execution, index) => [
+        `### Run ${index + 1} — ${execution.status}`,
+        "",
+        `Code hash: ${execution.codeHash}`,
+        `Model: ${execution.model}`,
+        `Inputs: ${execution.inputHashes.join(", ")}`,
+        "",
+        "```python",
+        execution.code,
+        "```",
+        ""
+      ])
+    ];
+    downloadBytes(
+      `${slug(chat.title)}-reproducibility-report.md`,
+      new TextEncoder().encode(lines.join("\n")),
+      "text/markdown"
+    );
+    setStatus("Downloaded reproducibility report");
+  }
+
   async function attach(file: WorkspaceFile) {
-    if (!confirm(`Attach ${file.name} to the selected OMERO object?`)) return;
+    if (!await dialogs.confirm(
+      "Attach result to OMERO?",
+      `${file.name} will be uploaded and linked directly to the selected OMERO object.`,
+      "Attach result"
+    )) return;
     try {
       const result = await bridge.attach(file);
       setStatus(`Attached ${result.name} as FileAnnotation ${result.annotation_id}`);
@@ -1387,8 +1939,10 @@ The user has ${current.scripts.length} saved scripts. ${
     if (!bridge.canUpload) return;
     try {
       const archive = await createArchive();
-      if (archive.omittedLocalInputs.length && !confirm(
-        `The snapshot is too large to include these local inputs:\n${archive.omittedLocalInputs.join("\n")}\n\nSave the snapshot without them?`
+      if (archive.omittedLocalInputs.length && !await dialogs.confirm(
+        "Save snapshot without oversized local inputs?",
+        `The following files will be omitted and required again after restore: ${archive.omittedLocalInputs.join(", ")}`,
+        "Save without files"
       )) return;
       const snapshot = await bridge.uploadSnapshot(archive.filename, archive.data);
       setSnapshots((current) => [...current, snapshot]);
@@ -1408,7 +1962,7 @@ The user has ${current.scripts.length} saved scripts. ${
           `Project archive exceeds the configured ${Math.floor(limit / 1024 / 1024)} MiB limit`
         );
       }
-      const imported = await importProject(await file.arrayBuffer());
+      const imported = await importProject(await file.arrayBuffer(), bootstrap.context);
       if (
         bootstrap.context &&
         (imported.project.objectType !== bootstrap.context.object_type ||
@@ -1433,7 +1987,10 @@ The user has ${current.scripts.length} saved scripts. ${
   async function resumeSnapshot(snapshot: Attachment) {
     try {
       setStatus(`Downloading ${snapshot.name}…`);
-      const imported = await importProject(await bridge.downloadSnapshot(snapshot));
+      const imported = await importProject(
+        await bridge.downloadSnapshot(snapshot),
+        bootstrap.context
+      );
       if (
         bootstrap.context &&
         (imported.project.objectType !== bootstrap.context.object_type ||
@@ -1491,9 +2048,16 @@ The user has ${current.scripts.length} saved scripts. ${
         label: "Delete output",
         danger: true,
         run: () => {
-          if (window.confirm(`Delete generated output ${file.name} from this browser project?`)) {
+          void dialogs.confirm(
+            "Move output to trash?",
+            `${file.name} will be hidden, while its provenance record remains intact.`,
+            "Move to trash",
+            true
+          ).then((confirmed) => {
+            if (confirmed) {
             void removeFile(file.id);
-          }
+            }
+          });
         }
       }
     ];
@@ -1502,7 +2066,7 @@ The user has ${current.scripts.length} saved scripts. ${
   function scriptActions(script: ScriptRecord): BrowserMenuAction[] {
     return [
       { label: "Run", run: () => void runScript(script) },
-      { label: "Rename", run: () => renameScript(script) },
+      { label: "Rename", run: () => void renameScript(script) },
       { label: "Download", run: () => downloadScript(script) },
       { label: "Copy to another project…", run: () => beginScriptTransfer([script.id]) },
       { label: "Delete script", danger: true, run: () => void removeScript(script) }
@@ -1523,6 +2087,7 @@ The user has ${current.scripts.length} saved scripts. ${
   const quotaPercent = storage.quota ? Math.round(storage.usage / storage.quota * 100) : 0;
   return (
     <main className="app-shell">
+      {dialogs.element}
       <header className="project-header">
         <div>
           <h1>OMERO.AnalysisChat</h1>
@@ -1534,26 +2099,49 @@ The user has ${current.scripts.length} saved scripts. ${
             Plot + CSV
           </label>
           <span className="privacy-badge">Source data stay in this browser</span>
+          {bootstrap.context && (
+            <button
+              title="Open BIOMERO for pixel, GPU, server-package, or long-running workflows"
+              onClick={() => window.open(
+                `/biomero/?type=${encodeURIComponent(bootstrap.context!.object_type)}&id=${bootstrap.context!.object_id}`,
+                "_blank",
+                "noopener"
+              )}
+            >
+              BIOMERO handoff
+            </button>
+          )}
           <button onClick={() => setShowSettings(!showSettings)}>AI settings</button>
         </div>
       </header>
 
       {showSettings && (
-        <section className="settings-card">
+        <form className="settings-card" onSubmit={(event) => event.preventDefault()}>
           <h2>AmsterdamUMC</h2>
-          <p className="warning">The API key is stored unencrypted in this browser profile. It is never included in project snapshots.</p>
+          <p className="warning">
+            The API key is kept only for this tab unless you explicitly choose to remember it.
+            Remembered keys are stored unencrypted and never included in project snapshots.
+          </p>
           <label>Deployment/model
             <input value={settings.model} onChange={(event) => void saveSettings({ ...settings, model: event.target.value })} placeholder="GPT-5 deployment name" />
           </label>
           <label>API key
             <input type="password" value={settings.apiKey} onChange={(event) => void saveSettings({ ...settings, apiKey: event.target.value })} autoComplete="off" />
           </label>
+          <label className="remember-key">
+            <input
+              type="checkbox"
+              checked={settings.rememberKey}
+              onChange={(event) => void saveSettings({ ...settings, rememberKey: event.target.checked })}
+            />
+            Remember this key in this browser profile
+          </label>
           <label>Model context window (optional)
             <input type="number" min="0" value={settings.contextWindow || ""} onChange={(event) => void saveSettings({ ...settings, contextWindow: Math.max(0, Number(event.target.value) || 0) })} />
           </label>
           <p>Temperature is fixed at 1.</p>
           <button onClick={() => void saveSettings({ ...settings, apiKey: "" })}>Forget API key</button>
-        </section>
+        </form>
       )}
 
       <div className="project-toolbar">
@@ -1571,12 +2159,18 @@ The user has ${current.scripts.length} saved scripts. ${
           </select>
         </label>
         <button onClick={() => void newConversation()}>New chat</button>
-        <button onClick={() => renameChat(activeChat)}>Rename chat</button>
+        <button onClick={() => void renameChat(activeChat)}>Rename chat</button>
         <button onClick={() => archiveChat(activeChat)}>Archive</button>
-        <button onClick={() => void downloadArchive()}>Download project ZIP</button>
-        <button onClick={() => importInput.current?.click()}>Import project ZIP</button>
+        <details className="project-menu">
+          <summary>Project actions</summary>
+          <div>
+            <button onClick={downloadReproducibilityReport}>Download reproducibility report</button>
+            <button onClick={() => void downloadArchive()}>Download project ZIP</button>
+            <button onClick={() => importInput.current?.click()}>Import project ZIP</button>
+            {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save project to OMERO</button>}
+          </div>
+        </details>
         <input ref={importInput} hidden type="file" accept=".zip,.oac.zip" onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
-        {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save project to OMERO</button>}
       </div>
 
       {showScriptTransfer && (
@@ -1608,14 +2202,27 @@ The user has ${current.scripts.length} saved scripts. ${
         </div>
       )}
 
-      <div className="workspace">
-        <aside className="project-tree">
+      <div
+        className={`workspace ${artifactOpen ? "artifact-visible" : ""}`}
+        style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}
+      >
+        <aside
+          className="project-tree"
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            void addLocalFiles(event.dataTransfer.files);
+          }}
+        >
           <div
             className="file-browser-heading"
             onContextMenu={(event) => openBrowserMenu(event, project.name, [
               { label: "Add files", run: () => addFilesInput.current?.click() },
               { label: "New chat", run: () => void newConversation() },
-              { label: "Rename current chat", run: () => renameChat(activeChat) },
+              { label: "Rename current chat", run: () => void renameChat(activeChat) },
               { label: "Refresh", run: () => void refreshProject() }
             ])}
           >
@@ -1627,7 +2234,7 @@ The user has ${current.scripts.length} saved scripts. ${
               onClick={(event) => openBrowserMenu(event, project.name, [
                 { label: "Add files", run: () => addFilesInput.current?.click() },
                 { label: "New chat", run: () => void newConversation() },
-                { label: "Rename current chat", run: () => renameChat(activeChat) },
+                { label: "Rename current chat", run: () => void renameChat(activeChat) },
                 { label: "Refresh", run: () => void refreshProject() }
               ])}
             ><Icon name="more" /></button>
@@ -1644,10 +2251,26 @@ The user has ${current.scripts.length} saved scripts. ${
             <button
               title="Collapse all folders"
               aria-label="Collapse all folders"
-              onClick={() => setOpenFolders({ inputs: false, outputs: false, scripts: false, snapshots: false })}
+              onClick={() => setOpenFolders({
+                inputs: false,
+                outputs: false,
+                scripts: false,
+                workflows: false,
+                trash: false,
+                snapshots: false
+              })}
             ><Icon name="collapse" /></button>
             <input ref={addFilesInput} hidden type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} />
           </div>
+          <label className="explorer-search">
+            <span className="sr-only">Search project files</span>
+            <input
+              type="search"
+              value={explorerQuery}
+              placeholder="Search files, scripts, workflows…"
+              onChange={(event) => setExplorerQuery(event.target.value)}
+            />
+          </label>
           <div
             className="browser-path"
             title={browserAtParent ? `OMERO/${project.objectType}-${project.objectId}` : project.rootPath}
@@ -1658,6 +2281,31 @@ The user has ${current.scripts.length} saved scripts. ${
           </div>
           <div className="browser-columns"><span>Name</span><span>Size</span></div>
           {browserAtParent ? (
+            <>
+            <div className="hierarchy-section">
+              <strong>OMERO hierarchy</strong>
+              {[...(hierarchy?.parents || []), ...(hierarchy?.children || [])].map((item) => (
+                <button
+                  key={`${item.type}:${item.id}`}
+                  disabled={!item.supported}
+                  onClick={() => {
+                    if (item.supported) {
+                      window.location.assign(
+                        `${bootstrap.tokenUrl.replace(/api\/context-token\/$/, "")}?type=${encodeURIComponent(item.type)}&id=${item.id}`
+                      );
+                    }
+                  }}
+                >
+                  <Icon name="folder" />
+                  <span>{item.name}</span>
+                  <small>{item.type} {item.id}</small>
+                </button>
+              ))}
+              {!hierarchy?.parents.length && !hierarchy?.children.length && (
+                <p>No readable immediate OMERO relations.</p>
+              )}
+            </div>
+            <div className="hierarchy-section-title">Browser-local projects for this object</div>
             <ul className="browser-list project-list">
               {projects.map((item) => (
                 <li
@@ -1665,7 +2313,12 @@ The user has ${current.scripts.length} saved scripts. ${
                   className={`browser-row project-row ${item.id === project.id ? "active" : ""}`}
                   onDoubleClick={() => void switchProject(item.id)}
                   onContextMenu={(event) => openBrowserMenu(event, item.name, [
-                    { label: "Open project", run: () => void switchProject(item.id) }
+                    { label: "Open project", run: () => void switchProject(item.id) },
+                    ...(item.id !== project.id ? [{
+                      label: "Delete local project",
+                      danger: true,
+                      run: () => void removeLocalProject(item)
+                    }] : [])
                   ])}
                 >
                   <Icon name="folder" />
@@ -1678,12 +2331,18 @@ The user has ${current.scripts.length} saved scripts. ${
                     className="browser-more"
                     aria-label={`Actions for ${item.name}`}
                     onClick={(event) => openBrowserMenu(event, item.name, [
-                      { label: "Open project", run: () => void switchProject(item.id) }
+                      { label: "Open project", run: () => void switchProject(item.id) },
+                      ...(item.id !== project.id ? [{
+                        label: "Delete local project",
+                        danger: true,
+                        run: () => void removeLocalProject(item)
+                      }] : [])
                     ])}
                   ><Icon name="more" /></button>
                 </li>
               ))}
             </ul>
+            </>
           ) : (<>
           {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Archive or download old projects.</p>}
 
@@ -1705,7 +2364,7 @@ The user has ${current.scripts.length} saved scripts. ${
               <strong>inputs</strong><small>{inputFiles.length}</small>
             </summary>
             <ul className="browser-list">
-              {inputFiles.map((file) => (
+              {visibleInputs.map((file) => (
                 <li
                   key={file.id}
                   className={`browser-row file-${file.state}`}
@@ -1733,7 +2392,7 @@ The user has ${current.scripts.length} saved scripts. ${
                   )}
                 </li>
               ))}
-              {!inputFiles.length && <li className="browser-empty">No input files</li>}
+              {!visibleInputs.length && <li className="browser-empty">No matching input files</li>}
             </ul>
           </details>
 
@@ -1747,7 +2406,7 @@ The user has ${current.scripts.length} saved scripts. ${
           >
             <summary
               onContextMenu={(event) => openBrowserMenu(event, `chats/${activeChat.title}/`, [
-                { label: "Rename chat", run: () => renameChat(activeChat) },
+                { label: "Rename chat", run: () => void renameChat(activeChat) },
                 { label: "New chat", run: () => void newConversation() },
                 { label: "Archive chat", run: () => archiveChat(activeChat) }
               ])}
@@ -1767,10 +2426,14 @@ The user has ${current.scripts.length} saved scripts. ${
                 <div className="browser-name"><strong>chat.md</strong><small>autosaved</small></div>
                 <span className="browser-size">—</span>
               </li>
-              {outputFiles.map((file) => (
+              {visibleOutputs.map((file) => (
                 <li
                   key={file.id}
                   className="browser-row"
+                  onClick={() => {
+                    setSelectedArtifactFileId(file.id);
+                    setArtifactOpen(true);
+                  }}
                   onDoubleClick={() => downloadFile(file)}
                   onContextMenu={(event) => openBrowserMenu(event, file.name, outputActions(file))}
                 >
@@ -1805,9 +2468,9 @@ The user has ${current.scripts.length} saved scripts. ${
             >
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>scripts</strong><small>{workspace.scripts.length}</small>
+              <strong>scripts</strong><small>{activeScripts.length}</small>
             </summary>
-            {workspace.scripts.length > 0 && (
+            {activeScripts.length > 0 && (
               <div className="script-selection-toolbar">
                 <span>{selectedScriptIds.size} selected</span>
                 <button disabled={selectedScriptIds.size < 2} onClick={() => void combineSelectedScripts()}>Combine</button>
@@ -1815,7 +2478,7 @@ The user has ${current.scripts.length} saved scripts. ${
               </div>
             )}
             <ul className="browser-list">
-              {workspace.scripts.map((script) => (
+              {activeScripts.filter((script) => matchesExplorer(script.name)).map((script) => (
                 <li
                   key={script.id}
                   className="browser-row script-row"
@@ -1842,9 +2505,129 @@ The user has ${current.scripts.length} saved scripts. ${
                   ><Icon name="more" /></button>
                 </li>
               ))}
-              {!workspace.scripts.length && <li className="browser-empty">No saved scripts</li>}
+              {!activeScripts.filter((script) => matchesExplorer(script.name)).length && <li className="browser-empty">No matching scripts</li>}
             </ul>
           </details>
+
+          <details
+            open={openFolders.workflows}
+            className="browser-folder"
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, workflows: open }));
+            }}
+          >
+            <summary>
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
+              <strong>workflows</strong><small>{workspace.workflows.length}</small>
+            </summary>
+            <ul className="browser-list">
+              {workspace.workflows.filter((workflow) =>
+                !workflow.deletedAt && matchesExplorer(workflow.name)
+              ).map((workflow) => (
+                <li
+                  key={workflow.id}
+                  className="browser-row"
+                  onDoubleClick={() => void runWorkflow(workflow)}
+                  onContextMenu={(event) => openBrowserMenu(event, workflow.name, [
+                    { label: "Run workflow", run: () => void runWorkflow(workflow) },
+                    { label: "Batch run on opened projects…", run: () => void batchRunWorkflow(workflow) },
+                    ...(bridge.canUpload ? [{
+                      label: "Publish template to OMERO",
+                      run: () => void publishWorkflow(workflow)
+                    }] : []),
+                    { label: "Delete workflow", danger: true, run: () => void removeWorkflow(workflow) }
+                  ])}
+                >
+                  <Icon name="file" />
+                  <div className="browser-name">
+                    <strong>{workflow.name}</strong>
+                    <small>v{workflow.version} · {workflow.steps.length} isolated steps</small>
+                  </div>
+                  <span className="browser-size">{workflow.steps.length}</span>
+                  <button
+                    className="browser-more"
+                    aria-label={`Actions for ${workflow.name}`}
+                    onClick={(event) => openBrowserMenu(event, workflow.name, [
+                      { label: "Run workflow", run: () => void runWorkflow(workflow) },
+                      { label: "Batch run on opened projects…", run: () => void batchRunWorkflow(workflow) },
+                      ...(bridge.canUpload ? [{
+                        label: "Publish template to OMERO",
+                        run: () => void publishWorkflow(workflow)
+                      }] : []),
+                      { label: "Delete workflow", danger: true, run: () => void removeWorkflow(workflow) }
+                    ])}
+                  ><Icon name="more" /></button>
+                </li>
+              ))}
+              {!workspace.workflows.filter((workflow) =>
+                !workflow.deletedAt && matchesExplorer(workflow.name)
+              ).length && <li className="browser-empty">No matching workflows</li>}
+              {workflowTemplates.map((template) => (
+                <li
+                  key={`template-${template.annotation_id}`}
+                  className="browser-row"
+                  onDoubleClick={() => void importWorkflowTemplate(template)}
+                >
+                  <span className="browser-icon archive" aria-hidden="true" />
+                  <div className="browser-name">
+                    <strong>{template.name}</strong>
+                    <small>OMERO template · double-click to import</small>
+                  </div>
+                  <span className="browser-size">{bytesLabel(template.size)}</span>
+                  <button
+                    className="browser-more"
+                    aria-label={`Import ${template.name}`}
+                    onClick={() => void importWorkflowTemplate(template)}
+                  ><Icon name="more" /></button>
+                </li>
+              ))}
+            </ul>
+          </details>
+
+          {(trashedFiles.length > 0 || trashedScripts.length > 0 || trashedWorkflows.length > 0) && (
+            <details
+              open={openFolders.trash}
+              className="browser-folder"
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setOpenFolders((current) => ({ ...current, trash: open }));
+              }}
+            >
+              <summary>
+                <Icon name="chevron" className="folder-chevron" />
+                <Icon name="folder" />
+                <strong>trash</strong><small>{trashedFiles.length + trashedScripts.length + trashedWorkflows.length}</small>
+              </summary>
+              <ul className="browser-list">
+                {trashedFiles.map((file) => (
+                  <li key={file.id} className="browser-row">
+                    <Icon name="file" />
+                    <div className="browser-name"><strong>{file.name}</strong><small>deleted output</small></div>
+                    <span className="browser-size">{bytesLabel(file.size)}</span>
+                    <button onClick={() => void restoreTrashedFile(file)}>Restore</button>
+                  </li>
+                ))}
+                {trashedScripts.map((script) => (
+                  <li key={script.id} className="browser-row">
+                    <span className="browser-icon python" aria-hidden="true" />
+                    <div className="browser-name"><strong>{script.name}</strong><small>deleted script</small></div>
+                    <span className="browser-size">v{script.currentVersion}</span>
+                    <button onClick={() => void restoreTrashedScript(script)}>Restore</button>
+                  </li>
+                ))}
+                {trashedWorkflows.map((workflow) => (
+                  <li key={workflow.id} className="browser-row">
+                    <Icon name="file" />
+                    <div className="browser-name"><strong>{workflow.name}</strong><small>deleted workflow</small></div>
+                    <span className="browser-size">v{workflow.version}</span>
+                    <button onClick={() => void restoreTrashedWorkflow(workflow)}>Restore</button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {snapshots.length > 0 && (
             <details
@@ -1883,6 +2666,12 @@ The user has ${current.scripts.length} saved scripts. ${
           )}
           </>)}
         </aside>
+        <div
+          className="pane-resizer"
+          role="separator"
+          aria-label="Resize project explorer"
+          onMouseDown={beginExplorerResize}
+        />
 
         {browserMenu && (
           <div
@@ -1909,7 +2698,25 @@ The user has ${current.scripts.length} saved scripts. ${
 
         <section className="chat">
           <div className="messages" aria-live="polite" ref={messagesElement}>
-            {!activeChat.messages.length && <div className="welcome"><h2>What would you like to learn from these data?</h2><p>This named chat, its code, outputs, and reusable scripts are saved automatically in the browser project.</p></div>}
+            {!activeChat.messages.length && (
+              <div className="welcome">
+                <h2>What would you like to learn from these data?</h2>
+                <p>This named chat, its code, outputs, and reusable workflows are saved automatically in the browser project.</p>
+                {profiles.length > 0 && (
+                  <div className="suggested-prompts">
+                    <button onClick={() => setPrompt("Summarize the available datasets, tables, columns, and important data-quality issues.")}>
+                      Summarize these data
+                    </button>
+                    <button onClick={() => setPrompt("Find the most biologically meaningful differences and visualize them with reproducible plot data.")}>
+                      Find meaningful differences
+                    </button>
+                    <button onClick={() => setPrompt("Explain the CI Segmentation schema and suggest three safe analyses for these measurements.")}>
+                      Explore the measurement schema
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {activeChat.messages.map((message) => {
               if (message.kind === "execution" && message.executionId) {
                 const execution = workspace.executions.find((item) => item.id === message.executionId);
@@ -1925,36 +2732,75 @@ The user has ${current.scripts.length} saved scripts. ${
               }
               return (
                 <article key={message.id} className={`message ${message.role} ${message.kind || ""}`}>
-                  <span>{message.role}</span>
+                  <span>
+                    {message.role}
+                    <button
+                      className="pin-message"
+                      aria-label={`${(activeChat.pinnedMessageIds || []).includes(message.id) ? "Unpin" : "Pin"} message`}
+                      onClick={() => togglePinnedMessage(activeChat, message.id)}
+                    >
+                      {(activeChat.pinnedMessageIds || []).includes(message.id) ? "★" : "☆"}
+                    </button>
+                  </span>
                   <p>{message.content}</p>
+                  {message.citationIds?.length ? (
+                    <div className="message-citations" aria-label="Evidence used for this answer">
+                      {message.citationIds.map((executionId, index) => {
+                        const cited = workspace.executions.find((item) => item.id === executionId);
+                        const fileId = cited?.outputFileIds.find((candidate) =>
+                          workspace.files.some((file) => file.id === candidate && !file.deletedAt)
+                        );
+                        return (
+                          <button
+                            key={executionId}
+                            title={`Open local execution ${executionId.slice(0, 8)}`}
+                            onClick={() => {
+                              if (fileId) setSelectedArtifactFileId(fileId);
+                              setArtifactOpen(true);
+                            }}
+                          >
+                            Evidence {index + 1}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </article>
               );
             })}
+            {streamingText && (
+              <article className="message assistant streaming">
+                <span>assistant · {analysisPhase}</span>
+                <p>{streamingText}<i className="stream-caret" /></p>
+              </article>
+            )}
           </div>
-          {!runtimeReady && (
-            <div className="runtime-progress" role="status" aria-live="polite">
-              <div><strong>{runtimeProgress.message}</strong><span>{Math.round(runtimeProgress.percent)}%</span></div>
-              <progress max="100" value={runtimeProgress.percent} />
-              <small>Please wait. The question box unlocks automatically when browser Python is ready.</small>
-            </div>
-          )}
-          <div className="status" role="status">{status}</div>
-          <div className="usage-status">
-            <span>Azure receives prompts, generated code, bounded schemas/previews/statistics, summaries, and errors — never source files.</span>
-            <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
-          </div>
-          {blockedFiles.length > 0 && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
-          {!settings.apiKey || !settings.model ? <div className="blocker">Enter the AmsterdamUMC deployment name and API key in AI settings.</div> : null}
-          <div className="composer">
-            <div className={`composer-state ${canChat ? "ready" : "waiting"}`}>
-              <span aria-hidden="true">{canChat ? "●" : "◷"}</span>
-              {canChat ? "Ready — you can ask a question" : composerPlaceholder}
-            </div>
-            <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendPrompt(); } }} disabled={!canChat} placeholder={composerPlaceholder} />
-            {busy ? <button className="stop" onClick={stop}>Stop</button> : <button disabled={!canChat || !prompt.trim()} onClick={() => void sendPrompt()}>Send</button>}
-            <button disabled={busy || !runtimeReady} onClick={() => void restartRuntime(workspace.files, "Python state reset; inputs restored")}>Reset Python</button>
-          </div>
+          <ComposerPanel
+            runtimeReady={runtimeReady}
+            runtimeProgress={runtimeProgress}
+            status={status}
+            usage={usage}
+            settings={settings}
+            blocked={blockedFiles.length > 0}
+            canChat={canChat}
+            composerPlaceholder={composerPlaceholder}
+            prompt={prompt}
+            busy={busy}
+            onPromptChange={setPrompt}
+            onSend={() => void sendPrompt()}
+            onStop={stop}
+            onReset={() => void restartRuntime(workspace.files, "Python state reset; inputs restored")}
+          />
         </section>
+        <ArtifactInspector
+          open={artifactOpen}
+          file={selectedArtifactFile}
+          profiles={profiles}
+          canUpload={bridge.canUpload}
+          onToggle={() => setArtifactOpen((value) => !value)}
+          onDownload={downloadFile}
+          onAttach={(file) => void attach(file)}
+        />
       </div>
     </main>
   );
@@ -1994,78 +2840,6 @@ The user has ${current.scripts.length} saved scripts. ${
       setBusy(false);
     }
   }
-}
-
-function ExecutionCard({
-  execution,
-  files,
-  onSave,
-  onRerun
-}: {
-  execution: ExecutionRecord;
-  files: WorkspaceFile[];
-  onSave: () => void;
-  onRerun: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const outputs = execution.outputFileIds
-    .map((fileId) => files.find((file) => file.id === fileId))
-    .filter(Boolean) as WorkspaceFile[];
-  const plots = execution.status === "reused"
-    ? []
-    : outputs.filter((file) => file.type === "image/png" || file.type === "image/svg+xml");
-  const controls = (position: "top" | "bottom") => (
-    <div className={`execution-actions ${position}`}>
-      <button
-        className="detail-toggle"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >{expanded ? "Collapse" : "Show details"}</button>
-      {["success", "reused"].includes(execution.status) && (
-        <button onClick={onSave}>Save as script</button>
-      )}
-      <button onClick={onRerun}>Rerun</button>
-      <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
-    </div>
-  );
-  return (
-    <article className={`message execution ${execution.status}`}>
-      <section className="execution-details" data-expanded={expanded ? "true" : "false"}>
-        <div className="execution-heading">
-          <span>{execution.status === "reused" ? "Reused Python run" : "Python code (local)"}</span>
-          {controls("top")}
-        </div>
-        <div className="execution-content" hidden={!expanded}>
-          <pre><code>{execution.code}</code></pre>
-          {execution.stdout && <pre>{execution.stdout}</pre>}
-          {execution.stderr && <pre className="execution-error">{execution.stderr}</pre>}
-          {execution.preview != null && <Preview value={execution.preview} />}
-          {controls("bottom")}
-        </div>
-      </section>
-      {execution.status === "reused" && <p className="reuse-note">Reused prior execution {execution.reusedFrom?.slice(0, 8)} because code and inputs are unchanged.</p>}
-      {execution.missingPlotCsv.length > 0 && <p className="plot-warning">Source CSV missing: {execution.missingPlotCsv.join(", ")}</p>}
-      {plots.map((file) => <Artifact key={file.id} file={file} />)}
-    </article>
-  );
-}
-
-function Preview({ value }: { value: any }) {
-  if (value?.kind === "table" && value.data) {
-    const columns: string[] = value.data.columns || [];
-    const rows: unknown[][] = value.data.data || [];
-    return <div className="table-wrap"><table><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{String(cell ?? "")}</td>)}</tr>)}</tbody></table></div>;
-  }
-  return <pre className="preview">{JSON.stringify(value, null, 2)}</pre>;
-}
-
-function Artifact({ file }: { file: WorkspaceFile }) {
-  const url = useMemo(
-    () => file.data ? URL.createObjectURL(new Blob([file.data], { type: file.type })) : "",
-    [file.data, file.type]
-  );
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  return url ? <figure><img src={url} alt={file.name} /><figcaption>{file.name}</figcaption></figure> : null;
 }
 
 type IconName =
