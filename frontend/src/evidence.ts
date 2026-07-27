@@ -91,3 +91,75 @@ export function requireEvidenceIds(
   }
   return ids;
 }
+
+function galleryContracts(
+  value: unknown,
+  found: Record<string, unknown>[] = [],
+): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    for (const child of value) galleryContracts(child, found);
+    return found;
+  }
+  if (!value || typeof value !== "object") return found;
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.render_panels)) found.push(record);
+  for (const child of Object.values(record)) galleryContracts(child, found);
+  return found;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map(
+      (key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`,
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function requireGalleryEvidence(
+  request: unknown,
+  requestedEvidenceIds: unknown,
+  available: EvidenceRecord[],
+): string[] {
+  const ids = requireEvidenceIds(requestedEvidenceIds, available);
+  if (!request || typeof request !== "object") {
+    throw new Error("Gallery rendering requires a structured request");
+  }
+  const raw = request as Record<string, unknown>;
+  if (!Array.isArray(raw.panels)) {
+    throw new Error("Gallery rendering requires panels");
+  }
+  const requestedPanels = canonicalJson(raw.panels);
+  const requestedStore = String(raw.store_uuid || "").toLowerCase();
+  const evidenceById = new Map(available.map((record) => [record.id, record]));
+  for (const id of ids) {
+    const evidence = evidenceById.get(id);
+    if (!evidence) continue;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(evidence.payload);
+    } catch {
+      continue;
+    }
+    for (const contract of galleryContracts(payload)) {
+      const store = String(contract.store_uuid || "").toLowerCase();
+      if (
+        store === requestedStore &&
+        canonicalJson(contract.render_panels) === requestedPanels
+      ) {
+        return ids;
+      }
+    }
+  }
+  throw new Error(
+    "The cited analysis evidence does not contain this exact gallery recipe. " +
+    "Run Python once with result = {\"store_uuid\": store_uuid, " +
+    "\"render_panels\": panels}, including every field, ROI, channel, label path, " +
+    "label value, title, and caption; then copy render_panels unchanged into " +
+    "render_zarr_gallery.",
+  );
+}

@@ -109,6 +109,7 @@ import {
   currentEvidence,
   evidenceKind,
   evidencePrompt,
+  requireGalleryEvidence,
   requireEvidenceIds,
   sourceSkillKey,
   upsertBoundedEvidence
@@ -1289,7 +1290,7 @@ export default function App() {
       workspaceInputHashes(current),
       turnWorkflowSkills.current.map((skill) => skill.sha256)
     );
-    requireEvidenceIds(evidenceIds, ledger);
+    requireGalleryEvidence(args, evidenceIds, ledger);
     const { binding, capability } = await resolveZarrTarget(recipe.storeUuid);
     const data = await renderZarrRecipe(capability, recipe);
     if (projectBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {

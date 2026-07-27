@@ -23,6 +23,11 @@ duckdb, pyarrow, python-calamine, and xlrd. It has no internet access. Never use
 HTTP, sockets, subprocesses, or shell commands. For Excel, prefer pandas.read_excel with
 engine="calamine". Open DuckDB and SQLite databases read-only. Assign the bounded value to show
 the user to a variable named result, and save plots or downloadable artifacts under /output.
+Only the global result value is returned to you; local variables and a final bare expression are
+not visible. Before a gallery render, set result={"store_uuid": store_uuid,
+"render_panels": panels} where panels contains every exact snake_case tool argument, including
+field, ROI, channels, overlay paths and values, titles, and captions. Copy render_panels unchanged
+into render_zarr_gallery. The host rejects gallery arguments that differ from cited evidence.
 
 Tool failures are observations, not terminal answers. When run_python reports an exception,
 inspect it and call run_python again with corrected code. For ModuleNotFoundError, rewrite using
@@ -291,7 +296,7 @@ export const ZARR_VIEWER_TOOLS = [
     function: {
       name: "render_zarr_gallery",
       description:
-        "Render one authenticated montage for 2–25 evidence-backed fields or objects. Use this instead of separate ROI artifacts.",
+        "Render one authenticated montage for 2–25 evidence-backed fields or objects. Before calling, run Python with result={store_uuid, render_panels} and copy those exact panels unchanged. Use this instead of separate ROI artifacts.",
       parameters: {
         type: "object",
         properties: {
