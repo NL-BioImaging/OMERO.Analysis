@@ -82,8 +82,13 @@ import {
 import {
   activityText,
   formatDuration,
-  projectRowClassName
+  projectRowClassName,
+  workflowSkillTooltip
 } from "./presentation";
+import {
+  normalizeProjectName,
+  renameProjectWorkspace
+} from "./projectModel";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -800,6 +805,53 @@ export default function App() {
     setProjects(await listContextProjects(bootstrap.context));
     setUserProjects(await listUserProjects(bootstrap.context));
     setStatus(`Deleted browser-local project ${target.name}`);
+  }
+
+  async function renameProject(target: ProjectRecord) {
+    const requested = await dialogs.askText(
+      "Rename project",
+      target.name,
+      "This changes the browser-local project name and logical project folder. OMERO object and attachment names are unchanged."
+    );
+    if (requested == null) return;
+    const name = normalizeProjectName(requested);
+    if (!name) {
+      setStatus("Project name cannot be empty");
+      return;
+    }
+    if (name === target.name) return;
+    const siblings = await listContextProjects(bootstrap.context);
+    if (siblings.some((item) =>
+      item.id !== target.id &&
+      item.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+    )) {
+      setStatus(`A project named ${name} already exists for this OMERO object`);
+      return;
+    }
+    const current = workspaceRef.current;
+    const targetWorkspace = current?.project.id === target.id
+      ? current
+      : await loadWorkspace(target.id);
+    if (!targetWorkspace) {
+      setStatus("The browser-local project could not be loaded");
+      return;
+    }
+    const renamed = renameProjectWorkspace(targetWorkspace, name, now());
+    if (siblings.some((item) =>
+      item.id !== target.id &&
+      item.rootPath.toLocaleLowerCase() === renamed.project.rootPath.toLocaleLowerCase()
+    )) {
+      setStatus(`The project folder ${renamed.project.rootPath} already exists`);
+      return;
+    }
+    await saveWorkspace(renamed);
+    if (current?.project.id === target.id) {
+      workspaceRef.current = renamed;
+      setWorkspace(renamed);
+    }
+    setProjects(await listContextProjects(bootstrap.context));
+    setUserProjects(await listUserProjects(bootstrap.context));
+    setStatus(`Renamed project to ${name}`);
   }
 
   async function renameWorkspaceFile(file: WorkspaceFile) {
@@ -2289,6 +2341,18 @@ ${activeSkillInstructions || (
   }
 
   const quotaPercent = storage.quota ? Math.round(storage.usage / storage.quota * 100) : 0;
+  const matchingWorkflowSkills = matchWorkflowSkills(
+    workflowSkillCatalog,
+    workspace.files,
+    profiles
+  );
+  const workflowSkillTitle = workflowSkillTooltip(
+    workflowSkillCatalog,
+    workflowSkillWarning,
+    matchingWorkflowSkills.map(
+      (match) => `${match.entry.source.workflow_key}/${match.skill.name}`
+    )
+  );
   return (
     <main className="app-shell">
       {dialogs.element}
@@ -2305,7 +2369,8 @@ ${activeSkillInstructions || (
           <span className="privacy-badge">Source data stay in this browser</span>
           <span
             className={workflowSkillWarning ? "skill-badge warning" : "skill-badge"}
-            title={workflowSkillWarning || "Validated workflow guidance is available"}
+            title={workflowSkillTitle}
+            aria-label={workflowSkillTitle}
           >
             {workflowSkillWarning
               ? "Generic guidance"
@@ -2314,18 +2379,6 @@ ${activeSkillInstructions || (
                 0
               ) || 0} workflow skills`}
           </span>
-          {bootstrap.context && (
-            <button
-              title="Open BIOMERO for pixel, GPU, server-package, or long-running workflows"
-              onClick={() => window.open(
-                `/biomero/?type=${encodeURIComponent(bootstrap.context!.object_type)}&id=${bootstrap.context!.object_id}`,
-                "_blank",
-                "noopener"
-              )}
-            >
-              BIOMERO handoff
-            </button>
-          )}
           <button onClick={() => setShowSettings(!showSettings)}>AI settings</button>
         </div>
       </header>
@@ -2379,6 +2432,7 @@ ${activeSkillInstructions || (
         <details className="project-menu">
           <summary>Project actions</summary>
           <div>
+            <button onClick={() => void renameProject(project)}>Rename project</button>
             <button onClick={downloadReproducibilityReport}>Download reproducibility report</button>
             <button onClick={() => void downloadArchive()}>Download project ZIP</button>
             <button onClick={() => importInput.current?.click()}>Import project ZIP</button>
@@ -2438,6 +2492,7 @@ ${activeSkillInstructions || (
               { label: "Add files", run: () => addFilesInput.current?.click() },
               { label: "New chat", run: () => void newConversation() },
               { label: "Rename current chat", run: () => void renameChat(activeChat) },
+              { label: "Rename project", run: () => void renameProject(project) },
               { label: "Refresh", run: () => void refreshProject() }
             ])}
           >
@@ -2450,6 +2505,7 @@ ${activeSkillInstructions || (
                 { label: "Add files", run: () => addFilesInput.current?.click() },
                 { label: "New chat", run: () => void newConversation() },
                 { label: "Rename current chat", run: () => void renameChat(activeChat) },
+                { label: "Rename project", run: () => void renameProject(project) },
                 { label: "Refresh", run: () => void refreshProject() }
               ])}
             ><Icon name="more" /></button>
@@ -2537,6 +2593,7 @@ ${activeSkillInstructions || (
                     setSelectedProjectId(item.id);
                     openBrowserMenu(event, item.name, [
                       { label: "Open project", run: () => void switchProject(item.id) },
+                      { label: "Rename project", run: () => void renameProject(item) },
                       ...(item.id !== project.id ? [{
                         label: "Delete local project",
                         danger: true,
@@ -2558,6 +2615,7 @@ ${activeSkillInstructions || (
                       setSelectedProjectId(item.id);
                       openBrowserMenu(event, item.name, [
                         { label: "Open project", run: () => void switchProject(item.id) },
+                        { label: "Rename project", run: () => void renameProject(item) },
                         ...(item.id !== project.id ? [{
                           label: "Delete local project",
                           danger: true,

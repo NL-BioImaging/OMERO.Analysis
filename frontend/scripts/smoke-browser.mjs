@@ -367,6 +367,17 @@ try {
     HTMLAnchorElement.prototype.click = function captureDownloadClick() {};
   });
   await page.getByText("Project actions", { exact: true }).click();
+  if (await page.getByRole("button", { name: "BIOMERO handoff" }).count()) {
+    throw new Error("The removed BIOMERO handoff is still visible");
+  }
+  const skillBadge = page.locator(".skill-badge");
+  const skillTooltip = await skillBadge.getAttribute("title");
+  if (!skillTooltip?.toLowerCase().includes("workflow")) {
+    throw new Error("The workflow-skill badge has no explanatory tooltip");
+  }
+  await page.getByRole("button", { name: "Rename project" }).click();
+  await answerDialog("Renamed smoke project");
+  await page.getByText("Renamed smoke project", { exact: true }).first().waitFor();
   await page.getByRole("button", { name: "Download project ZIP" }).click();
   await page.waitForFunction(() => Boolean(window.__oacDownloadPromise));
   const archiveBytes = await page.evaluate(() => window.__oacDownloadPromise);
