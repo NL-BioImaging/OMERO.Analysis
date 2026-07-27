@@ -265,6 +265,7 @@ export interface ScriptVersion {
   code: string;
   codeHash: string;
   executionId: string;
+  renderRecipe?: ZarrRenderRecipe;
   createdAt: string;
 }
 

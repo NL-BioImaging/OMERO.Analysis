@@ -115,6 +115,7 @@ import {
   upsertBoundedEvidence
 } from "./evidence";
 import { buildRenderBundle } from "./renderBundle";
+import { savedGalleryRequest } from "./savedScriptRender";
 import {
   activityText,
   formatDuration,
@@ -1365,6 +1366,22 @@ export default function App() {
     });
   }
 
+  async function replaySavedGallery(
+    executionResult: string,
+    chatId: string,
+    promptId: string,
+    scriptName: string,
+    recipe?: ZarrRenderRecipe
+  ): Promise<string | null> {
+    const request = savedGalleryRequest(
+      executionResult,
+      scriptName,
+      recipe
+    );
+    if (!request) return null;
+    return createZarrGalleryResult(request, chatId, promptId);
+  }
+
   async function loadWorkflowSkill(
     workflowKey: string,
     skillName: string
@@ -1817,10 +1834,28 @@ export default function App() {
     if (call.function.name === "run_saved_script") {
       const script = current.scripts.find((item) => item.id === args.script_id && !item.deletedAt);
       const version = script?.versions.find((item) => item.version === script.currentVersion);
-      if (!version) return toolErrorText("Saved script was not found");
+      if (!script || !version) return toolErrorText("Saved script was not found");
       try {
         const bound = bindScriptInputs(version.code, current.files);
-        return executeCode(bound.code, chatId, promptId, false, "script");
+        const executionResult = await executeCode(
+          bound.code,
+          chatId,
+          promptId,
+          true,
+          "script"
+        );
+        const renderResult = await replaySavedGallery(
+          executionResult,
+          chatId,
+          promptId,
+          script.name,
+          version.renderRecipe
+        );
+        return JSON.stringify({
+          execution: JSON.parse(executionResult),
+          render_replayed: Boolean(renderResult),
+          render: renderResult ? JSON.parse(renderResult) : undefined
+        }).slice(0, MAX_TOOL_TEXT);
       } catch (error) {
         return toolErrorText(error);
       }
@@ -2219,6 +2254,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             code: bundle.code,
             codeHash,
             executionId: bundle.execution.id,
+            renderRecipe: bundle.recipe,
             createdAt: now()
           }],
           updatedAt: now()
@@ -2236,6 +2272,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             code: bundle.code,
             codeHash,
             executionId: bundle.execution.id,
+            renderRecipe: bundle.recipe,
             createdAt: now()
           }],
           createdAt: now(),
@@ -2328,14 +2365,27 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       createdAt: now()
     });
     try {
-      await executeCode(
+      const executionResult = await executeCode(
         bound.code,
         current.project.activeChatId,
         promptId,
         true,
         "script"
       );
-      setStatus(`Ran ${script.name} locally`);
+      const renderResult = await replaySavedGallery(
+        executionResult,
+        current.project.activeChatId,
+        promptId,
+        script.name,
+        version.renderRecipe
+      );
+      setStatus(
+        renderResult
+          ? `Ran ${script.name} locally and rendered its PNG gallery`
+          : `Ran ${script.name} locally`
+      );
+    } catch (error) {
+      setStatus(`Could not complete ${script.name}: ${String(error)}`);
     } finally {
       setBusy(false);
     }
@@ -3986,14 +4036,32 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     turnOutputNames.current.clear();
     await runtime.beginTurn();
     try {
-      await executeCode(
+      const promptId = id();
+      const executionResult = await executeCode(
         execution.code,
         execution.chatId,
-        id(),
+        promptId,
         true,
         execution.purpose === "script" ? "script" : "analysis"
       );
-      setStatus("Python rerun completed");
+      const current = workspaceRef.current;
+      const saved = current?.scripts.flatMap((script) =>
+        script.versions.map((version) => ({ script, version }))
+      ).find(({ version }) => version.codeHash === execution.codeHash);
+      const renderResult = await replaySavedGallery(
+        executionResult,
+        execution.chatId,
+        promptId,
+        saved?.script.name || "python-rerun-analysis.py",
+        saved?.version.renderRecipe
+      );
+      setStatus(
+        renderResult
+          ? "Python rerun completed and rendered its PNG gallery"
+          : "Python rerun completed"
+      );
+    } catch (error) {
+      setStatus(`Python rerun could not complete: ${String(error)}`);
     } finally {
       setBusy(false);
     }

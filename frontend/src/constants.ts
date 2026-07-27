@@ -158,7 +158,9 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "run_saved_script",
-      description: "Run the current version of a user-approved project script locally.",
+      description:
+        "Run the current version of a user-approved project script locally. " +
+        "When its verified result contains a gallery render contract, the saved PNG gallery is rendered automatically.",
       parameters: {
         type: "object",
         properties: { script_id: { type: "string" } },
