@@ -82,7 +82,7 @@ export function savedGalleryRequest(
     store_uuid: contract.store_uuid,
     panels: contract.render_panels,
     title: recipe?.title || contract.title || stem.replace(/-/g, " "),
-    filename: recipe?.filename || contract.filename || `${stem}.png`,
+    filename: recipe?.filename || contract.filename || stem,
     columns
   };
 }

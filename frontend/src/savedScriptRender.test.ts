@@ -32,7 +32,7 @@ describe("saved script gallery replay", () => {
       evidence_ids: ["new-evidence"],
       store_uuid: "ac680965-c76f-47f3-98f9-95f07ecae356",
       panels,
-      filename: "top-8-cells.png",
+      filename: "top-8-cells",
       columns: 2
     });
     expect(request?.panels).toStrictEqual(panels);

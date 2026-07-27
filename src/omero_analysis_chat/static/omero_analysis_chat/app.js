@@ -8991,7 +8991,7 @@ function py(o, i, a) {
     store_uuid: y.store_uuid,
     panels: y.render_panels,
     title: (a == null ? void 0 : a.title) || y.title || m.replace(/-/g, " "),
-    filename: (a == null ? void 0 : a.filename) || y.filename || `${m}.png`,
+    filename: (a == null ? void 0 : a.filename) || y.filename || m,
     columns: x
   };
 }
