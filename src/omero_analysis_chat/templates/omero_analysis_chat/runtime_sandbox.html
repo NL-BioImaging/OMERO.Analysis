@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Analysis Chat Python sandbox</title>
+<script>
+let runtimeWorker = null;
+let lastRequestId = "bootstrap";
+
+function forwardRuntimeMessage(event) {
+  const files = event.data && event.data.value && event.data.value.files || [];
+  parent.postMessage(event.data, "*", files.map((file) => file.data));
+}
+
+addEventListener("message", (event) => {
+  const message = event.data;
+  if (!message) return;
+  if (message.source === "oac-bootstrap") {
+    runtimeWorker?.terminate();
+    const sourceUrl = URL.createObjectURL(
+      new Blob([String(message.value || "")], {type: "text/javascript"})
+    );
+    runtimeWorker = new Worker(sourceUrl);
+    URL.revokeObjectURL(sourceUrl);
+    runtimeWorker.addEventListener("message", forwardRuntimeMessage);
+    runtimeWorker.addEventListener("messageerror", () => {
+      parent.postMessage({
+        source: "oac-runtime",
+        id: lastRequestId,
+        type: "error",
+        value: "Python worker message transport failed"
+      }, "*");
+    });
+    runtimeWorker.addEventListener("error", (workerError) => {
+      parent.postMessage({
+        source: "oac-runtime",
+        id: lastRequestId,
+        type: "error",
+        value: `Python worker failed: ${workerError.message || "unknown startup error"}`
+      }, "*");
+    });
+    return;
+  }
+  if (message.source !== "oac-parent" || !runtimeWorker) return;
+  lastRequestId = message.id || "bootstrap";
+  const transfer = message.type === "file" && message.value && message.value.data
+    ? [message.value.data] : [];
+  runtimeWorker.postMessage(message, transfer);
+});
+</script>

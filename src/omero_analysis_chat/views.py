@@ -95,6 +95,23 @@ def runtime_asset(request, asset_path, **kwargs):
     return response
 
 
+@require_GET
+def runtime_sandbox(request, **kwargs):
+    """Opaque iframe host whose policy permits only the vendored Python runtime."""
+    response = render(request, "omero_analysis_chat/runtime_sandbox.html")
+    origin = f"{request.scheme}://{request.get_host()}"
+    response["Content-Security-Policy"] = (
+        "default-src 'none'; "
+        f"script-src 'unsafe-inline' 'wasm-unsafe-eval' blob: {origin}; "
+        f"connect-src {origin}; "
+        "img-src data: blob:; style-src 'unsafe-inline'; worker-src blob:; "
+        "object-src 'none'; base-uri 'none'; form-action 'none'"
+    )
+    response["Cache-Control"] = "no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @login_required(setGroupContext=True)
 def chat(request, conn=None, **kwargs):
     context = None

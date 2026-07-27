@@ -19,6 +19,7 @@ REQUIRED = {
     str(STATIC / "pyodide/seaborn-0.13.2-py3-none-any.whl"),
     "omero_analysis_chat/templates/omero_analysis_chat/chat.html",
     "omero_analysis_chat/templates/omero_analysis_chat/panel.html",
+    "omero_analysis_chat/templates/omero_analysis_chat/runtime_sandbox.html",
     "omero_analysis_chat/templates/omero_analysis_chat/center_plugin.js.html",
 }
 PACKAGES = {

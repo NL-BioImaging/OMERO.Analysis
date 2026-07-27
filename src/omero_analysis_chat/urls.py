@@ -5,6 +5,11 @@ from . import views
 urlpatterns = [
     re_path(r"^$", views.chat, name="omero_analysis_chat_index"),
     re_path(
+        r"^runtime-sandbox/$",
+        views.runtime_sandbox,
+        name="omero_analysis_chat_runtime_sandbox",
+    ),
+    re_path(
         r"^runtime/(?P<asset_path>[-\w./]+)$",
         views.runtime_asset,
         name="omero_analysis_chat_runtime_asset",

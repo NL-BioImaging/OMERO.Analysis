@@ -15,7 +15,7 @@ const PACKAGES = [
 ];
 export const RUNTIME_VERSION = "pyodide-314.0.3-oac-0.5";
 
-function runtimeWorker(runtimeBase: string): string {
+export function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
   const packages = JSON.stringify(PACKAGES);
   return `
@@ -304,32 +304,8 @@ _json.dumps(_profiles, ensure_ascii=False)
 `;
 }
 
-export function sandboxDocument(runtimeBase: string): string {
-  const origin = new URL(runtimeBase).origin;
-  const worker = JSON.stringify(runtimeWorker(runtimeBase));
-  return `<!doctype html><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob: ${origin}; connect-src ${origin}; img-src data: blob:; style-src 'unsafe-inline'; worker-src blob:">
-<script>
-const source = ${worker};
-const worker = new Worker(URL.createObjectURL(new Blob([source], {type: "text/javascript"})));
-worker.addEventListener("error", (event) => {
-  console.error("Analysis Chat runtime worker failed:", event.message, event.filename, event.lineno);
-});
-worker.addEventListener("messageerror", (event) => {
-  console.error("Analysis Chat runtime worker message failed:", event.data);
-});
-worker.addEventListener("message", (event) => {
-  const files = event.data && event.data.value && event.data.value.files || [];
-  parent.postMessage(event.data, "*", files.map((file) => file.data));
-});
-addEventListener("message", (event) => {
-  const message = event.data;
-  if (!message || message.source !== "oac-parent") return;
-  const transfer = message.type === "file" && message.value && message.value.data
-    ? [message.value.data] : [];
-  worker.postMessage(message, transfer);
-});
-<\/script>`;
+export function sandboxUrl(runtimeBase: string): string {
+  return new URL("../runtime-sandbox/", runtimeBase).toString();
 }
 
 export class PythonRuntime {
@@ -359,14 +335,17 @@ export class PythonRuntime {
     const loaded = new Promise<void>((resolve) =>
       frame.addEventListener("load", () => resolve(), { once: true })
     );
-    frame.srcdoc = sandboxDocument(
-      new URL(this.runtimeBase, window.location.href).toString()
-    );
+    const absoluteRuntimeBase = new URL(this.runtimeBase, window.location.href).toString();
+    frame.src = sandboxUrl(absoluteRuntimeBase);
     document.body.append(frame);
     this.frame = frame;
     this.readyPromise = (async () => {
       await loaded;
       this.report({ percent: 8, message: "Connecting to the Python worker…" });
+      frame.contentWindow?.postMessage(
+        { source: "oac-bootstrap", value: runtimeWorker(absoluteRuntimeBase) },
+        "*"
+      );
       await this.request("ping", true, 120_000);
       for (let index = 0; index < this.inputs.length; index += 1) {
         const file = this.inputs[index];

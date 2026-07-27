@@ -23,6 +23,74 @@ function usageSummary(usage: TokenUsage | null, contextWindow: number): string {
   return `Latest request: ${usage.promptTokens.toLocaleString()} input + ${usage.completionTokens.toLocaleString()} output tokens (${source})${limit} · session: ${usage.sessionTokens.toLocaleString()}`;
 }
 
+export function parseDelimited(text: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === "\"") {
+      if (quoted && text[index + 1] === "\"") {
+        value += "\"";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === delimiter && !quoted) {
+      row.push(value);
+      value = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(value);
+      if (row.some((cell) => cell.length)) rows.push(row);
+      row = [];
+      value = "";
+      if (rows.length >= 101) break;
+    } else {
+      value += character;
+    }
+  }
+  if (row.length || value) {
+    row.push(value);
+    if (row.some((cell) => cell.length)) rows.push(row);
+  }
+  return rows.map((cells) => cells.slice(0, 50));
+}
+
+function FilePreview({ file }: { file: WorkspaceFile }) {
+  if (file.type === "image/png" || file.type === "image/svg+xml") {
+    return <Artifact file={file} />;
+  }
+  if (!file.data) return <p className="artifact-help">This file is not available locally.</p>;
+  if (file.type.startsWith("text/") || /\.(csv|tsv|json|md|txt)$/i.test(file.name)) {
+    const text = new TextDecoder().decode(file.data);
+    if (/\.(csv|tsv)$/i.test(file.name)) {
+      const rows = parseDelimited(text, /\.tsv$/i.test(file.name) ? "\t" : ",");
+      const [header = [], ...body] = rows;
+      return (
+        <div className="table-wrap artifact-table">
+          <table>
+            <thead><tr>{header.map((cell, index) => <th key={index}>{cell}</th>)}</tr></thead>
+            <tbody>{body.map((rowValue, rowIndex) => (
+              <tr key={rowIndex}>
+                {header.map((_, cellIndex) => <td key={cellIndex}>{rowValue[cellIndex] || ""}</td>)}
+              </tr>
+            ))}</tbody>
+          </table>
+          {rows.length >= 101 && <p className="artifact-help">Preview limited to 100 rows.</p>}
+        </div>
+      );
+    }
+    return <pre className="artifact-text-preview">{text.slice(0, 64 * 1024)}</pre>;
+  }
+  return (
+    <p className="artifact-help">
+      Preview is not available for this file type. Use Download to open the file.
+    </p>
+  );
+}
+
 export function ComposerPanel({
   runtimeReady,
   runtimeProgress,
@@ -131,7 +199,7 @@ export function ArtifactInspector({
         <div className="artifact-body">
           {file ? (
             <>
-              <Artifact file={file} />
+              <FilePreview file={file} />
               <dl className="artifact-metadata">
                 <dt>Size</dt><dd>{bytesLabel(file.size)}</dd>
                 <dt>SHA-256</dt><dd>{file.sha256}</dd>

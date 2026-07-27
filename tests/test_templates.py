@@ -36,3 +36,11 @@ def test_chat_has_no_notebook_surface_and_includes_runtime_config():
     assert "data-snapshot-upload-template" in source
     assert "JupyterLab" not in source
     assert "notebook" not in source.lower()
+
+    sandbox = (
+        ROOT
+        / "src/omero_analysis_chat/templates/omero_analysis_chat/runtime_sandbox.html"
+    ).read_text(encoding="utf-8")
+    assert 'new Worker(sourceUrl)' in sandbox
+    assert "oac-bootstrap" in sandbox
+    assert "allow-same-origin" not in sandbox

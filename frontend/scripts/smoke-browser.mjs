@@ -1,4 +1,4 @@
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
@@ -8,6 +8,10 @@ import { chromium } from "playwright-core";
 const root = resolve(
   import.meta.dirname,
   "../../src/omero_analysis_chat/static/omero_analysis_chat"
+);
+const sandboxTemplate = readFileSync(
+  resolve(import.meta.dirname, "../../src/omero_analysis_chat/templates/omero_analysis_chat/runtime_sandbox.html"),
+  "utf8"
 );
 const chrome = [
   process.env.CHROME_PATH,
@@ -35,22 +39,42 @@ const server = createServer(async (request, response) => {
   }
   if (request.url === "/") {
     response.setHeader("Content-Type", "text/html");
+    response.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
+      "connect-src 'self' https://aumc-aicode-openai-swedencentral-oai.openai.azure.com; " +
+      "worker-src blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    );
     response.end(`<!doctype html><meta charset="utf-8"><title>Analysis Chat smoke</title>
       <link rel="stylesheet" href="/app.css">
-      <div id="root"></div>
-      <script>window.OMERO_ANALYSIS_CHAT = {
-        context: null,
-        tokenUrl: "/unused",
-        contextTemplate: "/unused",
-        attachmentsTemplate: "/unused",
-        downloadTemplate: "/unused",
-        uploadTemplate: "/unused",
-        snapshotsTemplate: "/unused",
-        snapshotUploadTemplate: "/unused",
-        snapshotDownloadTemplate: "/unused",
-        runtimeBase: "/runtime/"
-      };</script>
+      <div id="root"
+        data-token-url="/unused"
+        data-context-template="/unused"
+        data-attachments-template="/unused"
+        data-hierarchy-template="/unused"
+        data-download-template="/unused"
+        data-upload-template="/unused"
+        data-snapshots-template="/unused"
+        data-snapshot-upload-template="/unused"
+        data-snapshot-download-template="/unused"
+        data-workflow-templates-template="/unused"
+        data-workflow-download-template="/unused"
+        data-runtime-base="/runtime/ASSET"></div>
+      <script id="omero-analysis-chat-context" type="application/json">null</script>
       <script type="module" src="/app.js"></script>`);
+    return;
+  }
+  if (request.url === "/runtime-sandbox/") {
+    const origin = `http://${request.headers.host}`;
+    response.setHeader("Content-Type", "text/html");
+    response.setHeader(
+      "Content-Security-Policy",
+      "default-src 'none'; " +
+      `script-src 'unsafe-inline' 'wasm-unsafe-eval' blob: ${origin}; ` +
+      `connect-src ${origin}; img-src data: blob:; style-src 'unsafe-inline'; ` +
+      "worker-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    );
+    response.end(sandboxTemplate);
     return;
   }
   const relative = request.url === "/app.js" || request.url === "/app.css"
@@ -280,7 +304,11 @@ try {
   ) {
     throw new Error("Execution controls were not duplicated above and below the code");
   }
-  await page.getByRole("columnheader", { name: "group" }).waitFor();
+  await page.locator(".messages").getByRole("columnheader", { name: "group" }).waitFor();
+  await page.locator(".artifact-inspector").getByRole("columnheader", { name: "group" }).waitFor();
+  if (await page.locator(".artifact-inspector img").count()) {
+    throw new Error("The artifact inspector attempted to render CSV data as an image");
+  }
   const outputCount = await page.locator(".project-tree details").nth(1).locator("li").count();
   await page.getByPlaceholder("Ask a question about the loaded data…").fill(
     "Repeat exactly the same analysis."
@@ -326,11 +354,13 @@ try {
 
   await page.evaluate(() => {
     window.__oacDownloadPromise = null;
-    HTMLAnchorElement.prototype.click = function captureDownload() {
-      window.__oacDownloadPromise = fetch(this.href)
-        .then((response) => response.arrayBuffer())
+    const createObjectUrl = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = function captureDownload(blob) {
+      window.__oacDownloadPromise = blob.arrayBuffer()
         .then((buffer) => Array.from(new Uint8Array(buffer)));
+      return createObjectUrl(blob);
     };
+    HTMLAnchorElement.prototype.click = function captureDownloadClick() {};
   });
   await page.getByText("Project actions", { exact: true }).click();
   await page.getByRole("button", { name: "Download project ZIP" }).click();

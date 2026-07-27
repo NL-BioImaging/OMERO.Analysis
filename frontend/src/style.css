@@ -270,6 +270,8 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
 .artifact-metadata dt { color: #7894a4; }
 .artifact-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .artifact-buttons { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }
+.artifact-table { max-height: 58vh; }
+.artifact-text-preview { max-height: 58vh !important; overflow: auto; }
 .messages {
   min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   padding: 1.4rem max(1rem, calc((100% - 900px) / 2)); scrollbar-gutter: stable;

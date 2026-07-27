@@ -67,6 +67,17 @@ def test_runtime_assets_reject_traversal():
         raise AssertionError("Traversal was not rejected")
 
 
+def test_runtime_sandbox_has_an_isolated_boot_policy():
+    request = RequestFactory().get("/omero_analysis_chat/runtime-sandbox/")
+    response = views.runtime_sandbox(request)
+    policy = response["Content-Security-Policy"]
+    assert response.status_code == 200
+    assert "worker-src blob:" in policy
+    assert "connect-src http://testserver" in policy
+    assert "default-src 'none'" in policy
+    assert b'oac-bootstrap' in response.content
+
+
 def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
     snapshot = FakeAnnotation(
         21,

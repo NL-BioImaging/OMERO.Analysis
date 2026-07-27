@@ -1,34 +1,29 @@
-import { sandboxDocument } from "./runtime";
+import { runtimeWorker, sandboxUrl } from "./runtime";
 
 describe("Python sandbox", () => {
-  const document = sandboxDocument("https://omero.example/omero_analysis_chat/runtime");
+  const worker = runtimeWorker("https://omero.example/omero_analysis_chat/runtime/");
 
-  it("uses an opaque iframe CSP that permits only runtime-origin connections", () => {
-    expect(document).toContain("default-src 'none'");
-    expect(document).toContain("connect-src https://omero.example");
-    expect(document).toContain("new Worker");
-    expect(document).toContain('worker-src blob:');
-    expect(document).toContain("'wasm-unsafe-eval'");
-    expect(document).not.toContain("connect-src *");
-    expect(document).not.toContain("allow-same-origin");
+  it("uses a real sandbox document so the production CSP cannot block srcdoc bootstrapping", () => {
+    expect(sandboxUrl("https://omero.example/omero_analysis_chat/runtime/"))
+      .toBe("https://omero.example/omero_analysis_chat/runtime-sandbox/");
   });
 
   it("does not embed OMERO or Azure credentials", () => {
-    expect(document).not.toContain("api-key");
-    expect(document).not.toContain("context_token");
-    expect(document).not.toContain("aumc-aicode");
+    expect(worker).not.toContain("api-key");
+    expect(worker).not.toContain("context_token");
+    expect(worker).not.toContain("aumc-aicode");
   });
 
   it("reports meaningful boot stages without weakening the sandbox", () => {
-    expect(document).toContain("Loading the browser Python engine");
-    expect(document).toContain("Loading data-analysis packages");
-    expect(document).toContain("Loading seaborn plotting support");
-    expect(document).toContain('message.type === \\"begin\\"');
-    expect(document).toContain('removeTree(\\"/output\\")');
-    expect(document).toContain("outputState()");
-    expect(document).toContain("Network access is disabled in Analysis Chat Python");
-    expect(document).toContain("globalThis.fetch = denyNetwork");
-    expect(document).toContain('message.type === \\"clear_inputs\\"');
-    expect(document).toContain('message.type === \\"profile\\"');
+    expect(worker).toContain("Loading the browser Python engine");
+    expect(worker).toContain("Loading data-analysis packages");
+    expect(worker).toContain("Loading seaborn plotting support");
+    expect(worker).toContain('message.type === "begin"');
+    expect(worker).toContain('removeTree("/output")');
+    expect(worker).toContain("outputState()");
+    expect(worker).toContain("Network access is disabled in Analysis Chat Python");
+    expect(worker).toContain("globalThis.fetch = denyNetwork");
+    expect(worker).toContain('message.type === "clear_inputs"');
+    expect(worker).toContain('message.type === "profile"');
   });
 });
