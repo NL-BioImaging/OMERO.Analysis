@@ -237,6 +237,9 @@ export async function importProject(
   const chatIds = new Map(manifest.chats.map((chat) => [chat.id, crypto.randomUUID()]));
   const executionIds = new Map(manifest.executions.map((execution) => [execution.id, crypto.randomUUID()]));
   const fileIds = new Map(manifest.files.map((file) => [file.id, crypto.randomUUID()]));
+  const artifactIds = new Map(
+    manifest.artifacts.map((artifact) => [artifact.id, crypto.randomUUID()])
+  );
   const scriptIds = new Map(manifest.scripts.map((script) => [script.id, crypto.randomUUID()]));
   const workflowIds = new Map(manifest.workflows.map((workflow) => [workflow.id, crypto.randomUUID()]));
   const now = new Date().toISOString();
@@ -247,7 +250,8 @@ export async function importProject(
     title: `${chat.title} (imported)`,
     messages: chat.messages.map((message) => ({
       ...message,
-      executionId: message.executionId ? executionIds.get(message.executionId) : undefined
+      executionId: message.executionId ? executionIds.get(message.executionId) : undefined,
+      artifactId: message.artifactId ? artifactIds.get(message.artifactId) : undefined
     })),
     updatedAt: now
   }));
@@ -270,6 +274,9 @@ export async function importProject(
       chatId: metadata.chatId ? chatIds.get(metadata.chatId) : undefined,
       executionId: metadata.executionId ? executionIds.get(metadata.executionId) : undefined,
       data: fileData,
+      viewer: metadata.viewer
+        ? { ...metadata.viewer, viewerUrl: "" }
+        : undefined,
       state: fileData || metadata.source === "omero" ? metadata.state : "missing",
       logicalPath: metadata.logicalPath.replace(manifest.project.rootPath, `${manifest.project.rootPath}--imported`)
     });
@@ -305,11 +312,14 @@ export async function importProject(
   }));
   const artifacts = manifest.artifacts.map((artifact) => ({
     ...artifact,
-    id: crypto.randomUUID(),
+    id: artifactIds.get(artifact.id)!,
     projectId,
     chatId: chatIds.get(artifact.chatId) || chats[0]?.id,
     executionId: artifact.executionId ? executionIds.get(artifact.executionId) : undefined,
-    fileId: artifact.fileId ? fileIds.get(artifact.fileId) : undefined
+    fileId: artifact.fileId ? fileIds.get(artifact.fileId) : undefined,
+    viewer: artifact.viewer
+      ? { ...artifact.viewer, viewerUrl: "" }
+      : undefined
   })).filter((artifact) => Boolean(artifact.chatId)) as ArtifactRecord[];
   const activeChatId = chatIds.get(manifest.project.activeChatId) || chats[0]?.id;
   if (!activeChatId) throw new Error("Project archive contains no chats");
@@ -331,6 +341,12 @@ export async function importProject(
       groupId: manifest.project.groupId,
       snapshotAnnotationId: manifest.project.sourceSnapshotAnnotationId
     },
+    zarrBindings: Object.fromEntries(
+      Object.entries(manifest.project.zarrBindings || {}).map(([key, binding]) => [
+        key,
+        { ...binding, verified: false }
+      ])
+    ),
     activeChatId,
     createdAt: now,
     updatedAt: now

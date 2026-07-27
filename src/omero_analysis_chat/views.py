@@ -22,6 +22,7 @@ except ImportError:
         return decorator
 
 from .errors import AnalysisChatError
+from .integrations import zarr_viewer_status
 from .services import (
     can_annotate,
     checked_download,
@@ -206,6 +207,12 @@ def workflow_skills(request, conn=None, **kwargs):
         return JsonResponse(payload)
     except Exception as exc:
         return _workflow_skill_error(exc)
+
+
+@require_GET
+@login_required(setGroupContext=True)
+def zarr_viewer_integration(request, conn=None, **kwargs):
+    return JsonResponse(zarr_viewer_status())
 
 
 @require_GET

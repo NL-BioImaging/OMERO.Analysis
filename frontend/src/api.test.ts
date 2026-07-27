@@ -23,6 +23,7 @@ const bootstrap: Bootstrap = {
   workflowTemplatesTemplate: "/workflows/TYPE/1/",
   workflowDownloadTemplate: "/workflow/1/download/",
   workflowSkillsUrl: "/workflow-skills/",
+  zarrViewerStatusUrl: "/integrations/zarr-viewer/",
   runtimeBase: "/runtime/"
 };
 
@@ -128,6 +129,65 @@ describe("workflow skill adapter", () => {
       .toBe("analyze-example");
     expect((await bridge.loadWorkflowSkill("example", "analyze-example")).files[0].path)
       .toBe("SKILL.md");
+    vi.unstubAllGlobals();
+  });
+
+  it("accepts application-operation skills and ZarrViewer status", async () => {
+    const source = {
+      workflow_key: "omero-zarr-viewer",
+      source_kind: "application",
+      source_key: "omero-zarr-viewer",
+      repository_url: "https://github.com/NL-BioImaging/BIOMERO.ZarrViewer/tree/v0.3.0",
+      configured_ref: "v0.3.0",
+      resolved_commit: "d".repeat(40),
+      skills_path: "_agents/skills",
+      ref_kind: "tag"
+    };
+    const skill = {
+      workflow_key: "omero-zarr-viewer",
+      name: "use-omero-zarr-viewer",
+      description: "Open measured objects",
+      purpose: "application-operation",
+      consumers: ["omero-analysis-chat"],
+      version: "1",
+      sha256: "e".repeat(64),
+      package_url: "/workflow-skills/omero-zarr-viewer/use-omero-zarr-viewer/",
+      match: {
+        extensions: [],
+        filename_globs: [],
+        required_tables: [],
+        auto_activate: false
+      }
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === bootstrap.zarrViewerStatusUrl) {
+        return new Response(JSON.stringify({
+          schema_version: 1,
+          available: true,
+          installed: true,
+          enabled: true,
+          version: "0.3.0",
+          minimum_version: "0.3.0",
+          reason: "ready",
+          viewer_url: "/biomero_zarr_viewer/",
+          image_capabilities_template: "/images/0/capabilities/",
+          plate_capabilities_template: "/plates/0/capabilities/"
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        schema: "nl.bioimaging.omero-workflow-skills.v1",
+        generated_at: "",
+        consumer: "omero-analysis-chat",
+        config_hash: "config",
+        workflows: [],
+        applications: [{ source, status: "ready", checked_at: "", skills: [skill] }],
+        diagnostics: []
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const bridge = new OmeroBridge(bootstrap);
+    const catalog = await bridge.listWorkflowSkills();
+    expect(catalog.applications?.[0].skills[0].name).toBe("use-omero-zarr-viewer");
+    expect((await bridge.zarrViewerStatus()).version).toBe("0.3.0");
     vi.unstubAllGlobals();
   });
 });

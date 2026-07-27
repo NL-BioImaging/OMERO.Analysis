@@ -39,6 +39,7 @@ export interface Bootstrap {
   workflowTemplatesTemplate: string;
   workflowDownloadTemplate: string;
   workflowSkillsUrl: string;
+  zarrViewerStatusUrl: string;
   runtimeBase: string;
 }
 
@@ -51,6 +52,8 @@ export interface WorkflowSkillMatch {
 
 export interface WorkflowSkillSummary {
   workflow_key: string;
+  source_kind?: "workflow" | "application";
+  source_key?: string;
   name: string;
   description: string;
   purpose: string;
@@ -63,6 +66,8 @@ export interface WorkflowSkillSummary {
 
 export interface WorkflowSkillSource {
   workflow_key: string;
+  source_kind?: "workflow" | "application";
+  source_key?: string;
   repository_url: string;
   configured_ref: string;
   resolved_commit: string;
@@ -84,6 +89,7 @@ export interface WorkflowSkillCatalog {
   consumer: string;
   config_hash: string;
   workflows: WorkflowSkillEntry[];
+  applications?: WorkflowSkillEntry[];
   diagnostics: Array<{
     level: "info" | "warning" | "error";
     code: string;
@@ -136,6 +142,7 @@ export interface ProjectRecord {
     groupId: number;
     snapshotAnnotationId?: number;
   };
+  zarrBindings?: Record<string, ZarrBinding>;
   revision?: number;
   deletedAt?: string;
   createdAt: string;
@@ -171,6 +178,7 @@ export interface WorkspaceFile {
   error?: string;
   annotationId?: number;
   fileId?: number;
+  viewer?: ZarrViewerProvenance;
   deletedAt?: string;
   createdAt: string;
 }
@@ -179,11 +187,14 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  kind?: "text" | "error" | "execution";
+  kind?: "text" | "error" | "execution" | "viewer-preview";
   executionId?: string;
+  artifactId?: string;
   citationIds?: string[];
   workflowSkills?: Array<{
     workflowKey: string;
+    sourceKind?: "workflow" | "application";
+    sourceKey?: string;
     name: string;
     version: string;
     sha256: string;
@@ -293,10 +304,93 @@ export interface ArtifactRecord {
   chatId: string;
   executionId?: string;
   fileId?: string;
-  kind: "plot" | "table" | "file" | "report";
+  kind: "plot" | "table" | "file" | "report" | "viewer-preview";
   title: string;
   pinned: boolean;
+  promptId?: string;
+  viewer?: ZarrViewerProvenance;
   createdAt: string;
+}
+
+export interface ZarrViewerIntegrationStatus {
+  schema_version: 1;
+  available: boolean;
+  installed: boolean;
+  enabled: boolean;
+  version: string | null;
+  minimum_version: string;
+  reason: "ready" | "not-installed" | "incompatible-version" | "app-disabled";
+  viewer_url?: string;
+  image_capabilities_template?: string;
+  plate_capabilities_template?: string;
+}
+
+export interface ZarrViewerCapability {
+  schema_version: 1;
+  supported: true;
+  image: { id: number; name: string };
+  store: { uuid: string; roi_url: string };
+  kind: "image" | "plate";
+  initial_path: string;
+  channels: Array<{ index: number; label: string; active: boolean }>;
+  labels: Array<{ id: string; name: string; path: string }>;
+  plate?: {
+    wells: Array<{
+      path: string;
+      fields: Array<{ path: string; name: string }>;
+    }>;
+  };
+}
+
+export interface ZarrFocusTarget {
+  storeUuid: string;
+  field: string;
+  targetKind: "object" | "point" | "field";
+  sizeX: number;
+  sizeY: number;
+  sizeZ?: number;
+  sizeT?: number;
+  bbox?: [number, number, number, number];
+  centroid?: [number, number];
+  sourceChannels: number[];
+  labelPath?: string;
+  labelChannel?: number;
+  labelValue?: number;
+  t: number;
+  z: number;
+  roi: [number, number, number, number];
+  croppedField: boolean;
+  title: string;
+}
+
+export interface ZarrBinding {
+  storeUuid: string;
+  objectType: "Image" | "Plate";
+  objectId: number;
+  groupId: number;
+  capabilityImageId: number;
+  viewerVersion: string;
+  validatedAt: string;
+  verified: boolean;
+}
+
+export interface ZarrViewerProvenance {
+  application: "biomero-zarr-viewer";
+  viewerVersion: string;
+  storeUuid: string;
+  objectType: "Image" | "Plate";
+  objectId: number;
+  capabilityImageId: number;
+  field: string;
+  roi: [number, number, number, number];
+  sourceChannels: number[];
+  labelPath?: string;
+  labelChannel?: number;
+  labelValue?: number;
+  t: number;
+  z: number;
+  viewerUrl: string;
+  croppedField: boolean;
 }
 
 export interface ModelPayload {

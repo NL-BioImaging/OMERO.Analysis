@@ -48,7 +48,7 @@ function Build-Wheel {
                 & $python @arguments
             }
             if ($LASTEXITCODE -ne 0) { throw "Frontend/runtime validation failed." }
-            & $python -m build --wheel --no-isolation
+            & $python -m build --wheel
             if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
         } finally { Pop-Location }
     }
@@ -103,7 +103,7 @@ try:
     installed = Version(m.version("omero-workflow-skills"))
 except m.PackageNotFoundError:
     raise SystemExit(0)
-if not (Version("0.1") <= installed < Version("0.2")):
+if not (Version("0.2") <= installed < Version("0.3")):
     raise SystemExit(f"Incompatible installed omero-workflow-skills {installed}")
 "@
         docker exec $Container $ContainerPython -c $compatibility

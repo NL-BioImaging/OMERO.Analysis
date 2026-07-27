@@ -69,7 +69,7 @@ if (-not $SkipBuild) {
             & $python @arguments
         }
         if ($LASTEXITCODE -ne 0) { throw "Frontend/runtime build failed." }
-        & $python -m build --wheel --no-isolation
+        & $python -m build --wheel
         if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
     } finally { Pop-Location }
 }

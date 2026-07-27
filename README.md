@@ -30,7 +30,16 @@ separate local/model result envelopes with outbound-payload audits, incremental
 input synchronization, lazy package loading, local data profiles, a resizable
 artifact inspector, accessible dialogs, streaming chat, OMERO hierarchy
 navigation, workflow templates, compatibility preflight, batch execution,
-reproducibility reports, project trash, and an explicit BIOMERO handoff.
+reproducibility reports, and project trash.
+
+Version 0.6 integrates optional BIOMERO ZarrViewer 0.3+ application skills.
+For explicit requests such as “show the cell with most foci,” the assistant
+queries the browser-local measurement database, uses its canonical OME-Zarr
+UUID and field/object coordinates, and asks the browser to validate that
+identity against the current OMERO hierarchy. A bounded PNG preview is saved
+as a project output and the chat provides a deep link to the complete view.
+OMERO IDs, Zarr credentials, and authenticated URLs are resolved locally and
+are not exposed to the model.
 
 ## Privacy and security model
 
@@ -130,6 +139,7 @@ POST /api/context-token/
 GET  /api/context/<type>/<id>/
 GET  /api/attachments/<type>/<id>/
 GET  /api/hierarchy/<type>/<id>/
+GET  /api/integrations/zarr-viewer/
 GET  /api/attachment/<annotation-id>/download/
 POST /api/attachments/<type>/<id>/upload/
 GET|POST /api/projects/<type>/<id>/snapshots/
@@ -145,3 +155,5 @@ Workflow-specific AI guidance is discovered dynamically from administrator
 configured GitHub workflow revisions. See
 [Dynamic BIOMERO workflow skills](docs/workflow-skills.md) for the authoring
 contract, automatic activation, provenance, privacy, caching, and deployment.
+See [ZarrViewer integration](docs/zarrviewer-integration.md) for image-preview
+resolution, database requirements, limits, and troubleshooting.

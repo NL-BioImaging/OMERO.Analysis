@@ -14,6 +14,10 @@ export interface MatchedWorkflowSkill {
   reasons: string[];
 }
 
+export function workflowSkillSourceKey(entry: WorkflowSkillEntry): string {
+  return entry.source.source_key || entry.source.workflow_key;
+}
+
 function globMatches(name: string, glob: string): boolean {
   const expression = glob
     .split("*")
@@ -96,7 +100,7 @@ export function packageInstructions(value: WorkflowSkillPackage): string {
     .filter((file) => file.path !== "SKILL.md")
     .map((file) => file.path);
   return [
-    `Active workflow skill: ${value.skill.name} v${value.skill.version}`,
+    `Active ${value.source.source_kind === "application" ? "application-operation" : "workflow"} skill: ${value.skill.name} v${value.skill.version}`,
     `Source: ${value.source.repository_url}@${value.source.configured_ref}`,
     `Resolved commit: ${value.source.resolved_commit}`,
     `Package hash: ${value.skill.sha256}`,
@@ -110,6 +114,8 @@ export function packageInstructions(value: WorkflowSkillPackage): string {
 export function skillProvenance(value: WorkflowSkillPackage) {
   return {
     workflowKey: value.source.workflow_key,
+    sourceKind: value.source.source_kind || "workflow",
+    sourceKey: value.source.source_key || value.source.workflow_key,
     name: value.skill.name,
     version: value.skill.version,
     sha256: value.skill.sha256,

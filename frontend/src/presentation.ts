@@ -59,10 +59,11 @@ export function workflowSkillTooltip(
   if (!catalog) {
     return "The workflow-skill catalog is still loading or is not configured.";
   }
-  const values = catalog.workflows.flatMap((entry) =>
+  const values = [...catalog.workflows, ...(catalog.applications || [])].flatMap((entry) =>
     entry.skills.map((skill) => ({
-      key: `${entry.source.workflow_key}/${skill.name}`,
-      label: `${entry.source.workflow_key}: ${skill.name} v${skill.version}`,
+      key: `${entry.source.source_key || entry.source.workflow_key}/${skill.name}`,
+      label: `${entry.source.source_key || entry.source.workflow_key}: ${skill.name} v${skill.version}` +
+        `${entry.source.source_kind === "application" ? " (application)" : ""}`,
       ref: entry.source.configured_ref,
       commit: entry.source.resolved_commit.slice(0, 12),
       status: entry.status
@@ -76,7 +77,7 @@ export function workflowSkillTooltip(
   }
   const matches = new Set(matchingSkillKeys);
   return [
-    `${values.length} validated workflow skill${values.length === 1 ? "" : "s"} discovered.`,
+    `${values.length} validated workflow/application skill${values.length === 1 ? "" : "s"} discovered.`,
     matches.size
       ? `${matches.size} match${matches.size === 1 ? "es" : ""} the current inputs (marked ✓).`
       : "None currently match the loaded inputs.",

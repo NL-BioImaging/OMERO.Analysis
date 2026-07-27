@@ -6,7 +6,8 @@ interface DialogState {
   value?: string;
   confirmLabel: string;
   danger?: boolean;
-  mode: "text" | "confirm";
+  choices?: Array<{ value: string; label: string; description?: string }>;
+  mode: "text" | "confirm" | "choose";
 }
 
 export interface DialogController {
@@ -17,6 +18,11 @@ export interface DialogController {
     confirmLabel?: string,
     danger?: boolean
   ) => Promise<boolean>;
+  choose: (
+    title: string,
+    choices: Array<{ value: string; label: string; description?: string }>,
+    description?: string
+  ) => Promise<string | null>;
   element: ReactNode;
 }
 
@@ -48,6 +54,22 @@ export function useDialogs(): DialogController {
     setState({ title, description, confirmLabel, danger, mode: "confirm" });
   });
 
+  const choose = (
+    title: string,
+    choices: Array<{ value: string; label: string; description?: string }>,
+    description?: string
+  ) => new Promise<string | null>((resolve) => {
+    resolver.current = resolve as (value: string | boolean | null) => void;
+    setValue(choices[0]?.value || "");
+    setState({
+      title,
+      description,
+      choices,
+      confirmLabel: "Use selected object",
+      mode: "choose"
+    });
+  });
+
   const element = state ? (
     <div
       className="dialog-backdrop"
@@ -63,7 +85,13 @@ export function useDialogs(): DialogController {
         aria-labelledby="app-dialog-title"
         onSubmit={(event) => {
           event.preventDefault();
-          close(state.mode === "text" ? value.trim() || null : true);
+          close(
+            state.mode === "text"
+              ? value.trim() || null
+              : state.mode === "choose"
+                ? value || null
+                : true
+          );
         }}
       >
         <h2 id="app-dialog-title">{state.title}</h2>
@@ -79,6 +107,22 @@ export function useDialogs(): DialogController {
             />
           </label>
         )}
+        {state.mode === "choose" && (
+          <label>
+            <span>OMERO object</span>
+            <select
+              autoFocus
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            >
+              {(state.choices || []).map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}{choice.description ? ` — ${choice.description}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="dialog-actions">
           <button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
             Cancel
@@ -91,5 +135,5 @@ export function useDialogs(): DialogController {
     </div>
   ) : null;
 
-  return { askText, confirm, element };
+  return { askText, confirm, choose, element };
 }

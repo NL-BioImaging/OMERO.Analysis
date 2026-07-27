@@ -21,7 +21,9 @@ import {
   MAX_TOOL_TEXT,
   MAX_WORKSPACE_BYTES,
   PROVIDER_NAME,
-  SYSTEM_PROMPT
+  SYSTEM_PROMPT,
+  TOOLS,
+  ZARR_VIEWER_TOOLS
 } from "./constants";
 import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
 import {
@@ -69,16 +71,34 @@ import type {
   TokenUsage,
   WorkspaceFile,
   WorkflowSkillCatalog,
-  WorkflowSkillPackage
+  WorkflowSkillPackage,
+  ZarrBinding,
+  ZarrFocusTarget,
+  ZarrViewerCapability,
+  ZarrViewerIntegrationStatus
 } from "./types";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
-import { ArtifactInspector, ComposerPanel } from "./components/WorkspacePanels";
+import {
+  ArtifactInspector,
+  ComposerPanel,
+  ViewerPreviewCard
+} from "./components/WorkspacePanels";
 import {
   matchWorkflowSkills,
   packageInstructions,
-  skillProvenance
+  skillProvenance,
+  workflowSkillSourceKey
 } from "./workflowSkills";
+import {
+  fetchZarrCapability,
+  renderZarrPreview,
+  zarrBinding,
+  zarrCandidates,
+  zarrFocusFromToolArgs,
+  zarrProvenance,
+  zarrViewerUrl
+} from "./zarrViewer";
 import {
   activityText,
   formatDuration,
@@ -225,6 +245,10 @@ export default function App() {
   const workflowSkillCatalogRef = useRef<WorkflowSkillCatalog | null>(null);
   const workflowSkillPackages = useRef(new Map<string, WorkflowSkillPackage>());
   const [workflowSkillWarning, setWorkflowSkillWarning] = useState("");
+  const [zarrViewerStatus, setZarrViewerStatus] =
+    useState<ZarrViewerIntegrationStatus | null>(null);
+  const [zarrViewerWarning, setZarrViewerWarning] = useState("");
+  const zarrCapabilities = useRef(new Map<string, ZarrViewerCapability>());
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -350,7 +374,29 @@ export default function App() {
       if (!alive) return;
       if (savedSettings) setSettings({ ...defaultSettings, ...savedSettings });
       await bridge.connect();
-      setHierarchy(await bridge.hierarchy());
+      const [loadedHierarchy, viewerStatus] = await Promise.all([
+        bridge.hierarchy(),
+        bridge.zarrViewerStatus().catch((error) => ({
+          schema_version: 1 as const,
+          available: false,
+          installed: false,
+          enabled: false,
+          version: null,
+          minimum_version: "0.3.0",
+          reason: "not-installed" as const
+        }))
+      ]);
+      setHierarchy(loadedHierarchy);
+      setZarrViewerStatus(viewerStatus);
+      setZarrViewerWarning(
+        viewerStatus.available
+          ? ""
+          : viewerStatus.reason === "not-installed"
+            ? "OMERO ZarrViewer is not installed; image previews are unavailable."
+            : viewerStatus.reason === "app-disabled"
+              ? "OMERO ZarrViewer is installed but not enabled in OMERO.web."
+              : `OMERO ZarrViewer integration unavailable: ${viewerStatus.reason || "unknown reason"}`
+      );
       try {
         const catalog = await bridge.listWorkflowSkills();
         if (alive) {
@@ -964,6 +1010,206 @@ export default function App() {
     await restartRuntime(prepared.files, "Project loaded");
   }
 
+  async function resolveZarrTarget(
+    focus: ZarrFocusTarget
+  ): Promise<{ binding: ZarrBinding; capability: ZarrViewerCapability }> {
+    const current = workspaceRef.current;
+    const viewer = zarrViewerStatus;
+    const context = bootstrap.context;
+    if (!current || !context || !viewer?.available || !viewer.version) {
+      throw new Error(zarrViewerWarning || "OMERO ZarrViewer 0.3 or newer is unavailable");
+    }
+
+    const candidates = zarrCandidates(context, hierarchy);
+    if (!candidates.length) {
+      throw new Error(
+        "No compatible OMERO Image or Plate is available in the current object hierarchy"
+      );
+    }
+    const cachedBinding = current.project.zarrBindings?.[focus.storeUuid];
+    const cachedCandidate = cachedBinding && cachedBinding.groupId === context.group_id
+      ? candidates.find(
+        (candidate) =>
+          candidate.type === cachedBinding.objectType &&
+          candidate.id === cachedBinding.objectId
+      )
+      : undefined;
+    if (cachedCandidate) {
+      try {
+        const cacheKey = `${cachedCandidate.type}:${cachedCandidate.id}`;
+        const capability = zarrCapabilities.current.get(cacheKey) ||
+          await fetchZarrCapability(viewer, cachedCandidate);
+        zarrCapabilities.current.set(cacheKey, capability);
+        if (capability.store.uuid === focus.storeUuid) {
+          const binding = zarrBinding(
+            capability,
+            cachedCandidate,
+            context.group_id,
+            viewer.version
+          );
+          return { binding, capability };
+        }
+      } catch {
+        // A stale or inaccessible binding is re-discovered below.
+      }
+    }
+
+    let candidatesToProbe = candidates;
+    if (candidates.length > 50) {
+      const selected = await dialogs.choose(
+        "Choose the OME-Zarr source",
+        candidates.map((candidate) => ({
+          value: `${candidate.type}:${candidate.id}`,
+          label: candidate.name,
+          description: `${candidate.type} ${candidate.id}`
+        })),
+        "This object contains many possible Zarr sources. Choose the source whose UUID should match the measurement database."
+      );
+      if (!selected) throw new Error("OME-Zarr source selection was cancelled");
+      candidatesToProbe = candidates.filter(
+        (candidate) => `${candidate.type}:${candidate.id}` === selected
+      );
+    }
+
+    const matches: Array<{
+      candidate: (typeof candidatesToProbe)[number];
+      capability: ZarrViewerCapability;
+    }> = [];
+    for (let offset = 0; offset < candidatesToProbe.length; offset += 4) {
+      const batch = candidatesToProbe.slice(offset, offset + 4);
+      const settled = await Promise.allSettled(batch.map(async (candidate) => {
+        const cacheKey = `${candidate.type}:${candidate.id}`;
+        const capability = zarrCapabilities.current.get(cacheKey) ||
+          await fetchZarrCapability(viewer, candidate);
+        zarrCapabilities.current.set(cacheKey, capability);
+        return { candidate, capability };
+      }));
+      for (const result of settled) {
+        if (
+          result.status === "fulfilled" &&
+          result.value.capability.store.uuid === focus.storeUuid
+        ) {
+          matches.push(result.value);
+        }
+      }
+    }
+    if (!matches.length) {
+      throw new Error(
+        `No accessible OME-Zarr source in the current OMERO hierarchy has store UUID ${focus.storeUuid}`
+      );
+    }
+
+    let selectedMatch = matches[0];
+    if (matches.length > 1) {
+      const selected = await dialogs.choose(
+        "Choose the matching OME-Zarr source",
+        matches.map(({ candidate }) => ({
+          value: `${candidate.type}:${candidate.id}`,
+          label: candidate.name,
+          description: `${candidate.type} ${candidate.id}`
+        })),
+        "Multiple accessible OMERO objects point to the same OME-Zarr store."
+      );
+      if (!selected) throw new Error("OME-Zarr source selection was cancelled");
+      selectedMatch = matches.find(
+        ({ candidate }) => `${candidate.type}:${candidate.id}` === selected
+      ) || matches[0];
+    }
+
+    const binding = zarrBinding(
+      selectedMatch.capability,
+      selectedMatch.candidate,
+      context.group_id,
+      viewer.version
+    );
+    updateProject({
+      ...workspaceRef.current!.project,
+      zarrBindings: {
+        ...(workspaceRef.current!.project.zarrBindings || {}),
+        [focus.storeUuid]: binding
+      },
+      updatedAt: now()
+    });
+    return { binding, capability: selectedMatch.capability };
+  }
+
+  async function createZarrViewerResult(
+    args: Record<string, unknown>,
+    chatId: string,
+    promptId: string,
+    includePreview: boolean
+  ): Promise<string> {
+    const current = workspaceRef.current;
+    const viewer = zarrViewerStatus;
+    if (!current || !viewer?.available) {
+      throw new Error(zarrViewerWarning || "OMERO ZarrViewer is unavailable");
+    }
+    const focus = zarrFocusFromToolArgs(args);
+    const { binding, capability } = await resolveZarrTarget(focus);
+    const viewerUrl = zarrViewerUrl(viewer, capability, focus);
+    const viewerMetadata = zarrProvenance(binding, focus, viewerUrl);
+    let createdFile: WorkspaceFile | undefined;
+
+    if (includePreview) {
+      const data = await renderZarrPreview(capability, focus);
+      if (projectBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
+        throw new Error("The rendered preview would exceed the 512 MiB project limit");
+      }
+      const filename = `${slug(focus.title)}.png`;
+      createdFile = {
+        id: id(),
+        projectId: current.project.id,
+        chatId,
+        name: filename,
+        logicalPath: `${current.project.rootPath}/chats/${chatId}/outputs/zarr/${filename}`,
+        type: "image/png",
+        size: data.byteLength,
+        sha256: await sha256(data),
+        source: "result",
+        state: "ready",
+        data,
+        viewer: viewerMetadata,
+        createdAt: now()
+      };
+      upsertFiles([createdFile]);
+    }
+
+    const artifact: ArtifactRecord = {
+      id: id(),
+      projectId: current.project.id,
+      chatId,
+      fileId: createdFile?.id,
+      kind: "viewer-preview",
+      title: focus.title,
+      pinned: false,
+      promptId,
+      viewer: viewerMetadata,
+      createdAt: now()
+    };
+    upsertArtifacts([artifact]);
+    appendMessage(chatId, {
+      id: id(),
+      role: "assistant",
+      content: includePreview
+        ? `Rendered ${focus.title} locally from the matching OME-Zarr source.`
+        : `Prepared a validated ZarrViewer link for ${focus.title}.`,
+      kind: "viewer-preview",
+      artifactId: artifact.id,
+      activity: "worked",
+      createdAt: now()
+    });
+    if (createdFile) setSelectedArtifactFileId(createdFile.id);
+    setArtifactOpen(true);
+    return JSON.stringify({
+      ok: true,
+      artifact_id: artifact.id,
+      preview_created: Boolean(createdFile),
+      field: focus.field,
+      roi: focus.roi,
+      cropped_field_preview: focus.croppedField
+    });
+  }
+
   async function loadWorkflowSkill(
     workflowKey: string,
     skillName: string
@@ -1197,9 +1443,12 @@ export default function App() {
           workflowSkillWarning || "No workflow skill catalog is available"
         );
       }
-      return JSON.stringify(
-        matchWorkflowSkills(catalog, current.files, profiles).map((match) => ({
-          workflow_key: match.entry.source.workflow_key,
+      const matchedWorkflowSkills = matchWorkflowSkills(
+        catalog,
+        current.files,
+        profiles
+      ).map((match) => ({
+          workflow_key: workflowSkillSourceKey(match.entry),
           name: match.skill.name,
           description: match.skill.description,
           purpose: match.skill.purpose,
@@ -1214,8 +1463,30 @@ export default function App() {
             sha256: match.skill.sha256,
             status: match.entry.status
           }
+        }));
+      const applicationSkills = (catalog.applications || []).flatMap((entry) =>
+        entry.skills.map((skill) => ({
+          workflow_key: workflowSkillSourceKey(entry),
+          name: skill.name,
+          description: skill.description,
+          purpose: skill.purpose,
+          version: skill.version,
+          score: 0,
+          reasons: [
+            "Optional application operation; load only when the user explicitly asks to show, open, or render compatible data."
+          ],
+          references_are_progressive: true,
+          source: {
+            repository_url: entry.source.repository_url,
+            configured_ref: entry.source.configured_ref,
+            resolved_commit: entry.source.resolved_commit,
+            sha256: skill.sha256,
+            status: entry.status
+          }
         }))
-      ).slice(0, MAX_TOOL_TEXT);
+      );
+      return JSON.stringify([...matchedWorkflowSkills, ...applicationSkills])
+        .slice(0, MAX_TOOL_TEXT);
     }
     if (call.function.name === "load_skill") {
       if (
@@ -1229,6 +1500,15 @@ export default function App() {
           args.workflow_key,
           args.skill_name
         );
+        const provenance = skillProvenance(skill);
+        if (!turnWorkflowSkills.current.some(
+          (item) =>
+            item.workflowKey === provenance.workflowKey &&
+            item.name === provenance.name &&
+            item.sha256 === provenance.sha256
+        )) {
+          turnWorkflowSkills.current = [...turnWorkflowSkills.current, provenance];
+        }
         const resource =
           typeof args.resource === "string" && args.resource
             ? args.resource
@@ -1253,6 +1533,29 @@ export default function App() {
         });
       } catch (error) {
         return toolErrorText(error);
+      }
+    }
+    if (
+      call.function.name === "open_zarr_view" ||
+      call.function.name === "render_zarr_roi"
+    ) {
+      try {
+        return await createZarrViewerResult(
+          args,
+          chatId,
+          promptId,
+          call.function.name === "render_zarr_roi"
+        );
+      } catch (error) {
+        setStatus(`ZarrViewer request needs correction: ${String(error)}`);
+        setAnalysisPhase("repairing");
+        return JSON.stringify({
+          ok: false,
+          recoverable: true,
+          error: String(error instanceof Error ? error.message : error),
+          instruction:
+            "Inspect the measurement database again and correct the UUID, field, dimensions, coordinates, channels, or label information. Do not invent an OMERO ID or URL."
+        }).slice(0, MAX_TOOL_TEXT);
       }
     }
     if (call.function.name === "list_workspace_files") return listFiles(current.files);
@@ -1407,6 +1710,9 @@ The user has ${current.scripts.filter((script) => !script.deletedAt).length} sav
     ? "Plot CSV mode is ON: every PNG or SVG must have a same-stem CSV containing its plotted data."
     : "Plot CSV mode is OFF."
 }
+${zarrViewerStatus?.available
+  ? `OMERO ZarrViewer ${zarrViewerStatus.version} is available. Use its tools only for an explicit request to show, open, or render an image, field, object, or focus; derive every navigation value from the measurement database.`
+  : `OMERO ZarrViewer tools are unavailable in this deployment. ${zarrViewerWarning}`}
 
 ${activeSkillInstructions || (
   workflowSkillWarning
@@ -1435,7 +1741,11 @@ ${activeSkillInstructions || (
           settings,
           conversation,
           abort.current.signal,
-          (partial) => setStreamingText(partial)
+          (partial) => setStreamingText(partial),
+          [
+            ...TOOLS,
+            ...(zarrViewerStatus?.available ? ZARR_VIEWER_TOOLS : [])
+          ]
         );
         const answer = response.choices[0]?.message;
         if (!answer) throw new Error("AmsterdamUMC returned no response");
@@ -2437,7 +2747,15 @@ ${activeSkillInstructions || (
     matchingWorkflowSkills.map(
       (match) => `${match.entry.source.workflow_key}/${match.skill.name}`
     )
+  ) + (
+    zarrViewerStatus?.available
+      ? `\n\nZarrViewer ${zarrViewerStatus.version}: available for explicit image and field requests.`
+      : `\n\n${zarrViewerWarning}`
   );
+  const catalogSkillCount = [
+    ...(workflowSkillCatalog?.workflows || []),
+    ...(workflowSkillCatalog?.applications || [])
+  ].reduce((total, entry) => total + entry.skills.length, 0);
   return (
     <main className="app-shell">
       {dialogs.element}
@@ -2459,10 +2777,7 @@ ${activeSkillInstructions || (
           >
             {workflowSkillWarning
               ? "Generic guidance"
-              : `${workflowSkillCatalog?.workflows.reduce(
-                (total, entry) => total + entry.skills.length,
-                0
-              ) || 0} workflow skills`}
+              : `${catalogSkillCount} workflow skills`}
           </span>
           <button onClick={() => setShowSettings(!showSettings)}>AI settings</button>
         </div>
@@ -3114,6 +3429,27 @@ ${activeSkillInstructions || (
               </div>
             )}
             {activeChat.messages.map((message) => {
+              if (message.kind === "viewer-preview" && message.artifactId) {
+                const artifact = workspace.artifacts.find(
+                  (item) => item.id === message.artifactId
+                );
+                const file = artifact?.fileId
+                  ? workspace.files.find(
+                    (item) => item.id === artifact.fileId && !item.deletedAt
+                  )
+                  : undefined;
+                return artifact ? (
+                  <ViewerPreviewCard
+                    key={message.id}
+                    artifact={artifact}
+                    file={file}
+                    onInspect={(selected) => {
+                      setSelectedArtifactFileId(selected.id);
+                      setArtifactOpen(true);
+                    }}
+                  />
+                ) : null;
+              }
               if (message.kind === "execution" && message.executionId) {
                 const execution = workspace.executions.find((item) => item.id === message.executionId);
                 return execution ? (

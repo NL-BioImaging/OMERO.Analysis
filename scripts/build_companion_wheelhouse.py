@@ -67,6 +67,19 @@ def main() -> int:
             ],
             check=True,
         )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--only-binary=:all:",
+            "--dest",
+            str(output),
+            "packaging>=23",
+        ],
+        check=True,
+    )
     wheels = sorted(output.glob("*.whl"))
     manifest = {
         "schema": "nl.bioimaging.omero-plugin-wheelhouse.v1",

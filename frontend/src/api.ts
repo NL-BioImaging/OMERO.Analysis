@@ -7,8 +7,10 @@ import type {
   OmeroHierarchy,
   WorkspaceFile,
   WorkflowSkillCatalog,
-  WorkflowSkillPackage
+  WorkflowSkillPackage,
+  ZarrViewerIntegrationStatus
 } from "./types";
+import { zarrViewerStatusFrom } from "./zarrViewer";
 
 function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
@@ -201,15 +203,22 @@ export class OmeroBridge {
     return workflowSkillCatalogFrom(await readJson(response));
   }
 
+  async zarrViewerStatus(): Promise<ZarrViewerIntegrationStatus> {
+    const response = await fetch(this.bootstrap.zarrViewerStatusUrl, {
+      credentials: "same-origin"
+    });
+    return zarrViewerStatusFrom(await readJson(response));
+  }
+
   async loadWorkflowSkill(
     workflowKey: string,
     skillName: string
   ): Promise<WorkflowSkillPackage> {
     const catalog = await this.listWorkflowSkills();
-    const skill = catalog.workflows
+    const skill = [...catalog.workflows, ...(catalog.applications || [])]
       .flatMap((entry) => entry.skills)
       .find((item) =>
-        item.workflow_key === workflowKey && item.name === skillName
+        (item.source_key || item.workflow_key) === workflowKey && item.name === skillName
       );
     if (!skill) throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
     const response = await fetch(skill.package_url, { credentials: "same-origin" });
@@ -291,15 +300,19 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
     body.schema !== "nl.bioimaging.omero-workflow-skills.v1" ||
     body.consumer !== "omero-analysis-chat" ||
     !Array.isArray(body.workflows) ||
+    !(body.applications == null || Array.isArray(body.applications)) ||
     !Array.isArray(body.diagnostics)
   ) {
     throw new Error("OMERO returned an invalid workflow skill catalog");
   }
-  for (const rawEntry of body.workflows) {
+  body.applications = body.applications || [];
+  for (const rawEntry of [...body.workflows, ...body.applications]) {
     const entry = record(rawEntry, "workflow skill entry");
     const source = record(entry.source, "workflow skill source");
     if (
       typeof source.workflow_key !== "string" ||
+      !(source.source_kind == null || ["workflow", "application"].includes(source.source_kind)) ||
+      !(source.source_key == null || typeof source.source_key === "string") ||
       typeof source.repository_url !== "string" ||
       typeof source.configured_ref !== "string" ||
       typeof source.resolved_commit !== "string" ||
@@ -325,15 +338,23 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
 
 function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
   const body = record(value, "workflow skill package");
+  const source = record(body.source, "workflow skill source");
+  const collection = source.source_kind === "application" ? "applications" : "workflows";
   workflowSkillCatalogFrom({
     schema: "nl.bioimaging.omero-workflow-skills.v1",
     consumer: "omero-analysis-chat",
-    workflows: [{
+    workflows: collection === "workflows" ? [{
       source: body.source,
       status: "ready",
       checked_at: "",
       skills: [body.skill]
-    }],
+    }] : [],
+    applications: collection === "applications" ? [{
+      source: body.source,
+      status: "ready",
+      checked_at: "",
+      skills: [body.skill]
+    }] : [],
     diagnostics: []
   });
   if (!Array.isArray(body.files)) {
@@ -385,7 +406,8 @@ export async function completeChat(
   settings: ProviderSettings,
   messages: AiMessage[],
   signal: AbortSignal,
-  onDelta?: (content: string) => void
+  onDelta?: (content: string) => void,
+  tools: readonly unknown[] = TOOLS
 ): Promise<AiResponse> {
   const response = await fetch(CHAT_URL, {
     method: "POST",
@@ -398,7 +420,7 @@ export async function completeChat(
       model: settings.model,
       temperature: TEMPERATURE,
       messages,
-      tools: TOOLS,
+      tools,
       tool_choice: "auto",
       stream: Boolean(onDelta),
       stream_options: onDelta ? { include_usage: true } : undefined

@@ -71,6 +71,11 @@ urlpatterns = [
         name="omero_analysis_chat_workflow_skills",
     ),
     re_path(
+        r"^api/integrations/zarr-viewer/$",
+        views.zarr_viewer_integration,
+        name="omero_analysis_chat_zarr_viewer_integration",
+    ),
+    re_path(
         r"^api/workflow-skills/(?P<workflow_key>[a-zA-Z0-9_-]+)/"
         r"(?P<skill_name>[a-z0-9-]+)/$",
         views.workflow_skill_package,

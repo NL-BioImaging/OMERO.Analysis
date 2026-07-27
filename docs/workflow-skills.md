@@ -1,6 +1,6 @@
 # Dynamic BIOMERO workflow skills
 
-OMERO.AnalysisChat uses `omero-workflow-skills>=0.1,<0.2` as a shared,
+OMERO.AnalysisChat uses `omero-workflow-skills>=0.2,<0.3` as a shared,
 framework-neutral catalog. It reads the existing BIOMERO workflow
 configuration, resolves each configured GitHub tag, branch, or commit, and
 accepts only validated UTF-8 Agent Skill instructions and text references. It
@@ -29,6 +29,21 @@ Specialized workflow knowledge has been removed from the global system prompt;
 privacy, browser paths, execution limits, and tools remain plugin-owned. If the
 catalog is unavailable, generic schema-first analysis continues with a visible
 warning.
+
+Catalog 0.2 also discovers application-operation skills from the optional
+`[APPLICATIONS]` configuration. These skills are never auto-activated merely
+because a database is present. AnalysisChat exposes them to the model when an
+application is installed and loads them for an explicit operation request,
+such as showing a measured object in ZarrViewer. This keeps workflow analysis
+knowledge separate from application-specific routes and UI behavior.
+
+Example application configuration:
+
+```ini
+[APPLICATIONS]
+omero-zarr-viewer_repo = https://github.com/NL-BioImaging/BIOMERO.ZarrViewer/tree/v0.3.0
+omero-zarr-viewer_skills_path = _agents/skills
+```
 
 Workflow authors should follow the contract documented by
 [OMERO.WorkflowSkills](https://github.com/NL-BioImaging/OMERO.WorkflowSkills).

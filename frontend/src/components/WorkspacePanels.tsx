@@ -1,4 +1,5 @@
 import type {
+  ArtifactRecord,
   DataProfile,
   ProviderSettings,
   RuntimeProgress,
@@ -88,6 +89,52 @@ function FilePreview({ file }: { file: WorkspaceFile }) {
     <p className="artifact-help">
       Preview is not available for this file type. Use Download to open the file.
     </p>
+  );
+}
+
+export function ViewerPreviewCard({
+  artifact,
+  file,
+  onInspect
+}: {
+  artifact: ArtifactRecord;
+  file?: WorkspaceFile;
+  onInspect: (file: WorkspaceFile) => void;
+}) {
+  const viewer = artifact.viewer || file?.viewer;
+  if (!viewer) return null;
+  return (
+    <article className="viewer-preview-card">
+      <div className="viewer-preview-heading">
+        <div>
+          <span>OME-Zarr view</span>
+          <strong>{artifact.title}</strong>
+        </div>
+        {viewer.viewerUrl ? (
+          <a
+            className="button-link"
+            href={viewer.viewerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in ZarrViewer
+          </a>
+        ) : (
+          <span className="viewer-link-pending">
+            Revalidate this preview in the current OMERO object to reopen it
+          </span>
+        )}
+      </div>
+      {file && (
+        <button className="viewer-preview-image" onClick={() => onInspect(file)}>
+          <Artifact file={file} />
+        </button>
+      )}
+      <small>
+        Field {viewer.field} · ROI {viewer.roi.join(", ")}
+        {viewer.croppedField ? " · centered preview; full field opens in ZarrViewer" : ""}
+      </small>
+    </article>
   );
 }
 
@@ -206,6 +253,16 @@ export function ArtifactInspector({
                 <dt>Created</dt><dd>{new Date(file.createdAt).toLocaleString()}</dd>
               </dl>
               <div className="artifact-buttons">
+                {file.viewer?.viewerUrl && (
+                  <a
+                    className="button-link"
+                    href={file.viewer.viewerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in ZarrViewer
+                  </a>
+                )}
                 <button onClick={() => onDownload(file)}>Download</button>
                 {canUpload && <button onClick={() => onAttach(file)}>Attach to OMERO</button>}
               </div>
