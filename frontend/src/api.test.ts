@@ -22,6 +22,7 @@ const bootstrap: Bootstrap = {
   snapshotDownloadTemplate: "/snapshot/1/download/",
   workflowTemplatesTemplate: "/workflows/TYPE/1/",
   workflowDownloadTemplate: "/workflow/1/download/",
+  workflowSkillsUrl: "/workflow-skills/",
   runtimeBase: "/runtime/"
 };
 
@@ -71,6 +72,62 @@ describe("OMERO capability renewal", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
     const bridge = new OmeroBridge(bootstrap);
     await expect(bridge.connect()).rejects.toThrow("invalid context capability");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("workflow skill adapter", () => {
+  it("validates catalog and package payloads", async () => {
+    const source = {
+      workflow_key: "example",
+      repository_url: "https://github.com/example/workflow/tree/v1",
+      configured_ref: "v1",
+      resolved_commit: "a".repeat(40),
+      skills_path: "_agents/skills",
+      ref_kind: "tag"
+    };
+    const skill = {
+      workflow_key: "example",
+      name: "analyze-example",
+      description: "Analyze example outputs",
+      purpose: "attachment-analysis",
+      consumers: ["omero-analysis-chat"],
+      version: "1",
+      sha256: "b".repeat(64),
+      package_url: "/workflow-skills/example/analyze-example/",
+      match: {
+        extensions: [".csv"],
+        filename_globs: [],
+        required_tables: [],
+        auto_activate: true
+      }
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const packageRequest = String(input).includes("analyze-example");
+      return new Response(JSON.stringify(packageRequest ? {
+        source,
+        skill,
+        files: [{
+          path: "SKILL.md",
+          media_type: "text/markdown",
+          size: 10,
+          sha256: "c".repeat(64),
+          content: "# Instructions"
+        }]
+      } : {
+        schema: "nl.bioimaging.omero-workflow-skills.v1",
+        generated_at: "",
+        consumer: "omero-analysis-chat",
+        config_hash: "config",
+        workflows: [{ source, status: "ready", checked_at: "", skills: [skill] }],
+        diagnostics: []
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const bridge = new OmeroBridge(bootstrap);
+    expect((await bridge.listWorkflowSkills()).workflows[0].skills[0].name)
+      .toBe("analyze-example");
+    expect((await bridge.loadWorkflowSkill("example", "analyze-example")).files[0].path)
+      .toBe("SKILL.md");
     vi.unstubAllGlobals();
   });
 });

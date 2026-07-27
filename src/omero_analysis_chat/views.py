@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 try:
@@ -38,6 +39,7 @@ from .services import (
 from .tokens import make_context_token, validate_context_token
 
 logger = logging.getLogger(__name__)
+WORKFLOW_SKILLS_CONSUMER = "omero-analysis-chat"
 RUNTIME_ROOT = (
     Path(__file__).resolve().parent
     / "static"
@@ -168,6 +170,86 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
         "omero_analysis_chat/panel.html",
         {"context": object_context(object_type, object_id, obj, conn)},
     )
+
+
+def _workflow_skill_catalog():
+    from omero_workflow_skills import WorkflowSkillCatalog
+
+    return WorkflowSkillCatalog(
+        package_url=lambda workflow_key, skill_name: reverse(
+            "omero_analysis_chat_workflow_skill",
+            kwargs={"workflow_key": workflow_key, "skill_name": skill_name},
+        )
+    )
+
+
+def _workflow_skill_error(exc):
+    logger.warning("OMERO workflow skill catalog request failed: %s", exc)
+    return JsonResponse(
+        {
+            "error": {
+                "code": "workflow_skills_unavailable",
+                "message": str(exc),
+            }
+        },
+        status=503,
+    )
+
+
+@require_GET
+@login_required(setGroupContext=True)
+def workflow_skills(request, conn=None, **kwargs):
+    try:
+        catalog = _workflow_skill_catalog()
+        payload = catalog.get_catalog(WORKFLOW_SKILLS_CONSUMER).to_dict()
+        payload["service_status"] = catalog.status()
+        return JsonResponse(payload)
+    except Exception as exc:
+        return _workflow_skill_error(exc)
+
+
+@require_GET
+@login_required(setGroupContext=True)
+def workflow_skill_package(
+    request, workflow_key, skill_name, conn=None, **kwargs
+):
+    try:
+        package = _workflow_skill_catalog().get_package(
+            workflow_key,
+            skill_name,
+            WORKFLOW_SKILLS_CONSUMER,
+        )
+        return JsonResponse(package.to_dict())
+    except Exception as exc:
+        return _workflow_skill_error(exc)
+
+
+@require_POST
+@login_required(setGroupContext=True)
+def refresh_workflow_skills(request, conn=None, **kwargs):
+    if conn is None or not bool(conn.isAdmin()):
+        return JsonResponse(
+            {
+                "error": {
+                    "code": "permission_denied",
+                    "message": "Only OMERO administrators can refresh workflow skills",
+                }
+            },
+            status=403,
+        )
+    try:
+        catalog = _workflow_skill_catalog()
+        catalog.refresh()
+        return JsonResponse(
+            {
+                "refreshed": True,
+                "catalog": catalog.get_catalog(
+                    WORKFLOW_SKILLS_CONSUMER
+                ).to_dict(),
+            }
+        )
+    except Exception as exc:
+        return _workflow_skill_error(exc)
 
 
 @require_POST

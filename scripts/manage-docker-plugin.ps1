@@ -78,6 +78,8 @@ function Restart-Web([bool] $ExpectActive) {
 function Show-Status {
     $version = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('$PackageName'))" 2>$null
     Write-Host $(if ($LASTEXITCODE -eq 0) { "Package: installed ($version)" } else { "Package: not installed" })
+    $catalogVersion = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('omero-workflow-skills'))" 2>$null
+    Write-Host $(if ($LASTEXITCODE -eq 0) { "Catalog: installed ($catalogVersion)" } else { "Catalog: not installed" })
     $apps = docker exec $Container $ContainerOmero config get omero.web.apps 2>$null
     Write-Host $(if ($apps -match "omero_analysis_chat") { "OMERO.web: app active" } else { "OMERO.web: app inactive" })
 }
@@ -88,19 +90,61 @@ switch ($Action) {
     "status" { Show-Status }
     { $_ -in @("install", "update") } {
         $wheel = Build-Wheel
-        $remote = "/tmp/$($wheel.Name)"
-        docker cp $wheel.FullName "${Container}:$remote"
-        docker exec --user root $Container $ContainerPython -m pip install --no-deps --force-reinstall $remote
+        $wheelhouse = Join-Path $RepoRoot "dist\wheelhouse"
+        $python = Host-Python
+        & $python (Join-Path $RepoRoot "scripts\build_companion_wheelhouse.py") `
+            --plugin-wheel $wheel.FullName `
+            --output $wheelhouse
+        if ($LASTEXITCODE -ne 0) { throw "Offline companion wheelhouse build failed." }
+        $compatibility = @"
+import importlib.metadata as m
+from packaging.version import Version
+try:
+    installed = Version(m.version("omero-workflow-skills"))
+except m.PackageNotFoundError:
+    raise SystemExit(0)
+if not (Version("0.1") <= installed < Version("0.2")):
+    raise SystemExit(f"Incompatible installed omero-workflow-skills {installed}")
+"@
+        docker exec $Container $ContainerPython -c $compatibility
+        if ($LASTEXITCODE -ne 0) { throw "The installed workflow catalog is incompatible; the container was not changed." }
+        $remote = "/tmp/omero-analysis-chat-wheelhouse"
+        docker exec --user root $Container rm -rf $remote
+        docker cp "$wheelhouse\." "${Container}:$remote"
+        docker exec --user root $Container $ContainerPython -m pip install `
+            --no-index --find-links $remote --upgrade `
+            "$remote/$($wheel.Name)"
+        if ($LASTEXITCODE -ne 0) { throw "Offline plugin installation failed." }
         docker cp (Join-Path $RepoRoot "docker\90-omero-analysis-chat.omero") "${Container}:$ContainerConfig"
         docker exec --user root $Container chmod 0644 $ContainerConfig
         docker exec --user root $Container rm -rf $ContainerStatic
-        docker exec --user root $Container rm -f $remote
+        docker exec --user root $Container rm -rf $remote
         Restart-Web $true
         Show-Status
     }
     "remove" {
         docker exec --user root $Container rm -f $ContainerConfig
         docker exec --user root $Container $ContainerPython -m pip uninstall -y $PackageName
+        $reverseDependencies = @"
+import importlib.metadata as m
+from packaging.requirements import InvalidRequirement, Requirement
+users = []
+for distribution in m.distributions():
+    for raw in distribution.requires or ():
+        try:
+            requirement = Requirement(raw)
+        except InvalidRequirement:
+            continue
+        if requirement.name.lower().replace("_", "-") == "omero-workflow-skills":
+            users.append(distribution.metadata.get("Name", "unknown"))
+print(",".join(sorted(set(users))))
+"@
+        $catalogUsers = (docker exec $Container $ContainerPython -c $reverseDependencies 2>$null).Trim()
+        if (-not $catalogUsers) {
+            docker exec --user root $Container $ContainerPython -m pip uninstall -y omero-workflow-skills
+        } else {
+            Write-Host "Keeping omero-workflow-skills; required by $catalogUsers"
+        }
         docker exec --user root $Container rm -rf $ContainerStatic
         Restart-Web $false
         Show-Status

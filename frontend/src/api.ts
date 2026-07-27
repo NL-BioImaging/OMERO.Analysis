@@ -5,7 +5,9 @@ import type {
   ProviderSettings,
   RuntimeOutput,
   OmeroHierarchy,
-  WorkspaceFile
+  WorkspaceFile,
+  WorkflowSkillCatalog,
+  WorkflowSkillPackage
 } from "./types";
 
 function csrfToken(): string {
@@ -191,6 +193,28 @@ export class OmeroBridge {
     if (!response.ok) throw new Error(await errorText(response));
     return response.arrayBuffer();
   }
+
+  async listWorkflowSkills(): Promise<WorkflowSkillCatalog> {
+    const response = await fetch(this.bootstrap.workflowSkillsUrl, {
+      credentials: "same-origin"
+    });
+    return workflowSkillCatalogFrom(await readJson(response));
+  }
+
+  async loadWorkflowSkill(
+    workflowKey: string,
+    skillName: string
+  ): Promise<WorkflowSkillPackage> {
+    const catalog = await this.listWorkflowSkills();
+    const skill = catalog.workflows
+      .flatMap((entry) => entry.skills)
+      .find((item) =>
+        item.workflow_key === workflowKey && item.name === skillName
+      );
+    if (!skill) throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
+    const response = await fetch(skill.package_url, { credentials: "same-origin" });
+    return workflowSkillPackageFrom(await readJson(response));
+  }
 }
 
 async function errorText(response: Response): Promise<string> {
@@ -259,6 +283,74 @@ function hierarchyFrom(value: unknown): OmeroHierarchy {
     parents: body.parents.map(item),
     children: body.children.map(item)
   } as OmeroHierarchy;
+}
+
+function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
+  const body = record(value, "workflow skill catalog");
+  if (
+    body.schema !== "nl.bioimaging.omero-workflow-skills.v1" ||
+    body.consumer !== "omero-analysis-chat" ||
+    !Array.isArray(body.workflows) ||
+    !Array.isArray(body.diagnostics)
+  ) {
+    throw new Error("OMERO returned an invalid workflow skill catalog");
+  }
+  for (const rawEntry of body.workflows) {
+    const entry = record(rawEntry, "workflow skill entry");
+    const source = record(entry.source, "workflow skill source");
+    if (
+      typeof source.workflow_key !== "string" ||
+      typeof source.repository_url !== "string" ||
+      typeof source.configured_ref !== "string" ||
+      typeof source.resolved_commit !== "string" ||
+      !Array.isArray(entry.skills)
+    ) {
+      throw new Error("OMERO returned invalid workflow skill metadata");
+    }
+    for (const rawSkill of entry.skills) {
+      const skill = record(rawSkill, "workflow skill");
+      if (
+        typeof skill.name !== "string" ||
+        typeof skill.sha256 !== "string" ||
+        typeof skill.package_url !== "string" ||
+        !skill.match ||
+        typeof skill.match !== "object"
+      ) {
+        throw new Error("OMERO returned an invalid workflow skill");
+      }
+    }
+  }
+  return body as WorkflowSkillCatalog;
+}
+
+function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
+  const body = record(value, "workflow skill package");
+  workflowSkillCatalogFrom({
+    schema: "nl.bioimaging.omero-workflow-skills.v1",
+    consumer: "omero-analysis-chat",
+    workflows: [{
+      source: body.source,
+      status: "ready",
+      checked_at: "",
+      skills: [body.skill]
+    }],
+    diagnostics: []
+  });
+  if (!Array.isArray(body.files)) {
+    throw new Error("OMERO returned an invalid workflow skill package");
+  }
+  for (const rawFile of body.files) {
+    const file = record(rawFile, "workflow skill file");
+    if (
+      typeof file.path !== "string" ||
+      typeof file.content !== "string" ||
+      typeof file.sha256 !== "string" ||
+      (file.path !== "SKILL.md" && !file.path.startsWith("references/"))
+    ) {
+      throw new Error("OMERO returned an unsafe workflow skill file");
+    }
+  }
+  return body as WorkflowSkillPackage;
 }
 
 export interface AiMessage {

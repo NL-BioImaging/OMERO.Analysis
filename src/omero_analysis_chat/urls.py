@@ -65,4 +65,20 @@ urlpatterns = [
         views.download_workflow_template,
         name="omero_analysis_chat_workflow_download",
     ),
+    re_path(
+        r"^api/workflow-skills/$",
+        views.workflow_skills,
+        name="omero_analysis_chat_workflow_skills",
+    ),
+    re_path(
+        r"^api/workflow-skills/(?P<workflow_key>[a-zA-Z0-9_-]+)/"
+        r"(?P<skill_name>[a-z0-9-]+)/$",
+        views.workflow_skill_package,
+        name="omero_analysis_chat_workflow_skill",
+    ),
+    re_path(
+        r"^api/workflow-skills/refresh/$",
+        views.refresh_workflow_skills,
+        name="omero_analysis_chat_refresh_workflow_skills",
+    ),
 ]

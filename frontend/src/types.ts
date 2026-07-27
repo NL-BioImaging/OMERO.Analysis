@@ -38,7 +38,71 @@ export interface Bootstrap {
   snapshotDownloadTemplate: string;
   workflowTemplatesTemplate: string;
   workflowDownloadTemplate: string;
+  workflowSkillsUrl: string;
   runtimeBase: string;
+}
+
+export interface WorkflowSkillMatch {
+  extensions: string[];
+  filename_globs: string[];
+  required_tables: string[];
+  auto_activate: boolean;
+}
+
+export interface WorkflowSkillSummary {
+  workflow_key: string;
+  name: string;
+  description: string;
+  purpose: string;
+  consumers: string[];
+  version: string;
+  sha256: string;
+  package_url: string;
+  match: WorkflowSkillMatch;
+}
+
+export interface WorkflowSkillSource {
+  workflow_key: string;
+  repository_url: string;
+  configured_ref: string;
+  resolved_commit: string;
+  skills_path: string;
+  ref_kind: string;
+}
+
+export interface WorkflowSkillEntry {
+  source: WorkflowSkillSource;
+  status: "ready" | "no-skills" | "stale" | "error";
+  checked_at: string;
+  skills: WorkflowSkillSummary[];
+  error?: string;
+}
+
+export interface WorkflowSkillCatalog {
+  schema: "nl.bioimaging.omero-workflow-skills.v1";
+  generated_at: string;
+  consumer: string;
+  config_hash: string;
+  workflows: WorkflowSkillEntry[];
+  diagnostics: Array<{
+    level: "info" | "warning" | "error";
+    code: string;
+    message: string;
+    workflow_key?: string;
+    skill_name?: string;
+  }>;
+}
+
+export interface WorkflowSkillPackage {
+  source: WorkflowSkillSource;
+  skill: WorkflowSkillSummary;
+  files: Array<{
+    path: string;
+    media_type: string;
+    size: number;
+    sha256: string;
+    content: string;
+  }>;
 }
 
 export interface HierarchyItem {
@@ -118,6 +182,14 @@ export interface ChatMessage {
   kind?: "text" | "error" | "execution";
   executionId?: string;
   citationIds?: string[];
+  workflowSkills?: Array<{
+    workflowKey: string;
+    name: string;
+    version: string;
+    sha256: string;
+    configuredRef: string;
+    resolvedCommit: string;
+  }>;
   createdAt: string;
 }
 
@@ -140,6 +212,7 @@ export interface ExecutionRecord {
   runtimeVersion: string;
   model: string;
   modelPayload?: ModelPayload;
+  workflowSkills?: ChatMessage["workflowSkills"];
   deletedOutputFileIds?: string[];
   createdAt: string;
 }

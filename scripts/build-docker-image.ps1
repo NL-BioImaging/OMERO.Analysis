@@ -77,13 +77,16 @@ $wheel = Get-ChildItem (Join-Path $RepoRoot "dist\omero_analysis_chat-*.whl") | 
 if (-not $wheel) { throw "No Analysis Chat wheel exists in dist." }
 & $python (Join-Path $RepoRoot "scripts\verify_wheel.py") $wheel.FullName
 if ($LASTEXITCODE -ne 0) { throw "Wheel verification failed." }
+$wheelhouse = Join-Path $RepoRoot "dist\wheelhouse"
+& $python (Join-Path $RepoRoot "scripts\build_companion_wheelhouse.py") `
+    --plugin-wheel $wheel.FullName `
+    --output $wheelhouse
+if ($LASTEXITCODE -ne 0) { throw "Offline companion wheelhouse build failed." }
 
 docker build `
     --build-arg "OMERO_WEB_IMAGE=$BaseImage" `
-    --build-arg "ANALYSIS_CHAT_WHEEL=dist/$($wheel.Name)" `
     --file docker/Dockerfile.omeroweb `
     --tag $Tag `
     $RepoRoot
 if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
 Write-Host "Built $Tag on top of $BaseImage without dropping existing baked-in plugins."
-

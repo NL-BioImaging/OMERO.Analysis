@@ -66,11 +66,18 @@ import type {
   InputContract,
   OmeroHierarchy,
   TokenUsage,
-  WorkspaceFile
+  WorkspaceFile,
+  WorkflowSkillCatalog,
+  WorkflowSkillPackage
 } from "./types";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
 import { ArtifactInspector, ComposerPanel } from "./components/WorkspacePanels";
+import {
+  matchWorkflowSkills,
+  packageInstructions,
+  skillProvenance
+} from "./workflowSkills";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -201,6 +208,11 @@ export default function App() {
   const [snapshots, setSnapshots] = useState<Attachment[]>([]);
   const [hierarchy, setHierarchy] = useState<OmeroHierarchy | null>(null);
   const [workflowTemplates, setWorkflowTemplates] = useState<Attachment[]>([]);
+  const [workflowSkillCatalog, setWorkflowSkillCatalog] =
+    useState<WorkflowSkillCatalog | null>(null);
+  const workflowSkillCatalogRef = useRef<WorkflowSkillCatalog | null>(null);
+  const workflowSkillPackages = useRef(new Map<string, WorkflowSkillPackage>());
+  const [workflowSkillWarning, setWorkflowSkillWarning] = useState("");
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -239,7 +251,10 @@ export default function App() {
   const importInput = useRef<HTMLInputElement | null>(null);
   const addFilesInput = useRef<HTMLInputElement | null>(null);
   const turnOutputNames = useRef(new Set<string>());
+  const turnWorkflowSkills =
+    useRef<NonNullable<ChatMessage["workflowSkills"]>>([]);
   workspaceRef.current = workspace;
+  workflowSkillCatalogRef.current = workflowSkillCatalog;
 
   const project = workspace?.project || null;
   const chats = workspace?.chats || [];
@@ -318,6 +333,23 @@ export default function App() {
       if (savedSettings) setSettings({ ...defaultSettings, ...savedSettings });
       await bridge.connect();
       setHierarchy(await bridge.hierarchy());
+      try {
+        const catalog = await bridge.listWorkflowSkills();
+        if (alive) {
+          setWorkflowSkillCatalog(catalog);
+          setWorkflowSkillWarning(
+            catalog.workflows.some((entry) => entry.status === "stale")
+              ? "Workflow guidance is using an unchanged cached revision."
+              : ""
+          );
+        }
+      } catch (error) {
+        if (alive) {
+          setWorkflowSkillWarning(
+            `Workflow-specific guidance unavailable: ${String(error)}`
+          );
+        }
+      }
       let initial = baseProject;
       const requestedSnapshot = bootstrap.context?.selected_project_snapshot;
       if (requestedSnapshot) {
@@ -860,6 +892,18 @@ export default function App() {
     await restartRuntime(prepared.files, "Project loaded");
   }
 
+  async function loadWorkflowSkill(
+    workflowKey: string,
+    skillName: string
+  ): Promise<WorkflowSkillPackage> {
+    const key = `${workflowKey}/${skillName}`;
+    const cached = workflowSkillPackages.current.get(key);
+    if (cached) return cached;
+    const loaded = await bridge.loadWorkflowSkill(workflowKey, skillName);
+    workflowSkillPackages.current.set(key, loaded);
+    return loaded;
+  }
+
   async function executeCode(
     code: string,
     chatId: string,
@@ -874,8 +918,12 @@ export default function App() {
       .filter((file) => file.source !== "result" && file.state === "ready" && !file.deletedAt)
       .map((file) => file.sha256)
       .sort();
+    const skillHashes = turnWorkflowSkills.current
+      .map((skill) => skill.sha256)
+      .sort();
     const cacheKey = await sha256(
-      `${codeHash}|${inputHashes.join(",")}|${RUNTIME_VERSION}|plotCsv=${current.project.plotCsv}`
+      `${codeHash}|${inputHashes.join(",")}|${skillHashes.join(",")}|` +
+      `${RUNTIME_VERSION}|plotCsv=${current.project.plotCsv}`
     );
     const previous = current.executions
       .filter((execution) => execution.cacheKey === cacheKey && execution.status !== "running")
@@ -935,6 +983,7 @@ export default function App() {
       inputHashes,
       runtimeVersion: RUNTIME_VERSION,
       model: settings.model,
+      workflowSkills: turnWorkflowSkills.current,
       createdAt: now()
     };
     upsertExecution(execution);
@@ -1057,6 +1106,71 @@ export default function App() {
     }
     const current = workspaceRef.current;
     if (!current) return toolErrorText("Project is not ready");
+    if (call.function.name === "discover_skills") {
+      const catalog = workflowSkillCatalogRef.current;
+      if (!catalog) {
+        return toolErrorText(
+          workflowSkillWarning || "No workflow skill catalog is available"
+        );
+      }
+      return JSON.stringify(
+        matchWorkflowSkills(catalog, current.files, profiles).map((match) => ({
+          workflow_key: match.entry.source.workflow_key,
+          name: match.skill.name,
+          description: match.skill.description,
+          purpose: match.skill.purpose,
+          version: match.skill.version,
+          score: match.score,
+          reasons: match.reasons,
+          references_are_progressive: true,
+          source: {
+            repository_url: match.entry.source.repository_url,
+            configured_ref: match.entry.source.configured_ref,
+            resolved_commit: match.entry.source.resolved_commit,
+            sha256: match.skill.sha256,
+            status: match.entry.status
+          }
+        }))
+      ).slice(0, MAX_TOOL_TEXT);
+    }
+    if (call.function.name === "load_skill") {
+      if (
+        typeof args.workflow_key !== "string" ||
+        typeof args.skill_name !== "string"
+      ) {
+        return toolErrorText("load_skill requires workflow_key and skill_name");
+      }
+      try {
+        const skill = await loadWorkflowSkill(
+          args.workflow_key,
+          args.skill_name
+        );
+        const resource =
+          typeof args.resource === "string" && args.resource
+            ? args.resource
+            : "SKILL.md";
+        const file = skill.files.find((item) => item.path === resource);
+        if (!file) {
+          return toolErrorText(
+            `Resource ${resource} is unavailable. Available resources: ` +
+            skill.files.map((item) => item.path).join(", ")
+          );
+        }
+        return JSON.stringify({
+          workflow_key: skill.source.workflow_key,
+          skill_name: skill.skill.name,
+          version: skill.skill.version,
+          configured_ref: skill.source.configured_ref,
+          resolved_commit: skill.source.resolved_commit,
+          sha256: skill.skill.sha256,
+          resource,
+          content: file.content.slice(0, MAX_TOOL_TEXT - 4096),
+          available_resources: skill.files.map((item) => item.path)
+        });
+      } catch (error) {
+        return toolErrorText(error);
+      }
+    }
     if (call.function.name === "list_workspace_files") return listFiles(current.files);
     if (call.function.name === "reset_python") {
       try {
@@ -1146,11 +1260,35 @@ export default function App() {
     abort.current = new AbortController();
     turnOutputNames.current.clear();
     await runtime.beginTurn();
+    turnWorkflowSkills.current = [];
+    let activeSkillInstructions = "";
+    const compatibleSkills = matchWorkflowSkills(
+      workflowSkillCatalogRef.current,
+      current.files,
+      profiles
+    );
+    if (compatibleSkills.length) {
+      const strongest = compatibleSkills[0];
+      try {
+        const skill = await loadWorkflowSkill(
+          strongest.entry.source.workflow_key,
+          strongest.skill.name
+        );
+        turnWorkflowSkills.current = [skillProvenance(skill)];
+        activeSkillInstructions = packageInstructions(skill);
+        setWorkflowSkillWarning("");
+      } catch (error) {
+        setWorkflowSkillWarning(
+          `Workflow-specific guidance unavailable: ${String(error)}`
+        );
+      }
+    }
     const promptId = id();
     const user: ChatMessage = {
       id: promptId,
       role: "user",
       content: text,
+      workflowSkills: turnWorkflowSkills.current,
       createdAt: now()
     };
     appendMessage(chat.id, user);
@@ -1180,7 +1318,13 @@ The user has ${current.scripts.filter((script) => !script.deletedAt).length} sav
   current.project.plotCsv
     ? "Plot CSV mode is ON: every PNG or SVG must have a same-stem CSV containing its plotted data."
     : "Plot CSV mode is OFF."
-}`;
+}
+
+${activeSkillInstructions || (
+  workflowSkillWarning
+    ? `No specialized workflow skill was loaded. ${workflowSkillWarning}`
+    : "No compatible specialized workflow skill matched; use generic schema-first analysis."
+)}`;
     const pinnedIds = new Set(currentChat.pinnedMessageIds || []);
     const history = [
       ...ordinary.filter((message) => pinnedIds.has(message.id)),
@@ -1227,6 +1371,7 @@ The user has ${current.scripts.filter((script) => !script.deletedAt).length} sav
             role: "assistant",
             content: answer.content,
             citationIds,
+            workflowSkills: turnWorkflowSkills.current,
             createdAt: now()
           });
         }
@@ -2099,6 +2244,17 @@ The user has ${current.scripts.filter((script) => !script.deletedAt).length} sav
             Plot + CSV
           </label>
           <span className="privacy-badge">Source data stay in this browser</span>
+          <span
+            className={workflowSkillWarning ? "skill-badge warning" : "skill-badge"}
+            title={workflowSkillWarning || "Validated workflow guidance is available"}
+          >
+            {workflowSkillWarning
+              ? "Generic guidance"
+              : `${workflowSkillCatalog?.workflows.reduce(
+                (total, entry) => total + entry.skills.length,
+                0
+              ) || 0} workflow skills`}
+          </span>
           {bootstrap.context && (
             <button
               title="Open BIOMERO for pixel, GPU, server-package, or long-running workflows"

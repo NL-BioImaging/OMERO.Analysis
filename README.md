@@ -141,3 +141,7 @@ GET  /api/workflow-template/<annotation-id>/download/
 ## License
 
 GNU Affero General Public License v3.0 or later.
+Workflow-specific AI guidance is discovered dynamically from administrator
+configured GitHub workflow revisions. See
+[Dynamic BIOMERO workflow skills](docs/workflow-skills.md) for the authoring
+contract, automatic activation, provenance, privacy, caching, and deployment.

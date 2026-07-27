@@ -20,6 +20,7 @@ window.OMERO_ANALYSIS_CHAT = existing?.runtimeBase ? existing : {
   snapshotDownloadTemplate: value("snapshotDownloadTemplate"),
   workflowTemplatesTemplate: value("workflowTemplatesTemplate"),
   workflowDownloadTemplate: value("workflowDownloadTemplate"),
+  workflowSkillsUrl: value("workflowSkillsUrl"),
   runtimeBase: value("runtimeBase").replace(/ASSET$/, "")
 };
 

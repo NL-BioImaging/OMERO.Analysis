@@ -20,6 +20,8 @@ describe("AmsterdamUMC provider", () => {
 
   it("exposes bounded analysis and user-approved saved-script tools", () => {
     expect(TOOLS.map((tool) => tool.function.name)).toEqual([
+      "discover_skills",
+      "load_skill",
       "list_workspace_files",
       "run_python",
       "reset_python",
@@ -34,7 +36,8 @@ describe("AmsterdamUMC provider", () => {
   it("instructs the model to repair tool errors with the available local stack", () => {
     expect(SYSTEM_PROMPT).toContain("Tool failures are observations");
     expect(SYSTEM_PROMPT).toContain("seaborn");
-    expect(SYSTEM_PROMPT).toContain("CI Segmentation");
+    expect(SYSTEM_PROMPT).toContain("administrator-approved, revision-pinned skills");
+    expect(SYSTEM_PROMPT).toContain("without waiting for the user to ask");
     expect(SYSTEM_PROMPT).toMatch(
       /Never print, preview, encode, or return a complete source\s+file/
     );
