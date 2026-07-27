@@ -54,6 +54,7 @@ import type {
   ChatMessage,
   ChatRecord,
   ExecutionRecord,
+  ExecutionPurpose,
   ProjectRecord,
   ProjectWorkspace,
   ProviderSettings,
@@ -78,6 +79,11 @@ import {
   packageInstructions,
   skillProvenance
 } from "./workflowSkills";
+import {
+  activityText,
+  formatDuration,
+  projectRowClassName
+} from "./presentation";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -229,6 +235,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
   const [browserAtParent, setBrowserAtParent] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
   const [showScriptTransfer, setShowScriptTransfer] = useState(false);
   const [scriptTransferTarget, setScriptTransferTarget] = useState("");
@@ -887,6 +894,7 @@ export default function App() {
     const prepared = await prepareInputs(selected);
     setWorkspace(prepared);
     workspaceRef.current = prepared;
+    setSelectedProjectId(projectId);
     setBrowserAtParent(false);
     setSelectedScriptIds(new Set());
     await restartRuntime(prepared.files, "Project loaded");
@@ -908,10 +916,12 @@ export default function App() {
     code: string,
     chatId: string,
     promptId: string,
-    force = false
+    force = false,
+    purpose: ExecutionPurpose = "analysis"
   ): Promise<string> {
     const current = workspaceRef.current;
     if (!current) return toolErrorText("Project is not ready");
+    const startedAt = performance.now();
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
     const inputHashes = current.files
@@ -936,6 +946,8 @@ export default function App() {
         promptId,
         status: previous.status === "success" || previous.status === "reused" ? "reused" : "failed",
         reusedFrom: previous.id,
+        purpose,
+        durationMs: performance.now() - startedAt,
         createdAt: now()
       };
       upsertExecution(reused);
@@ -984,6 +996,7 @@ export default function App() {
       runtimeVersion: RUNTIME_VERSION,
       model: settings.model,
       workflowSkills: turnWorkflowSkills.current,
+      purpose,
       createdAt: now()
     };
     upsertExecution(execution);
@@ -1002,7 +1015,12 @@ export default function App() {
       output = await runtime.run(normalizedCode);
     } catch (error) {
       const detail = String(error instanceof Error ? error.message : error).slice(0, MAX_TOOL_TEXT);
-      const failed = { ...execution, status: "failed" as const, stderr: detail };
+      const failed = {
+        ...execution,
+        status: "failed" as const,
+        stderr: detail,
+        durationMs: performance.now() - startedAt
+      };
       upsertExecution(failed);
       setStatus("Python error sent to AmsterdamUMC; waiting for corrected code…");
       setAnalysisPhase("repairing");
@@ -1055,7 +1073,9 @@ export default function App() {
       preview: output.preview,
       modelPayload: output.modelPayload,
       outputFileIds: generated.map((file) => file.id),
-      missingPlotCsv: missing
+      missingPlotCsv: missing,
+      purpose: purpose === "inspection" && generated.length ? "analysis" : purpose,
+      durationMs: performance.now() - startedAt
     };
     upsertExecution(completed);
     const modelPayloadText = JSON.stringify(output.modelPayload);
@@ -1204,7 +1224,7 @@ export default function App() {
       if (!version) return toolErrorText("Saved script was not found");
       try {
         const bound = bindScriptInputs(version.code, current.files);
-        return executeCode(bound.code, chatId, promptId);
+        return executeCode(bound.code, chatId, promptId, false, "script");
       } catch (error) {
         return toolErrorText(error);
       }
@@ -1232,7 +1252,7 @@ export default function App() {
         try {
           await runtime.beginTurn();
           const bound = bindScriptInputs(version.code, latest.files);
-          results.push(await executeCode(bound.code, chatId, promptId));
+          results.push(await executeCode(bound.code, chatId, promptId, false, "script"));
         } catch (error) {
           return toolErrorText(`Workflow step ${step.name} failed: ${String(error)}`);
         }
@@ -1246,7 +1266,9 @@ export default function App() {
     if (call.function.name !== "run_python" || typeof args.code !== "string") {
       return toolErrorText(`Unsupported or invalid tool call: ${call.function.name}`);
     }
-    return executeCode(args.code, chatId, promptId);
+    const purpose: ExecutionPurpose =
+      args.purpose === "analysis" ? "analysis" : "inspection";
+    return executeCode(args.code, chatId, promptId, false, purpose);
   }
 
   async function sendPrompt() {
@@ -1257,6 +1279,8 @@ export default function App() {
     setPrompt("");
     setBusy(true);
     setAnalysisPhase("planning");
+    const turnStartedAt = performance.now();
+    let usedTools = false;
     abort.current = new AbortController();
     turnOutputNames.current.clear();
     await runtime.beginTurn();
@@ -1342,6 +1366,7 @@ ${activeSkillInstructions || (
     try {
       for (let turn = 0; turn < 8; turn += 1) {
         const estimatedPrompt = estimateTokens(conversation);
+        const responseStartedAt = performance.now();
         const response = await completeChat(
           settings,
           conversation,
@@ -1350,6 +1375,7 @@ ${activeSkillInstructions || (
         );
         const answer = response.choices[0]?.message;
         if (!answer) throw new Error("AmsterdamUMC returned no response");
+        const responseDurationMs = performance.now() - responseStartedAt;
         const promptTokens = response.usage?.prompt_tokens ?? estimatedPrompt;
         const completionTokens =
           response.usage?.completion_tokens ?? estimateTokens(answer.content || answer.tool_calls || "");
@@ -1372,11 +1398,16 @@ ${activeSkillInstructions || (
             content: answer.content,
             citationIds,
             workflowSkills: turnWorkflowSkills.current,
+            activity: usedTools ? "worked" : "thought",
+            durationMs: usedTools
+              ? performance.now() - turnStartedAt
+              : responseDurationMs,
             createdAt: now()
           });
         }
         setStreamingText("");
         if (!answer.tool_calls?.length) break;
+        usedTools = true;
         setAnalysisPhase(turn ? "repairing" : "running");
         for (const call of answer.tool_calls) {
           const result = await executeTool(call, chat.id, promptId);
@@ -1392,6 +1423,8 @@ ${activeSkillInstructions || (
           role: "assistant",
           content: String(error),
           kind: "error",
+          activity: usedTools ? "worked" : "thought",
+          durationMs: performance.now() - turnStartedAt,
           createdAt: now()
         });
       }
@@ -1414,7 +1447,11 @@ ${activeSkillInstructions || (
 
   async function saveAsScript(execution: ExecutionRecord) {
     const current = workspaceRef.current;
-    if (!current || !["success", "reused"].includes(execution.status)) return;
+    if (
+      !current ||
+      execution.purpose === "inspection" ||
+      !["success", "reused"].includes(execution.status)
+    ) return;
     const chat = current.chats.find((item) => item.id === execution.chatId);
     const promptMessage = chat?.messages.find((message) => message.id === execution.promptId);
     const related = current.executions
@@ -1517,7 +1554,13 @@ ${activeSkillInstructions || (
       createdAt: now()
     });
     try {
-      await executeCode(bound.code, current.project.activeChatId, promptId, true);
+      await executeCode(
+        bound.code,
+        current.project.activeChatId,
+        promptId,
+        true,
+        "script"
+      );
       setStatus(`Ran ${script.name} locally`);
     } finally {
       setBusy(false);
@@ -1634,6 +1677,7 @@ ${activeSkillInstructions || (
     const current = workspaceRef.current;
     if (!current?.project.activeChatId || busy) return;
     setBusy(true);
+    const workflowStartedAt = performance.now();
     const chatId = current.project.activeChatId;
     const promptId = id();
     appendMessage(chatId, {
@@ -1656,7 +1700,7 @@ ${activeSkillInstructions || (
         await runtime.beginTurn();
         turnOutputNames.current.clear();
         const bound = bindScriptInputs(version.code, availableInputs);
-        await executeCode(bound.code, chatId, promptId, true);
+        await executeCode(bound.code, chatId, promptId, true, "script");
         const produced = workspaceRef.current!.files.filter(
           (file) => file.source === "result" && file.executionId &&
             workspaceRef.current!.executions.some(
@@ -1676,6 +1720,8 @@ ${activeSkillInstructions || (
         role: "assistant",
         content: `Workflow stopped: ${String(error)}`,
         kind: "error",
+        activity: "worked",
+        durationMs: performance.now() - workflowStartedAt,
         createdAt: now()
       });
       setStatus(`Workflow ${workflow.name} failed`);
@@ -1841,6 +1887,7 @@ ${activeSkillInstructions || (
           skipped.push(targetRecord.name);
           continue;
         }
+        const targetStartedAt = performance.now();
         try {
           const chat = newChat(target.project.id, `${workflow.name} batch run`);
           target.project = { ...target.project, activeChatId: chat.id, updatedAt: now() };
@@ -1860,7 +1907,7 @@ ${activeSkillInstructions || (
           for (const code of preparedSteps) {
             await runtime.beginTurn();
             turnOutputNames.current.clear();
-            await executeCode(code, chat.id, promptId, true);
+            await executeCode(code, chat.id, promptId, true, "script");
           }
           await saveWorkspace(workspaceRef.current!);
           completed.push(targetRecord.name);
@@ -1874,6 +1921,8 @@ ${activeSkillInstructions || (
                 role: "assistant",
                 kind: "error",
                 content: `Batch workflow failed for this object: ${String(error)}`,
+                activity: "worked",
+                durationMs: performance.now() - targetStartedAt,
                 createdAt: now()
               });
               await saveWorkspace(workspaceRef.current!);
@@ -2020,13 +2069,23 @@ ${activeSkillInstructions || (
       "",
       "## Conversation",
       ...chat.messages.filter((message) => message.kind !== "execution")
-        .flatMap((message) => [`### ${message.role}`, "", message.content, ""]),
+        .flatMap((message) => [
+          `### ${message.role}`,
+          ...(activityText(message.activity, message.durationMs)
+            ? [`_${activityText(message.activity, message.durationMs)}_`]
+            : []),
+          "",
+          message.content,
+          ""
+        ]),
       "## Executions",
       ...executions.flatMap((execution, index) => [
         `### Run ${index + 1} — ${execution.status}`,
         "",
         `Code hash: ${execution.codeHash}`,
         `Model: ${execution.model}`,
+        `Purpose: ${execution.purpose || "analysis"}`,
+        `Duration: ${formatDuration(execution.durationMs) || "not recorded"}`,
         `Inputs: ${execution.inputHashes.join(", ")}`,
         "",
         "```python",
@@ -2466,16 +2525,25 @@ ${activeSkillInstructions || (
               {projects.map((item) => (
                 <li
                   key={item.id}
-                  className={`browser-row project-row ${item.id === project.id ? "active" : ""}`}
+                  className={projectRowClassName(
+                    item.id,
+                    project.id,
+                    selectedProjectId
+                  )}
+                  aria-selected={item.id === (selectedProjectId || project.id)}
+                  onClick={() => setSelectedProjectId(item.id)}
                   onDoubleClick={() => void switchProject(item.id)}
-                  onContextMenu={(event) => openBrowserMenu(event, item.name, [
-                    { label: "Open project", run: () => void switchProject(item.id) },
-                    ...(item.id !== project.id ? [{
-                      label: "Delete local project",
-                      danger: true,
-                      run: () => void removeLocalProject(item)
-                    }] : [])
-                  ])}
+                  onContextMenu={(event) => {
+                    setSelectedProjectId(item.id);
+                    openBrowserMenu(event, item.name, [
+                      { label: "Open project", run: () => void switchProject(item.id) },
+                      ...(item.id !== project.id ? [{
+                        label: "Delete local project",
+                        danger: true,
+                        run: () => void removeLocalProject(item)
+                      }] : [])
+                    ]);
+                  }}
                 >
                   <Icon name="folder" />
                   <div className="browser-name">
@@ -2486,14 +2554,17 @@ ${activeSkillInstructions || (
                   <button
                     className="browser-more"
                     aria-label={`Actions for ${item.name}`}
-                    onClick={(event) => openBrowserMenu(event, item.name, [
-                      { label: "Open project", run: () => void switchProject(item.id) },
-                      ...(item.id !== project.id ? [{
-                        label: "Delete local project",
-                        danger: true,
-                        run: () => void removeLocalProject(item)
-                      }] : [])
-                    ])}
+                    onClick={(event) => {
+                      setSelectedProjectId(item.id);
+                      openBrowserMenu(event, item.name, [
+                        { label: "Open project", run: () => void switchProject(item.id) },
+                        ...(item.id !== project.id ? [{
+                          label: "Delete local project",
+                          danger: true,
+                          run: () => void removeLocalProject(item)
+                        }] : [])
+                      ]);
+                    }}
                   ><Icon name="more" /></button>
                 </li>
               ))}
@@ -2886,6 +2957,10 @@ ${activeSkillInstructions || (
                   />
                 ) : null;
               }
+              const messageTiming = activityText(
+                message.activity,
+                message.durationMs
+              );
               return (
                 <article key={message.id} className={`message ${message.role} ${message.kind || ""}`}>
                   <span>
@@ -2921,6 +2996,9 @@ ${activeSkillInstructions || (
                       })}
                     </div>
                   ) : null}
+                  {messageTiming && (
+                    <small className="message-activity">{messageTiming}</small>
+                  )}
                 </article>
               );
             })}
@@ -2985,12 +3063,18 @@ ${activeSkillInstructions || (
   }
 
   async function rerunExecution(execution: ExecutionRecord) {
-    if (!runtimeReady || busy) return;
+    if (!runtimeReady || busy || execution.purpose === "inspection") return;
     setBusy(true);
     turnOutputNames.current.clear();
     await runtime.beginTurn();
     try {
-      await executeCode(execution.code, execution.chatId, id(), true);
+      await executeCode(
+        execution.code,
+        execution.chatId,
+        id(),
+        true,
+        execution.purpose === "script" ? "script" : "analysis"
+      );
       setStatus("Python rerun completed");
     } finally {
       setBusy(false);

@@ -5,7 +5,9 @@ import { resolve } from "node:path";
 export default defineConfig({
   plugins: [react()],
   define: {
-    "process.env.NODE_ENV": JSON.stringify("production")
+    "process.env.NODE_ENV": JSON.stringify(
+      process.env.VITEST ? "test" : "production"
+    )
   },
   build: {
     outDir: resolve(__dirname, "../src/omero_analysis_chat/static/omero_analysis_chat"),

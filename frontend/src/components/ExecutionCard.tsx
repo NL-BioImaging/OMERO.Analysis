@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { executionActivityText } from "../presentation";
 import type { ExecutionRecord, WorkspaceFile } from "../types";
 
 export function ExecutionCard({
@@ -19,6 +20,9 @@ export function ExecutionCard({
   const plots = execution.status === "reused"
     ? []
     : outputs.filter((file) => file.type === "image/png" || file.type === "image/svg+xml");
+  const purpose = execution.purpose || "analysis";
+  const isInspection = purpose === "inspection";
+  const timing = executionActivityText(purpose, execution.durationMs);
   const controls = (position: "top" | "bottom") => (
     <div className={`execution-actions ${position}`}>
       <button
@@ -26,20 +30,36 @@ export function ExecutionCard({
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >{expanded ? "Collapse" : "Show details"}</button>
-      {["success", "reused"].includes(execution.status) && (
+      {!isInspection && ["success", "reused"].includes(execution.status) && (
         <button onClick={onSave}>Save as script</button>
       )}
-      <button onClick={onRerun}>Rerun</button>
+      {!isInspection && <button onClick={onRerun}>Rerun</button>}
       <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
     </div>
   );
   return (
-    <article className={`message execution ${execution.status}`}>
+    <article
+      className={`message execution ${execution.status} ${isInspection ? "inspection" : ""}`}
+      data-purpose={purpose}
+    >
       <section className="execution-details" data-expanded={expanded ? "true" : "false"}>
         <div className="execution-heading">
-          <span>{execution.status === "reused" ? "Reused Python run" : "Python code (local)"}</span>
+          <span>
+            {execution.status === "reused"
+              ? "Reused Python run"
+              : isInspection
+                ? "AI data inspection (local)"
+                : "Python code (local)"}
+          </span>
           {controls("top")}
         </div>
+        {timing && <p className="activity-timing">{timing}</p>}
+        {isInspection && (
+          <p className="inspection-note">
+            This code was generated only to inspect bounded data for the assistant. It is not a
+            reusable analysis script.
+          </p>
+        )}
         <div className="execution-content" hidden={!expanded}>
           <pre><code>{execution.code}</code></pre>
           {execution.stdout && <pre>{execution.stdout}</pre>}

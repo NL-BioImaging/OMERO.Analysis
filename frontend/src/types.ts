@@ -190,8 +190,12 @@ export interface ChatMessage {
     configuredRef: string;
     resolvedCommit: string;
   }>;
+  activity?: "thought" | "worked";
+  durationMs?: number;
   createdAt: string;
 }
+
+export type ExecutionPurpose = "inspection" | "analysis" | "script";
 
 export interface ExecutionRecord {
   id: string;
@@ -213,6 +217,8 @@ export interface ExecutionRecord {
   model: string;
   modelPayload?: ModelPayload;
   workflowSkills?: ChatMessage["workflowSkills"];
+  purpose?: ExecutionPurpose;
+  durationMs?: number;
   deletedOutputFileIds?: string[];
   createdAt: string;
 }

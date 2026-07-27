@@ -349,8 +349,12 @@ try {
   await page.getByRole("menuitem", { name: "Delete output" }).waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Up to OMERO object projects" }).click();
-  await page.locator(".project-row.active").waitFor();
-  await page.locator(".project-row.active").dblclick();
+  const selectedProject = page.locator(".project-row.selected");
+  await selectedProject.waitFor();
+  if ((await selectedProject.count()) !== 1) {
+    throw new Error("Project explorer must have exactly one selected project");
+  }
+  await selectedProject.dblclick();
 
   await page.evaluate(() => {
     window.__oacDownloadPromise = null;

@@ -47,6 +47,26 @@ describe("AmsterdamUMC provider", () => {
     expect(payload.length).toBeLessThanOrEqual(64 * 1024 + 30);
   });
 
+  it("requires Python calls to distinguish AI inspection from user analysis", () => {
+    const runPython = TOOLS.find(
+      (tool) => tool.function.name === "run_python"
+    ) as (typeof TOOLS)[number] & {
+      function: {
+        parameters: {
+          required: readonly string[];
+          properties: { purpose: { enum: readonly string[] } };
+        };
+      };
+    };
+    expect(runPython?.function.parameters.required).toEqual(["code", "purpose"]);
+    expect(runPython?.function.parameters.properties.purpose.enum).toEqual([
+      "inspection",
+      "analysis"
+    ]);
+    expect(SYSTEM_PROMPT).toContain('purpose="inspection"');
+    expect(SYSTEM_PROMPT).toContain('purpose="analysis"');
+  });
+
   it("never forwards local stdout or generated file contents to Azure", () => {
     const payload = toolResultText({
       stdout: "CANARY COMPLETE SOURCE FILE",

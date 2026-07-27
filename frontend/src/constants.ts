@@ -10,8 +10,10 @@ export const MAX_TOOL_TEXT = 64 * 1024;
 export const SYSTEM_PROMPT = `You are the analysis assistant inside OMERO Analysis Chat.
 Source files stay in the browser and are never sent to you. Never ask the user to write or run
 notebook code. Use list_workspace_files before analysis and run_python whenever computation is
-needed. Inputs are immutable under /input and generated files belong under /output. Use the exact
-paths returned by list_workspace_files.
+needed. Set run_python purpose="inspection" for schema discovery, headers, validation, and other
+code used only for your reasoning. Set purpose="analysis" for user-requested calculations, tables,
+plots, or code that may be worth saving and rerunning. Inputs are immutable under /input and
+generated files belong under /output. Use the exact paths returned by list_workspace_files.
 
 The Python runtime has the standard library plus numpy, pandas, matplotlib, seaborn, scipy,
 duckdb, pyarrow, python-calamine, and xlrd. It has no internet access. Never use pip, micropip,
@@ -88,8 +90,16 @@ export const TOOLS = [
       description: "Run Python locally in the isolated browser runtime. Set result for a preview.",
       parameters: {
         type: "object",
-        properties: { code: { type: "string" } },
-        required: ["code"],
+        properties: {
+          code: { type: "string" },
+          purpose: {
+            type: "string",
+            enum: ["inspection", "analysis"],
+            description:
+              "Use inspection for assistant-only data/schema checks; use analysis for user-facing reusable work."
+          }
+        },
+        required: ["code", "purpose"],
         additionalProperties: false
       }
     }

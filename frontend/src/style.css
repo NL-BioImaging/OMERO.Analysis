@@ -150,7 +150,8 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
   min-height: 39px; padding: .28rem .35rem .28rem 1.1rem;
 }
 .browser-row.project-row { cursor: default; padding-left: 1.2rem; }
-.browser-row.project-row.active { background: #183748; box-shadow: inset 3px 0 #36a6c9; }
+.browser-row.project-row.selected { background: #183748; box-shadow: inset 3px 0 #36a6c9; }
+.browser-row.project-row.open:not(.selected) { box-shadow: inset 2px 0 #567487; }
 .browser-row.script-row {
   grid-template-columns: 17px 18px minmax(0, 1fr) auto 27px;
 }
@@ -321,6 +322,18 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
 .execution-actions small { color: #728d9d; margin-left: auto; }
 .execution-actions.top small { display: none; }
 .execution-actions .detail-toggle { color: #9ccbe4; }
+.activity-timing {
+  color: #83a8bb; font-size: .68rem; margin: .2rem 0 0 !important;
+}
+.message-activity {
+  border-top: 1px solid #223a4a; color: #83a8bb; display: block;
+  font-size: .68rem; margin-top: .7rem; padding-top: .45rem;
+}
+.message.execution.inspection { border-color: #38546a; background: #101e28; }
+.inspection-note {
+  color: #9bb4c3; font-size: .72rem; line-height: 1.45;
+  margin: .45rem 0 0 !important;
+}
 .reuse-note { color: #83d9ae; font-size: .75rem; margin-top: .6rem !important; }
 .message.execution figure {
   border-top: 1px solid #223a4a; margin-top: .7rem; padding-top: .8rem;
