@@ -37,7 +37,8 @@ const workspace = {
   scripts: [],
   workflows: [],
   artifacts: [],
-  audits: []
+  audits: [],
+  evidence: []
 } satisfies ProjectWorkspace;
 
 describe("project renaming", () => {

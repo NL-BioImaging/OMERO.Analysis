@@ -99,14 +99,26 @@ export function packageInstructions(value: WorkflowSkillPackage): string {
   const references = value.files
     .filter((file) => file.path !== "SKILL.md")
     .map((file) => file.path);
+  const required = (value.skill.required_resources || []).map((path) => {
+    const file = value.files.find((item) => item.path === path);
+    if (!file) throw new Error(`${value.skill.name} requires unavailable resource ${path}`);
+    return `Required reference ${path}:\n${file.content}`;
+  });
+  const capabilities = value.skill.required_capabilities || [];
   return [
     `Active ${value.source.source_kind === "application" ? "application-operation" : "workflow"} skill: ${value.skill.name} v${value.skill.version}`,
     `Source: ${value.source.repository_url}@${value.source.configured_ref}`,
     `Resolved commit: ${value.source.resolved_commit}`,
     `Package hash: ${value.skill.sha256}`,
     main.content,
+    ...(capabilities.length
+      ? [`Required host capabilities: ${capabilities.join(", ")}`]
+      : []),
+    ...required,
     references.length
-      ? `Available references (load only when needed): ${references.join(", ")}`
+      ? `Other available references (load only when needed): ${
+        references.filter((path) => !value.skill.required_resources?.includes(path)).join(", ") || "none"
+      }`
       : "No additional references."
   ].join("\n\n");
 }

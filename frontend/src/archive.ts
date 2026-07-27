@@ -9,13 +9,14 @@ import type {
   WorkflowRecord,
   ArtifactRecord,
   OutboundPayloadAudit,
-  WorkspaceFile
+  WorkspaceFile,
+  EvidenceRecord
 } from "./types";
 import { sha256 } from "./storage";
 
 export const PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project.v2";
 export const LEGACY_PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project";
-export const PROJECT_FORMAT_VERSION = 2;
+export const PROJECT_FORMAT_VERSION = 3;
 export const MAX_ARCHIVE_ENTRIES = 10_000;
 export const MAX_ARCHIVE_UNCOMPRESSED = 512 * 1024 * 1024;
 
@@ -30,6 +31,7 @@ interface SnapshotManifest {
   workflows: WorkflowRecord[];
   artifacts: ArtifactRecord[];
   audits: OutboundPayloadAudit[];
+  evidence: EvidenceRecord[];
   files: Array<Omit<WorkspaceFile, "data"> & { archivePath?: string }>;
   omittedLocalInputs: string[];
 }
@@ -89,6 +91,7 @@ function buildArchive(
     workflows: workspace.workflows,
     artifacts: workspace.artifacts,
     audits: workspace.audits.map((audit) => ({ ...audit, payload: "[omitted from snapshot]" })),
+    evidence: workspace.evidence,
     files,
     omittedLocalInputs
   };
@@ -184,7 +187,9 @@ function requireManifest(value: unknown): SnapshotManifest {
   if (!value || typeof value !== "object") throw new Error("Project manifest must be an object");
   const raw = value as Record<string, unknown>;
   const legacy = raw.format === LEGACY_PROJECT_FORMAT && raw.version === 1;
-  const current = raw.format === PROJECT_FORMAT && raw.version === PROJECT_FORMAT_VERSION;
+  const current = raw.format === PROJECT_FORMAT && (
+    raw.version === 2 || raw.version === PROJECT_FORMAT_VERSION
+  );
   if (!legacy && !current) throw new Error("Unsupported Analysis Chat project format");
   const manifest = value as Partial<SnapshotManifest>;
   if (!manifest.project || !Array.isArray(manifest.chats) || !Array.isArray(manifest.files)) {
@@ -195,6 +200,7 @@ function requireManifest(value: unknown): SnapshotManifest {
     workflows: Array.isArray(manifest.workflows) ? manifest.workflows : [],
     artifacts: Array.isArray(manifest.artifacts) ? manifest.artifacts : [],
     audits: Array.isArray(manifest.audits) ? manifest.audits : [],
+    evidence: Array.isArray(manifest.evidence) ? manifest.evidence : [],
     executions: Array.isArray(manifest.executions) ? manifest.executions : [],
     scripts: Array.isArray(manifest.scripts) ? manifest.scripts : [],
     omittedLocalInputs: Array.isArray(manifest.omittedLocalInputs) ? manifest.omittedLocalInputs : []
@@ -236,6 +242,7 @@ export async function importProject(
   const projectId = crypto.randomUUID();
   const chatIds = new Map(manifest.chats.map((chat) => [chat.id, crypto.randomUUID()]));
   const executionIds = new Map(manifest.executions.map((execution) => [execution.id, crypto.randomUUID()]));
+  const evidenceIds = new Map(manifest.evidence.map((item) => [item.id, crypto.randomUUID()]));
   const fileIds = new Map(manifest.files.map((file) => [file.id, crypto.randomUUID()]));
   const artifactIds = new Map(
     manifest.artifacts.map((artifact) => [artifact.id, crypto.randomUUID()])
@@ -251,7 +258,10 @@ export async function importProject(
     messages: chat.messages.map((message) => ({
       ...message,
       executionId: message.executionId ? executionIds.get(message.executionId) : undefined,
-      artifactId: message.artifactId ? artifactIds.get(message.artifactId) : undefined
+      artifactId: message.artifactId ? artifactIds.get(message.artifactId) : undefined,
+      citationIds: message.citationIds
+        ?.map((id) => executionIds.get(id))
+        .filter(Boolean) as string[] | undefined
     })),
     updatedAt: now
   }));
@@ -275,7 +285,13 @@ export async function importProject(
       executionId: metadata.executionId ? executionIds.get(metadata.executionId) : undefined,
       data: fileData,
       viewer: metadata.viewer
-        ? { ...metadata.viewer, viewerUrl: "" }
+        ? {
+          ...metadata.viewer,
+          viewerUrl: "",
+          evidenceIds: metadata.viewer.evidenceIds
+            ?.map((id) => evidenceIds.get(id))
+            .filter(Boolean) as string[] | undefined
+        }
         : undefined,
       state: fileData || metadata.source === "omero" ? metadata.state : "missing",
       logicalPath: metadata.logicalPath.replace(manifest.project.rootPath, `${manifest.project.rootPath}--imported`)
@@ -287,7 +303,8 @@ export async function importProject(
     projectId,
     chatId: chatIds.get(execution.chatId)!,
     outputFileIds: execution.outputFileIds.map((id) => fileIds.get(id)).filter(Boolean) as string[],
-    reusedFrom: execution.reusedFrom ? executionIds.get(execution.reusedFrom) : undefined
+    reusedFrom: execution.reusedFrom ? executionIds.get(execution.reusedFrom) : undefined,
+    evidenceId: execution.evidenceId ? evidenceIds.get(execution.evidenceId) : undefined
   }));
   const scripts = manifest.scripts.map((script) => ({
     ...script,
@@ -318,7 +335,13 @@ export async function importProject(
     executionId: artifact.executionId ? executionIds.get(artifact.executionId) : undefined,
     fileId: artifact.fileId ? fileIds.get(artifact.fileId) : undefined,
     viewer: artifact.viewer
-      ? { ...artifact.viewer, viewerUrl: "" }
+      ? {
+        ...artifact.viewer,
+        viewerUrl: "",
+        evidenceIds: artifact.viewer.evidenceIds
+          ?.map((id) => evidenceIds.get(id))
+          .filter(Boolean) as string[] | undefined
+      }
       : undefined
   })).filter((artifact) => Boolean(artifact.chatId)) as ArtifactRecord[];
   const activeChatId = chatIds.get(manifest.project.activeChatId) || chats[0]?.id;
@@ -351,5 +374,13 @@ export async function importProject(
     createdAt: now,
     updatedAt: now
   };
-  return { project, chats, files, executions, scripts, workflows, artifacts, audits: [] };
+  const evidence = manifest.evidence.map((item) => ({
+    ...item,
+    id: evidenceIds.get(item.id)!,
+    projectId,
+    chatId: chatIds.get(item.chatId) || activeChatId,
+    promptId: item.promptId,
+    executionId: item.executionId ? executionIds.get(item.executionId) : undefined
+  }));
+  return { project, chats, files, executions, scripts, workflows, artifacts, audits: [], evidence };
 }

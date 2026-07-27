@@ -72,3 +72,22 @@ it("formats main instructions with immutable provenance and progressive referenc
   expect(text).toContain("references/REFERENCE.md");
   expect(text).not.toContain("# Reference");
 });
+
+it("loads required references and capability contracts into the first-turn instructions", () => {
+  const value: WorkflowSkillPackage = {
+    source,
+    skill: {
+      ...skill,
+      required_resources: ["references/REFERENCE.md"],
+      required_capabilities: ["zarr-render-v2", "zarr-gallery-v1"]
+    },
+    files: [
+      { path: "SKILL.md", media_type: "text/markdown", size: 10, sha256: "a", content: "# Use me" },
+      { path: "references/REFERENCE.md", media_type: "text/markdown", size: 10, sha256: "b", content: "# Canonical queries" }
+    ]
+  };
+  const text = packageInstructions(value);
+  expect(text).toContain("# Canonical queries");
+  expect(text).toContain("zarr-render-v2");
+  expect(text).toContain("zarr-gallery-v1");
+});

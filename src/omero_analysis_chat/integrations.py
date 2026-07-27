@@ -8,7 +8,7 @@ from django.urls import NoReverseMatch, reverse
 from packaging.version import InvalidVersion, Version
 
 ZARR_VIEWER_DISTRIBUTION = "biomero-zarr-viewer"
-ZARR_VIEWER_MINIMUM_VERSION = "0.3.0"
+ZARR_VIEWER_MINIMUM_VERSION = "0.4.0"
 
 
 def zarr_viewer_status():

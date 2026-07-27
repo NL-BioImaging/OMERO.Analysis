@@ -61,6 +61,8 @@ export interface WorkflowSkillSummary {
   version: string;
   sha256: string;
   package_url: string;
+  required_resources?: string[];
+  required_capabilities?: string[];
   match: WorkflowSkillMatch;
 }
 
@@ -229,8 +231,32 @@ export interface ExecutionRecord {
   modelPayload?: ModelPayload;
   workflowSkills?: ChatMessage["workflowSkills"];
   purpose?: ExecutionPurpose;
+  evidenceId?: string;
   durationMs?: number;
   deletedOutputFileIds?: string[];
+  createdAt: string;
+}
+
+export type EvidenceKind =
+  | "tool-result"
+  | "schema"
+  | "navigation"
+  | "render"
+  | "failed-approach";
+
+export interface EvidenceRecord {
+  id: string;
+  projectId: string;
+  chatId: string;
+  promptId: string;
+  kind: EvidenceKind;
+  status: "success" | "failed";
+  sourceHashes: string[];
+  skillHashes: string[];
+  sourceSkillKey: string;
+  executionId?: string;
+  summary: string;
+  payload: string;
   createdAt: string;
 }
 
@@ -329,7 +355,7 @@ export interface ZarrViewerCapability {
   schema_version: 1;
   supported: true;
   image: { id: number; name: string };
-  store: { uuid: string; roi_url: string };
+  store: { uuid: string; roi_url: string; render_url: string };
   kind: "image" | "plate";
   initial_path: string;
   channels: Array<{ index: number; label: string; active: boolean }>;
@@ -340,6 +366,37 @@ export interface ZarrViewerCapability {
       fields: Array<{ path: string; name: string }>;
     }>;
   };
+}
+
+export interface ZarrOverlay {
+  labelPath?: string;
+  labelChannel?: number;
+  values?: number[];
+  mode: "outline" | "fill" | "outline-fill";
+  color?: string;
+  opacity: number;
+  outlineWidth: number;
+  name?: string;
+}
+
+export interface ZarrRenderPanel {
+  field: string;
+  roi: [number, number, number, number];
+  sourceChannels: number[];
+  t: number;
+  z: number;
+  title: string;
+  caption?: string;
+  overlays: ZarrOverlay[];
+  scaleBar?: boolean;
+}
+
+export interface ZarrRenderRecipe {
+  storeUuid: string;
+  title?: string;
+  filename?: string;
+  layout?: { columns: number };
+  panels: ZarrRenderPanel[];
 }
 
 export interface ZarrFocusTarget {
@@ -356,6 +413,8 @@ export interface ZarrFocusTarget {
   labelPath?: string;
   labelChannel?: number;
   labelValue?: number;
+  overlays: ZarrOverlay[];
+  evidenceIds: string[];
   t: number;
   z: number;
   roi: [number, number, number, number];
@@ -387,6 +446,10 @@ export interface ZarrViewerProvenance {
   labelPath?: string;
   labelChannel?: number;
   labelValue?: number;
+  overlays?: ZarrOverlay[];
+  evidenceIds?: string[];
+  renderRecipe?: ZarrRenderRecipe;
+  renderKind?: "roi" | "gallery";
   t: number;
   z: number;
   viewerUrl: string;
@@ -457,6 +520,7 @@ export interface ProjectWorkspace {
   workflows: WorkflowRecord[];
   artifacts: ArtifactRecord[];
   audits: OutboundPayloadAudit[];
+  evidence: EvidenceRecord[];
 }
 
 declare global {

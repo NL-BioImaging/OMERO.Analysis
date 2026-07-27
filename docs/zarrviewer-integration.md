@@ -1,7 +1,7 @@
 # Optional ZarrViewer integration
 
 OMERO.AnalysisChat can render measured objects and fields through
-`BIOMERO.ZarrViewer>=0.3.0` when both applications are installed in the same
+`BIOMERO.ZarrViewer>=0.4.0` when both applications are installed in the same
 OMERO.web environment. ZarrViewer is optional: tabular analysis continues
 normally when it is absent or disabled.
 
@@ -36,13 +36,19 @@ from the authenticated hierarchy.
 - Fields up to 2048 × 2048 render in full.
 - Larger fields produce a centered 1024 × 1024 preview and a deep link to the
   full ZarrViewer field.
-- At most four source channels and one label overlay are accepted.
-- A returned PNG is limited to 16 MiB.
+- A panel supports at most four source channels and eight overlays. Each
+  overlay can select multiple values and use `outline`, `fill`, or
+  `outline-fill`; outlines default to two screen pixels and masks default to
+  30% opacity.
+- Galleries contain 2–25 panels and use one authenticated batch request so
+  repeated image and label planes can be reused.
+- Crops are at most 2048 × 2048 and a returned PNG is limited to 32 MiB.
 
 The preview is stored as a browser-local project output with UUID, field, ROI,
 channel, label, viewer-version, and resolved-object provenance. It is not
 automatically attached to OMERO and does not require a same-stem CSV even when
-Plot + CSV is enabled. The user can explicitly download or attach it.
+Plot + CSV is enabled. **Save analysis + render** persists the versioned Python
+analysis, exact recipe, PNG, cited evidence manifest, and a downloadable ZIP.
 
 ## Privacy boundary
 
@@ -58,7 +64,7 @@ source pixels.
 The workflow-skills badge tooltip reports both cataloged application skills and
 whether a compatible ZarrViewer is enabled. If a preview cannot be created:
 
-1. confirm `biomero-zarr-viewer>=0.3.0` is installed and present in
+1. confirm `biomero-zarr-viewer>=0.4.0` is installed and present in
    `omero.web.apps`;
 2. configure its tagged GitHub source under `[APPLICATIONS]`;
 3. refresh the workflow catalog as an OMERO administrator;

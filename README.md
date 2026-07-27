@@ -41,6 +41,21 @@ as a project output and the chat provides a deep link to the complete view.
 OMERO IDs, Zarr credentials, and authenticated URLs are resolved locally and
 are not exposed to the model.
 
+Version 0.7 adds an input-and-skill-hash evidence ledger, automatically loads
+required skill references and application capability contracts, and supports
+evidence-backed multi-overlay ROI renders and 2–25 panel galleries through
+BIOMERO ZarrViewer 0.4+. A successful render can be saved with one click as a
+versioned analysis script, exact render-recipe JSON, PNG, provenance manifest,
+and downloadable ZIP. Repeated schema discovery is avoided while inputs and
+skills are unchanged; stale evidence is rejected after either changes.
+
+Supported image questions include ranked object galleries; raw/contour/mask
+segmentation comparisons; nuclear/cytoplasmic and neighbour relationships;
+border, clump, cell–nucleus, and assignment review; blurred, saturated, dim,
+unevenly illuminated, debris, and unusual-count field review; well montages;
+plate heatmaps; and selected time/Z comparisons. Results are described as
+review candidates rather than definitive bad images.
+
 ## Privacy and security model
 
 - Source files and Python execution stay in the browser.

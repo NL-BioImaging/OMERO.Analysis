@@ -95,11 +95,13 @@ function FilePreview({ file }: { file: WorkspaceFile }) {
 export function ViewerPreviewCard({
   artifact,
   file,
-  onInspect
+  onInspect,
+  onSaveBundle
 }: {
   artifact: ArtifactRecord;
   file?: WorkspaceFile;
   onInspect: (file: WorkspaceFile) => void;
+  onSaveBundle: (artifact: ArtifactRecord, file: WorkspaceFile) => void;
 }) {
   const viewer = artifact.viewer || file?.viewer;
   if (!viewer) return null;
@@ -126,9 +128,19 @@ export function ViewerPreviewCard({
         )}
       </div>
       {file && (
-        <button className="viewer-preview-image" onClick={() => onInspect(file)}>
-          <Artifact file={file} />
-        </button>
+        <>
+          <button className="viewer-preview-image" onClick={() => onInspect(file)}>
+            <Artifact file={file} />
+          </button>
+          {viewer.renderRecipe && (
+            <button
+              className="button-link"
+              onClick={() => onSaveBundle(artifact, file)}
+            >
+              Save analysis + render
+            </button>
+          )}
+        </>
       )}
       <small>
         Field {viewer.field} · ROI {viewer.roi.join(", ")}

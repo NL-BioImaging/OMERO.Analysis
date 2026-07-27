@@ -53,12 +53,27 @@ async function workspace(): Promise<ProjectWorkspace> {
       code: "result = 1", codeHash: "hash", cacheKey: "cache", status: "success",
       stdout: "", stderr: "", outputFileIds: ["output-file"], missingPlotCsv: [],
       inputHashes: files.slice(0, 2).map((file) => file.sha256), runtimeVersion: "runtime",
-      model: "gpt-5", createdAt
+      model: "gpt-5", evidenceId: "evidence", createdAt
     }],
     scripts: [],
     workflows: [],
     artifacts: [],
-    audits: []
+    audits: [],
+    evidence: [{
+      id: "evidence",
+      projectId: "project",
+      chatId: "chat",
+      promptId: "prompt",
+      executionId: "execution",
+      kind: "navigation",
+      status: "success",
+      sourceHashes: files.slice(0, 2).map((file) => file.sha256),
+      skillHashes: ["skill"],
+      sourceSkillKey: "key",
+      summary: "verified navigation",
+      payload: "{}",
+      createdAt
+    }]
   };
 }
 
@@ -79,6 +94,8 @@ describe("project archive", () => {
     expect(restored.project.id).not.toBe(source.project.id);
     expect(restored.files.find((file) => file.source === "omero")?.data).toBeUndefined();
     expect(restored.files.find((file) => file.source === "local")?.data).toBeInstanceOf(ArrayBuffer);
+    expect(restored.evidence).toHaveLength(1);
+    expect(restored.executions[0].evidenceId).toBe(restored.evidence[0].id);
 
     const rebound = await importProject(archive.data.buffer as ArrayBuffer, {
       object_type: "Screen",

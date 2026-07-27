@@ -9,11 +9,12 @@ import type {
   WorkflowRecord,
   ArtifactRecord,
   OutboundPayloadAudit,
-  WorkspaceFile
+  WorkspaceFile,
+  EvidenceRecord
 } from "./types";
 
 const DB_NAME = "omero-analysis-chat";
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 const STORES = [
   "projects",
   "chats",
@@ -22,7 +23,8 @@ const STORES = [
   "scripts",
   "workflows",
   "artifacts",
-  "audits"
+  "audits",
+  "evidence"
 ] as const;
 type EntityStore = typeof STORES[number];
 
@@ -53,11 +55,19 @@ function database(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains("values")) db.createObjectStore("values");
       for (const name of STORES) {
-        if (db.objectStoreNames.contains(name)) continue;
-        const store = db.createObjectStore(name, { keyPath: "id" });
-        if (name !== "projects") store.createIndex("projectId", "projectId");
-        if (name === "projects") store.createIndex("contextKey", "contextKey", { unique: true });
-        if (name === "files" || name === "executions") {
+        const store = db.objectStoreNames.contains(name)
+          ? request.transaction!.objectStore(name)
+          : db.createObjectStore(name, { keyPath: "id" });
+        if (name !== "projects" && !store.indexNames.contains("projectId")) {
+          store.createIndex("projectId", "projectId");
+        }
+        if (name === "projects" && !store.indexNames.contains("contextKey")) {
+          store.createIndex("contextKey", "contextKey", { unique: true });
+        }
+        if (
+          (name === "files" || name === "executions" || name === "evidence") &&
+          !store.indexNames.contains("chatId")
+        ) {
           store.createIndex("chatId", "chatId");
         }
       }
@@ -131,6 +141,18 @@ export const saveArtifact = (value: ArtifactRecord) =>
   serializedWrite(() => putEntity("artifacts", value));
 export const saveAudit = (value: OutboundPayloadAudit) =>
   serializedWrite(() => putEntity("audits", value));
+export const saveEvidence = (value: EvidenceRecord) =>
+  serializedWrite(() => putEntity("evidence", value));
+export const saveEvidenceLedger = (chatId: string, values: EvidenceRecord[]) =>
+  serializedWrite(async () => {
+    const db = await database();
+    const tx = db.transaction("evidence", "readwrite");
+    const store = tx.objectStore("evidence");
+    const keys = await requestValue(store.index("chatId").getAllKeys(chatId));
+    keys.forEach((key) => store.delete(key));
+    values.forEach((value) => store.put(value));
+    await transactionDone(tx);
+  });
 export const deleteFile = (id: string) => serializedWrite(() => deleteEntity("files", id));
 export const deleteChat = (id: string) => serializedWrite(() => deleteEntity("chats", id));
 export const deleteScript = (id: string) => serializedWrite(() => deleteEntity("scripts", id));
@@ -217,6 +239,7 @@ export async function saveWorkspace(workspace: ProjectWorkspace): Promise<void> 
     workspace.workflows.forEach((value) => tx.objectStore("workflows").put(value));
     workspace.artifacts.forEach((value) => tx.objectStore("artifacts").put(value));
     workspace.audits.forEach((value) => tx.objectStore("audits").put(value));
+    workspace.evidence.forEach((value) => tx.objectStore("evidence").put(value));
     await transactionDone(tx);
   });
 }
@@ -268,7 +291,8 @@ async function migrateLegacy(
     scripts: [],
     workflows: [],
     artifacts: [],
-    audits: []
+    audits: [],
+    evidence: []
   };
   await saveWorkspace(workspace);
   await setValue(`migration:v2:${key}`, { completedAt: now });
@@ -305,19 +329,21 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
       scripts: [],
       workflows: [],
       artifacts: [],
-      audits: []
+      audits: [],
+      evidence: []
     };
     await saveWorkspace(workspace);
     return workspace;
   }
-  const [chats, files, executions, scripts, workflows, artifacts, audits] = await Promise.all([
+  const [chats, files, executions, scripts, workflows, artifacts, audits, evidence] = await Promise.all([
     entitiesForProject<ChatRecord>("chats", project.id),
     entitiesForProject<WorkspaceFile>("files", project.id),
     entitiesForProject<ExecutionRecord>("executions", project.id),
     entitiesForProject<ScriptRecord>("scripts", project.id),
     entitiesForProject<WorkflowRecord>("workflows", project.id),
     entitiesForProject<ArtifactRecord>("artifacts", project.id),
-    entitiesForProject<OutboundPayloadAudit>("audits", project.id)
+    entitiesForProject<OutboundPayloadAudit>("audits", project.id),
+    entitiesForProject<EvidenceRecord>("evidence", project.id)
   ]);
   if (!chats.length) {
     const chat = newChat(project.id);
@@ -330,11 +356,12 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
       scripts,
       workflows,
       artifacts,
-      audits
+      audits,
+      evidence
     });
     chats.push(chat);
   }
-  return { project, chats, files, executions, scripts, workflows, artifacts, audits };
+  return { project, chats, files, executions, scripts, workflows, artifacts, audits, evidence };
 }
 
 export async function listContextProjects(context: OmeroContext | null): Promise<ProjectRecord[]> {
@@ -370,16 +397,17 @@ export async function loadWorkspace(projectId: string): Promise<ProjectWorkspace
   const tx = db.transaction("projects", "readonly");
   const project = await requestValue(tx.objectStore("projects").get(projectId)) as ProjectRecord | undefined;
   if (!project) return undefined;
-  const [chats, files, executions, scripts, workflows, artifacts, audits] = await Promise.all([
+  const [chats, files, executions, scripts, workflows, artifacts, audits, evidence] = await Promise.all([
     entitiesForProject<ChatRecord>("chats", project.id),
     entitiesForProject<WorkspaceFile>("files", project.id),
     entitiesForProject<ExecutionRecord>("executions", project.id),
     entitiesForProject<ScriptRecord>("scripts", project.id),
     entitiesForProject<WorkflowRecord>("workflows", project.id),
     entitiesForProject<ArtifactRecord>("artifacts", project.id),
-    entitiesForProject<OutboundPayloadAudit>("audits", project.id)
+    entitiesForProject<OutboundPayloadAudit>("audits", project.id),
+    entitiesForProject<EvidenceRecord>("evidence", project.id)
   ]);
-  return { project, chats, files, executions, scripts, workflows, artifacts, audits };
+  return { project, chats, files, executions, scripts, workflows, artifacts, audits, evidence };
 }
 
 export async function storageEstimate(): Promise<{ usage: number; quota: number }> {

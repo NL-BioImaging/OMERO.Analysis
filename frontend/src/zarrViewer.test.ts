@@ -3,6 +3,7 @@ import {
   fetchZarrCapability,
   zarrCandidates,
   zarrFocusFromToolArgs,
+  zarrRecipeFromToolArgs,
   zarrViewerUrl
 } from "./zarrViewer";
 import type { ZarrViewerIntegrationStatus } from "./types";
@@ -13,8 +14,8 @@ const status: ZarrViewerIntegrationStatus = {
   available: true,
   installed: true,
   enabled: true,
-  version: "0.3.0",
-  minimum_version: "0.3.0",
+  version: "0.4.0",
+  minimum_version: "0.4.0",
   reason: "ready",
   viewer_url: "/biomero_zarr_viewer/",
   image_capabilities_template: "/biomero_zarr_viewer/api/images/0/capabilities/",
@@ -26,6 +27,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("ZarrViewer focus validation", () => {
   it("uses half-open database bounds for an object preview", () => {
     const focus = zarrFocusFromToolArgs({
+      evidence_ids: ["evidence-1"],
       store_uuid: storeUuid,
       field: "A/1/5",
       target_kind: "object",
@@ -43,6 +45,7 @@ describe("ZarrViewer focus validation", () => {
 
   it("renders a bounded center crop for an oversized full field", () => {
     const focus = zarrFocusFromToolArgs({
+      evidence_ids: ["evidence-1"],
       store_uuid: storeUuid,
       field: "B/1/1",
       target_kind: "field",
@@ -56,12 +59,69 @@ describe("ZarrViewer focus validation", () => {
 
   it("rejects invented identity and unsafe paths", () => {
     expect(() => zarrFocusFromToolArgs({
+      evidence_ids: ["evidence-1"],
       store_uuid: "not-a-uuid",
       field: "../secret",
       target_kind: "field",
       size_x: 10,
       size_y: 10
     })).toThrow(/canonical UUID/);
+  });
+
+  it("keeps multiple values and 2 px complete-outline defaults", () => {
+    const focus = zarrFocusFromToolArgs({
+      evidence_ids: ["evidence-1"],
+      store_uuid: storeUuid,
+      field: "B/1/5",
+      target_kind: "object",
+      size_x: 1000,
+      size_y: 1000,
+      bbox: [100, 100, 300, 300],
+      overlays: [{
+        label_path: "labels/cells",
+        values: [260],
+        mode: "outline"
+      }, {
+        label_path: "labels/foci",
+        values: [332, 337, 349, 353],
+        mode: "outline-fill",
+        opacity: 0.3,
+        color: "#ff00ff"
+      }]
+    });
+    expect(focus.overlays[0]).toMatchObject({
+      values: [260],
+      outlineWidth: 2,
+      opacity: 1
+    });
+    expect(focus.overlays[1].values).toEqual([332, 337, 349, 353]);
+  });
+
+  it("creates one bounded gallery recipe for ranked objects", () => {
+    const panel = (field: string, value: number) => ({
+      field,
+      roi: [0, 0, 128, 128],
+      source_channels: [1, 2],
+      title: `Cell ${value}`,
+      caption: `${value} foci`,
+      overlays: [{
+        label_path: "labels/cells",
+        values: [value],
+        mode: "outline",
+        outline_width: 3
+      }]
+    });
+    const { recipe, evidenceIds } = zarrRecipeFromToolArgs({
+      evidence_ids: ["ranking-evidence"],
+      store_uuid: storeUuid,
+      title: "Top cells",
+      columns: 2,
+      panels: [panel("A/1/0", 1), panel("A/1/1", 2)]
+    });
+    expect(evidenceIds).toEqual(["ranking-evidence"]);
+    expect(recipe.panels).toHaveLength(2);
+    expect(recipe.layout).toEqual({ columns: 2 });
+    expect(recipe.panels[0].overlays[0].outlineWidth).toBe(3);
   });
 });
 
@@ -99,6 +159,7 @@ it("discards capability credentials and builds a validated deep link", async () 
     store: {
       uuid: storeUuid,
       roi_url: "/biomero_zarr_viewer/api/images/201/roi.png",
+      render_url: "/biomero_zarr_viewer/api/images/201/render.png",
       url: "https://secret-store.example/",
       context: "must-not-survive",
       expires_at: "tomorrow"
@@ -118,10 +179,12 @@ it("discards capability credentials and builds a validated deep link", async () 
   );
   expect(capability.store).toEqual({
     uuid: storeUuid,
-    roi_url: "/biomero_zarr_viewer/api/images/201/roi.png"
+    roi_url: "/biomero_zarr_viewer/api/images/201/roi.png",
+    render_url: "/biomero_zarr_viewer/api/images/201/render.png"
   });
   expect(JSON.stringify(capability)).not.toContain("secret-store");
   const url = new URL(zarrViewerUrl(status, capability, zarrFocusFromToolArgs({
+    evidence_ids: ["evidence-1"],
     store_uuid: storeUuid,
     field: "A/1/5",
     target_kind: "object",

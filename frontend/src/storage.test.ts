@@ -5,6 +5,7 @@ import {
   newChat,
   deleteProjectCascade,
   saveChat,
+  saveEvidenceLedger,
   saveProject,
   setValue
 } from "./storage";
@@ -73,5 +74,28 @@ describe("normalized project storage", () => {
     expect((await loadWorkspace(workspace.project.id))?.project.name).toBe("latest");
     await deleteProjectCascade(workspace.project.id);
     expect(await loadWorkspace(workspace.project.id)).toBeUndefined();
+  });
+
+  it("persists a bounded replacement evidence ledger per chat", async () => {
+    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 61 });
+    const chatId = workspace.project.activeChatId;
+    const evidence = (id: string) => ({
+      id,
+      projectId: workspace.project.id,
+      chatId,
+      promptId: "prompt",
+      kind: "tool-result" as const,
+      status: "success" as const,
+      sourceHashes: ["source"],
+      skillHashes: ["skill"],
+      sourceSkillKey: "key",
+      summary: id,
+      payload: "{}",
+      createdAt: "2026-07-27T00:00:00Z"
+    });
+    await saveEvidenceLedger(chatId, [evidence("old"), evidence("keep")]);
+    await saveEvidenceLedger(chatId, [evidence("keep")]);
+    expect((await loadWorkspace(workspace.project.id))?.evidence.map((item) => item.id))
+      .toEqual(["keep"]);
   });
 });

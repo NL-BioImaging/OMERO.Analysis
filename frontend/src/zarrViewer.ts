@@ -4,13 +4,15 @@ import type {
   OmeroHierarchy,
   ZarrBinding,
   ZarrFocusTarget,
+  ZarrOverlay,
+  ZarrRenderRecipe,
   ZarrViewerCapability,
   ZarrViewerIntegrationStatus,
   ZarrViewerProvenance
 } from "./types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MAX_RENDERED_PNG = 16 * 1024 * 1024;
+const MAX_RENDERED_PNG = 32 * 1024 * 1024;
 const DEFAULT_RENDER_LIMIT = 2048;
 const OVERSIZED_FIELD_PREVIEW = 1024;
 
@@ -88,6 +90,7 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
     typeof store.uuid !== "string" ||
     !UUID.test(store.uuid) ||
     typeof store.roi_url !== "string" ||
+    typeof store.render_url !== "string" ||
     typeof body.initial_path !== "string" ||
     !Array.isArray(body.channels) ||
     !Array.isArray(body.labels)
@@ -141,7 +144,11 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
     schema_version: 1,
     supported: true,
     image: { id: image.id, name: image.name },
-    store: { uuid: store.uuid.toLowerCase(), roi_url: store.roi_url },
+    store: {
+      uuid: store.uuid.toLowerCase(),
+      roi_url: store.roi_url,
+      render_url: store.render_url
+    },
     kind: body.kind,
     initial_path: body.initial_path,
     channels,
@@ -168,6 +175,59 @@ function centeredField(sizeX: number, sizeY: number): [number, number, number, n
   const x0 = Math.floor((sizeX - width) / 2);
   const y0 = Math.floor((sizeY - height) / 2);
   return [x0, y0, x0 + width, y0 + height];
+}
+
+function zarrOverlay(value: unknown): ZarrOverlay {
+  const raw = object(value, "Zarr overlay");
+  const labelPath = raw.label_path == null
+    ? undefined
+    : safePath(raw.label_path, "overlay label_path");
+  const labelChannel = raw.label_channel == null
+    ? undefined
+    : integer(raw.label_channel, "overlay label_channel", 1);
+  if (Boolean(labelPath) === Boolean(labelChannel)) {
+    throw new Error("Each overlay requires either label_path or label_channel");
+  }
+  const values = raw.values == null
+    ? undefined
+    : Array.from(new Set(
+      (Array.isArray(raw.values) ? raw.values : [])
+        .map((item, index) => integer(item, `overlay values[${index}]`, 1))
+    ));
+  if (values && values.length > 256) throw new Error("An overlay supports at most 256 values");
+  const mode = raw.mode == null ? "outline" : String(raw.mode);
+  if (!["outline", "fill", "outline-fill"].includes(mode)) {
+    throw new Error("overlay mode must be outline, fill, or outline-fill");
+  }
+  const opacity = raw.opacity == null
+    ? mode === "fill" ? 0.3 : 1
+    : finite(raw.opacity, "overlay opacity");
+  if (opacity < 0 || opacity > 1) throw new Error("overlay opacity must be between 0 and 1");
+  const outlineWidth = raw.outline_width == null
+    ? 2
+    : integer(raw.outline_width, "overlay outline_width", 1);
+  if (outlineWidth > 8) throw new Error("overlay outline_width must be at most 8");
+  const color = raw.color == null ? undefined : String(raw.color);
+  if (color && !/^#[0-9a-f]{6}$/i.test(color)) {
+    throw new Error("overlay color must use #RRGGBB");
+  }
+  return {
+    labelPath,
+    labelChannel,
+    values,
+    mode: mode as ZarrOverlay["mode"],
+    color,
+    opacity,
+    outlineWidth,
+    name: typeof raw.name === "string" ? raw.name.trim().slice(0, 80) : undefined
+  };
+}
+
+function evidenceIds(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== "string")) {
+    throw new Error("evidence_ids must contain at least one evidence ID");
+  }
+  return Array.from(new Set(value)).slice(0, 32);
 }
 
 export function zarrFocusFromToolArgs(value: unknown): ZarrFocusTarget {
@@ -253,7 +313,22 @@ export function zarrFocusFromToolArgs(value: unknown): ZarrFocusTarget {
   if ((labelPath || labelChannel != null) && labelValue == null) {
     throw new Error("A label overlay requires label_value");
   }
+  const overlays = raw.overlays == null
+    ? []
+    : (Array.isArray(raw.overlays) ? raw.overlays : []).map(zarrOverlay);
+  if (overlays.length > 8) throw new Error("At most eight overlays may be rendered");
+  if (!overlays.length && (labelPath || labelChannel != null)) {
+    overlays.push({
+      labelPath,
+      labelChannel,
+      values: labelValue == null ? undefined : [labelValue],
+      mode: "outline",
+      opacity: 1,
+      outlineWidth: 2
+    });
+  }
   return {
+    evidenceIds: evidenceIds(raw.evidence_ids),
     storeUuid: raw.store_uuid.toLowerCase(),
     field,
     targetKind: raw.target_kind,
@@ -267,6 +342,7 @@ export function zarrFocusFromToolArgs(value: unknown): ZarrFocusTarget {
     labelPath,
     labelChannel,
     labelValue,
+    overlays,
     t,
     z,
     roi,
@@ -274,6 +350,66 @@ export function zarrFocusFromToolArgs(value: unknown): ZarrFocusTarget {
     title: typeof raw.title === "string" && raw.title.trim()
       ? raw.title.trim().slice(0, 180)
       : `${field} ${raw.target_kind} preview`
+  };
+}
+
+export function zarrRecipeFromToolArgs(value: unknown): {
+  recipe: ZarrRenderRecipe;
+  evidenceIds: string[];
+} {
+  const raw = object(value, "Zarr gallery");
+  if (typeof raw.store_uuid !== "string" || !UUID.test(raw.store_uuid)) {
+    throw new Error("store_uuid must be a canonical UUID from the measurement database");
+  }
+  if (!Array.isArray(raw.panels) || raw.panels.length < 2 || raw.panels.length > 25) {
+    throw new Error("A gallery requires 2 through 25 panels");
+  }
+  const panels = raw.panels.map((value: unknown, panelIndex: number) => {
+    const panel = object(value, `gallery panel ${panelIndex + 1}`);
+    if (!Array.isArray(panel.roi) || panel.roi.length !== 4) {
+      throw new Error(`gallery panel ${panelIndex + 1} roi must contain x0,y0,x1,y1`);
+    }
+    const roi = panel.roi.map((item, index) =>
+      integer(item, `gallery panel ${panelIndex + 1} roi[${index}]`)
+    ) as [number, number, number, number];
+    if (roi[0] >= roi[2] || roi[1] >= roi[3] ||
+        roi[2] - roi[0] > 2048 || roi[3] - roi[1] > 2048) {
+      throw new Error(`gallery panel ${panelIndex + 1} roi is empty or exceeds 2048×2048`);
+    }
+    const sourceChannels = Array.from(new Set(
+      (Array.isArray(panel.source_channels) ? panel.source_channels : [])
+        .map((item, index) => integer(item, `source_channels[${index}]`, 1))
+    ));
+    if (sourceChannels.length > 4) throw new Error("At most four source channels may be rendered");
+    const overlays = (Array.isArray(panel.overlays) ? panel.overlays : []).map(zarrOverlay);
+    if (overlays.length > 8) throw new Error("At most eight overlays may be rendered");
+    return {
+      field: safePath(panel.field, `gallery panel ${panelIndex + 1} field`),
+      roi,
+      sourceChannels,
+      t: panel.t == null ? 0 : integer(panel.t, "t"),
+      z: panel.z == null ? 0 : integer(panel.z, "z"),
+      title: typeof panel.title === "string"
+        ? panel.title.trim().slice(0, 160)
+        : `Panel ${panelIndex + 1}`,
+      caption: typeof panel.caption === "string"
+        ? panel.caption.trim().slice(0, 320)
+        : undefined,
+      overlays,
+      scaleBar: true
+    };
+  });
+  const columns = raw.columns == null ? undefined : integer(raw.columns, "columns", 1);
+  if (columns != null && columns > 5) throw new Error("columns must be at most 5");
+  return {
+    evidenceIds: evidenceIds(raw.evidence_ids),
+    recipe: {
+      storeUuid: raw.store_uuid.toLowerCase(),
+      title: typeof raw.title === "string" ? raw.title.trim().slice(0, 200) : undefined,
+      filename: typeof raw.filename === "string" ? raw.filename.trim().slice(0, 100) : undefined,
+      layout: columns == null ? undefined : { columns },
+      panels
+    }
   };
 }
 
@@ -354,10 +490,50 @@ function validateAgainstCapability(
     );
     if (!available) throw new Error("The requested label path is not available in ZarrViewer");
   }
+  for (const overlay of focus.overlays) {
+    if (overlay.labelChannel != null && !availableChannels.has(overlay.labelChannel)) {
+      throw new Error("A requested overlay label channel is not available in ZarrViewer");
+    }
+    if (overlay.labelPath) {
+      const requestedName = overlay.labelPath.split("/").at(-1);
+      const available = capability.labels.some(
+        (label) => label.path === overlay.labelPath || label.path.split("/").at(-1) === requestedName
+      );
+      if (!available) throw new Error("A requested overlay label path is not available in ZarrViewer");
+    }
+  }
+}
+
+export function validateRecipeAgainstCapability(
+  capability: ZarrViewerCapability,
+  recipe: ZarrRenderRecipe
+): void {
+  if (capability.store.uuid !== recipe.storeUuid) {
+    throw new Error("The measurement database belongs to a different OME-Zarr store");
+  }
+  const fields = validFieldPaths(capability);
+  const channels = new Set(capability.channels.map((channel) => channel.index + 1));
+  for (const panel of recipe.panels) {
+    if (!fields.has(panel.field)) throw new Error(`Field ${panel.field} is unavailable`);
+    if (panel.sourceChannels.some((channel) => !channels.has(channel))) {
+      throw new Error("A gallery source channel is unavailable");
+    }
+    for (const overlay of panel.overlays) {
+      if (overlay.labelChannel != null && !channels.has(overlay.labelChannel)) {
+        throw new Error("A gallery label channel is unavailable");
+      }
+      if (overlay.labelPath) {
+        const name = overlay.labelPath.split("/").at(-1);
+        if (!capability.labels.some(
+          (label) => label.path === overlay.labelPath || label.path.split("/").at(-1) === name
+        )) throw new Error("A gallery label path is unavailable");
+      }
+    }
+  }
 }
 
 function appendFocus(url: URL, focus: ZarrFocusTarget): URL {
-  url.searchParams.set("v", "1");
+  url.searchParams.set("v", "2");
   url.searchParams.set("field", focus.field);
   url.searchParams.set("roi", focus.roi.join(","));
   url.searchParams.set("t", String(focus.t));
@@ -372,6 +548,9 @@ function appendFocus(url: URL, focus: ZarrFocusTarget): URL {
   }
   if (focus.labelValue != null) {
     url.searchParams.set("labelValue", String(focus.labelValue));
+  }
+  if (focus.overlays.length) {
+    url.searchParams.set("overlays", JSON.stringify(focus.overlays));
   }
   return url;
 }
@@ -393,18 +572,47 @@ export async function renderZarrPreview(
   focus: ZarrFocusTarget
 ): Promise<ArrayBuffer> {
   validateAgainstCapability(capability, focus);
-  const url = appendFocus(
-    new URL(capability.store.roi_url, window.location.href),
-    focus
+  const recipe: ZarrRenderRecipe = {
+    storeUuid: focus.storeUuid,
+    filename: `${focus.title}.png`,
+    panels: [{
+      field: focus.field,
+      roi: focus.roi,
+      sourceChannels: focus.sourceChannels,
+      t: focus.t,
+      z: focus.z,
+      title: focus.title,
+      overlays: focus.overlays,
+      scaleBar: true
+    }]
+  };
+  return renderZarrRecipe(capability, recipe);
+}
+
+export async function renderZarrRecipe(
+  capability: ZarrViewerCapability,
+  recipe: ZarrRenderRecipe
+): Promise<ArrayBuffer> {
+  validateRecipeAgainstCapability(capability, recipe);
+  const response = await fetch(
+    new URL(capability.store.render_url, window.location.href),
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1] || ""
+      },
+      body: JSON.stringify(recipe)
+    }
   );
-  const response = await fetch(url, { credentials: "same-origin" });
   if (!response.ok) throw new Error(await response.text() || `${response.status} ${response.statusText}`);
   const contentType = (response.headers.get("content-type") || "").split(";", 1)[0].toLowerCase();
   if (contentType !== "image/png") throw new Error("ZarrViewer did not return a PNG preview");
   const declared = Number(response.headers.get("content-length") || 0);
-  if (declared > MAX_RENDERED_PNG) throw new Error("ZarrViewer preview exceeds 16 MiB");
+  if (declared > MAX_RENDERED_PNG) throw new Error("ZarrViewer preview exceeds 32 MiB");
   const data = await response.arrayBuffer();
-  if (data.byteLength > MAX_RENDERED_PNG) throw new Error("ZarrViewer preview exceeds 16 MiB");
+  if (data.byteLength > MAX_RENDERED_PNG) throw new Error("ZarrViewer preview exceeds 32 MiB");
   return data;
 }
 
@@ -447,9 +655,51 @@ export function zarrProvenance(
     labelPath: focus.labelPath,
     labelChannel: focus.labelChannel,
     labelValue: focus.labelValue,
+    overlays: focus.overlays,
+    evidenceIds: focus.evidenceIds,
+    renderRecipe: {
+      storeUuid: focus.storeUuid,
+      panels: [{
+        field: focus.field,
+        roi: focus.roi,
+        sourceChannels: focus.sourceChannels,
+        t: focus.t,
+        z: focus.z,
+        title: focus.title,
+        overlays: focus.overlays
+      }]
+    },
+    renderKind: "roi",
     t: focus.t,
     z: focus.z,
     viewerUrl,
     croppedField: focus.croppedField
+  };
+}
+
+export function zarrGalleryProvenance(
+  binding: ZarrBinding,
+  recipe: ZarrRenderRecipe,
+  evidence: string[]
+): ZarrViewerProvenance {
+  const first = recipe.panels[0];
+  return {
+    application: "biomero-zarr-viewer",
+    viewerVersion: binding.viewerVersion,
+    storeUuid: binding.storeUuid,
+    objectType: binding.objectType,
+    objectId: binding.objectId,
+    capabilityImageId: binding.capabilityImageId,
+    field: first.field,
+    roi: first.roi,
+    sourceChannels: first.sourceChannels,
+    overlays: first.overlays,
+    evidenceIds: evidence,
+    renderRecipe: recipe,
+    renderKind: "gallery",
+    t: first.t,
+    z: first.z,
+    viewerUrl: "",
+    croppedField: false
   };
 }

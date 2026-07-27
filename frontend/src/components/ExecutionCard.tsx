@@ -6,12 +6,14 @@ export function ExecutionCard({
   execution,
   files,
   onSave,
-  onRerun
+  onRerun,
+  allowInspectionSave = false
 }: {
   execution: ExecutionRecord;
   files: WorkspaceFile[];
   onSave: () => void;
   onRerun: () => void;
+  allowInspectionSave?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const outputs = execution.outputFileIds
@@ -30,7 +32,8 @@ export function ExecutionCard({
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >{expanded ? "Collapse" : "Show details"}</button>
-      {!isInspection && ["success", "reused"].includes(execution.status) && (
+      {(!isInspection || allowInspectionSave) &&
+        ["success", "reused"].includes(execution.status) && (
         <button onClick={onSave}>Save as script</button>
       )}
       {!isInspection && <button onClick={onRerun}>Rerun</button>}
@@ -56,8 +59,9 @@ export function ExecutionCard({
         {timing && <p className="activity-timing">{timing}</p>}
         {isInspection && (
           <p className="inspection-note">
-            This code was generated only to inspect bounded data for the assistant. It is not a
-            reusable analysis script.
+            {allowInspectionSave
+              ? "This successful legacy inspection can be promoted because no analysis-purpose execution exists for the request."
+              : "This code was generated only to inspect bounded data for the assistant. It is not a reusable analysis script."}
           </p>
         )}
         <div className="execution-content" hidden={!expanded}>

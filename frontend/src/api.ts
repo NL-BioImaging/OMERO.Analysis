@@ -329,6 +329,14 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
         typeof skill.name !== "string" ||
         typeof skill.sha256 !== "string" ||
         typeof skill.package_url !== "string" ||
+        !(skill.required_resources == null || (
+          Array.isArray(skill.required_resources) &&
+          skill.required_resources.every((item: unknown) => typeof item === "string")
+        )) ||
+        !(skill.required_capabilities == null || (
+          Array.isArray(skill.required_capabilities) &&
+          skill.required_capabilities.every((item: unknown) => typeof item === "string")
+        )) ||
         !skill.match ||
         typeof skill.match !== "object"
       ) {

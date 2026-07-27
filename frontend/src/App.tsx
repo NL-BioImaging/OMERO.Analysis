@@ -11,7 +11,6 @@ import {
   completeChat,
   OmeroBridge,
   toolErrorText,
-  toolResultText,
   type AiMessage,
   type ToolCall
 } from "./api";
@@ -44,6 +43,7 @@ import {
   saveWorkflow,
   saveAudit,
   saveArtifact,
+  saveEvidenceLedger,
   saveWorkspace,
   settingsKey,
   setValue,
@@ -75,7 +75,9 @@ import type {
   ZarrBinding,
   ZarrFocusTarget,
   ZarrViewerCapability,
-  ZarrViewerIntegrationStatus
+  ZarrViewerIntegrationStatus,
+  EvidenceRecord,
+  ZarrRenderRecipe
 } from "./types";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
@@ -93,12 +95,25 @@ import {
 import {
   fetchZarrCapability,
   renderZarrPreview,
+  renderZarrRecipe,
   zarrBinding,
   zarrCandidates,
   zarrFocusFromToolArgs,
+  zarrGalleryProvenance,
   zarrProvenance,
+  zarrRecipeFromToolArgs,
   zarrViewerUrl
 } from "./zarrViewer";
+import {
+  boundedEvidencePayload,
+  currentEvidence,
+  evidenceKind,
+  evidencePrompt,
+  requireEvidenceIds,
+  sourceSkillKey,
+  upsertBoundedEvidence
+} from "./evidence";
+import { buildRenderBundle } from "./renderBundle";
 import {
   activityText,
   formatDuration,
@@ -218,6 +233,13 @@ function bytesLabel(value: number): string {
 function projectBytes(workspace: ProjectWorkspace | null): number {
   return workspace?.files.filter((file) => !file.deletedAt)
     .reduce((sum, file) => sum + file.size, 0) || 0;
+}
+
+function workspaceInputHashes(workspace: ProjectWorkspace): string[] {
+  return workspace.files
+    .filter((file) => file.source !== "result" && file.state === "ready" && !file.deletedAt)
+    .map((file) => file.sha256)
+    .sort();
 }
 
 interface BrowserMenuAction {
@@ -387,7 +409,7 @@ export default function App() {
           installed: false,
           enabled: false,
           version: null,
-          minimum_version: "0.3.0",
+          minimum_version: "0.4.0",
           reason: "not-installed" as const
         }))
       ]);
@@ -662,6 +684,16 @@ export default function App() {
     workspaceRef.current = updated;
     setWorkspace(updated);
     void saveAudit(audit);
+  }
+
+  function upsertEvidence(record: EvidenceRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const evidence = upsertBoundedEvidence(current.evidence, record);
+    const updated = { ...current, evidence };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    void saveEvidenceLedger(record.chatId, evidence.filter((item) => item.chatId === record.chatId));
   }
 
   function upsertArtifacts(artifacts: ArtifactRecord[]) {
@@ -1016,7 +1048,7 @@ export default function App() {
   }
 
   async function resolveZarrTarget(
-    focus: ZarrFocusTarget
+    storeUuid: string
   ): Promise<{ binding: ZarrBinding; capability: ZarrViewerCapability }> {
     const current = workspaceRef.current;
     const viewer = zarrViewerStatus;
@@ -1031,7 +1063,7 @@ export default function App() {
         "No compatible OMERO Image or Plate is available in the current object hierarchy"
       );
     }
-    const cachedBinding = current.project.zarrBindings?.[focus.storeUuid];
+    const cachedBinding = current.project.zarrBindings?.[storeUuid];
     const cachedCandidate = cachedBinding && cachedBinding.groupId === context.group_id
       ? candidates.find(
         (candidate) =>
@@ -1045,7 +1077,7 @@ export default function App() {
         const capability = zarrCapabilities.current.get(cacheKey) ||
           await fetchZarrCapability(viewer, cachedCandidate);
         zarrCapabilities.current.set(cacheKey, capability);
-        if (capability.store.uuid === focus.storeUuid) {
+        if (capability.store.uuid === storeUuid) {
           const binding = zarrBinding(
             capability,
             cachedCandidate,
@@ -1092,7 +1124,7 @@ export default function App() {
       for (const result of settled) {
         if (
           result.status === "fulfilled" &&
-          result.value.capability.store.uuid === focus.storeUuid
+          result.value.capability.store.uuid === storeUuid
         ) {
           matches.push(result.value);
         }
@@ -1100,7 +1132,7 @@ export default function App() {
     }
     if (!matches.length) {
       throw new Error(
-        `No accessible OME-Zarr source in the current OMERO hierarchy has store UUID ${focus.storeUuid}`
+        `No accessible OME-Zarr source in the current OMERO hierarchy has store UUID ${storeUuid}`
       );
     }
 
@@ -1131,7 +1163,7 @@ export default function App() {
       ...workspaceRef.current!.project,
       zarrBindings: {
         ...(workspaceRef.current!.project.zarrBindings || {}),
-        [focus.storeUuid]: binding
+        [storeUuid]: binding
       },
       updatedAt: now()
     });
@@ -1150,7 +1182,14 @@ export default function App() {
       throw new Error(zarrViewerWarning || "OMERO ZarrViewer is unavailable");
     }
     const focus = zarrFocusFromToolArgs(args);
-    const { binding, capability } = await resolveZarrTarget(focus);
+    const currentLedger = currentEvidence(
+      current.evidence,
+      chatId,
+      workspaceInputHashes(current),
+      turnWorkflowSkills.current.map((skill) => skill.sha256)
+    );
+    requireEvidenceIds(focus.evidenceIds, currentLedger);
+    const { binding, capability } = await resolveZarrTarget(focus.storeUuid);
     const viewerUrl = zarrViewerUrl(viewer, capability, focus);
     const viewerMetadata = zarrProvenance(binding, focus, viewerUrl);
     let createdFile: WorkspaceFile | undefined;
@@ -1205,13 +1244,123 @@ export default function App() {
     });
     if (createdFile) setSelectedArtifactFileId(createdFile.id);
     setArtifactOpen(true);
+    const renderEvidenceId = id();
+    const sourceHashes = workspaceInputHashes(current);
+    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
+    upsertEvidence({
+      id: renderEvidenceId,
+      projectId: current.project.id,
+      chatId,
+      promptId,
+      kind: "render",
+      status: "success",
+      sourceHashes,
+      skillHashes,
+      sourceSkillKey: sourceSkillKey(sourceHashes, skillHashes),
+      summary: `${includePreview ? "Rendered" : "Opened"} ${focus.title} from evidence ${focus.evidenceIds.join(", ")}`,
+      payload: boundedEvidencePayload(viewerMetadata),
+      createdAt: now()
+    });
     return JSON.stringify({
       ok: true,
       artifact_id: artifact.id,
+      render_evidence_id: renderEvidenceId,
+      cited_evidence_ids: focus.evidenceIds,
       preview_created: Boolean(createdFile),
       field: focus.field,
       roi: focus.roi,
       cropped_field_preview: focus.croppedField
+    });
+  }
+
+  async function createZarrGalleryResult(
+    args: Record<string, unknown>,
+    chatId: string,
+    promptId: string
+  ): Promise<string> {
+    const current = workspaceRef.current;
+    if (!current || !zarrViewerStatus?.available) {
+      throw new Error(zarrViewerWarning || "OMERO ZarrViewer is unavailable");
+    }
+    const { recipe, evidenceIds } = zarrRecipeFromToolArgs(args);
+    const ledger = currentEvidence(
+      current.evidence,
+      chatId,
+      workspaceInputHashes(current),
+      turnWorkflowSkills.current.map((skill) => skill.sha256)
+    );
+    requireEvidenceIds(evidenceIds, ledger);
+    const { binding, capability } = await resolveZarrTarget(recipe.storeUuid);
+    const data = await renderZarrRecipe(capability, recipe);
+    if (projectBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
+      throw new Error("The rendered gallery would exceed the 512 MiB project limit");
+    }
+    const filename = `${slug(recipe.filename || recipe.title || "zarr-gallery").replace(/-png$/, "")}.png`;
+    const viewerMetadata = zarrGalleryProvenance(binding, recipe, evidenceIds);
+    const file: WorkspaceFile = {
+      id: id(),
+      projectId: current.project.id,
+      chatId,
+      name: filename,
+      logicalPath: `${current.project.rootPath}/chats/${chatId}/outputs/zarr/${filename}`,
+      type: "image/png",
+      size: data.byteLength,
+      sha256: await sha256(data),
+      source: "result",
+      state: "ready",
+      data,
+      viewer: viewerMetadata,
+      createdAt: now()
+    };
+    upsertFiles([file]);
+    const artifact: ArtifactRecord = {
+      id: id(),
+      projectId: current.project.id,
+      chatId,
+      fileId: file.id,
+      kind: "viewer-preview",
+      title: recipe.title || "OME-Zarr gallery",
+      pinned: false,
+      promptId,
+      viewer: viewerMetadata,
+      createdAt: now()
+    };
+    upsertArtifacts([artifact]);
+    appendMessage(chatId, {
+      id: id(),
+      role: "assistant",
+      content: `Rendered one ${recipe.panels.length}-panel OME-Zarr gallery from verified analysis evidence.`,
+      kind: "viewer-preview",
+      artifactId: artifact.id,
+      activity: "worked",
+      createdAt: now()
+    });
+    setSelectedArtifactFileId(file.id);
+    setArtifactOpen(true);
+    const renderEvidenceId = id();
+    const sourceHashes = workspaceInputHashes(current);
+    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
+    upsertEvidence({
+      id: renderEvidenceId,
+      projectId: current.project.id,
+      chatId,
+      promptId,
+      kind: "render",
+      status: "success",
+      sourceHashes,
+      skillHashes,
+      sourceSkillKey: sourceSkillKey(sourceHashes, skillHashes),
+      summary: `Rendered ${recipe.panels.length}-panel gallery from evidence ${evidenceIds.join(", ")}`,
+      payload: boundedEvidencePayload({ recipe, fileId: file.id, sha256: file.sha256 }),
+      createdAt: now()
+    });
+    return JSON.stringify({
+      ok: true,
+      artifact_id: artifact.id,
+      file_id: file.id,
+      panel_count: recipe.panels.length,
+      render_evidence_id: renderEvidenceId,
+      cited_evidence_ids: evidenceIds
     });
   }
 
@@ -1239,10 +1388,7 @@ export default function App() {
     const startedAt = performance.now();
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
-    const inputHashes = current.files
-      .filter((file) => file.source !== "result" && file.state === "ready" && !file.deletedAt)
-      .map((file) => file.sha256)
-      .sort();
+    const inputHashes = workspaceInputHashes(current);
     const skillHashes = turnWorkflowSkills.current
       .map((skill) => skill.sha256)
       .sort();
@@ -1277,9 +1423,33 @@ export default function App() {
         createdAt: now()
       });
       if (reused.status === "reused") {
+        let evidenceId = previous.evidenceId;
+        if (!evidenceId) {
+          evidenceId = id();
+          upsertEvidence({
+            id: evidenceId,
+            projectId: current.project.id,
+            chatId,
+            promptId,
+            kind: evidenceKind(previous.code),
+            status: "success",
+            sourceHashes: inputHashes,
+            skillHashes,
+            sourceSkillKey: sourceSkillKey(inputHashes, skillHashes),
+            executionId: previous.id,
+            summary: `Reused verified execution ${previous.id}`,
+            payload: boundedEvidencePayload({
+              stdout: previous.stdout,
+              preview: previous.preview,
+              outputFileIds: previous.outputFileIds
+            }),
+            createdAt: now()
+          });
+        }
         return JSON.stringify({
           reused: true,
           execution_id: previous.id,
+          evidence_id: evidenceId,
           stdout: previous.stdout,
           stderr: previous.stderr,
           preview: previous.preview,
@@ -1330,13 +1500,30 @@ export default function App() {
       output = await runtime.run(normalizedCode);
     } catch (error) {
       const detail = String(error instanceof Error ? error.message : error).slice(0, MAX_TOOL_TEXT);
+      const evidenceId = id();
       const failed = {
         ...execution,
         status: "failed" as const,
         stderr: detail,
+        evidenceId,
         durationMs: performance.now() - startedAt
       };
       upsertExecution(failed);
+      upsertEvidence({
+        id: evidenceId,
+        projectId: current.project.id,
+        chatId,
+        promptId,
+        kind: "failed-approach",
+        status: "failed",
+        sourceHashes: inputHashes,
+        skillHashes,
+        sourceSkillKey: sourceSkillKey(inputHashes, skillHashes),
+        executionId: execution.id,
+        summary: detail.slice(0, 300),
+        payload: boundedEvidencePayload({ code: normalizedCode, error: detail }),
+        createdAt: now()
+      });
       setStatus("Python error sent to AmsterdamUMC; waiting for corrected code…");
       setAnalysisPhase("repairing");
       return toolErrorText(error);
@@ -1380,6 +1567,7 @@ export default function App() {
         .filter((name) => /\.(png|svg)$/i.test(name))
         .filter((name) => !turnOutputNames.current.has(name.replace(/\.(png|svg)$/i, ".csv")))
       : [];
+    const evidenceId = id();
     const completed: ExecutionRecord = {
       ...execution,
       status: missing.length ? "incomplete" : "success",
@@ -1390,9 +1578,35 @@ export default function App() {
       outputFileIds: generated.map((file) => file.id),
       missingPlotCsv: missing,
       purpose: purpose === "inspection" && generated.length ? "analysis" : purpose,
+      evidenceId,
       durationMs: performance.now() - startedAt
     };
     upsertExecution(completed);
+    upsertEvidence({
+      id: evidenceId,
+      projectId: current.project.id,
+      chatId,
+      promptId,
+      kind: evidenceKind(normalizedCode),
+      status: "success",
+      sourceHashes: inputHashes,
+      skillHashes,
+      sourceSkillKey: sourceSkillKey(inputHashes, skillHashes),
+      executionId: execution.id,
+      summary: `Successful ${purpose} execution; preview and generated-file metadata are reusable`,
+      payload: boundedEvidencePayload({
+        stdout: output.stdout,
+        preview: output.preview,
+        generatedFiles: generated.map((file) => ({
+          id: file.id,
+          name: file.name,
+          sha256: file.sha256,
+          size: file.size,
+          type: file.type
+        }))
+      }),
+      createdAt: now()
+    });
     const modelPayloadText = JSON.stringify(output.modelPayload);
     upsertAudit({
       id: id(),
@@ -1429,7 +1643,12 @@ export default function App() {
         `Plot data CSV required. Create ${missing.map((name) => name.replace(/\.(png|svg)$/i, ".csv")).join(", ")} containing the data used for the plot. Do not regenerate unrelated analysis.`
       );
     }
-    return toolResultText(output);
+    return JSON.stringify({
+      ok: true,
+      evidence_id: evidenceId,
+      execution_id: execution.id,
+      ...output.modelPayload
+    }).slice(0, MAX_TOOL_TEXT);
   }
 
   async function executeTool(call: ToolCall, chatId: string, promptId: string): Promise<string> {
@@ -1542,9 +1761,13 @@ export default function App() {
     }
     if (
       call.function.name === "open_zarr_view" ||
-      call.function.name === "render_zarr_roi"
+      call.function.name === "render_zarr_roi" ||
+      call.function.name === "render_zarr_gallery"
     ) {
       try {
+        if (call.function.name === "render_zarr_gallery") {
+          return await createZarrGalleryResult(args, chatId, promptId);
+        }
         return await createZarrViewerResult(
           args,
           chatId,
@@ -1657,8 +1880,10 @@ export default function App() {
     turnOutputNames.current.clear();
     await runtime.beginTurn();
     turnWorkflowSkills.current = [];
-    let activeSkillInstructions = "";
+    const activeSkillPackages: WorkflowSkillPackage[] = [];
     let activeSkillWarning = "";
+    const visualIntent =
+      /\b(show|render|view|open|gallery|montage|image|field|well|contour|mask|overlay|png)\b/i.test(text);
     const compatibleSkills = matchWorkflowSkills(
       workflowSkillCatalogRef.current,
       current.files,
@@ -1671,13 +1896,51 @@ export default function App() {
           strongest.entry.source.workflow_key,
           strongest.skill.name
         );
-        turnWorkflowSkills.current = [skillProvenance(skill)];
-        activeSkillInstructions = packageInstructions(skill);
+        activeSkillPackages.push(skill);
       } catch (error) {
         activeSkillWarning =
           `Workflow-specific guidance unavailable: ${String(error)}`;
       }
     }
+    if (visualIntent && zarrViewerStatus?.available) {
+      const application = (workflowSkillCatalogRef.current?.applications || [])
+        .flatMap((entry) => entry.skills.map((skill) => ({ entry, skill })))
+        .find(({ skill }) =>
+          skill.required_capabilities?.some((capability) =>
+            capability === "zarr-render-v2" || capability === "zarr-gallery-v1"
+          ) || /zarr.*viewer/i.test(skill.name)
+        );
+      if (application) {
+        try {
+          const skill = await loadWorkflowSkill(
+            application.entry.source.workflow_key,
+            application.skill.name
+          );
+          if (!activeSkillPackages.some((item) => item.skill.sha256 === skill.skill.sha256)) {
+            activeSkillPackages.push(skill);
+          }
+        } catch (error) {
+          activeSkillWarning = [
+            activeSkillWarning,
+            `ZarrViewer operation guidance unavailable: ${String(error)}`
+          ].filter(Boolean).join(" ");
+        }
+      }
+    }
+    turnWorkflowSkills.current = activeSkillPackages.map(skillProvenance);
+    const activeSkillInstructions = activeSkillPackages.map((skill) => {
+      const base = packageInstructions(skill);
+      if (!visualIntent) return base;
+      const pngQuestions = skill.files.find((file) =>
+        /(^|\/)PNG_QUESTIONS\.md$/i.test(file.path)
+      );
+      return pngQuestions
+        ? `${base}\n\nPNG question and rendering reference ${pngQuestions.path}:\n${pngQuestions.content}`
+        : base;
+    }).join("\n\n---\n\n");
+    const sourceHashes = workspaceInputHashes(current);
+    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256).sort();
+    const ledger = currentEvidence(current.evidence, chat.id, sourceHashes, skillHashes);
     const promptId = id();
     const user: ChatMessage = {
       id: promptId,
@@ -1709,6 +1972,11 @@ export default function App() {
     const dynamicPrompt = `${SYSTEM_PROMPT}
 
 Project root: ${current.project.rootPath}
+Exact current project files (already discovered; do not call list_workspace_files):
+${listFiles(current.files)}
+
+${evidencePrompt(ledger)}
+
 The user has ${current.scripts.filter((script) => !script.deletedAt).length} saved scripts. ${
   current.project.plotCsv
     ? "Plot CSV mode is ON: every PNG or SVG must have a same-stem CSV containing its plotted data."
@@ -1722,7 +1990,11 @@ ${activeSkillInstructions || (
   activeSkillWarning || workflowSkillWarning
     ? `No specialized workflow skill was loaded. ${activeSkillWarning || workflowSkillWarning}`
     : "No compatible specialized workflow skill matched; use generic schema-first analysis."
-)}`;
+)}
+
+Efficiency contract: answer an initial most-foci request within four tool rounds and a follow-up
+render within two tool rounds. Do not repeat schema discovery while the listed source and skill
+hashes are unchanged. Reuse matching evidence IDs and verified rows from the ledger.`;
     const pinnedIds = new Set(currentChat.pinnedMessageIds || []);
     const history = [
       ...ordinary.filter((message) => pinnedIds.has(message.id)),
@@ -1739,7 +2011,10 @@ ${activeSkillInstructions || (
 
     try {
       const availableTools = [
-        ...TOOLS,
+        ...TOOLS.filter((tool) =>
+          tool.function.name !== "discover_skills" &&
+          tool.function.name !== "list_workspace_files"
+        ),
         ...(zarrViewerStatus?.available ? ZARR_VIEWER_TOOLS : [])
       ];
       for (let turn = 0; turn <= MAX_TOOL_ROUNDS; turn += 1) {
@@ -1838,18 +2113,22 @@ ${activeSkillInstructions || (
     const current = workspaceRef.current;
     if (
       !current ||
-      execution.purpose === "inspection" ||
       !["success", "reused"].includes(execution.status)
     ) return;
     const chat = current.chats.find((item) => item.id === execution.chatId);
     const promptMessage = chat?.messages.find((message) => message.id === execution.promptId);
-    const related = current.executions
+    const successful = current.executions
       .filter((item) =>
         item.chatId === execution.chatId &&
         item.promptId === execution.promptId &&
-        ["success", "incomplete"].includes(item.status)
+        ["success", "reused"].includes(item.status)
       )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const reusable = successful.filter((item) => item.purpose !== "inspection");
+    const related = reusable.length
+      ? reusable
+      : successful.filter((item) => item.purpose === "inspection");
+    if (execution.purpose === "inspection" && reusable.length) return;
     const scriptCode = Array.from(new Set(related.map((item) => item.code))).join(
       "\n\n# Continued analysis / automatic repair\n"
     ) || execution.code;
@@ -1915,6 +2194,111 @@ ${activeSkillInstructions || (
     }
     await saveScript(script);
     setStatus(`Saved ${script.name} version ${script.currentVersion}`);
+  }
+
+  async function saveAnalysisRender(artifact: ArtifactRecord, png: WorkspaceFile) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    try {
+      const bundle = buildRenderBundle(artifact, png, current.executions, current.evidence);
+      const base = slug(artifact.title || "zarr-render");
+      const scriptName = `${base}-analysis.py`;
+      const existing = current.scripts.find((item) =>
+        !item.deletedAt && item.name.toLowerCase() === scriptName.toLowerCase()
+      );
+      const version = (existing?.currentVersion || 0) + 1;
+      const codeHash = await sha256(bundle.code);
+      const script: ScriptRecord = existing
+        ? {
+          ...existing,
+          currentVersion: version,
+          inputContract: inputContractFromCode(bundle.code),
+          versions: [...existing.versions, {
+            version,
+            code: bundle.code,
+            codeHash,
+            executionId: bundle.execution.id,
+            createdAt: now()
+          }],
+          updatedAt: now()
+        }
+        : {
+          id: id(),
+          projectId: current.project.id,
+          name: scriptName,
+          description: `Reproducible analysis for ${artifact.title}`,
+          currentVersion: version,
+          inputContract: inputContractFromCode(bundle.code),
+          parameters: [],
+          versions: [{
+            version,
+            code: bundle.code,
+            codeHash,
+            executionId: bundle.execution.id,
+            createdAt: now()
+          }],
+          createdAt: now(),
+          updatedAt: now()
+        };
+      const recipeBytes = new TextEncoder().encode(`${JSON.stringify(bundle.recipe, null, 2)}\n`);
+      const manifestBytes = new TextEncoder().encode(`${JSON.stringify(bundle.manifest, null, 2)}\n`);
+      const componentSpecs = [
+        {
+          name: `${base}-v${version}-render-recipe.json`,
+          type: "application/json",
+          data: recipeBytes
+        },
+        {
+          name: `${base}-v${version}-evidence-manifest.json`,
+          type: "application/json",
+          data: manifestBytes
+        },
+        {
+          name: `${base}-v${version}.zip`,
+          type: "application/zip",
+          data: bundle.archive
+        }
+      ];
+      const files: WorkspaceFile[] = [];
+      for (const item of componentSpecs) {
+        const data = item.data.buffer.slice(
+          item.data.byteOffset,
+          item.data.byteOffset + item.data.byteLength
+        ) as ArrayBuffer;
+        files.push({
+          id: id(),
+          projectId: current.project.id,
+          chatId: artifact.chatId,
+          name: item.name,
+          logicalPath: `${current.project.rootPath}/chats/${artifact.chatId}/outputs/render-bundles/${item.name}`,
+          type: item.type,
+          size: item.data.byteLength,
+          sha256: await sha256(data),
+          source: "result",
+          state: "ready",
+          data,
+          createdAt: now()
+        });
+      }
+      const latest = workspaceRef.current;
+      if (!latest) return;
+      const updated = {
+        ...latest,
+        scripts: existing
+          ? latest.scripts.map((item) => item.id === script.id ? script : item)
+          : [...latest.scripts, script]
+      };
+      workspaceRef.current = updated;
+      setWorkspace(updated);
+      await saveScript(script);
+      upsertFiles(files);
+      downloadBytes(`${base}-v${version}.zip`, bundle.archive, "application/zip");
+      setStatus(
+        `Saved ${script.name} version ${version}, render recipe, provenance manifest, PNG, and downloadable ZIP`
+      );
+    } catch (error) {
+      setStatus(`Could not save analysis + render: ${String(error)}`);
+    }
   }
 
   async function runScript(script: ScriptRecord) {
@@ -3462,6 +3846,9 @@ ${activeSkillInstructions || (
                       setSelectedArtifactFileId(selected.id);
                       setArtifactOpen(true);
                     }}
+                    onSaveBundle={(selectedArtifact, selectedFile) =>
+                      void saveAnalysisRender(selectedArtifact, selectedFile)
+                    }
                   />
                 ) : null;
               }
@@ -3474,6 +3861,16 @@ ${activeSkillInstructions || (
                     files={workspace.files}
                     onSave={() => void saveAsScript(execution)}
                     onRerun={() => void rerunExecution(execution)}
+                    allowInspectionSave={
+                      execution.purpose === "inspection" &&
+                      ["success", "reused"].includes(execution.status) &&
+                      !workspace.executions.some((item) =>
+                        item.chatId === execution.chatId &&
+                        item.promptId === execution.promptId &&
+                        item.purpose !== "inspection" &&
+                        ["success", "reused"].includes(item.status)
+                      )
+                    }
                   />
                 ) : null;
               }

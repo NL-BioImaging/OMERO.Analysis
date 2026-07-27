@@ -1,6 +1,6 @@
 # Dynamic BIOMERO workflow skills
 
-OMERO.AnalysisChat uses `omero-workflow-skills>=0.2,<0.3` as a shared,
+OMERO.AnalysisChat uses `omero-workflow-skills>=0.2.1,<0.3` as a shared,
 framework-neutral catalog. It reads the existing BIOMERO workflow
 configuration, resolves each configured GitHub tag, branch, or commit, and
 accepts only validated UTF-8 Agent Skill instructions and text references. It
@@ -19,9 +19,11 @@ private repositories; it is never returned to the browser.
 
 Before every question, AnalysisChat matches skills using file extensions,
 filename globs, and locally derived schema profiles. It automatically loads the
-strongest match's `SKILL.md`. The model can call `discover_skills` and
-`load_skill` to inspect alternatives and progressively load listed references.
-The user does not need to request a skill.
+strongest match's `SKILL.md`, every `biomero-required-resources` reference, and
+the declared `biomero-required-capabilities` contract. Optional references
+remain progressively loadable. Exact input paths and the current evidence
+ledger are injected before the first response, so routine file and schema
+discovery is not repeated. The user does not need to request a skill.
 
 Skill source URL, configured ref, resolved commit, version, and hash are stored
 with chat turns and executions and participate in execution-cache keys.
@@ -41,7 +43,7 @@ Example application configuration:
 
 ```ini
 [APPLICATIONS]
-omero-zarr-viewer_repo = https://github.com/NL-BioImaging/BIOMERO.ZarrViewer/tree/v0.3.0
+omero-zarr-viewer_repo = https://github.com/NL-BioImaging/BIOMERO.ZarrViewer/tree/v0.4.0
 omero-zarr-viewer_skills_path = _agents/skills
 ```
 

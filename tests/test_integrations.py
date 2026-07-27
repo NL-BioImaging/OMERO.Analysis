@@ -24,7 +24,7 @@ def test_zarr_viewer_requires_compatible_version(monkeypatch):
 
 
 def test_zarr_viewer_reports_routes_without_importing_the_plugin(monkeypatch):
-    monkeypatch.setattr(integrations, "version", lambda _name: "0.3.0")
+    monkeypatch.setattr(integrations, "version", lambda _name: "0.4.0")
 
     def fake_reverse(name, kwargs=None):
         if name == "biomero_zarr_viewer_index":
@@ -35,12 +35,12 @@ def test_zarr_viewer_reports_routes_without_importing_the_plugin(monkeypatch):
     monkeypatch.setattr(integrations, "reverse", fake_reverse)
     status = integrations.zarr_viewer_status()
     assert status["available"] is True
-    assert status["version"] == "0.3.0"
+    assert status["version"] == "0.4.0"
     assert status["plate_capabilities_template"].endswith("/0/")
 
 
 def test_zarr_viewer_must_be_enabled_in_omero_web(monkeypatch):
-    monkeypatch.setattr(integrations, "version", lambda _name: "0.3.0")
+    monkeypatch.setattr(integrations, "version", lambda _name: "0.4.0")
 
     def missing_route(*_args, **_kwargs):
         raise NoReverseMatch
