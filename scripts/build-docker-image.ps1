@@ -53,7 +53,10 @@ if (-not $Tag) { $Tag = "$currentImage-analysis-chat" }
 
 $containerConfigs = Get-PluginConfigs $Container
 $imageConfigs = Get-PluginConfigs $BaseImage -Image
-$missingConfigs = @($containerConfigs | Where-Object { $_ -notin $imageConfigs })
+$configsAddedByThisImage = @("90-omero-analysis-chat.omero")
+$missingConfigs = @($containerConfigs | Where-Object {
+    $_ -notin $imageConfigs -and $_ -notin $configsAddedByThisImage
+})
 if ($missingConfigs.Count) {
     throw "Refusing to build from '$BaseImage'; it would drop container-only plugin configurations:`n  $($missingConfigs -join "`n  ")"
 }
