@@ -87,7 +87,8 @@ import {
 } from "./presentation";
 import {
   normalizeProjectName,
-  renameProjectWorkspace
+  renameProjectWorkspace,
+  trashProjectOutputs
 } from "./projectModel";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
@@ -242,6 +243,7 @@ export default function App() {
   const [browserAtParent, setBrowserAtParent] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
+  const [selectedOutputIds, setSelectedOutputIds] = useState<Set<string>>(new Set());
   const [showScriptTransfer, setShowScriptTransfer] = useState(false);
   const [scriptTransferTarget, setScriptTransferTarget] = useState("");
   const [openFolders, setOpenFolders] = useState({
@@ -315,6 +317,10 @@ export default function App() {
     });
     return () => cancelAnimationFrame(frame);
   }, [activeChat?.messages, workspace?.executions, workspace?.files]);
+
+  useEffect(() => {
+    setSelectedOutputIds(new Set());
+  }, [project?.id, activeChat?.id]);
 
   useEffect(() => {
     if (!browserMenu) return;
@@ -675,6 +681,12 @@ export default function App() {
     if (file.source === "result") {
       const tombstone = { ...file, deletedAt: now() };
       upsertFiles([tombstone]);
+      setSelectedOutputIds((selected) => {
+        const next = new Set(selected);
+        next.delete(file.id);
+        return next;
+      });
+      if (selectedArtifactFileId === file.id) setSelectedArtifactFileId(null);
       setStatus(`Moved ${file.name} to project trash; provenance is preserved`);
       return;
     }
@@ -1671,6 +1683,85 @@ ${activeSkillInstructions || (
     });
   }
 
+  function toggleOutputSelection(outputId: string) {
+    setSelectedOutputIds((current) => {
+      const next = new Set(current);
+      if (next.has(outputId)) next.delete(outputId);
+      else next.add(outputId);
+      return next;
+    });
+  }
+
+  function toggleVisibleOutputSelection() {
+    const visibleIds = visibleOutputs.map((file) => file.id);
+    const allSelected = visibleIds.length > 0 &&
+      visibleIds.every((outputId) => selectedOutputIds.has(outputId));
+    setSelectedOutputIds((current) => {
+      const next = new Set(current);
+      visibleIds.forEach((outputId) => {
+        if (allSelected) next.delete(outputId);
+        else next.add(outputId);
+      });
+      return next;
+    });
+  }
+
+  async function trashOutputs(outputIds: Iterable<string>) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const requested = new Set(outputIds);
+    const outputs = current.files.filter((file) =>
+      requested.has(file.id) &&
+      file.source === "result" &&
+      file.chatId === current.project.activeChatId &&
+      !file.deletedAt
+    );
+    if (!outputs.length) return;
+    const names = outputs.slice(0, 5).map((file) => file.name);
+    const extra = outputs.length - names.length;
+    const description = outputs.length === 1
+      ? `${outputs[0].name} will be hidden, while its provenance record remains intact.`
+      : [
+        `${outputs.length} outputs will be moved to project trash. Their provenance records remain intact.`,
+        names.join(", ") + (extra > 0 ? `, and ${extra} more` : "")
+      ].join("\n\n");
+    if (!await dialogs.confirm(
+      outputs.length === 1 ? "Move output to trash?" : `Move ${outputs.length} outputs to trash?`,
+      description,
+      "Move to trash",
+      true
+    )) return;
+    const deletedAt = now();
+    const updated = trashProjectOutputs(
+      current,
+      outputs.map((file) => file.id),
+      deletedAt
+    );
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    setSelectedOutputIds((selected) => {
+      const next = new Set(selected);
+      outputs.forEach((file) => next.delete(file.id));
+      return next;
+    });
+    if (
+      selectedArtifactFileId &&
+      outputs.some((file) => file.id === selectedArtifactFileId)
+    ) {
+      setSelectedArtifactFileId(null);
+    }
+    await Promise.all(
+      updated.files
+        .filter((file) => requested.has(file.id) && file.deletedAt === deletedAt)
+        .map(saveFile)
+    );
+    setStatus(
+      outputs.length === 1
+        ? `Moved ${outputs[0].name} to project trash`
+        : `Moved ${outputs.length} outputs to project trash`
+    );
+  }
+
   async function combineSelectedScripts() {
     const current = workspaceRef.current;
     if (!current) return;
@@ -2294,6 +2385,9 @@ ${activeSkillInstructions || (
   }
 
   function outputActions(file: WorkspaceFile): BrowserMenuAction[] {
+    const selected = selectedOutputIds.has(file.id) && selectedOutputIds.size > 1
+      ? Array.from(selectedOutputIds)
+      : [file.id];
     return [
       { label: "Rename", run: () => void renameWorkspaceFile(file) },
       { label: "Download", run: () => downloadFile(file) },
@@ -2301,20 +2395,11 @@ ${activeSkillInstructions || (
         ? [{ label: "Attach to OMERO", run: () => void attach(file) }]
         : []),
       {
-        label: "Delete output",
+        label: selected.length > 1
+          ? `Delete ${selected.length} selected outputs`
+          : "Delete output",
         danger: true,
-        run: () => {
-          void dialogs.confirm(
-            "Move output to trash?",
-            `${file.name} will be hidden, while its provenance record remains intact.`,
-            "Move to trash",
-            true
-          ).then((confirmed) => {
-            if (confirmed) {
-            void removeFile(file.id);
-            }
-          });
-        }
+        run: () => void trashOutputs(selected)
       }
     ];
   }
@@ -2700,6 +2785,23 @@ ${activeSkillInstructions || (
               <Icon name="folder" />
               <strong>chats/{slug(activeChat.title)}/outputs</strong><small>{outputFiles.length}</small>
             </summary>
+            {outputFiles.length > 0 && (
+              <div className="output-selection-toolbar">
+                <span>{selectedOutputIds.size} selected</span>
+                <button onClick={toggleVisibleOutputSelection}>
+                  {visibleOutputs.length > 0 &&
+                  visibleOutputs.every((file) => selectedOutputIds.has(file.id))
+                    ? "Clear"
+                    : "Select all"}
+                </button>
+                <button
+                  disabled={!selectedOutputIds.size}
+                  onClick={() => void trashOutputs(selectedOutputIds)}
+                >
+                  Delete selected
+                </button>
+              </div>
+            )}
             <ul className="browser-list">
               <li className="browser-row virtual">
                 <span className="browser-icon json" aria-hidden="true" />
@@ -2714,7 +2816,7 @@ ${activeSkillInstructions || (
               {visibleOutputs.map((file) => (
                 <li
                   key={file.id}
-                  className="browser-row"
+                  className={`browser-row output-row ${selectedOutputIds.has(file.id) ? "selected" : ""}`}
                   onClick={() => {
                     setSelectedArtifactFileId(file.id);
                     setArtifactOpen(true);
@@ -2722,6 +2824,15 @@ ${activeSkillInstructions || (
                   onDoubleClick={() => downloadFile(file)}
                   onContextMenu={(event) => openBrowserMenu(event, file.name, outputActions(file))}
                 >
+                  <input
+                    className="output-selector"
+                    type="checkbox"
+                    aria-label={`Select output ${file.name}`}
+                    checked={selectedOutputIds.has(file.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => toggleOutputSelection(file.id)}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  />
                   <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
                   <div className="browser-name">
                     <strong>{file.name}</strong><small>{file.sha256.slice(0, 10)} · double-click to download</small>

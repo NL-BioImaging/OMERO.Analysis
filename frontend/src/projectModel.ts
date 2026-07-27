@@ -46,3 +46,19 @@ export function renameProjectWorkspace(
     files
   };
 }
+
+export function trashProjectOutputs(
+  workspace: ProjectWorkspace,
+  outputIds: Iterable<string>,
+  deletedAt: string
+): ProjectWorkspace {
+  const ids = new Set(outputIds);
+  return {
+    ...workspace,
+    files: workspace.files.map((file) =>
+      ids.has(file.id) && file.source === "result" && !file.deletedAt
+        ? { ...file, deletedAt }
+        : file
+    )
+  };
+}

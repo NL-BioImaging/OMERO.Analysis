@@ -400,6 +400,21 @@ try {
   await page.getByRole("button", { name: "Rename chat" }).click();
   await answerDialog("Renamed smoke chat");
   await chatSelect.getByRole("option", { name: "Renamed smoke chat" }).waitFor({ state: "attached" });
+  const outputSelectors = page.locator(".output-selector");
+  const outputsBeforeBulkDelete = await outputSelectors.count();
+  if (outputsBeforeBulkDelete < 2) {
+    throw new Error("Bulk output deletion requires at least two generated outputs");
+  }
+  await outputSelectors.nth(0).check();
+  await outputSelectors.nth(1).check();
+  await page.getByRole("button", { name: "Delete selected" }).click();
+  const deleteDialog = page.getByRole("dialog");
+  await deleteDialog.getByText("Move 2 outputs to trash?").waitFor();
+  await deleteDialog.getByRole("button", { name: "Move to trash" }).click();
+  await page.waitForFunction(
+    (expected) => document.querySelectorAll(".output-selector").length === expected,
+    outputsBeforeBulkDelete - 2
+  );
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log(
     "Browser smoke passed: opaque iframe/worker, CSP, file transfer, fixed Azure contract, " +

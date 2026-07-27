@@ -1,7 +1,8 @@
 import type { ProjectWorkspace } from "./types";
 import {
   normalizeProjectName,
-  renameProjectWorkspace
+  renameProjectWorkspace,
+  trashProjectOutputs
 } from "./projectModel";
 
 const workspace = {
@@ -62,5 +63,48 @@ describe("project renaming", () => {
     expect(workspace.project.rootPath).toBe(
       "OMERO/Screen-101--2wellstest--imported"
     );
+  });
+});
+
+describe("bulk output deletion", () => {
+  it("tombstones selected outputs without removing provenance records", () => {
+    const secondOutput = {
+      ...workspace.files[0],
+      id: "second-output",
+      name: "plot.png",
+      type: "image/png"
+    };
+    const withProvenance = {
+      ...workspace,
+      files: [...workspace.files, secondOutput],
+      executions: [{
+        id: "execution",
+        projectId: "project",
+        chatId: "chat",
+        promptId: "prompt",
+        code: "print('test')",
+        codeHash: "code",
+        cacheKey: "cache",
+        status: "success",
+        stdout: "",
+        stderr: "",
+        outputFileIds: ["file", "second-output"],
+        missingPlotCsv: [],
+        inputHashes: [],
+        runtimeVersion: "runtime",
+        model: "model",
+        createdAt: "2026-07-26T00:00:00Z"
+      }]
+    } satisfies ProjectWorkspace;
+    const deleted = trashProjectOutputs(
+      withProvenance,
+      ["file", "second-output"],
+      "2026-07-27T12:00:00Z"
+    );
+    expect(deleted.files.every((file) => Boolean(file.deletedAt))).toBe(true);
+    expect(deleted.executions[0].outputFileIds).toEqual([
+      "file",
+      "second-output"
+    ]);
   });
 });
