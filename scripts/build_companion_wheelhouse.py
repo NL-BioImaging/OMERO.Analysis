@@ -14,10 +14,16 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plugin-wheel", required=True, type=Path)
+    parser.add_argument("--application-wheel", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--catalog-repo", type=Path)
     args = parser.parse_args()
     plugin = args.plugin_wheel.resolve(strict=True)
+    application = (
+        args.application_wheel.resolve(strict=True)
+        if args.application_wheel
+        else None
+    )
     root = Path(__file__).resolve().parents[1]
     catalog = (
         args.catalog_repo
@@ -45,6 +51,8 @@ def main() -> int:
         check=True,
     )
     shutil.copy2(plugin, output / plugin.name)
+    if application:
+        shutil.copy2(application, output / application.name)
     for python_version in ("310", "311", "312"):
         subprocess.run(
             [

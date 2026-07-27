@@ -140,6 +140,11 @@ For a persistent derived OMERO.web image:
 .\scripts\build-docker-image.ps1
 ```
 
+When a sibling `OMERO.ZarrViewer` 0.4 wheel is available, the persistent-image
+builder includes it in the same offline wheelhouse so the derived image keeps
+all base plugins while upgrading AnalysisChat, WorkflowSkills, and ZarrViewer
+together. Use `-ZarrViewerWheel` to select an explicit wheel.
+
 See [NL-BIOMERO deployment](docs/deployment-nl-biomero.md) and
 [omero-deployment-kit deployment](docs/deployment-omero-deployment-kit.md).
 

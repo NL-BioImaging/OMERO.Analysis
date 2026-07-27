@@ -6,9 +6,12 @@ USER root
 COPY dist/wheelhouse/ /tmp/omero-plugin-wheelhouse/
 COPY docker/90-omero-analysis-chat.omero /opt/omero/web/config/90-omero-analysis-chat.omero
 
-RUN /opt/omero/web/venv3/bin/python -m pip install \
+RUN set -eu; \
+    viewer_wheel="$(find /tmp/omero-plugin-wheelhouse -maxdepth 1 -name 'biomero_zarr_viewer-*.whl' -print -quit)"; \
+    /opt/omero/web/venv3/bin/python -m pip install \
         --no-index --find-links /tmp/omero-plugin-wheelhouse \
         /tmp/omero-plugin-wheelhouse/omero_analysis_chat-*.whl \
+        ${viewer_wheel:+$viewer_wheel} \
     && rm -rf /tmp/omero-plugin-wheelhouse \
     && chmod 0644 /opt/omero/web/config/90-omero-analysis-chat.omero
 

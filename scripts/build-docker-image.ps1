@@ -3,6 +3,7 @@ param(
     [string] $Container,
     [string] $BaseImage,
     [string] $Tag,
+    [string] $ZarrViewerWheel,
     [switch] $SkipBuild,
     [switch] $SkipFrontend,
     [switch] $SkipRuntime
@@ -78,9 +79,24 @@ if (-not $wheel) { throw "No Analysis Chat wheel exists in dist." }
 & $python (Join-Path $RepoRoot "scripts\verify_wheel.py") $wheel.FullName
 if ($LASTEXITCODE -ne 0) { throw "Wheel verification failed." }
 $wheelhouse = Join-Path $RepoRoot "dist\wheelhouse"
-& $python (Join-Path $RepoRoot "scripts\build_companion_wheelhouse.py") `
-    --plugin-wheel $wheel.FullName `
-    --output $wheelhouse
+$wheelhouseArguments = @(
+    (Join-Path $RepoRoot "scripts\build_companion_wheelhouse.py"),
+    "--plugin-wheel", $wheel.FullName,
+    "--output", $wheelhouse
+)
+if (-not $ZarrViewerWheel) {
+    $siblingDist = Join-Path (Split-Path -Parent $RepoRoot) "OMERO.ZarrViewer\dist"
+    if (Test-Path $siblingDist) {
+        $ZarrViewerWheel = Get-ChildItem (Join-Path $siblingDist "biomero_zarr_viewer-0.4.*.whl") |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+}
+if ($ZarrViewerWheel) {
+    $resolvedZarrViewerWheel = (Resolve-Path $ZarrViewerWheel).Path
+    $wheelhouseArguments += @("--application-wheel", $resolvedZarrViewerWheel)
+}
+& $python @wheelhouseArguments
 if ($LASTEXITCODE -ne 0) { throw "Offline companion wheelhouse build failed." }
 
 docker build `
