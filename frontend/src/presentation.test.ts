@@ -79,6 +79,17 @@ describe("workflow-skill tooltip", () => {
     )).toContain("✓ cisegmentation: analyze-measurements v1");
   });
 
+  it("keeps catalog skills visible when a non-fatal warning is present", () => {
+    const tooltip = workflowSkillTooltip(
+      catalog,
+      "Workflow guidance is using an unchanged cached revision.",
+      ["cisegmentation/analyze-measurements"]
+    );
+    expect(tooltip).toContain("Warning: Workflow guidance");
+    expect(tooltip).toContain("✓ cisegmentation: analyze-measurements v1");
+    expect(tooltip).not.toContain("Workflow-specific guidance is unavailable");
+  });
+
   it("explains an empty catalog", () => {
     expect(workflowSkillTooltip(
       { ...catalog, workflows: [] },

@@ -177,11 +177,38 @@ def _workflow_skill_catalog():
     from omero_workflow_skills import WorkflowSkillCatalog
 
     return WorkflowSkillCatalog(
-        package_url=lambda workflow_key, skill_name: reverse(
-            "omero_analysis_chat_workflow_skill",
-            kwargs={"workflow_key": workflow_key, "skill_name": skill_name},
-        )
+        package_url=_workflow_skill_package_url
     )
+
+
+def _workflow_skill_package_url(workflow_key, skill_name):
+    return reverse(
+        "omero_analysis_chat_workflow_skill",
+        kwargs={"workflow_key": workflow_key, "skill_name": skill_name},
+    )
+
+
+def _current_workflow_skill_urls(payload):
+    """Replace transport-specific package URLs restored from the shared cache."""
+    for entry in [
+        *(payload.get("workflows") or []),
+        *(payload.get("applications") or []),
+    ]:
+        source = entry.get("source", {})
+        for skill in entry.get("skills", []):
+            workflow_key = (
+                skill.get("source_key")
+                or skill.get("workflow_key")
+                or source.get("source_key")
+                or source.get("workflow_key")
+            )
+            skill_name = skill.get("name")
+            if workflow_key and skill_name:
+                skill["package_url"] = _workflow_skill_package_url(
+                    workflow_key,
+                    skill_name,
+                )
+    return payload
 
 
 def _workflow_skill_error(exc):
@@ -202,7 +229,9 @@ def _workflow_skill_error(exc):
 def workflow_skills(request, conn=None, **kwargs):
     try:
         catalog = _workflow_skill_catalog()
-        payload = catalog.get_catalog(WORKFLOW_SKILLS_CONSUMER).to_dict()
+        payload = _current_workflow_skill_urls(
+            catalog.get_catalog(WORKFLOW_SKILLS_CONSUMER).to_dict()
+        )
         payload["service_status"] = catalog.status()
         return JsonResponse(payload)
     except Exception as exc:
@@ -250,9 +279,11 @@ def refresh_workflow_skills(request, conn=None, **kwargs):
         return JsonResponse(
             {
                 "refreshed": True,
-                "catalog": catalog.get_catalog(
-                    WORKFLOW_SKILLS_CONSUMER
-                ).to_dict(),
+                "catalog": _current_workflow_skill_urls(
+                    catalog.get_catalog(
+                        WORKFLOW_SKILLS_CONSUMER
+                    ).to_dict()
+                ),
             }
         )
     except Exception as exc:

@@ -221,7 +221,10 @@ export class OmeroBridge {
         (item.source_key || item.workflow_key) === workflowKey && item.name === skillName
       );
     if (!skill) throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
-    const response = await fetch(skill.package_url, { credentials: "same-origin" });
+    const catalogUrl = this.bootstrap.workflowSkillsUrl.replace(/\/?$/, "/");
+    const packageUrl =
+      `${catalogUrl}${encodeURIComponent(workflowKey)}/${encodeURIComponent(skillName)}/`;
+    const response = await fetch(packageUrl, { credentials: "same-origin" });
     return workflowSkillPackageFrom(await readJson(response));
   }
 }
@@ -409,6 +412,9 @@ export async function completeChat(
   onDelta?: (content: string) => void,
   tools: readonly unknown[] = TOOLS
 ): Promise<AiResponse> {
+  const toolConfiguration = tools.length
+    ? { tools, tool_choice: "auto" }
+    : {};
   const response = await fetch(CHAT_URL, {
     method: "POST",
     signal,
@@ -420,8 +426,7 @@ export async function completeChat(
       model: settings.model,
       temperature: TEMPERATURE,
       messages,
-      tools,
-      tool_choice: "auto",
+      ...toolConfiguration,
       stream: Boolean(onDelta),
       stream_options: onDelta ? { include_usage: true } : undefined
     })

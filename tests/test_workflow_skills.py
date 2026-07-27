@@ -22,7 +22,21 @@ class FakeCatalog:
             {
                 "schema": "nl.bioimaging.omero-workflow-skills.v1",
                 "consumer": consumer,
-                "workflows": [],
+                "workflows": [
+                    {
+                        "source": {"workflow_key": "cisegmentation"},
+                        "skills": [
+                            {
+                                "workflow_key": "cisegmentation",
+                                "name": "analyze-cisegmentation-measurements",
+                                "package_url": (
+                                    "workflow-skills/cisegmentation/"
+                                    "analyze-cisegmentation-measurements/"
+                                ),
+                            }
+                        ],
+                    }
+                ],
             }
         )
 
@@ -53,6 +67,11 @@ def test_catalog_and_package_adapters(monkeypatch):
     assert response.status_code == 200
     assert b'"consumer": "omero-analysis-chat"' in response.content
     assert b'"version": "0.1.0"' in response.content
+    assert (
+        b'"/api/workflow-skills/cisegmentation/'
+        b'analyze-cisegmentation-measurements/"'
+    ) in response.content
+    assert b'"package_url": "workflow-skills/' not in response.content
 
     response = views.workflow_skill_package(
         factory.get("/api/workflow-skills/cisegmentation/skill/"),
@@ -82,3 +101,7 @@ def test_refresh_is_admin_only(monkeypatch):
     )
     assert allowed.status_code == 200
     assert catalog.refreshed
+    assert (
+        b'"/api/workflow-skills/cisegmentation/'
+        b'analyze-cisegmentation-measurements/"'
+    ) in allowed.content

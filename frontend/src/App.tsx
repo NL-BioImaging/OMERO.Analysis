@@ -106,6 +106,11 @@ import {
   workflowSkillTooltip
 } from "./presentation";
 import {
+  chatRoundPolicy,
+  FINAL_SYNTHESIS_INSTRUCTION,
+  MAX_TOOL_ROUNDS
+} from "./chatRounds";
+import {
   normalizeProjectName,
   renameProjectWorkspace,
   trashProjectOutputs
@@ -1653,6 +1658,7 @@ export default function App() {
     await runtime.beginTurn();
     turnWorkflowSkills.current = [];
     let activeSkillInstructions = "";
+    let activeSkillWarning = "";
     const compatibleSkills = matchWorkflowSkills(
       workflowSkillCatalogRef.current,
       current.files,
@@ -1667,11 +1673,9 @@ export default function App() {
         );
         turnWorkflowSkills.current = [skillProvenance(skill)];
         activeSkillInstructions = packageInstructions(skill);
-        setWorkflowSkillWarning("");
       } catch (error) {
-        setWorkflowSkillWarning(
-          `Workflow-specific guidance unavailable: ${String(error)}`
-        );
+        activeSkillWarning =
+          `Workflow-specific guidance unavailable: ${String(error)}`;
       }
     }
     const promptId = id();
@@ -1715,8 +1719,8 @@ ${zarrViewerStatus?.available
   : `OMERO ZarrViewer tools are unavailable in this deployment. ${zarrViewerWarning}`}
 
 ${activeSkillInstructions || (
-  workflowSkillWarning
-    ? `No specialized workflow skill was loaded. ${workflowSkillWarning}`
+  activeSkillWarning || workflowSkillWarning
+    ? `No specialized workflow skill was loaded. ${activeSkillWarning || workflowSkillWarning}`
     : "No compatible specialized workflow skill matched; use generic schema-first analysis."
 )}`;
     const pinnedIds = new Set(currentChat.pinnedMessageIds || []);
@@ -1734,7 +1738,19 @@ ${activeSkillInstructions || (
     if (conversation.at(-1)?.content !== text) conversation.push({ role: "user", content: text });
 
     try {
-      for (let turn = 0; turn < 8; turn += 1) {
+      const availableTools = [
+        ...TOOLS,
+        ...(zarrViewerStatus?.available ? ZARR_VIEWER_TOOLS : [])
+      ];
+      for (let turn = 0; turn <= MAX_TOOL_ROUNDS; turn += 1) {
+        const policy = chatRoundPolicy(turn, availableTools);
+        if (policy.finalSynthesis) {
+          conversation.push({
+            role: "system",
+            content: FINAL_SYNTHESIS_INSTRUCTION
+          });
+          setAnalysisPhase("checking");
+        }
         const estimatedPrompt = estimateTokens(conversation);
         const responseStartedAt = performance.now();
         const response = await completeChat(
@@ -1742,10 +1758,7 @@ ${activeSkillInstructions || (
           conversation,
           abort.current.signal,
           (partial) => setStreamingText(partial),
-          [
-            ...TOOLS,
-            ...(zarrViewerStatus?.available ? ZARR_VIEWER_TOOLS : [])
-          ]
+          policy.tools
         );
         const answer = response.choices[0]?.message;
         if (!answer) throw new Error("AmsterdamUMC returned no response");
@@ -1781,6 +1794,9 @@ ${activeSkillInstructions || (
         }
         setStreamingText("");
         if (!answer.tool_calls?.length) break;
+        if (policy.finalSynthesis) {
+          throw new Error("AmsterdamUMC attempted another tool call during final synthesis");
+        }
         usedTools = true;
         setAnalysisPhase(turn ? "repairing" : "running");
         for (const call of answer.tool_calls) {
@@ -1788,7 +1804,6 @@ ${activeSkillInstructions || (
           conversation.push({ role: "tool", tool_call_id: call.id, content: result });
         }
         setAnalysisPhase("checking");
-        if (turn === 7) throw new Error("The analysis exceeded eight tool rounds");
       }
     } catch (error) {
       if (!abort.current?.signal.aborted) {
@@ -2775,7 +2790,7 @@ ${activeSkillInstructions || (
             title={workflowSkillTitle}
             aria-label={workflowSkillTitle}
           >
-            {workflowSkillWarning
+            {!workflowSkillCatalog && workflowSkillWarning
               ? "Generic guidance"
               : `${catalogSkillCount} workflow skills`}
           </span>

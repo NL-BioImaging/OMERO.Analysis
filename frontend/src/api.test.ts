@@ -1,4 +1,4 @@
-import { OmeroBridge } from "./api";
+import { completeChat, OmeroBridge } from "./api";
 import type { Bootstrap } from "./types";
 
 const bootstrap: Bootstrap = {
@@ -95,7 +95,7 @@ describe("workflow skill adapter", () => {
       consumers: ["omero-analysis-chat"],
       version: "1",
       sha256: "b".repeat(64),
-      package_url: "/workflow-skills/example/analyze-example/",
+      package_url: "/stale-cache/example/analyze-example/",
       match: {
         extensions: [".csv"],
         filename_globs: [],
@@ -103,8 +103,11 @@ describe("workflow skill adapter", () => {
         auto_activate: true
       }
     };
+    const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const packageRequest = String(input).includes("analyze-example");
+      requests.push(String(input));
+      const packageRequest =
+        String(input) === "/workflow-skills/example/analyze-example/";
       return new Response(JSON.stringify(packageRequest ? {
         source,
         skill,
@@ -129,6 +132,8 @@ describe("workflow skill adapter", () => {
       .toBe("analyze-example");
     expect((await bridge.loadWorkflowSkill("example", "analyze-example")).files[0].path)
       .toBe("SKILL.md");
+    expect(requests).toContain("/workflow-skills/example/analyze-example/");
+    expect(requests).not.toContain("/stale-cache/example/analyze-example/");
     vi.unstubAllGlobals();
   });
 
@@ -188,6 +193,35 @@ describe("workflow skill adapter", () => {
     const catalog = await bridge.listWorkflowSkills();
     expect(catalog.applications?.[0].skills[0].name).toBe("use-omero-zarr-viewer");
     expect((await bridge.zarrViewerStatus()).version).toBe("0.3.0");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("AI completion requests", () => {
+  it("omits tool configuration during forced final synthesis", async () => {
+    let requestBody: Record<string, unknown> = {};
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body || "{}"));
+      return new Response(JSON.stringify({
+        choices: [{ message: { role: "assistant", content: "Final answer" } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+
+    await completeChat(
+      {
+        model: "gpt-test",
+        apiKey: "key",
+        rememberKey: false,
+        contextWindow: 0
+      },
+      [{ role: "user", content: "answer now" }],
+      new AbortController().signal,
+      undefined,
+      []
+    );
+
+    expect(requestBody).not.toHaveProperty("tools");
+    expect(requestBody).not.toHaveProperty("tool_choice");
     vi.unstubAllGlobals();
   });
 });

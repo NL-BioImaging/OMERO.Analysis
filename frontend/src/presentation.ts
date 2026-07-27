@@ -53,7 +53,7 @@ export function workflowSkillTooltip(
   warning: string,
   matchingSkillKeys: string[]
 ): string {
-  if (warning) {
+  if (warning && !catalog) {
     return `Workflow-specific guidance is unavailable.\n${warning}`;
   }
   if (!catalog) {
@@ -77,6 +77,7 @@ export function workflowSkillTooltip(
   }
   const matches = new Set(matchingSkillKeys);
   return [
+    ...(warning ? [`Warning: ${warning}`, ""] : []),
     `${values.length} validated workflow/application skill${values.length === 1 ? "" : "s"} discovered.`,
     matches.size
       ? `${matches.size} match${matches.size === 1 ? "es" : ""} the current inputs (marked ✓).`
