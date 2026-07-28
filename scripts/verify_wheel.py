@@ -40,6 +40,15 @@ def main():
     args = parser.parse_args()
     with zipfile.ZipFile(args.wheel) as archive:
         names = set(archive.namelist())
+        legacy = sorted(
+            name for name in names
+            if name == "omero_analysis_chat" or name.startswith("omero_analysis_chat/")
+        )
+        if legacy:
+            raise RuntimeError(
+                "Wheel contains the retired omero_analysis_chat package; "
+                "remove the stale build directory and rebuild"
+            )
         missing = sorted(REQUIRED - names)
         if missing:
             raise RuntimeError(f"Wheel is missing packaged assets: {missing}")

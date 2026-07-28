@@ -73,6 +73,10 @@ if (-not $SkipBuild) {
             & $python @arguments
         }
         if ($LASTEXITCODE -ne 0) { throw "Frontend/runtime build failed." }
+        $buildDirectory = Join-Path $RepoRoot "build"
+        if (Test-Path -LiteralPath $buildDirectory) {
+            Remove-Item -LiteralPath $buildDirectory -Recurse -Force
+        }
         & $python -m build --wheel
         if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
     } finally { Pop-Location }

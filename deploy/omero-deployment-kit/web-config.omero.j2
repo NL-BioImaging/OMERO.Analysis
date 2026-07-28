@@ -1,12 +1,4 @@
 # Append to roles/docker/templates/web_conf.omero.j2.
-config remove -- omero.web.apps '"omero_analysis_chat"'
-config remove -- omero.web.ui.center_plugins '["Analysis Chat", "omero_analysis_chat/center_plugin.js.html", "omero_analysis_chat_panel"]'
-config remove -- omero.web.ui.top_links '["Analysis Chat", "omero_analysis_chat_index", {"title": "Open browser-local Analysis Chat", "target": "new"}]'
-config set -- omero.web.analysis_chat.context_ttl_seconds
-config set -- omero.web.analysis_chat.max_upload_bytes
-config set -- omero.web.analysis_chat.max_download_bytes
-config set -- omero.web.analysis_chat.allowed_result_extensions
-
 config append -- omero.web.apps '"omero_analysis"'
 config append -- omero.web.ui.center_plugins '["Analysis", "omero_analysis/center_plugin.js.html", "omero_analysis_panel"]'
 config append -- omero.web.ui.top_links '["Analysis", "omero_analysis_index", {"title": "Open browser-local Analysis", "target": "new"}]'

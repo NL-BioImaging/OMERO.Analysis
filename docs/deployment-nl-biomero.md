@@ -16,7 +16,7 @@ docker build \
   --build-arg OMERO_WEB_IMAGE=<current-omeroweb-image> \
   --build-arg ANALYSIS_WHEEL=dist/<wheel-file>.whl \
   --file docker/Dockerfile.omeroweb \
-  --tag local/nl-biomero-omeroweb-analysis:0.8.0 \
+  --tag local/nl-biomero-omeroweb-analysis:0.8.1 \
   .
 ```
 

@@ -12,7 +12,7 @@ python scripts/verify_wheel.py dist/omero_analysis-*.whl
 Copy the pinned wheel to `roles/docker/files/` and expose its filename as:
 
 ```yaml
-omero_analysis_wheel: "omero_analysis-0.8.0-py3-none-any.whl"
+omero_analysis_wheel: "omero_analysis-0.8.1-py3-none-any.whl"
 ```
 
 Add an Ansible copy task that places the wheel in the remote Docker build

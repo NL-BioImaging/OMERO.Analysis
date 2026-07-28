@@ -51,6 +51,10 @@ function Build-Wheel {
                 & $python @arguments
             }
             if ($LASTEXITCODE -ne 0) { throw "Frontend/runtime validation failed." }
+            $buildDirectory = Join-Path $RepoRoot "build"
+            if (Test-Path -LiteralPath $buildDirectory) {
+                Remove-Item -LiteralPath $buildDirectory -Recurse -Force
+            }
             & $python -m build --wheel
             if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
         } finally { Pop-Location }
@@ -114,6 +118,10 @@ if not (Version("0.2") <= installed < Version("0.3")):
         docker exec --user root $Container rm -f $LegacyContainerConfig
         docker exec --user root $Container rm -rf $LegacyContainerStatic
         docker exec --user root $Container $ContainerPython -m pip uninstall -y $LegacyPackageName *> $null
+        docker exec $Container $ContainerPython -c "import importlib.metadata as m; m.distribution('$LegacyPackageName')" *> $null
+        if ($LASTEXITCODE -eq 0) {
+            throw "The legacy $LegacyPackageName distribution is still installed; the container was not changed further."
+        }
         $remote = "/tmp/omero-analysis-wheelhouse"
         docker exec --user root $Container rm -rf $remote
         docker cp "$wheelhouse\." "${Container}:$remote"
