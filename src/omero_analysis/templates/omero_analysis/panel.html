@@ -1,0 +1,95 @@
+<section class="oa-object"
+         data-object-type="{{ context.object_type }}"
+         data-object-id="{{ context.object_id }}">
+  <header class="oa-panel-header">
+    <div>
+      <span class="oa-eyebrow">OMERO Analysis workspace</span>
+      <h2>{{ context.name }}</h2>
+      <p>{{ context.object_type }} <strong>{{ context.object_id }}</strong></p>
+    </div>
+    <span class="oa-object-badge">{{ context.object_type }}</span>
+  </header>
+
+  <div class="oa-actions">
+    <button class="oa-button oa-button-primary oa-open-chat" type="button">
+      <span aria-hidden="true">&#8599;</span> Open Analysis
+    </button>
+  </div>
+  <p class="oa-panel-status" role="status" aria-live="polite"></p>
+
+  <section class="oa-card">
+    <div class="oa-section-heading">
+      <div>
+        <span class="oa-step">1</span>
+        <h3>Select data attachments</h3>
+      </div>
+      <span class="oa-selected-count">0 selected</span>
+    </div>
+    <p class="oa-help">
+      Choose one or more directly attached databases, workbooks, or tables.
+      They are downloaded into the browser before the chat becomes available.
+    </p>
+    <ul class="oa-attachments">
+      {% for attachment in context.supported_attachments %}
+        <li class="oa-data-card">
+          <label>
+            <input type="checkbox"
+                   class="oa-data-attachment"
+                   value="{{ attachment.annotation_id }}">
+            <span class="oa-file-icon" aria-hidden="true">DATA</span>
+            <span class="oa-file-details">
+              <strong>{{ attachment.name }}</strong>
+              <small>
+                {{ attachment.mimetype }} · {{ attachment.size }} bytes
+                <span class="oa-annotation-id">Annotation {{ attachment.annotation_id }}</span>
+              </small>
+            </span>
+            <span class="oa-checkmark" aria-hidden="true">&#10003;</span>
+          </label>
+        </li>
+      {% empty %}
+        <li class="oa-empty-state">
+          <strong>No supported data attachments yet</strong>
+          <span>Open an empty Analysis workspace to add browser-local files.</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if context.project_snapshots %}
+    <section class="oa-card">
+      <div class="oa-section-heading">
+        <div>
+          <span class="oa-step">2</span>
+          <h3>Resume a saved project</h3>
+        </div>
+        <span class="oa-project-count">{{ context.project_snapshots|length }} saved</span>
+      </div>
+      <p class="oa-help">
+        Select an attached Analysis project. It is restored into browser
+        storage, and referenced OMERO inputs are downloaded again if needed.
+      </p>
+      <ul class="oa-attachments">
+        {% for snapshot in context.project_snapshots %}
+          <li class="oa-data-card oa-project-card">
+            <label>
+              <input type="radio"
+                     name="oa-project-snapshot"
+                     class="oa-project-snapshot"
+                     value="{{ snapshot.annotation_id }}">
+              <span class="oa-file-icon oa-project-icon" aria-hidden="true">ZIP</span>
+              <span class="oa-file-details">
+                <strong>{{ snapshot.name }}</strong>
+                <small>
+                  {{ snapshot.size }} bytes
+                  <span class="oa-annotation-id">Annotation {{ snapshot.annotation_id }}</span>
+                </small>
+              </span>
+              <span class="oa-checkmark" aria-hidden="true">&#10003;</span>
+            </label>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+</section>

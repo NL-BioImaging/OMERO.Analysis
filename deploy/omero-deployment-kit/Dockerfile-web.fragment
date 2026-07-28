@@ -1,8 +1,10 @@
 # Add after FROM and before `omero web syncmedia`.
 USER root
-COPY omero_analysis_chat-*.whl /tmp/
-RUN /opt/omero/web/venv3/bin/python -m pip install --no-deps \
-        /tmp/omero_analysis_chat-*.whl \
-    && rm -f /tmp/omero_analysis_chat-*.whl
+COPY omero_analysis-*.whl /tmp/
+RUN rm -f /opt/omero/web/config/90-omero-analysis-chat.omero \
+    && rm -rf /opt/omero/web/OMERO.web/var/static/omero_analysis_chat \
+    && (/opt/omero/web/venv3/bin/python -m pip uninstall -y omero-analysis-chat || true) \
+    && /opt/omero/web/venv3/bin/python -m pip install --no-deps \
+        /tmp/omero_analysis-*.whl \
+    && rm -f /tmp/omero_analysis-*.whl
 USER omero-web
-

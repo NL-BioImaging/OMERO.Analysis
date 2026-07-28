@@ -3,14 +3,14 @@ from io import BytesIO
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from omero_analysis_chat.errors import (
+from omero_analysis.errors import (
     AttachmentNotFound,
     FileTooLarge,
     InvalidObject,
     PermissionDenied,
     UnsupportedMedia,
 )
-from omero_analysis_chat.services import (
+from omero_analysis.services import (
     PROJECT_NAMESPACE,
     RESULT_NAMESPACE,
     WORKFLOW_NAMESPACE,
@@ -116,12 +116,12 @@ def test_result_upload_requires_permission_and_uses_analysis_namespace():
 
 def test_project_snapshots_have_separate_kind_namespace_and_zip_validation():
     uploaded = SimpleUploadedFile(
-        "screen-1.oac.zip",
+        "screen-1.oa.zip",
         b"PK\x03\x04project",
         content_type="application/zip",
     )
     assert validate_project_snapshot(uploaded) == (
-        "screen-1.oac.zip",
+        "screen-1.oa.zip",
         "application/zip",
     )
     obj = FakeObject()
@@ -137,15 +137,20 @@ def test_project_snapshots_have_separate_kind_namespace_and_zip_validation():
     with pytest.raises(UnsupportedMedia):
         validate_project_snapshot(
             SimpleUploadedFile(
-                "project.oac.zip", b"not-a-zip", content_type="application/zip"
+                "project.oa.zip", b"not-a-zip", content_type="application/zip"
             )
         )
+    assert validate_project_snapshot(
+        SimpleUploadedFile(
+            "legacy.oac.zip", b"PK\x03\x04legacy", content_type="application/zip"
+        )
+    ) == ("legacy.oac.zip", "application/zip")
 
 
 def test_object_context_lists_project_snapshots_separately():
     snapshot = FakeAnnotation(
         21,
-        "saved.oac.zip",
+        "saved.oa.zip",
         b"PK\x03\x04snapshot",
         namespace=PROJECT_NAMESPACE,
     )
@@ -155,12 +160,12 @@ def test_object_context_lists_project_snapshots_separately():
 
 
 def test_workflow_templates_are_validated_and_listed_separately():
-    data = b'{"format":"nl.bioimaging.analysis-chat.workflow.v1","workflow":{},"scripts":[]}'
+    data = b'{"format":"nl.bioimaging.analysis.workflow.v1","workflow":{},"scripts":[]}'
     uploaded = SimpleUploadedFile(
-        "counts.oac-workflow.json", data, content_type="application/json"
+        "counts.oa-workflow.json", data, content_type="application/json"
     )
     assert validate_workflow_template(uploaded) == (
-        "counts.oac-workflow.json",
+        "counts.oa-workflow.json",
         "application/json",
     )
     obj = FakeObject()
@@ -174,11 +179,48 @@ def test_workflow_templates_are_validated_and_listed_separately():
     with pytest.raises(UnsupportedMedia):
         validate_workflow_template(
             SimpleUploadedFile(
-                "bad.oac-workflow.json",
+                "bad.oa-workflow.json",
                 b'{"format":"other"}',
                 content_type="application/json",
             )
         )
+    legacy = SimpleUploadedFile(
+        "legacy.oac-workflow.json",
+        b'{"format":"nl.bioimaging.analysis-chat.workflow.v1","workflow":{},"scripts":[]}',
+        content_type="application/json",
+    )
+    assert validate_workflow_template(legacy) == (
+        "legacy.oac-workflow.json",
+        "application/json",
+    )
+
+
+def test_legacy_analysis_chat_namespaces_remain_readable():
+    annotations = [
+        FakeAnnotation(
+            31,
+            "legacy.oac.zip",
+            b"PK\x03\x04snapshot",
+            namespace="nl.bioimaging.analysis-chat.project.v2",
+        ),
+        FakeAnnotation(
+            32,
+            "legacy.oac-workflow.json",
+            b"{}",
+            namespace="nl.bioimaging.analysis-chat.workflow.v1",
+        ),
+        FakeAnnotation(
+            33,
+            "legacy.csv",
+            b"a\n1\n",
+            namespace="nl.bioimaging.analysis-chat.result",
+        ),
+    ]
+    context = object_context("Dataset", 1, FakeObject(annotations=annotations))
+    assert context["project_snapshots"][0]["annotation_id"] == 31
+    assert context["workflow_templates"][0]["annotation_id"] == 32
+    result = next(item for item in context["attachments"] if item["annotation_id"] == 33)
+    assert result["kind"] == "result"
 
 
 def test_hierarchy_uses_wrapper_relations_without_webclient_api():

@@ -1,6 +1,6 @@
 # Dynamic BIOMERO workflow skills
 
-OMERO.AnalysisChat uses `omero-workflow-skills>=0.2.1,<0.3` as a shared,
+OMERO.Analysis uses `omero-workflow-skills>=0.2.1,<0.3` as a shared,
 framework-neutral catalog. It reads the existing BIOMERO workflow
 configuration, resolves each configured GitHub tag, branch, or commit, and
 accepts only validated UTF-8 Agent Skill instructions and text references. It
@@ -9,15 +9,15 @@ does not modify or depend on `OMERO.biomero`.
 Authenticated routes expose a consumer-filtered catalog and package:
 
 ```text
-GET  /omero_analysis_chat/api/workflow-skills/
-GET  /omero_analysis_chat/api/workflow-skills/<workflow>/<skill>/
-POST /omero_analysis_chat/api/workflow-skills/refresh/
+GET  /omero_analysis/api/workflow-skills/
+GET  /omero_analysis/api/workflow-skills/<workflow>/<skill>/
+POST /omero_analysis/api/workflow-skills/refresh/
 ```
 
 Refresh is OMERO-admin-only. Set `BIOMERO_GITHUB_TOKEN` on OMERO.web for
 private repositories; it is never returned to the browser.
 
-Before every question, AnalysisChat matches skills using file extensions,
+Before every question, Analysis matches skills using file extensions,
 filename globs, and locally derived schema profiles. It automatically loads the
 strongest match's `SKILL.md`, every `biomero-required-resources` reference, and
 the declared `biomero-required-capabilities` contract. Optional references
@@ -34,7 +34,7 @@ warning.
 
 Catalog 0.2 also discovers application-operation skills from the optional
 `[APPLICATIONS]` configuration. These skills are never auto-activated merely
-because a database is present. AnalysisChat exposes them to the model when an
+because a database is present. Analysis exposes them to the model when an
 application is installed and loads them for an explicit operation request,
 such as showing a measured object in ZarrViewer. This keeps workflow analysis
 knowledge separate from application-specific routes and UI behavior.
@@ -55,5 +55,5 @@ revalidated hourly, and only transient failures of the same source may use
 stale data.
 
 The Docker installer uses an offline wheelhouse containing the plugin and its
-tested companion wheel. Removing AnalysisChat keeps the library if
+tested companion wheel. Removing Analysis keeps the library if
 OMERO.JupyterLite or another installed consumer still requires it.

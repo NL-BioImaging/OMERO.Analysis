@@ -21,7 +21,7 @@ except ImportError:
 
         return decorator
 
-from .errors import AnalysisChatError
+from .errors import AnalysisError
 from .integrations import zarr_viewer_status
 from .services import (
     can_annotate,
@@ -40,11 +40,11 @@ from .services import (
 from .tokens import make_context_token, validate_context_token
 
 logger = logging.getLogger(__name__)
-WORKFLOW_SKILLS_CONSUMER = "omero-analysis-chat"
+WORKFLOW_SKILLS_CONSUMER = "omero-analysis"
 RUNTIME_ROOT = (
     Path(__file__).resolve().parent
     / "static"
-    / "omero_analysis_chat"
+    / "omero_analysis"
     / "pyodide"
 )
 
@@ -54,13 +54,13 @@ def api_errors(function):
     def wrapped(*args, **kwargs):
         try:
             return function(*args, **kwargs)
-        except AnalysisChatError as exc:
+        except AnalysisError as exc:
             return JsonResponse(
                 {"error": {"code": exc.code, "message": str(exc)}},
                 status=exc.status,
             )
         except Exception:
-            logger.exception("Unhandled OMERO Analysis Chat error")
+            logger.exception("Unhandled OMERO Analysis error")
             return JsonResponse(
                 {"error": {"code": "internal_error", "message": "The operation failed"}},
                 status=500,
@@ -101,7 +101,7 @@ def runtime_asset(request, asset_path, **kwargs):
 @require_GET
 def runtime_sandbox(request, **kwargs):
     """Opaque iframe host whose policy permits only the vendored Python runtime."""
-    response = render(request, "omero_analysis_chat/runtime_sandbox.html")
+    response = render(request, "omero_analysis/runtime_sandbox.html")
     origin = f"{request.scheme}://{request.get_host()}"
     response["Content-Security-Policy"] = (
         "default-src 'none'; "
@@ -138,7 +138,7 @@ def chat(request, conn=None, **kwargs):
                     from .errors import UnsupportedMedia
 
                     raise UnsupportedMedia(
-                        "The selected FileAnnotation is not an Analysis Chat project"
+                        "The selected FileAnnotation is not an Analysis project"
                     )
                 selected_project_snapshot = snapshot_info.to_dict()
             context = {
@@ -146,9 +146,9 @@ def chat(request, conn=None, **kwargs):
                 "selected_attachments": selected,
                 "selected_project_snapshot": selected_project_snapshot,
             }
-        except AnalysisChatError as exc:
+        except AnalysisError as exc:
             return HttpResponseBadRequest(str(exc))
-    response = render(request, "omero_analysis_chat/chat.html", {"context": context})
+    response = render(request, "omero_analysis/chat.html", {"context": context})
     response["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self'; "
@@ -168,7 +168,7 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     return render(
         request,
-        "omero_analysis_chat/panel.html",
+        "omero_analysis/panel.html",
         {"context": object_context(object_type, object_id, obj, conn)},
     )
 
@@ -183,7 +183,7 @@ def _workflow_skill_catalog():
 
 def _workflow_skill_package_url(workflow_key, skill_name):
     return reverse(
-        "omero_analysis_chat_workflow_skill",
+        "omero_analysis_workflow_skill",
         kwargs={"workflow_key": workflow_key, "skill_name": skill_name},
     )
 

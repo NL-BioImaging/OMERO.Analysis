@@ -1,6 +1,6 @@
 # Optional ZarrViewer integration
 
-OMERO.AnalysisChat can render measured objects and fields through
+OMERO.Analysis can render measured objects and fields through
 `BIOMERO.ZarrViewer>=0.4.0` when both applications are installed in the same
 OMERO.web environment. ZarrViewer is optional: tabular analysis continues
 normally when it is absent or disabled.
@@ -17,7 +17,7 @@ Generated Python first queries the measurement database for:
 - a half-open object bounding box or centroid;
 - an optional label path or one-based label channel and label value.
 
-AnalysisChat then performs a browser-side capability check against the current
+Analysis then performs a browser-side capability check against the current
 OMERO object. An Image is checked directly. A Dataset checks its Image
 children, a Plate is checked directly, and a Screen checks its Plate children.
 Candidates are probed four at a time and must return the exact database UUID.

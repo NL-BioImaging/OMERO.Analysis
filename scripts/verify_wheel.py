@@ -1,11 +1,11 @@
-"""Verify one complete Analysis Chat frontend and runtime in a wheel."""
+"""Verify one complete Analysis frontend and runtime in a wheel."""
 
 import argparse
 import json
 import zipfile
 from pathlib import Path, PurePosixPath
 
-STATIC = PurePosixPath("omero_analysis_chat/static/omero_analysis_chat")
+STATIC = PurePosixPath("omero_analysis/static/omero_analysis")
 REQUIRED = {
     str(STATIC / "app.js"),
     str(STATIC / "app.css"),
@@ -17,10 +17,10 @@ REQUIRED = {
     str(STATIC / "pyodide/pyodide-lock.json"),
     str(STATIC / "pyodide/RUNTIME.json"),
     str(STATIC / "pyodide/seaborn-0.13.2-py3-none-any.whl"),
-    "omero_analysis_chat/templates/omero_analysis_chat/chat.html",
-    "omero_analysis_chat/templates/omero_analysis_chat/panel.html",
-    "omero_analysis_chat/templates/omero_analysis_chat/runtime_sandbox.html",
-    "omero_analysis_chat/templates/omero_analysis_chat/center_plugin.js.html",
+    "omero_analysis/templates/omero_analysis/chat.html",
+    "omero_analysis/templates/omero_analysis/panel.html",
+    "omero_analysis/templates/omero_analysis/runtime_sandbox.html",
+    "omero_analysis/templates/omero_analysis/center_plugin.js.html",
 }
 PACKAGES = {
     "duckdb",
@@ -59,7 +59,7 @@ def main():
             packaged = str(STATIC / "pyodide" / record["file_name"])
             if packaged not in names:
                 raise RuntimeError(f"Wheel lacks {package} artifact: {packaged}")
-    print(f"Verified packaged Analysis Chat frontend/runtime in {args.wheel}")
+    print(f"Verified packaged Analysis frontend/runtime in {args.wheel}")
 
 
 if __name__ == "__main__":

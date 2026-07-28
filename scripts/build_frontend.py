@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
-STATIC = ROOT / "src/omero_analysis_chat/static/omero_analysis_chat"
+STATIC = ROOT / "src/omero_analysis/static/omero_analysis"
 RUNTIME = STATIC / "pyodide"
 PYTHON_BUILD = ROOT / "build"
 REQUIRED_RUNTIME = {
@@ -36,7 +36,7 @@ REQUIRED_PACKAGES = {
 def npm():
     executable = shutil.which("npm.cmd" if __import__("sys").platform == "win32" else "npm")
     if not executable:
-        raise RuntimeError("npm is required to build OMERO Analysis Chat")
+        raise RuntimeError("npm is required to build OMERO Analysis")
     return executable
 
 

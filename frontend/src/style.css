@@ -427,10 +427,10 @@ th { position: sticky; top: 0; background: #183040; }
 .composer textarea { resize: vertical; min-height: 48px; max-height: 180px; background: #0a1218; color: inherit; border: 1px solid #365266; border-radius: 8px; padding: .7rem; }
 .composer textarea:disabled { color: #8196a3; }
 .stop { background: #7f2929; border-color: #b84a4a; }
-.omero-analysis-chat-panel { padding: .7rem; }
-.oac-attachment-list { display: grid; gap: .5rem; margin: .7rem 0; }
-.oac-attachment-list label { display: grid; grid-template-columns: auto 1fr; gap: .2rem .5rem; }
-.oac-attachment-list small { grid-column: 2; }
+.omero-analysis-panel { padding: .7rem; }
+.oa-attachment-list { display: grid; gap: .5rem; margin: .7rem 0; }
+.oa-attachment-list label { display: grid; grid-template-columns: auto 1fr; gap: .2rem .5rem; }
+.oa-attachment-list small { grid-column: 2; }
 @media (max-width: 760px) {
   .app-shell { grid-template-rows: 72px auto minmax(0, 1fr); }
   .workspace {

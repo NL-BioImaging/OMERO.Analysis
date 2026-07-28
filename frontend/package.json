@@ -1,6 +1,6 @@
 {
-  "name": "omero-analysis-chat-frontend",
-  "version": "0.7.2",
+  "name": "omero-analysis-frontend",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {

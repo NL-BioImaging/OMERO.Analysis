@@ -7,10 +7,10 @@ import { chromium } from "playwright-core";
 
 const root = resolve(
   import.meta.dirname,
-  "../../src/omero_analysis_chat/static/omero_analysis_chat"
+  "../../src/omero_analysis/static/omero_analysis"
 );
 const sandboxTemplate = readFileSync(
-  resolve(import.meta.dirname, "../../src/omero_analysis_chat/templates/omero_analysis_chat/runtime_sandbox.html"),
+  resolve(import.meta.dirname, "../../src/omero_analysis/templates/omero_analysis/runtime_sandbox.html"),
   "utf8"
 );
 const chrome = [
@@ -45,7 +45,7 @@ const server = createServer(async (request, response) => {
       "connect-src 'self' https://aumc-aicode-openai-swedencentral-oai.openai.azure.com; " +
       "worker-src blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
     );
-    response.end(`<!doctype html><meta charset="utf-8"><title>Analysis Chat smoke</title>
+    response.end(`<!doctype html><meta charset="utf-8"><title>Analysis smoke</title>
       <link rel="stylesheet" href="/app.css">
       <div id="root"
         data-token-url="/unused"
@@ -60,7 +60,7 @@ const server = createServer(async (request, response) => {
         data-workflow-templates-template="/unused"
         data-workflow-download-template="/unused"
         data-runtime-base="/runtime/ASSET"></div>
-      <script id="omero-analysis-chat-context" type="application/json">null</script>
+      <script id="omero-analysis-context" type="application/json">null</script>
       <script type="module" src="/app.js"></script>`);
     return;
   }
@@ -357,10 +357,10 @@ try {
   await selectedProject.dblclick();
 
   await page.evaluate(() => {
-    window.__oacDownloadPromise = null;
+    window.__oaDownloadPromise = null;
     const createObjectUrl = URL.createObjectURL.bind(URL);
     URL.createObjectURL = function captureDownload(blob) {
-      window.__oacDownloadPromise = blob.arrayBuffer()
+      window.__oaDownloadPromise = blob.arrayBuffer()
         .then((buffer) => Array.from(new Uint8Array(buffer)));
       return createObjectUrl(blob);
     };
@@ -379,8 +379,8 @@ try {
   await answerDialog("Renamed smoke project");
   await page.getByText("Renamed smoke project", { exact: true }).first().waitFor();
   await page.getByRole("button", { name: "Download project ZIP" }).click();
-  await page.waitForFunction(() => Boolean(window.__oacDownloadPromise));
-  const archiveBytes = await page.evaluate(() => window.__oacDownloadPromise);
+  await page.waitForFunction(() => Boolean(window.__oaDownloadPromise));
+  const archiveBytes = await page.evaluate(() => window.__oaDownloadPromise);
   const archiveEntries = unzipSync(new Uint8Array(archiveBytes));
   const projectManifest = JSON.parse(strFromU8(archiveEntries["project.json"]));
   if (JSON.stringify(projectManifest).toLowerCase().includes("smoke-key")) {

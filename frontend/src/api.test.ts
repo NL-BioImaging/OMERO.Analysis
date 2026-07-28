@@ -92,7 +92,7 @@ describe("workflow skill adapter", () => {
       name: "analyze-example",
       description: "Analyze example outputs",
       purpose: "attachment-analysis",
-      consumers: ["omero-analysis-chat"],
+      consumers: ["omero-analysis"],
       version: "1",
       sha256: "b".repeat(64),
       package_url: "/stale-cache/example/analyze-example/",
@@ -121,7 +121,7 @@ describe("workflow skill adapter", () => {
       } : {
         schema: "nl.bioimaging.omero-workflow-skills.v1",
         generated_at: "",
-        consumer: "omero-analysis-chat",
+        consumer: "omero-analysis",
         config_hash: "config",
         workflows: [{ source, status: "ready", checked_at: "", skills: [skill] }],
         diagnostics: []
@@ -153,7 +153,7 @@ describe("workflow skill adapter", () => {
       name: "use-omero-zarr-viewer",
       description: "Open measured objects",
       purpose: "application-operation",
-      consumers: ["omero-analysis-chat"],
+      consumers: ["omero-analysis"],
       version: "1",
       sha256: "e".repeat(64),
       package_url: "/workflow-skills/omero-zarr-viewer/use-omero-zarr-viewer/",
@@ -182,7 +182,7 @@ describe("workflow skill adapter", () => {
       return new Response(JSON.stringify({
         schema: "nl.bioimaging.omero-workflow-skills.v1",
         generated_at: "",
-        consumer: "omero-analysis-chat",
+        consumer: "omero-analysis",
         config_hash: "config",
         workflows: [],
         applications: [{ source, status: "ready", checked_at: "", skills: [skill] }],

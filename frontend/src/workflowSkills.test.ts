@@ -11,7 +11,7 @@ const skill = {
   name: "analyze-cisegmentation-measurements",
   description: "Analyze measurements",
   purpose: "attachment-analysis",
-  consumers: ["omero-analysis-chat"],
+  consumers: ["omero-analysis"],
   version: "1",
   sha256: "abc",
   package_url: "/skills/cisegmentation/analyze/",
@@ -35,7 +35,7 @@ const source = {
 const catalog: WorkflowSkillCatalog = {
   schema: "nl.bioimaging.omero-workflow-skills.v1",
   generated_at: "",
-  consumer: "omero-analysis-chat",
+  consumer: "omero-analysis",
   config_hash: "config",
   workflows: [{ source, status: "ready", checked_at: "", skills: [skill] }],
   diagnostics: []

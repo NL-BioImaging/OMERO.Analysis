@@ -1,6 +1,6 @@
 # Deploy with NL-BIOMERO
 
-Analysis Chat is an OMERO.web wheel with a compiled frontend and self-hosted
+Analysis is an OMERO.web wheel with a compiled frontend and self-hosted
 Pyodide runtime. It needs no second service, storage mount, or custom Nginx
 location.
 
@@ -10,13 +10,13 @@ location.
 python -m pip install build
 python scripts/build_frontend.py
 python -m build --wheel
-python scripts/verify_wheel.py dist/omero_analysis_chat-*.whl
+python scripts/verify_wheel.py dist/omero_analysis-*.whl
 
 docker build \
   --build-arg OMERO_WEB_IMAGE=<current-omeroweb-image> \
-  --build-arg ANALYSIS_CHAT_WHEEL=dist/<wheel-file>.whl \
+  --build-arg ANALYSIS_WHEEL=dist/<wheel-file>.whl \
   --file docker/Dockerfile.omeroweb \
-  --tag local/nl-biomero-omeroweb-analysis-chat:0.7.0 \
+  --tag local/nl-biomero-omeroweb-analysis:0.8.0 \
   .
 ```
 
@@ -26,13 +26,13 @@ installed. `scripts/build-docker-image.ps1` automates this check.
 
 Set the `omeroweb` service image in the selected NL-BIOMERO Compose scenario to
 the derived tag and recreate only that service. The existing reverse proxy
-continues to route `/omero_analysis_chat/` through OMERO.web.
+continues to route `/omero_analysis/` through OMERO.web.
 
 ## Verify
 
 1. Sign in to OMERO.web.
 2. Select an Image, Dataset, Plate, or Screen with a supported FileAnnotation.
-3. Open the Analysis Chat center panel, select data, and open the chat.
+3. Open the Analysis center panel, select data, and open the chat.
 4. Confirm the composer stays disabled until every attachment is downloaded.
 5. Configure AmsterdamUMC, run an analysis, download a result, and explicitly
    attach it to the selected object.

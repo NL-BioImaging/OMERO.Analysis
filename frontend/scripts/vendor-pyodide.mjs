@@ -6,7 +6,7 @@ const frontend = resolve(import.meta.dirname, "..");
 const source = resolve(frontend, "node_modules/pyodide");
 const destination = resolve(
   frontend,
-  "../src/omero_analysis_chat/static/omero_analysis_chat/pyodide"
+  "../src/omero_analysis/static/omero_analysis/pyodide"
 );
 const version = JSON.parse(await readFile(resolve(source, "package.json"), "utf8")).version;
 const lock = JSON.parse(await readFile(resolve(source, "pyodide-lock.json"), "utf8"));

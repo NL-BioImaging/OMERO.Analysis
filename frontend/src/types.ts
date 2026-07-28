@@ -242,7 +242,7 @@ export type EvidenceKind =
   | "schema"
   | "navigation"
   | "render"
-  | "failed-approach";
+  | "failed-approah";
 
 export interface EvidenceRecord {
   id: string;
@@ -526,6 +526,6 @@ export interface ProjectWorkspace {
 
 declare global {
   interface Window {
-    OMERO_ANALYSIS_CHAT: Bootstrap;
+    OMERO_ANALYSIS: Bootstrap;
   }
 }

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from django.test import RequestFactory
 
-from omero_analysis_chat import views
+from omero_analysis import views
 
 
 class FakePayload:
@@ -17,7 +17,7 @@ class FakeCatalog:
     refreshed = False
 
     def get_catalog(self, consumer):
-        assert consumer == "omero-analysis-chat"
+        assert consumer == "omero-analysis"
         return FakePayload(
             {
                 "schema": "nl.bioimaging.omero-workflow-skills.v1",
@@ -44,7 +44,7 @@ class FakeCatalog:
         assert (workflow_key, skill_name, consumer) == (
             "cisegmentation",
             "analyze-cisegmentation-measurements",
-            "omero-analysis-chat",
+            "omero-analysis",
         )
         return FakePayload({"skill": {"name": skill_name}, "files": []})
 
@@ -65,7 +65,7 @@ def test_catalog_and_package_adapters(monkeypatch):
         conn=object(),
     )
     assert response.status_code == 200
-    assert b'"consumer": "omero-analysis-chat"' in response.content
+    assert b'"consumer": "omero-analysis"' in response.content
     assert b'"version": "0.1.0"' in response.content
     assert (
         b'"/api/workflow-skills/cisegmentation/'

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory
 
-from omero_analysis_chat import views
-from omero_analysis_chat.tokens import make_context_token
+from omero_analysis import views
+from omero_analysis.tokens import make_context_token
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
 
@@ -68,22 +68,22 @@ def test_runtime_assets_reject_traversal():
 
 
 def test_runtime_sandbox_has_an_isolated_boot_policy():
-    request = RequestFactory().get("/omero_analysis_chat/runtime-sandbox/")
+    request = RequestFactory().get("/omero_analysis/runtime-sandbox/")
     response = views.runtime_sandbox(request)
     policy = response["Content-Security-Policy"]
     assert response.status_code == 200
     assert "worker-src blob:" in policy
     assert "connect-src http://testserver" in policy
     assert "default-src 'none'" in policy
-    assert b'oac-bootstrap' in response.content
+    assert b'oa-bootstrap' in response.content
 
 
 def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
     snapshot = FakeAnnotation(
         21,
-        "analysis.oac.zip",
+        "analysis.oa.zip",
         b"PK\x03\x04snapshot",
-        namespace="nl.bioimaging.analysis-chat.project.v1",
+        namespace="nl.bioimaging.analysis.project.v1",
     )
     obj = FakeObject(annotations=[snapshot])
     conn = FakeConnection(obj)
@@ -109,7 +109,7 @@ def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
             "/",
             data={
                 "file": SimpleUploadedFile(
-                    "saved.oac.zip",
+                    "saved.oa.zip",
                     b"PK\x03\x04data",
                     content_type="application/zip",
                 )
@@ -124,9 +124,9 @@ def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
 def test_chat_bootstrap_accepts_only_attached_project_snapshot():
     snapshot = FakeAnnotation(
         21,
-        "analysis.oac.zip",
+        "analysis.oa.zip",
         b"PK\x03\x04snapshot",
-        namespace="nl.bioimaging.analysis-chat.project.v1",
+        namespace="nl.bioimaging.analysis.project.v1",
     )
     obj = FakeObject(annotations=[snapshot])
     request = with_session(

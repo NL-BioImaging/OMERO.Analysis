@@ -68,7 +68,7 @@ export function evidencePrompt(records: EvidenceRecord[]): string {
   ];
   if (failures.length) {
     lines.push(
-      "Recent failed approaches; do not repeat unchanged:",
+      "Recent failed approahes; do not repeat unchanged:",
       ...failures.map((record) => `- ${record.id}: ${record.summary}`),
     );
   }

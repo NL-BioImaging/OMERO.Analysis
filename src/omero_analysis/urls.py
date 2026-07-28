@@ -3,87 +3,87 @@ from django.urls import re_path
 from . import views
 
 urlpatterns = [
-    re_path(r"^$", views.chat, name="omero_analysis_chat_index"),
+    re_path(r"^$", views.chat, name="omero_analysis_index"),
     re_path(
         r"^runtime-sandbox/$",
         views.runtime_sandbox,
-        name="omero_analysis_chat_runtime_sandbox",
+        name="omero_analysis_runtime_sandbox",
     ),
     re_path(
         r"^runtime/(?P<asset_path>[-\w./]+)$",
         views.runtime_asset,
-        name="omero_analysis_chat_runtime_asset",
+        name="omero_analysis_runtime_asset",
     ),
     re_path(
         r"^panel/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.panel,
-        name="omero_analysis_chat_panel",
+        name="omero_analysis_panel",
     ),
-    re_path(r"^api/context-token/$", views.context_token, name="omero_analysis_chat_token"),
+    re_path(r"^api/context-token/$", views.context_token, name="omero_analysis_token"),
     re_path(
         r"^api/context/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.context,
-        name="omero_analysis_chat_context",
+        name="omero_analysis_context",
     ),
     re_path(
         r"^api/attachments/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.attachments,
-        name="omero_analysis_chat_attachments",
+        name="omero_analysis_attachments",
     ),
     re_path(
         r"^api/hierarchy/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.hierarchy,
-        name="omero_analysis_chat_hierarchy",
+        name="omero_analysis_hierarchy",
     ),
     re_path(
         r"^api/attachment/(?P<annotation_id>\d+)/download/$",
         views.download_attachment,
-        name="omero_analysis_chat_download",
+        name="omero_analysis_download",
     ),
     re_path(
         r"^api/attachments/(?P<object_type>\w+)/(?P<object_id>\d+)/upload/$",
         views.upload_result,
-        name="omero_analysis_chat_upload",
+        name="omero_analysis_upload",
     ),
     re_path(
         r"^api/projects/(?P<object_type>\w+)/(?P<object_id>\d+)/snapshots/$",
         views.project_snapshots,
-        name="omero_analysis_chat_project_snapshots",
+        name="omero_analysis_project_snapshots",
     ),
     re_path(
         r"^api/project-snapshot/(?P<annotation_id>\d+)/download/$",
         views.download_project_snapshot,
-        name="omero_analysis_chat_project_snapshot_download",
+        name="omero_analysis_project_snapshot_download",
     ),
     re_path(
         r"^api/workflows/(?P<object_type>\w+)/(?P<object_id>\d+)/templates/$",
         views.workflow_templates,
-        name="omero_analysis_chat_workflow_templates",
+        name="omero_analysis_workflow_templates",
     ),
     re_path(
         r"^api/workflow-template/(?P<annotation_id>\d+)/download/$",
         views.download_workflow_template,
-        name="omero_analysis_chat_workflow_download",
+        name="omero_analysis_workflow_download",
     ),
     re_path(
         r"^api/workflow-skills/$",
         views.workflow_skills,
-        name="omero_analysis_chat_workflow_skills",
+        name="omero_analysis_workflow_skills",
     ),
     re_path(
         r"^api/integrations/zarr-viewer/$",
         views.zarr_viewer_integration,
-        name="omero_analysis_chat_zarr_viewer_integration",
+        name="omero_analysis_zarr_viewer_integration",
     ),
     re_path(
         r"^api/workflow-skills/(?P<workflow_key>[a-zA-Z0-9_-]+)/"
         r"(?P<skill_name>[a-z0-9-]+)/$",
         views.workflow_skill_package,
-        name="omero_analysis_chat_workflow_skill",
+        name="omero_analysis_workflow_skill",
     ),
     re_path(
         r"^api/workflow-skills/refresh/$",
         views.refresh_workflow_skills,
-        name="omero_analysis_chat_refresh_workflow_skills",
+        name="omero_analysis_refresh_workflow_skills",
     ),
 ]

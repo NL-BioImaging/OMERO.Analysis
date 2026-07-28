@@ -1,0 +1,32 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>OMERO Analysis</title>
+  <link rel="stylesheet" href="{% static 'omero_analysis/app.css' %}">
+</head>
+<body>
+  <div id="root"
+       data-token-url="{% url 'omero_analysis_token' %}"
+       data-context-template="{% url 'omero_analysis_context' object_type='TYPE' object_id=1 %}"
+       data-attachments-template="{% url 'omero_analysis_attachments' object_type='TYPE' object_id=1 %}"
+       data-hierarchy-template="{% url 'omero_analysis_hierarchy' object_type='TYPE' object_id=1 %}"
+       data-download-template="{% url 'omero_analysis_download' annotation_id=1 %}"
+       data-upload-template="{% url 'omero_analysis_upload' object_type='TYPE' object_id=1 %}"
+       data-snapshots-template="{% url 'omero_analysis_project_snapshots' object_type='TYPE' object_id=1 %}"
+       data-snapshot-upload-template="{% url 'omero_analysis_project_snapshots' object_type='TYPE' object_id=1 %}"
+       data-snapshot-download-template="{% url 'omero_analysis_project_snapshot_download' annotation_id=1 %}"
+       data-workflow-templates-template="{% url 'omero_analysis_workflow_templates' object_type='TYPE' object_id=1 %}"
+       data-workflow-download-template="{% url 'omero_analysis_workflow_download' annotation_id=1 %}"
+       data-workflow-skills-url="{% url 'omero_analysis_workflow_skills' %}"
+       data-zarr-viewer-status-url="{% url 'omero_analysis_zarr_viewer_integration' %}"
+       data-runtime-base="{% url 'omero_analysis_runtime_asset' asset_path='ASSET' %}">
+    <div class="boot-message">Starting OMERO Analysis…</div>
+  </div>
+  {{ context|json_script:"omero-analysis-context" }}
+  <script type="module" src="{% static 'omero_analysis/app.js' %}"></script>
+</body>
+</html>

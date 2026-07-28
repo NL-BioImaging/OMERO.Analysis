@@ -124,6 +124,26 @@ describe("project archive", () => {
     expect(manifest.files.find((file: any) => file.id === "local-file").state).toBe("missing");
   });
 
+  it("imports Analysis Chat project snapshots created before the rename", async () => {
+    const source = await workspace();
+    const entries = unzipSync(exportProject(source, 1024 * 1024).data);
+    const manifest = JSON.parse(strFromU8(entries["project.json"]));
+    manifest.format = "nl.bioimaging.analysis-chat.project.v2";
+    manifest.version = 3;
+    const encodedManifest = strToU8(JSON.stringify(manifest));
+    const ArchiveUint8Array = entries["project.json"].constructor as Uint8ArrayConstructor;
+    const legacyManifest = new ArchiveUint8Array(encodedManifest.byteLength);
+    legacyManifest.set(encodedManifest);
+    const legacyEntries = {
+      ...entries,
+      "project.json": legacyManifest
+    };
+    const legacyArchive = zipSync(legacyEntries);
+    const restored = await importProject(asArrayBuffer(legacyArchive));
+    expect(restored.project.name).toBe("Test (imported)");
+    expect(restored.chats).toHaveLength(1);
+  });
+
   it("rejects traversal paths, altered files, and credential fields", async () => {
     const source = await workspace();
     const archive = exportProject(source, 1024 * 1024);

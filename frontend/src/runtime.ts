@@ -13,19 +13,19 @@ const PACKAGES = [
   "matplotlib",
   "duckdb"
 ];
-export const RUNTIME_VERSION = "pyodide-314.0.3-oac-0.6";
+export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.6";
 
 export function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
   const packages = JSON.stringify(PACKAGES);
   return `
 const runtimeBase = ${base};
-const send = (id, type, value, transfer = []) => postMessage({source:"oac-runtime", id, type, value}, transfer);
+const send = (id, type, value, transfer = []) => postMessage({source:"oa-runtime", id, type, value}, transfer);
 const runtimeFetch = globalThis.fetch.bind(globalThis);
-const denyNetwork = () => Promise.reject(new Error("Network access is disabled in Analysis Chat Python"));
+const denyNetwork = () => Promise.reject(new Error("Network access is disabled in Analysis Python"));
 const loadedPackages = new Set(${packages});
 const progress = (percent, message) => postMessage({
-  source: "oac-runtime",
+  source: "oa-runtime",
   type: "progress",
   value: {percent, message}
 });
@@ -178,30 +178,30 @@ function modelPayload(preview, stderr, files) {
   };
 }
 const previewCode = \`
-import json as _oac_json, math as _oac_math
-def _oac_clean(value):
+import json as _oa_json, math as _oa_math
+def _oa_clean(value):
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float):
-        return value if _oac_math.isfinite(value) else str(value)
+        return value if _oa_math.isfinite(value) else str(value)
     if hasattr(value, "head") and hasattr(value, "to_dict"):
         frame = value.head(100)
         if hasattr(frame, "iloc"):
             frame = frame.iloc[:, :50]
         return {"kind": "table", "data": frame.to_dict(orient="split")}
     if isinstance(value, dict):
-        return {str(k): _oac_clean(v) for k, v in list(value.items())[:100]}
+        return {str(k): _oa_clean(v) for k, v in list(value.items())[:100]}
     if isinstance(value, (list, tuple)):
-        return [_oac_clean(v) for v in value[:100]]
+        return [_oa_clean(v) for v in value[:100]]
     if hasattr(value, "item"):
-        try: return _oac_clean(value.item())
+        try: return _oa_clean(value.item())
         except Exception: pass
     return str(value)
-_oac_json.dumps(_oac_clean(globals().get("result")), ensure_ascii=False)
+_oa_json.dumps(_oa_clean(globals().get("result")), ensure_ascii=False)
 \`;
 addEventListener("message", async (event) => {
   const message = event.data;
-  if (!message || message.source !== "oac-parent") return;
+  if (!message || message.source !== "oa-parent") return;
   try {
     await ready;
     if (message.type === "ping") {
@@ -209,9 +209,9 @@ addEventListener("message", async (event) => {
     } else if (message.type === "begin") {
       removeTree("/output");
       await pyodide.runPythonAsync(\`
-for _oac_name in list(globals()):
-    if not _oac_name.startswith("__"):
-        globals().pop(_oac_name, None)
+for _oa_name in list(globals()):
+    if not _oa_name.startswith("__"):
+        globals().pop(_oa_name, None)
 \`);
       send(message.id, "begin", true);
     } else if (message.type === "clear_inputs") {
@@ -343,7 +343,7 @@ export class PythonRuntime {
       await loaded;
       this.report({ percent: 8, message: "Connecting to the Python worker…" });
       frame.contentWindow?.postMessage(
-        { source: "oac-bootstrap", value: runtimeWorker(absoluteRuntimeBase) },
+        { source: "oa-bootstrap", value: runtimeWorker(absoluteRuntimeBase) },
         "*"
       );
       await this.request("ping", true, 120_000);
@@ -439,7 +439,7 @@ export class PythonRuntime {
       }, timeout);
       this.pending.set(id, { resolve, reject, timer });
       this.frame?.contentWindow?.postMessage(
-        { source: "oac-parent", id, type, value },
+        { source: "oa-parent", id, type, value },
         "*",
         transfer
       );
@@ -449,7 +449,7 @@ export class PythonRuntime {
   private receive = (event: MessageEvent): void => {
     if (event.source !== this.frame?.contentWindow) return;
     const message = event.data;
-    if (!message || message.source !== "oac-runtime") return;
+    if (!message || message.source !== "oa-runtime") return;
     if (message.type === "progress") {
       this.report(message.value);
       return;

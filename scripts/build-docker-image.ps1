@@ -49,11 +49,11 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker CLI
 $Container = Resolve-WebContainer
 $currentImage = (& docker inspect --format "{{.Config.Image}}" $Container).Trim()
 if (-not $BaseImage) { $BaseImage = $currentImage }
-if (-not $Tag) { $Tag = "$currentImage-analysis-chat" }
+if (-not $Tag) { $Tag = "$currentImage-analysis" }
 
 $containerConfigs = Get-PluginConfigs $Container
 $imageConfigs = Get-PluginConfigs $BaseImage -Image
-$configsAddedByThisImage = @("90-omero-analysis-chat.omero")
+$configsAddedByThisImage = @("90-omero-analysis.omero")
 $missingConfigs = @($containerConfigs | Where-Object {
     $_ -notin $imageConfigs -and $_ -notin $configsAddedByThisImage
 })
@@ -77,8 +77,8 @@ if (-not $SkipBuild) {
         if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
     } finally { Pop-Location }
 }
-$wheel = Get-ChildItem (Join-Path $RepoRoot "dist\omero_analysis_chat-*.whl") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $wheel) { throw "No Analysis Chat wheel exists in dist." }
+$wheel = Get-ChildItem (Join-Path $RepoRoot "dist\omero_analysis-*.whl") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $wheel) { throw "No Analysis wheel exists in dist." }
 & $python (Join-Path $RepoRoot "scripts\verify_wheel.py") $wheel.FullName
 if ($LASTEXITCODE -ne 0) { throw "Wheel verification failed." }
 $wheelhouse = Join-Path $RepoRoot "dist\wheelhouse"

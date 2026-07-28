@@ -30,7 +30,7 @@ jobs:
         working-directory: frontend
       - run: python scripts/build_frontend.py --skip-install
       - run: python -m build
-      - run: python scripts/verify_wheel.py dist/omero_analysis_chat-*.whl
+      - run: python scripts/verify_wheel.py dist/omero_analysis-*.whl
       - run: python -m twine check dist/*
       - uses: actions/upload-artifact@v4
         with:
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/omero-analysis-chat
+      url: https://pypi.org/p/omero-analysis
     permissions:
       id-token: write
     steps:

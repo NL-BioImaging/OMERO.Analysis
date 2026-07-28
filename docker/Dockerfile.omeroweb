@@ -4,21 +4,24 @@ FROM ${OMERO_WEB_IMAGE}
 USER root
 
 COPY dist/wheelhouse/ /tmp/omero-plugin-wheelhouse/
-COPY docker/90-omero-analysis-chat.omero /opt/omero/web/config/90-omero-analysis-chat.omero
+COPY docker/90-omero-analysis.omero /opt/omero/web/config/90-omero-analysis.omero
 
 RUN set -eu; \
+    rm -f /opt/omero/web/config/90-omero-analysis-chat.omero; \
+    rm -rf /opt/omero/web/OMERO.web/var/static/omero_analysis_chat; \
+    /opt/omero/web/venv3/bin/python -m pip uninstall -y omero-analysis-chat >/dev/null 2>&1 || true; \
     viewer_wheel="$(find /tmp/omero-plugin-wheelhouse -maxdepth 1 -name 'biomero_zarr_viewer-*.whl' -print -quit)"; \
     catalog_wheel="$(find /tmp/omero-plugin-wheelhouse -maxdepth 1 -name 'omero_workflow_skills-*.whl' -print -quit)"; \
     /opt/omero/web/venv3/bin/python -m pip install \
         --no-index --find-links /tmp/omero-plugin-wheelhouse \
-        /tmp/omero-plugin-wheelhouse/omero_analysis_chat-*.whl \
+        /tmp/omero-plugin-wheelhouse/omero_analysis-*.whl \
         ${viewer_wheel:+$viewer_wheel} \
     && /opt/omero/web/venv3/bin/python -m pip install \
         --no-index --no-deps --force-reinstall \
         ${catalog_wheel:+$catalog_wheel} \
-        /tmp/omero-plugin-wheelhouse/omero_analysis_chat-*.whl \
+        /tmp/omero-plugin-wheelhouse/omero_analysis-*.whl \
         ${viewer_wheel:+$viewer_wheel} \
     && rm -rf /tmp/omero-plugin-wheelhouse \
-    && chmod 0644 /opt/omero/web/config/90-omero-analysis-chat.omero
+    && chmod 0644 /opt/omero/web/config/90-omero-analysis.omero
 
 USER omero-web

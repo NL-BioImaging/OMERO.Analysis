@@ -16,10 +16,15 @@ from .errors import (
 from .settings import allowed_result_extensions, max_download_bytes, max_upload_bytes
 
 SUPPORTED_OBJECT_TYPES = ("Image", "Dataset", "Plate", "Screen")
-RESULT_NAMESPACE = "nl.bioimaging.analysis-chat.result"
-PROJECT_NAMESPACE = "nl.bioimaging.analysis-chat.project.v2"
-LEGACY_PROJECT_NAMESPACES = {"nl.bioimaging.analysis-chat.project.v1"}
-WORKFLOW_NAMESPACE = "nl.bioimaging.analysis-chat.workflow.v1"
+RESULT_NAMESPACE = "nl.bioimaging.analysis.result.v1"
+PROJECT_NAMESPACE = "nl.bioimaging.analysis.project.v1"
+LEGACY_RESULT_NAMESPACES = {"nl.bioimaging.analysis-chat.result"}
+LEGACY_PROJECT_NAMESPACES = {
+    "nl.bioimaging.analysis-chat.project.v1",
+    "nl.bioimaging.analysis-chat.project.v2",
+}
+WORKFLOW_NAMESPACE = "nl.bioimaging.analysis.workflow.v1"
+LEGACY_WORKFLOW_NAMESPACES = {"nl.bioimaging.analysis-chat.workflow.v1"}
 INPUT_EXTENSIONS = {
     ".csv",
     ".tsv",
@@ -149,9 +154,9 @@ def attachment_info(annotation):
         "project"
         if namespace == PROJECT_NAMESPACE or namespace in LEGACY_PROJECT_NAMESPACES
         else "workflow"
-        if namespace == WORKFLOW_NAMESPACE
+        if namespace == WORKFLOW_NAMESPACE or namespace in LEGACY_WORKFLOW_NAMESPACES
         else "result"
-        if namespace == RESULT_NAMESPACE
+        if namespace == RESULT_NAMESPACE or namespace in LEGACY_RESULT_NAMESPACES
         else "attachment"
     )
     return AttachmentInfo(
@@ -301,7 +306,7 @@ def checked_download(obj, annotation_id):
 def checked_project_snapshot_download(obj, annotation_id):
     annotation, info = get_direct_attachment(obj, annotation_id)
     if info.kind != "project":
-        raise UnsupportedMedia(f"{info.name} is not an Analysis Chat project snapshot")
+        raise UnsupportedMedia(f"{info.name} is not an Analysis project snapshot")
     if info.size > max_download_bytes():
         raise FileTooLarge(
             f"Snapshot is {info.size} bytes; the limit is {max_download_bytes()}"
@@ -312,7 +317,7 @@ def checked_project_snapshot_download(obj, annotation_id):
 def checked_workflow_download(obj, annotation_id):
     annotation, info = get_direct_attachment(obj, annotation_id)
     if info.kind != "workflow":
-        raise UnsupportedMedia(f"{info.name} is not an Analysis Chat workflow template")
+        raise UnsupportedMedia(f"{info.name} is not an Analysis workflow template")
     if info.size > max_download_bytes():
         raise FileTooLarge(
             f"Workflow is {info.size} bytes; the limit is {max_download_bytes()}"
@@ -349,8 +354,8 @@ def validate_project_snapshot(uploaded_file):
             f"Project snapshot is {uploaded_file.size} bytes; the limit is {max_upload_bytes()}"
         )
     filename = safe_filename(uploaded_file.name)
-    if not filename.lower().endswith(".oac.zip"):
-        raise UnsupportedMedia("Project snapshots must use the .oac.zip extension")
+    if not filename.lower().endswith((".oa.zip", ".oac.zip")):
+        raise UnsupportedMedia("Project snapshots must use the .oa.zip extension")
     supplied = (uploaded_file.content_type or "").lower().split(";", 1)[0].strip()
     if supplied and supplied not in {
         "application/zip",
@@ -373,8 +378,8 @@ def validate_workflow_template(uploaded_file):
     if int(uploaded_file.size) > min(max_upload_bytes(), 4 * 1024 * 1024):
         raise FileTooLarge("Workflow templates are limited to 4 MiB")
     filename = safe_filename(uploaded_file.name)
-    if not filename.lower().endswith(".oac-workflow.json"):
-        raise UnsupportedMedia("Workflow templates must use .oac-workflow.json")
+    if not filename.lower().endswith((".oa-workflow.json", ".oac-workflow.json")):
+        raise UnsupportedMedia("Workflow templates must use .oa-workflow.json")
     position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
     try:
         payload = json.load(uploaded_file)
@@ -383,7 +388,10 @@ def validate_workflow_template(uploaded_file):
     finally:
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(position)
-    if payload.get("format") != "nl.bioimaging.analysis-chat.workflow.v1":
+    if payload.get("format") not in {
+        "nl.bioimaging.analysis.workflow.v1",
+        "nl.bioimaging.analysis-chat.workflow.v1",
+    }:
         raise UnsupportedMedia("Unsupported workflow template format")
     return filename, "application/json"
 
@@ -393,7 +401,7 @@ def _upload_annotation(conn, obj, uploaded_file, validator, namespace, descripti
         raise PermissionDenied("The active user cannot annotate the selected object")
     filename, mimetype = validator(uploaded_file)
     annotation = None
-    with tempfile.TemporaryDirectory(prefix="omero-analysis-chat-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="omero-analysis-") as temp_dir:
         local_path = Path(temp_dir) / filename
         with local_path.open("wb") as handle:
             for chunk in uploaded_file.chunks():
@@ -423,7 +431,7 @@ def upload_result_annotation(conn, obj, uploaded_file):
         uploaded_file,
         validate_result,
         RESULT_NAMESPACE,
-        "Created in OMERO Analysis Chat",
+        "Created in OMERO Analysis",
     )
 
 
@@ -434,7 +442,7 @@ def upload_project_snapshot_annotation(conn, obj, uploaded_file):
         uploaded_file,
         validate_project_snapshot,
         PROJECT_NAMESPACE,
-        "Portable OMERO Analysis Chat project snapshot",
+        "Portable OMERO Analysis project snapshot",
     )
 
 
@@ -445,5 +453,5 @@ def upload_workflow_annotation(conn, obj, uploaded_file):
         uploaded_file,
         validate_workflow_template,
         WORKFLOW_NAMESPACE,
-        "Reusable OMERO Analysis Chat workflow template",
+        "Reusable OMERO Analysis workflow template",
     )

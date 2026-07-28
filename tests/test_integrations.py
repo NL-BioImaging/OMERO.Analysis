@@ -2,7 +2,7 @@ from importlib.metadata import PackageNotFoundError
 
 from django.urls import NoReverseMatch
 
-from omero_analysis_chat import integrations
+from omero_analysis import integrations
 
 
 def test_zarr_viewer_is_optional(monkeypatch):

@@ -48,13 +48,13 @@ jobs:
       - run: npm run smoke:browser
         working-directory: frontend
       - run: python -m build --wheel --no-isolation
-      - run: python scripts/verify_wheel.py dist/omero_analysis_chat-*.whl
+      - run: python scripts/verify_wheel.py dist/omero_analysis-*.whl
       - uses: actions/checkout@v4
         with:
           repository: NL-BioImaging/OMERO.WorkflowSkills
           path: OMERO.WorkflowSkills
       - run: >-
           python scripts/build_companion_wheelhouse.py
-          --plugin-wheel dist/omero_analysis_chat-*.whl
+          --plugin-wheel dist/omero_analysis-*.whl
           --output dist/wheelhouse
           --catalog-repo OMERO.WorkflowSkills

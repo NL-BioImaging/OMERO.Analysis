@@ -1,6 +1,6 @@
-# OMERO.AnalysisChat
+# OMERO.Analysis
 
-OMERO.AnalysisChat is an OMERO.web extension for conversational, browser-local
+OMERO.Analysis is an OMERO.web extension for conversational, browser-local
 analysis of tabular FileAnnotations and uploaded data. It has no notebook or
 JupyterLab interface: the assistant writes visible Python, executes it in an
 isolated Pyodide sandbox, and returns bounded tables, plots, and downloadable
@@ -8,7 +8,7 @@ results in the chat.
 
 Version 0.2 introduced object-scoped browser projects with multiple named chats,
 shared immutable inputs, chat-specific outputs, versioned reusable Python
-scripts, exact-run reuse, and portable `.oac.zip` snapshots. Every project is
+scripts, exact-run reuse, and portable `.oa.zip` snapshots. Every project is
 autosaved in normalized IndexedDB storage so updating a chat does not rewrite
 large file blobs.
 
@@ -117,7 +117,7 @@ cd ..
 python scripts/build_frontend.py --skip-install
 python -m pytest
 python -m build --wheel
-python scripts/verify_wheel.py dist/omero_analysis_chat-*.whl
+python scripts/verify_wheel.py dist/omero_analysis-*.whl
 ```
 
 `build_frontend.py` downloads the pinned Pyodide package closure plus the pinned
@@ -142,7 +142,7 @@ For a persistent derived OMERO.web image:
 
 When a sibling `OMERO.ZarrViewer` 0.4 wheel is available, the persistent-image
 builder includes it in the same offline wheelhouse so the derived image keeps
-all base plugins while upgrading AnalysisChat, WorkflowSkills, and ZarrViewer
+all base plugins while upgrading Analysis, WorkflowSkills, and ZarrViewer
 together. Use `-ZarrViewerWheel` to select an explicit wheel.
 
 See [NL-BIOMERO deployment](docs/deployment-nl-biomero.md) and
@@ -150,7 +150,7 @@ See [NL-BIOMERO deployment](docs/deployment-nl-biomero.md) and
 
 ## API
 
-All routes are mounted under `/omero_analysis_chat/`:
+All routes are mounted under `/omero_analysis/`:
 
 ```text
 GET  /?type=<Image|Dataset|Plate|Screen>&id=<id>&data_annotation=<id>

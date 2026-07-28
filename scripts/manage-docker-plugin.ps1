@@ -14,9 +14,12 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ContainerPython = "/opt/omero/web/venv3/bin/python"
 $ContainerOmero = "/opt/omero/web/venv3/bin/omero"
-$ContainerConfig = "/opt/omero/web/config/90-omero-analysis-chat.omero"
-$ContainerStatic = "/opt/omero/web/OMERO.web/var/static/omero_analysis_chat"
-$PackageName = "omero-analysis-chat"
+$ContainerConfig = "/opt/omero/web/config/90-omero-analysis.omero"
+$ContainerStatic = "/opt/omero/web/OMERO.web/var/static/omero_analysis"
+$PackageName = "omero-analysis"
+$LegacyContainerConfig = "/opt/omero/web/config/90-omero-analysis-chat.omero"
+$LegacyContainerStatic = "/opt/omero/web/OMERO.web/var/static/omero_analysis_chat"
+$LegacyPackageName = "omero-analysis-chat"
 
 function Resolve-WebContainer {
     if ($Container) {
@@ -52,8 +55,8 @@ function Build-Wheel {
             if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
         } finally { Pop-Location }
     }
-    $wheel = Get-ChildItem (Join-Path $RepoRoot "dist\omero_analysis_chat-*.whl") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $wheel) { throw "No Analysis Chat wheel exists in dist." }
+    $wheel = Get-ChildItem (Join-Path $RepoRoot "dist\omero_analysis-*.whl") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $wheel) { throw "No Analysis wheel exists in dist." }
     $verification = & $python (Join-Path $RepoRoot "scripts\verify_wheel.py") $wheel.FullName
     if ($LASTEXITCODE -ne 0) { throw "Wheel verification failed." }
     $verification | Write-Host
@@ -69,7 +72,7 @@ function Restart-Web([bool] $ExpectActive) {
         docker exec $Container $ContainerOmero web status *> $null
         if ($LASTEXITCODE -eq 0) {
             $apps = docker exec $Container $ContainerOmero config get omero.web.apps 2>$null
-            if (($apps -match "omero_analysis_chat") -eq $ExpectActive) { return }
+            if (($apps -match "omero_analysis") -eq $ExpectActive) { return }
         }
     } while ((Get-Date) -lt $deadline)
     throw "OMERO.web did not reach the expected plugin state within 90 seconds."
@@ -81,7 +84,7 @@ function Show-Status {
     $catalogVersion = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('omero-workflow-skills'))" 2>$null
     Write-Host $(if ($LASTEXITCODE -eq 0) { "Catalog: installed ($catalogVersion)" } else { "Catalog: not installed" })
     $apps = docker exec $Container $ContainerOmero config get omero.web.apps 2>$null
-    Write-Host $(if ($apps -match "omero_analysis_chat") { "OMERO.web: app active" } else { "OMERO.web: app inactive" })
+    Write-Host $(if ($apps -match "omero_analysis") { "OMERO.web: app active" } else { "OMERO.web: app inactive" })
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker CLI was not found." }
@@ -108,14 +111,17 @@ if not (Version("0.2") <= installed < Version("0.3")):
 "@
         docker exec $Container $ContainerPython -c $compatibility
         if ($LASTEXITCODE -ne 0) { throw "The installed workflow catalog is incompatible; the container was not changed." }
-        $remote = "/tmp/omero-analysis-chat-wheelhouse"
+        docker exec --user root $Container rm -f $LegacyContainerConfig
+        docker exec --user root $Container rm -rf $LegacyContainerStatic
+        docker exec --user root $Container $ContainerPython -m pip uninstall -y $LegacyPackageName *> $null
+        $remote = "/tmp/omero-analysis-wheelhouse"
         docker exec --user root $Container rm -rf $remote
         docker cp "$wheelhouse\." "${Container}:$remote"
         docker exec --user root $Container $ContainerPython -m pip install `
             --no-index --find-links $remote --upgrade `
             "$remote/$($wheel.Name)"
         if ($LASTEXITCODE -ne 0) { throw "Offline plugin installation failed." }
-        docker cp (Join-Path $RepoRoot "docker\90-omero-analysis-chat.omero") "${Container}:$ContainerConfig"
+        docker cp (Join-Path $RepoRoot "docker\90-omero-analysis.omero") "${Container}:$ContainerConfig"
         docker exec --user root $Container chmod 0644 $ContainerConfig
         docker exec --user root $Container rm -rf $ContainerStatic
         docker exec --user root $Container rm -rf $remote

@@ -37,7 +37,7 @@ describe("browser-local project selection", () => {
 describe("workflow-skill tooltip", () => {
   const catalog = {
     schema: "nl.bioimaging.omero-workflow-skills.v1",
-    consumer: "omero-analysis-chat",
+    consumer: "omero-analysis",
     generated_at: "2026-07-27T00:00:00Z",
     config_hash: "config",
     workflows: [{
@@ -57,7 +57,7 @@ describe("workflow-skill tooltip", () => {
         description: "Analyze measurements",
         version: "1",
         purpose: "attachment-analysis",
-        consumers: ["omero-analysis-chat"],
+        consumers: ["omero-analysis"],
         sha256: "abc",
         package_url: "/skills/package/",
         match: {

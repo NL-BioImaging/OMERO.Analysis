@@ -7,7 +7,7 @@ export const MAX_FILE_BYTES = 256 * 1024 * 1024;
 export const MAX_WORKSPACE_BYTES = 512 * 1024 * 1024;
 export const MAX_TOOL_TEXT = 64 * 1024;
 
-export const SYSTEM_PROMPT = `You are the analysis assistant inside OMERO Analysis Chat.
+export const SYSTEM_PROMPT = `You are the analysis assistant inside OMERO Analysis.
 Source files stay in the browser and are never sent to you. Never ask the user to write or run
 notebook code. The host supplies exact input paths, active workflow skills, required references,
 capability contracts, and a current evidence ledger before the first response. Reuse those facts;

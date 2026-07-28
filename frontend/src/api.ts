@@ -301,7 +301,7 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
   const body = record(value, "workflow skill catalog");
   if (
     body.schema !== "nl.bioimaging.omero-workflow-skills.v1" ||
-    body.consumer !== "omero-analysis-chat" ||
+    body.consumer !== "omero-analysis" ||
     !Array.isArray(body.workflows) ||
     !(body.applications == null || Array.isArray(body.applications)) ||
     !Array.isArray(body.diagnostics)
@@ -353,7 +353,7 @@ function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
   const collection = source.source_kind === "application" ? "applications" : "workflows";
   workflowSkillCatalogFrom({
     schema: "nl.bioimaging.omero-workflow-skills.v1",
-    consumer: "omero-analysis-chat",
+    consumer: "omero-analysis",
     workflows: collection === "workflows" ? [{
       source: body.source,
       status: "ready",

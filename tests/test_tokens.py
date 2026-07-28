@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 from django.test import RequestFactory
 
-from omero_analysis_chat.errors import InvalidToken
-from omero_analysis_chat.tokens import make_context_token, validate_context_token
+from omero_analysis.errors import InvalidToken
+from omero_analysis.tokens import make_context_token, validate_context_token
 
 from .conftest import FakeConnection, FakeObject
 

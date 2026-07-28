@@ -138,7 +138,7 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
       })
     };
   }
-  // Deliberately discard store.context, store.url, and expires_at. AnalysisChat
+  // Deliberately discard store.context, store.url, and expires_at. Analysis
   // needs only the identity and the authenticated ROI route.
   return {
     schema_version: 1,

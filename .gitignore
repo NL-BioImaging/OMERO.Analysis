@@ -9,6 +9,6 @@ build/
 dist/
 *.egg-info/
 frontend/node_modules/
-src/omero_analysis_chat/static/omero_analysis_chat/pyodide/
-src/omero_analysis_chat/static/omero_analysis_chat/assets/
+src/omero_analysis/static/omero_analysis/pyodide/
+src/omero_analysis/static/omero_analysis/assets/
 .DS_Store

@@ -4,7 +4,7 @@ import { loadPyodide } from "pyodide";
 
 const runtime = resolve(
   import.meta.dirname,
-  "../../src/omero_analysis_chat/static/omero_analysis_chat/pyodide"
+  "../../src/omero_analysis/static/omero_analysis/pyodide"
 );
 const manifest = JSON.parse(await readFile(resolve(runtime, "RUNTIME.json"), "utf8"));
 const pyodide = await loadPyodide({ indexURL: `${runtime}/` });
@@ -41,7 +41,7 @@ import pandas as pd
 import scipy
 import seaborn as sns
 
-root = Path("/tmp/oac-smoke")
+root = Path("/tmp/oa-smoke")
 root.mkdir(parents=True, exist_ok=True)
 frame = pd.DataFrame({"group": ["a", "a", "b"], "value": [1.0, 2.0, 4.0]})
 frame.to_csv(root / "data.csv", index=False)

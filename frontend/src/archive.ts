@@ -14,9 +14,12 @@ import type {
 } from "./types";
 import { sha256 } from "./storage";
 
-export const PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project.v2";
-export const LEGACY_PROJECT_FORMAT = "nl.bioimaging.analysis-chat.project";
-export const PROJECT_FORMAT_VERSION = 3;
+export const PROJECT_FORMAT = "nl.bioimaging.analysis.project.v1";
+export const PROJECT_FORMAT_VERSION = 1;
+const LEGACY_PROJECT_FORMATS = new Map<string, Set<number>>([
+  ["nl.bioimaging.analysis-chat.project", new Set([1])],
+  ["nl.bioimaging.analysis-chat.project.v2", new Set([2, 3])]
+]);
 export const MAX_ARCHIVE_ENTRIES = 10_000;
 export const MAX_ARCHIVE_UNCOMPRESSED = 512 * 1024 * 1024;
 
@@ -108,7 +111,7 @@ function buildArchive(
     }
   }
   const data = zipSync(entries, { level: 0 });
-  const filename = `${safeSegment(workspace.project.rootPath.split("/").at(-1) || "analysis-project")}-${new Date().toISOString().replace(/[:.]/g, "-")}.oac.zip`;
+  const filename = `${safeSegment(workspace.project.rootPath.split("/").at(-1) || "analysis-project")}-${new Date().toISOString().replace(/[:.]/g, "-")}.oa.zip`;
   return { data, filename, omittedLocalInputs, manifest };
 }
 
@@ -186,11 +189,12 @@ function validateArchiveDirectory(data: Uint8Array): void {
 function requireManifest(value: unknown): SnapshotManifest {
   if (!value || typeof value !== "object") throw new Error("Project manifest must be an object");
   const raw = value as Record<string, unknown>;
-  const legacy = raw.format === LEGACY_PROJECT_FORMAT && raw.version === 1;
-  const current = raw.format === PROJECT_FORMAT && (
-    raw.version === 2 || raw.version === PROJECT_FORMAT_VERSION
-  );
-  if (!legacy && !current) throw new Error("Unsupported Analysis Chat project format");
+  const current = raw.format === PROJECT_FORMAT && raw.version === PROJECT_FORMAT_VERSION;
+  const legacyVersions = typeof raw.format === "string"
+    ? LEGACY_PROJECT_FORMATS.get(raw.format)
+    : undefined;
+  const legacy = typeof raw.version === "number" && legacyVersions?.has(raw.version);
+  if (!legacy && !current) throw new Error("Unsupported OMERO Analysis project format");
   const manifest = value as Partial<SnapshotManifest>;
   if (!manifest.project || !Array.isArray(manifest.chats) || !Array.isArray(manifest.files)) {
     throw new Error("Project manifest is missing required project, chat, or file records");

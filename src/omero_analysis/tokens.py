@@ -7,7 +7,7 @@ from .errors import InvalidToken
 from .services import object_group_id
 from .settings import context_ttl_seconds
 
-SALT = "omero-analysis-chat-context-v1"
+SALT = "omero-analysis-context-v1"
 
 
 def _session_key(request):

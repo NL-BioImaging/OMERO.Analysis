@@ -1,11 +1,11 @@
 import { runtimeWorker, sandboxUrl } from "./runtime";
 
 describe("Python sandbox", () => {
-  const worker = runtimeWorker("https://omero.example/omero_analysis_chat/runtime/");
+  const worker = runtimeWorker("https://omero.example/omero_analysis/runtime/");
 
   it("uses a real sandbox document so the production CSP cannot block srcdoc bootstrapping", () => {
-    expect(sandboxUrl("https://omero.example/omero_analysis_chat/runtime/"))
-      .toBe("https://omero.example/omero_analysis_chat/runtime-sandbox/");
+    expect(sandboxUrl("https://omero.example/omero_analysis/runtime/"))
+      .toBe("https://omero.example/omero_analysis/runtime-sandbox/");
   });
 
   it("does not embed OMERO or Azure credentials", () => {
@@ -21,7 +21,7 @@ describe("Python sandbox", () => {
     expect(worker).toContain('message.type === "begin"');
     expect(worker).toContain('removeTree("/output")');
     expect(worker).toContain("outputState()");
-    expect(worker).toContain("Network access is disabled in Analysis Chat Python");
+    expect(worker).toContain("Network access is disabled in Analysis Python");
     expect(worker).toContain("globalThis.fetch = denyNetwork");
     expect(worker).toContain('message.type === "clear_inputs"');
     expect(worker).toContain('message.type === "profile"');

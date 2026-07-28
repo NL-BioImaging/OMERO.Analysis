@@ -260,7 +260,7 @@ interface BrowserMenuState {
 }
 
 export default function App() {
-  const bootstrap = window.OMERO_ANALYSIS_CHAT;
+  const bootstrap = window.OMERO_ANALYSIS;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
   const runtime = useMemo(() => new PythonRuntime(bootstrap.runtimeBase), [bootstrap]);
   const dialogs = useDialogs();
@@ -1558,7 +1558,7 @@ export default function App() {
         projectId: current.project.id,
         chatId,
         promptId,
-        kind: "failed-approach",
+        kind: "failed-approah",
         status: "failed",
         sourceHashes: inputHashes,
         skillHashes,
@@ -2756,12 +2756,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (!current || !bridge.canUpload) return;
     const scriptIds = new Set(workflow.steps.map((step) => step.scriptId));
     const payload = {
-      format: "nl.bioimaging.analysis-chat.workflow.v1",
+      format: "nl.bioimaging.analysis.workflow.v1",
       exportedAt: now(),
       workflow,
       scripts: current.scripts.filter((script) => !script.deletedAt && scriptIds.has(script.id))
     };
-    const name = `${slug(workflow.name)}.oac-workflow.json`;
+    const name = `${slug(workflow.name)}.oa-workflow.json`;
     const result = await bridge.uploadWorkflowTemplate(
       name,
       new TextEncoder().encode(JSON.stringify(payload, null, 2))
@@ -2778,7 +2778,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         new TextDecoder().decode(await bridge.downloadWorkflowTemplate(template))
       );
       if (
-        payload.format !== "nl.bioimaging.analysis-chat.workflow.v1" ||
+        payload.format !== "nl.bioimaging.analysis.workflow.v1" ||
         !payload.workflow ||
         !Array.isArray(payload.scripts)
       ) throw new Error("Unsupported workflow template");
@@ -2827,7 +2827,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (!source || busy) return;
     const targets = userProjects.filter((item) => item.id !== source.project.id);
     if (!targets.length) {
-      setStatus("Open the destination OMERO objects in Analysis Chat once before batch execution");
+      setStatus("Open the destination OMERO objects in Analysis once before batch execution");
       return;
     }
     if (!await dialogs.confirm(
@@ -3289,7 +3289,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       {dialogs.element}
       <header className="project-header">
         <div>
-          <h1>OMERO.AnalysisChat</h1>
+          <h1>OMERO.Analysis</h1>
           <p>{project.rootPath}</p>
         </div>
         <div className="header-actions">
@@ -3367,7 +3367,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save project to OMERO</button>}
           </div>
         </details>
-        <input ref={importInput} hidden type="file" accept=".zip,.oac.zip" onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
+        <input ref={importInput} hidden type="file" accept=".zip,.oa.zip,.oac.zip" onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
       </div>
 
       {showScriptTransfer && (
@@ -3389,7 +3389,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             </label>
             <small>
               A destination appears after you have opened that OMERO object in
-              Analysis Chat at least once.
+              Analysis at least once.
             </small>
             <div className="dialog-actions">
               <button onClick={() => setShowScriptTransfer(false)}>Cancel</button>

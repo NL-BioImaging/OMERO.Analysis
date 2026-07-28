@@ -7,14 +7,14 @@ from django.conf import settings
 def pytest_configure():
     if not settings.configured:
         settings.configure(
-            SECRET_KEY="analysis-chat-tests",
-            ROOT_URLCONF="omero_analysis_chat.urls",
+            SECRET_KEY="analysis-tests",
+            ROOT_URLCONF="omero_analysis.urls",
             ALLOWED_HOSTS=["testserver"],
             MIDDLEWARE=[],
             INSTALLED_APPS=[
                 "django.contrib.auth",
                 "django.contrib.contenttypes",
-                "omero_analysis_chat",
+                "omero_analysis",
             ],
             TEMPLATES=[
                 {
@@ -22,9 +22,9 @@ def pytest_configure():
                     "APP_DIRS": True,
                 }
             ],
-            OMERO_ANALYSIS_CHAT_CONTEXT_TTL_SECONDS=60,
-            OMERO_ANALYSIS_CHAT_MAX_DOWNLOAD_BYTES=1024,
-            OMERO_ANALYSIS_CHAT_MAX_UPLOAD_BYTES=1024,
+            OMERO_ANALYSIS_CONTEXT_TTL_SECONDS=60,
+            OMERO_ANALYSIS_MAX_DOWNLOAD_BYTES=1024,
+            OMERO_ANALYSIS_MAX_UPLOAD_BYTES=1024,
         )
         django.setup()
 

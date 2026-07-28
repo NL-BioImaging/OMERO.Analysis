@@ -13,7 +13,8 @@ import type {
   EvidenceRecord
 } from "./types";
 
-const DB_NAME = "omero-analysis-chat";
+const DB_NAME = "omero-analysis";
+const LEGACY_DB_NAME = "omero-analysis-chat";
 const DB_VERSION = 5;
 const STORES = [
   "projects",
@@ -48,9 +49,9 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-function database(): Promise<IDBDatabase> {
+function openDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(name, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("values")) db.createObjectStore("values");
@@ -75,6 +76,76 @@ function database(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function existingDatabase(name: string): Promise<IDBDatabase | null> {
+  if (typeof indexedDB.databases === "function") {
+    const databases = await indexedDB.databases();
+    if (!databases.some((entry) => entry.name === name)) return null;
+  }
+  return new Promise((resolve, reject) => {
+    let created = false;
+    const request = indexedDB.open(name);
+    request.onupgradeneeded = () => {
+      created = true;
+      request.transaction?.abort();
+    };
+    request.onsuccess = () => resolve(created ? null : request.result);
+    request.onerror = () => {
+      if (created && request.error?.name === "AbortError") {
+        resolve(null);
+      } else {
+        reject(request.error);
+      }
+    };
+  });
+}
+
+async function migrateLegacyDatabase(target: IDBDatabase): Promise<void> {
+  const markerKey = `migration:${LEGACY_DB_NAME}`;
+  const markerTx = target.transaction("values", "readonly");
+  if (await requestValue(markerTx.objectStore("values").get(markerKey))) return;
+  const projectTx = target.transaction("projects", "readonly");
+  if (await requestValue(projectTx.objectStore("projects").count()) > 0) return;
+
+  const legacy = await existingDatabase(LEGACY_DB_NAME);
+  if (!legacy) return;
+  try {
+    for (const storeName of ["values", ...STORES]) {
+      if (!legacy.objectStoreNames.contains(storeName)) continue;
+      const sourceTx = legacy.transaction(storeName, "readonly");
+      const source = sourceTx.objectStore(storeName);
+      const [values, keys] = await Promise.all([
+        requestValue(source.getAll()),
+        requestValue(source.getAllKeys())
+      ]);
+      const targetTx = target.transaction(storeName, "readwrite");
+      const destination = targetTx.objectStore(storeName);
+      values.forEach((value, index) => {
+        if (storeName === "values") destination.put(value, keys[index]);
+        else destination.put(value);
+      });
+      await transactionDone(targetTx);
+    }
+    const completedTx = target.transaction("values", "readwrite");
+    completedTx.objectStore("values").put(
+      { completedAt: new Date().toISOString(), source: LEGACY_DB_NAME },
+      markerKey
+    );
+    await transactionDone(completedTx);
+  } finally {
+    legacy.close();
+  }
+}
+
+let databasePromise: Promise<IDBDatabase> | undefined;
+
+function database(): Promise<IDBDatabase> {
+  databasePromise ??= openDatabase(DB_NAME).then(async (db) => {
+    await migrateLegacyDatabase(db);
+    return db;
+  });
+  return databasePromise;
 }
 
 export async function getValue<T>(key: string): Promise<T | undefined> {

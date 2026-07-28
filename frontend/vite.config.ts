@@ -10,7 +10,7 @@ export default defineConfig({
     )
   },
   build: {
-    outDir: resolve(__dirname, "../src/omero_analysis_chat/static/omero_analysis_chat"),
+    outDir: resolve(__dirname, "../src/omero_analysis/static/omero_analysis"),
     emptyOutDir: false,
     sourcemap: false,
     lib: {

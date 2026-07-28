@@ -4,10 +4,10 @@ import App from "./App";
 import "./style.css";
 
 const root = document.getElementById("root")!;
-const contextNode = document.getElementById("omero-analysis-chat-context");
+const contextNode = document.getElementById("omero-analysis-context");
 const value = (name: string) => root.dataset[name] || "";
-const existing = window.OMERO_ANALYSIS_CHAT;
-window.OMERO_ANALYSIS_CHAT = existing?.runtimeBase ? existing : {
+const existing = window.OMERO_ANALYSIS;
+window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   context: contextNode ? JSON.parse(contextNode.textContent || "null") : null,
   tokenUrl: value("tokenUrl"),
   contextTemplate: value("contextTemplate"),

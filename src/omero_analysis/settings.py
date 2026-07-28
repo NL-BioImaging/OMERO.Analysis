@@ -1,7 +1,7 @@
 from django.conf import settings
 
 
-PREFIX = "omero.web.analysis_chat."
+PREFIX = "omero.web.analysis."
 DEFAULT_EXTENSIONS = (
     ".csv,.tsv,.json,.xlsx,.xls,.parquet,.npy,.npz,.duckdb,.sqlite,.sqlite3,"
     ".png,.svg,.pdf,.txt,.md"
@@ -9,7 +9,7 @@ DEFAULT_EXTENSIONS = (
 
 
 def _setting(name, default):
-    django_name = f"OMERO_ANALYSIS_CHAT_{name.upper()}"
+    django_name = f"OMERO_ANALYSIS_{name.upper()}"
     if hasattr(settings, django_name):
         return getattr(settings, django_name)
     try:
