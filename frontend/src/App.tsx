@@ -63,6 +63,7 @@ import type {
   RuntimeOutput,
   RuntimeProgress,
   ScriptRecord,
+  ScriptVersion,
   WorkflowRecord,
   OutboundPayloadAudit,
   ArtifactRecord,
@@ -116,6 +117,7 @@ import {
 } from "./evidence";
 import { buildRenderBundle } from "./renderBundle";
 import { savedGalleryRequest } from "./savedScriptRender";
+import { visualSaveTitle } from "./saveSuggestions";
 import {
   activityText,
   formatDuration,
@@ -1382,6 +1384,30 @@ export default function App() {
     return createZarrGalleryResult(request, chatId, promptId);
   }
 
+  async function executeSavedScriptVersion(
+    script: ScriptRecord,
+    version: ScriptVersion,
+    code: string,
+    chatId: string,
+    promptId: string
+  ): Promise<{ executionResult: string; renderResult: string | null }> {
+    const executionResult = await executeCode(
+      code,
+      chatId,
+      promptId,
+      true,
+      "script"
+    );
+    const renderResult = await replaySavedGallery(
+      executionResult,
+      chatId,
+      promptId,
+      script.name,
+      version.renderRecipe
+    );
+    return { executionResult, renderResult };
+  }
+
   async function loadWorkflowSkill(
     workflowKey: string,
     skillName: string
@@ -1837,19 +1863,12 @@ export default function App() {
       if (!script || !version) return toolErrorText("Saved script was not found");
       try {
         const bound = bindScriptInputs(version.code, current.files);
-        const executionResult = await executeCode(
+        const { executionResult, renderResult } = await executeSavedScriptVersion(
+          script,
+          version,
           bound.code,
           chatId,
-          promptId,
-          true,
-          "script"
-        );
-        const renderResult = await replaySavedGallery(
-          executionResult,
-          chatId,
-          promptId,
-          script.name,
-          version.renderRecipe
+          promptId
         );
         return JSON.stringify({
           execution: JSON.parse(executionResult),
@@ -1875,15 +1894,24 @@ export default function App() {
       );
       if (!workflow) return toolErrorText("Saved workflow was not found");
       const results: string[] = [];
+      let renders = 0;
       for (const step of workflow.steps) {
         const latest = workspaceRef.current!;
         const script = latest.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
         const version = script?.versions.find((item) => item.version === step.scriptVersion);
-        if (!version) return toolErrorText(`Workflow step ${step.name} is unavailable`);
+        if (!script || !version) return toolErrorText(`Workflow step ${step.name} is unavailable`);
         try {
           await runtime.beginTurn();
           const bound = bindScriptInputs(version.code, latest.files);
-          results.push(await executeCode(bound.code, chatId, promptId, false, "script"));
+          const outcome = await executeSavedScriptVersion(
+            script,
+            version,
+            bound.code,
+            chatId,
+            promptId
+          );
+          results.push(outcome.executionResult);
+          if (outcome.renderResult) renders += 1;
         } catch (error) {
           return toolErrorText(`Workflow step ${step.name} failed: ${String(error)}`);
         }
@@ -1891,6 +1919,7 @@ export default function App() {
       return JSON.stringify({
         workflow: workflow.name,
         steps: workflow.steps.length,
+        renders,
         results
       }).slice(0, MAX_TOOL_TEXT);
     }
@@ -2169,17 +2198,27 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       "\n\n# Continued analysis / automatic repair\n"
     ) || execution.code;
     const scriptHash = await sha256(scriptCode);
-    const suggested = `${slug(promptMessage?.content || "analysis-script")}.py`;
+    const suggestedTitle = visualSaveTitle(
+      current.artifacts,
+      current.files,
+      {
+        chatId: execution.chatId,
+        promptId: execution.promptId,
+        executionIds: related.map((item) => item.id)
+      }
+    ) || titleFromPrompt(promptMessage?.content || "Analysis script");
+    const suggested = `${slug(suggestedTitle)}-analysis.py`;
     const name = (await dialogs.askText(
-      "Save as reusable script",
+      "Script filename",
       suggested,
       "Scripts are versioned and can be copied to compatible OMERO projects."
     ))?.trim();
     if (!name) return;
     const safeName = `${slug(name.replace(/\.py$/i, ""))}.py`;
     const description = (await dialogs.askText(
-      "Script description",
-      promptMessage?.content.slice(0, 180) || "Reusable Analysis Chat workflow"
+      "Script title",
+      suggestedTitle,
+      "Suggested from the generated graph or image title."
     ))?.trim() || "";
     const existing = current.scripts.find((script) =>
       !script.deletedAt && script.name.toLowerCase() === safeName.toLowerCase()
@@ -2237,8 +2276,28 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (!current) return;
     try {
       const bundle = buildRenderBundle(artifact, png, current.executions, current.evidence);
-      const base = slug(artifact.title || "zarr-render");
-      const scriptName = `${base}-analysis.py`;
+      const suggestedTitle = visualSaveTitle(
+        [artifact],
+        [png],
+        {
+          chatId: artifact.chatId,
+          promptId: artifact.promptId
+        }
+      ) || artifact.title || png.name.replace(/\.png$/i, "") || "Zarr render";
+      const requestedName = (await dialogs.askText(
+        "Script filename",
+        `${slug(suggestedTitle)}-analysis.py`,
+        "The analysis, render recipe, PNG, and provenance will be saved together."
+      ))?.trim();
+      if (!requestedName) return;
+      const scriptName = `${slug(requestedName.replace(/\.py$/i, ""))}.py`;
+      const scriptTitle = (await dialogs.askText(
+        "Script title",
+        suggestedTitle,
+        "Suggested from the rendered image or gallery title."
+      ))?.trim();
+      if (!scriptTitle) return;
+      const base = slug(scriptName.replace(/\.py$/i, "").replace(/-analysis$/i, ""));
       const existing = current.scripts.find((item) =>
         !item.deletedAt && item.name.toLowerCase() === scriptName.toLowerCase()
       );
@@ -2247,6 +2306,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const script: ScriptRecord = existing
         ? {
           ...existing,
+          description: scriptTitle,
           currentVersion: version,
           inputContract: inputContractFromCode(bundle.code),
           versions: [...existing.versions, {
@@ -2263,7 +2323,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           id: id(),
           projectId: current.project.id,
           name: scriptName,
-          description: `Reproducible analysis for ${artifact.title}`,
+          description: scriptTitle,
           currentVersion: version,
           inputContract: inputContractFromCode(bundle.code),
           parameters: [],
@@ -2365,19 +2425,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       createdAt: now()
     });
     try {
-      const executionResult = await executeCode(
+      const { renderResult } = await executeSavedScriptVersion(
+        script,
+        version,
         bound.code,
         current.project.activeChatId,
-        promptId,
-        true,
-        "script"
-      );
-      const renderResult = await replaySavedGallery(
-        executionResult,
-        current.project.activeChatId,
-        promptId,
-        script.name,
-        version.renderRecipe
+        promptId
       );
       setStatus(
         renderResult
@@ -2593,6 +2646,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       let availableInputs = current.files.filter(
         (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
       );
+      let rendered = 0;
       for (let index = 0; index < workflow.steps.length; index += 1) {
         const step = workflow.steps[index];
         const latest = workspaceRef.current!;
@@ -2603,7 +2657,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         await runtime.beginTurn();
         turnOutputNames.current.clear();
         const bound = bindScriptInputs(version.code, availableInputs);
-        await executeCode(bound.code, chatId, promptId, true, "script");
+        const outcome = await executeSavedScriptVersion(
+          script,
+          version,
+          bound.code,
+          chatId,
+          promptId
+        );
+        if (outcome.renderResult) rendered += 1;
         const produced = workspaceRef.current!.files.filter(
           (file) => file.source === "result" && file.executionId &&
             workspaceRef.current!.executions.some(
@@ -2616,7 +2677,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       await runtime.syncInputs(current.files.filter(
         (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
       ));
-      setStatus(`Workflow ${workflow.name} completed`);
+      setStatus(
+        `Workflow ${workflow.name} completed` +
+        (rendered ? ` and rendered ${rendered} PNG ${rendered === 1 ? "image" : "images"}` : "")
+      );
     } catch (error) {
       appendMessage(chatId, {
         id: id(),
@@ -2778,13 +2842,21 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       for (const targetRecord of targets) {
         const target = await loadWorkspace(targetRecord.id);
         if (!target) continue;
-        const preparedSteps: string[] = [];
+        const preparedSteps: Array<{
+          script: ScriptRecord;
+          version: ScriptVersion;
+          code: string;
+        }> = [];
         try {
           for (const step of workflow.steps) {
             const script = source.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
             const version = script?.versions.find((item) => item.version === step.scriptVersion);
-            if (!version) throw new Error(`Missing ${step.name}`);
-            preparedSteps.push(bindScriptInputs(version.code, target.files).code);
+            if (!script || !version) throw new Error(`Missing ${step.name}`);
+            preparedSteps.push({
+              script,
+              version,
+              code: bindScriptInputs(version.code, target.files).code
+            });
           }
         } catch {
           skipped.push(targetRecord.name);
@@ -2807,10 +2879,16 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             content: `Batch run workflow ${workflow.name} on ${targetRecord.objectType} ${targetRecord.objectId}`,
             createdAt: now()
           });
-          for (const code of preparedSteps) {
+          for (const step of preparedSteps) {
             await runtime.beginTurn();
             turnOutputNames.current.clear();
-            await executeCode(code, chat.id, promptId, true, "script");
+            await executeSavedScriptVersion(
+              step.script,
+              step.version,
+              step.code,
+              chat.id,
+              promptId
+            );
           }
           await saveWorkspace(workspaceRef.current!);
           completed.push(targetRecord.name);

@@ -181,7 +181,9 @@ export const TOOLS = [
     type: "function",
     function: {
       name: "run_saved_workflow",
-      description: "Run one user-approved workflow locally with isolated ordered steps.",
+      description:
+        "Run one user-approved workflow locally with isolated ordered steps. " +
+        "Every render-enabled script step automatically reproduces its PNG output.",
       parameters: {
         type: "object",
         properties: { workflow_id: { type: "string" } },
