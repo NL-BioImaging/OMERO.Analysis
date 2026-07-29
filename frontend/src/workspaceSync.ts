@@ -1,0 +1,307 @@
+import { sha256 } from "./storage";
+import type {
+  AnalysisWorkspace,
+  ChatRecord,
+  OmeroContext,
+  SyncInventory,
+  SyncInventoryItem,
+  SyncItemKind,
+  SyncPayload
+} from "./types";
+
+const encoder = new TextEncoder();
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)])
+    );
+  }
+  return value;
+}
+
+export function canonicalJson(value: unknown): string {
+  return `${JSON.stringify(canonical(value), null, 2)}\n`;
+}
+
+function chatMarkdown(chat: ChatRecord): string {
+  const lines = [`# ${chat.title}`, "", `Updated: ${chat.updatedAt}`, ""];
+  if (chat.summary) lines.push("## Conversation summary", "", chat.summary, "");
+  for (const message of chat.messages) {
+    if (message.kind === "execution") continue;
+    lines.push(
+      `## ${message.role === "user" ? "User" : "Assistant"}`,
+      "",
+      message.content,
+      ""
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function safeName(value: string): string {
+  return value
+    .replace(/[\\/\u0000-\u001f\u007f]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180) || "analysis";
+}
+
+function slug(value: string): string {
+  return safeName(value)
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase() || "analysis";
+}
+
+async function itemFromBytes(
+  key: string,
+  kind: SyncItemKind,
+  name: string,
+  mimetype: string,
+  logicalPath: string,
+  bytes: Uint8Array,
+  metadata: Record<string, unknown> = {}
+): Promise<SyncInventoryItem> {
+  return {
+    key,
+    kind,
+    name: safeName(name),
+    mimetype,
+    size: bytes.byteLength,
+    sha256: await sha256(bytes.slice().buffer),
+    logicalPath,
+    metadata
+  };
+}
+
+export async function buildWorkspaceSyncPayload(
+  workspace: AnalysisWorkspace,
+  context: OmeroContext
+): Promise<SyncPayload> {
+  const items: SyncInventoryItem[] = [];
+  const bytes = new Map<string, Uint8Array>();
+  const add = async (
+    key: string,
+    kind: SyncItemKind,
+    name: string,
+    mimetype: string,
+    logicalPath: string,
+    data: Uint8Array,
+    metadata: Record<string, unknown> = {}
+  ) => {
+    if (bytes.has(key)) throw new Error(`Duplicate synchronization item key: ${key}`);
+    bytes.set(key, data);
+    items.push(await itemFromBytes(
+      key, kind, name, mimetype, logicalPath, data, metadata
+    ));
+  };
+
+  for (const file of workspace.files
+    .filter((entry) => entry.source === "result" && !entry.deletedAt)
+    .sort((left, right) => left.id.localeCompare(right.id))) {
+    if (!file.data) {
+      throw new Error(`Result ${file.name} is unavailable in this browser`);
+    }
+    const data = new Uint8Array(file.data.slice(0));
+    await add(
+      `result:${file.id}`,
+      file.type === "image/png" ? "png-image" : "result",
+      file.name,
+      file.type || "application/octet-stream",
+      file.logicalPath,
+      data,
+      {
+        fileId: file.id,
+        chatId: file.chatId || null,
+        methodId: file.methodId || null,
+        pipelineId: file.pipelineId || null,
+        notebookId: file.notebookId || null,
+        executionId: file.executionId || null,
+        viewer: file.viewer || null
+      }
+    );
+  }
+
+  for (const file of workspace.files
+    .filter((entry) =>
+      entry.source !== "result" &&
+      !entry.deletedAt &&
+      entry.state === "ready" &&
+      /template/i.test(entry.name)
+    )
+    .sort((left, right) => left.id.localeCompare(right.id))) {
+    if (!file.data) {
+      throw new Error(`Template input ${file.name} is unavailable in this browser`);
+    }
+    await add(
+      `template-input:${file.id}`,
+      "template-input",
+      file.name,
+      file.type || "application/octet-stream",
+      `Templates/${file.name}`,
+      new Uint8Array(file.data.slice(0)),
+      {
+        fileId: file.id,
+        source: file.source,
+        sourceAnnotationId: file.annotationId || null,
+        originalLogicalPath: file.logicalPath
+      }
+    );
+  }
+
+  for (const chat of workspace.chats
+    .filter((entry) => !entry.deletedAt)
+    .sort((left, right) => left.id.localeCompare(right.id))) {
+    const base = `Chat/${slug(chat.title)}`;
+    await add(
+      `chat:${chat.id}:json`,
+      "chat-json",
+      `${slug(chat.title)}--chat.json`,
+      "application/json",
+      `${base}/chat.json`,
+      encoder.encode(canonicalJson({
+        schema: "nl.bioimaging.analysis.chat.v1",
+        chat
+      })),
+      { chatId: chat.id, title: chat.title }
+    );
+    await add(
+      `chat:${chat.id}:markdown`,
+      "chat-markdown",
+      `${slug(chat.title)}--chat.md`,
+      "text/markdown",
+      `${base}/chat.md`,
+      encoder.encode(chatMarkdown(chat)),
+      { chatId: chat.id, title: chat.title }
+    );
+  }
+
+  for (const method of workspace.methods
+    .filter((entry) => !entry.deletedAt)
+    .sort((left, right) => left.id.localeCompare(right.id))) {
+    const bundle = encoder.encode(canonicalJson({
+      schema: "nl.bioimaging.analysis.method.v1",
+      version: 1,
+      method
+    }));
+    await add(
+      `method:${method.id}`,
+      "method",
+      `${slug(method.name.replace(/\.py$/i, ""))}.oa-method.json`,
+      "application/json",
+      `Methods/${method.name}`,
+      bundle,
+      {
+        methodId: method.id,
+        description: method.description,
+        currentVersion: method.currentVersion,
+        requiredCapabilities: method.requiredCapabilities || [],
+        requiredFormats: method.inputContract?.formats || []
+      }
+    );
+    const current = method.versions.find(
+      (version) => version.version === method.currentVersion
+    );
+    if (current) {
+      await add(
+        `method:${method.id}:python`,
+        "method-python",
+        method.name,
+        "text/x-python",
+        `Methods/${method.name}`,
+        encoder.encode(`${current.code.trimEnd()}\n`),
+        {
+          methodId: method.id,
+          currentVersion: method.currentVersion,
+          canonicalItemKey: `method:${method.id}`
+        }
+      );
+    }
+  }
+
+  for (const pipeline of workspace.pipelines
+    .filter((entry) => !entry.deletedAt)
+    .sort((left, right) => left.id.localeCompare(right.id))) {
+    const dependencies = Array.from(new Set(
+      pipeline.steps.map((step) => `method:${step.methodId}`)
+    )).sort();
+    const dependencyMethods = pipeline.steps
+      .map((step) => workspace.methods.find((method) =>
+        method.id === step.methodId && !method.deletedAt
+      ))
+      .filter((method) => Boolean(method));
+    await add(
+      `pipeline:${pipeline.id}`,
+      "pipeline",
+      `${slug(pipeline.name)}.oa-pipeline.json`,
+      "application/json",
+      `Pipelines/${pipeline.name}`,
+      encoder.encode(canonicalJson({
+        schema: "nl.bioimaging.analysis.pipeline.v1",
+        version: 1,
+        pipeline
+      })),
+      {
+        pipelineId: pipeline.id,
+        description: pipeline.description,
+        version: pipeline.version,
+        dependencies,
+        requiredCapabilities: Array.from(new Set(
+          dependencyMethods.flatMap((method) => method?.requiredCapabilities || [])
+        )).sort(),
+        requiredFormats: Array.from(new Set(
+          dependencyMethods.flatMap((method) => method?.inputContract?.formats || [])
+        )).sort()
+      }
+    );
+  }
+
+  for (const notebook of workspace.notebooks
+    .sort((left, right) => left.id.localeCompare(right.id))) {
+    await add(
+      `notebook:${notebook.id}`,
+      "notebook",
+      notebook.name,
+      "application/x-ipynb+json",
+      `Notebooks/${notebook.name}`,
+      encoder.encode(canonicalJson(notebook.document)),
+      {
+        notebookId: notebook.id,
+        sourceAnnotationId: notebook.sourceAnnotationId || null
+      }
+    );
+  }
+
+  items.sort((left, right) => left.key.localeCompare(right.key));
+  const unsigned = {
+    schema: "nl.bioimaging.analysis.sync.inventory.v1" as const,
+    workspace: {
+      id: workspace.workspace.id,
+      name: workspace.workspace.name,
+      sourceObjectType: context.object_type,
+      sourceObjectId: context.object_id,
+      sourceObjectName: context.name,
+      userId: context.user_id,
+      groupId: context.group_id
+    },
+    items
+  };
+  const inventory: SyncInventory = {
+    ...unsigned,
+    digest: await sha256(canonicalJson(unsigned))
+  };
+  return { inventory, bytes };
+}
+
+export function syncHasChanges(
+  localDigest: string,
+  remoteDigest: string
+): boolean {
+  return Boolean(localDigest && localDigest !== remoteDigest);
+}

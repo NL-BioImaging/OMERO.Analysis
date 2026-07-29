@@ -80,4 +80,20 @@ describe("ExecutionCard", () => {
     expect(screen.queryByRole("button", { name: "Save as method" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Rerun" })).not.toBeInTheDocument();
   });
+
+  it("waits for the assistant summary before allowing a Method save", () => {
+    render(
+      <ExecutionCard
+        execution={execution({ purpose: "analysis" })}
+        files={[]}
+        onSave={vi.fn()}
+        onRerun={vi.fn()}
+        saveDisabled
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Save as method" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save as method" }))
+      .toHaveAttribute("title", expect.stringMatching(/assistant has finished/i));
+  });
 });

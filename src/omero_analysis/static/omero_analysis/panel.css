@@ -128,6 +128,90 @@
 }
 .omero-analysis-center .oa-empty-state strong { color: #536a75; font-size: 12px; }
 .omero-analysis-center .oa-panel-error { color: #a42222; }
+.omero-analysis-center .oa-library-search {
+  display: block; margin: 0 0 10px 32px;
+}
+.omero-analysis-center .oa-library-search input {
+  background: #fff; border: 1px solid var(--oa-border); border-radius: 7px;
+  box-sizing: border-box; color: #24343d; font: inherit; font-size: 12px;
+  padding: 8px 10px; width: min(520px, 100%);
+}
+.omero-analysis-center .oa-visually-hidden {
+  clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px;
+  overflow: hidden; position: absolute; white-space: nowrap; width: 1px;
+}
+.omero-analysis-center .oa-library-tree {
+  background: #f8fafb; border: 1px solid var(--oa-border); border-radius: 9px;
+  font-size: 12px; overflow: visible; padding: 7px;
+}
+.omero-analysis-center .oa-tree-root,
+.omero-analysis-center .oa-tree-dataset > summary,
+.omero-analysis-center .oa-tree-group > summary {
+  align-items: center; border-radius: 5px; cursor: pointer; display: grid;
+  gap: 7px; grid-template-columns: 14px 18px minmax(0, 1fr) auto;
+  list-style: none; min-height: 31px; padding: 4px 6px;
+}
+.omero-analysis-center .oa-tree-root {
+  background: #eaf1f4; border: 1px solid #d4e0e5;
+}
+.omero-analysis-center .oa-tree-dataset > summary:hover,
+.omero-analysis-center .oa-tree-group > summary:hover,
+.omero-analysis-center .oa-library-item label:hover { background: #edf4f6; }
+.omero-analysis-center .oa-tree-dataset > summary::-webkit-details-marker,
+.omero-analysis-center .oa-tree-group > summary::-webkit-details-marker { display: none; }
+.omero-analysis-center .oa-tree-chevron {
+  color: #6b7f89; display: inline-block; font-size: 16px; text-align: center;
+  transition: transform .12s ease;
+}
+.omero-analysis-center .oa-tree-dataset[open] > summary .oa-tree-chevron,
+.omero-analysis-center .oa-tree-group[open] > summary .oa-tree-chevron {
+  transform: rotate(90deg);
+}
+.omero-analysis-center .oa-tree-folder {
+  display: block; height: 16px; object-fit: contain; width: 16px;
+}
+.omero-analysis-center .oa-tree-root > small,
+.omero-analysis-center .oa-tree-dataset > summary > small,
+.omero-analysis-center .oa-tree-group > summary > small { color: var(--oa-muted); }
+.omero-analysis-center .oa-tree-dataset > summary span:nth-child(3) {
+  display: flex; flex-direction: column; min-width: 0;
+}
+.omero-analysis-center .oa-tree-dataset > summary span:nth-child(3) small {
+  color: var(--oa-muted); font-size: 10px;
+}
+.omero-analysis-center .oa-tree-children {
+  border-left: 1px solid #d9e2e7; margin-left: 10px; padding-left: 7px;
+}
+.omero-analysis-center .oa-tree-group ul {
+  list-style: none; margin: 0 0 3px 18px; padding: 0;
+}
+.omero-analysis-center .oa-library-item label {
+  align-items: center; border-radius: 5px; cursor: pointer; display: grid;
+  gap: 8px; grid-template-columns: auto 27px minmax(0, 1fr);
+  min-height: 38px; padding: 4px 6px;
+}
+.omero-analysis-center .oa-library-item input { height: 16px; margin: 0; width: 16px; }
+.omero-analysis-center .oa-library-kind {
+  align-items: center; background: #e1edf1; border-radius: 4px; color: #176b87;
+  display: inline-flex; font-size: 9px; font-weight: 750; height: 23px;
+  justify-content: center; width: 27px;
+}
+.omero-analysis-center .oa-library-kind-pipeline { color: #86651f; }
+.omero-analysis-center .oa-library-kind-notebook { color: #72528f; }
+.omero-analysis-center .oa-library-no-match {
+  color: var(--oa-muted); padding: 14px; text-align: center;
+}
+.omero-analysis-center .oa-notebook-upload-row {
+  align-items: center; background: var(--oa-surface-soft);
+  border: 1px solid var(--oa-border); border-radius: 8px; display: flex;
+  gap: 12px; margin: 10px 0 0 32px; padding: 9px 11px;
+}
+.omero-analysis-center .oa-notebook-upload-row strong {
+  color: #304650; flex: 0 0 auto; font-size: 11px;
+}
+.omero-analysis-center .oa-notebook-upload-row input {
+  color: var(--oa-muted); font-size: 11px; min-width: 0;
+}
 
 @media (max-width: 700px) {
   .omero-analysis-center { padding: 12px; }

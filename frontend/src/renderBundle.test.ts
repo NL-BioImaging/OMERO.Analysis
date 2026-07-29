@@ -142,4 +142,22 @@ describe("reproducible render bundles", () => {
     expect(strFromU8(files["analysis.py"])).toContain("result =");
     expect(JSON.parse(strFromU8(files["evidence-manifest.json"])).source_hashes).toEqual(["input"]);
   });
+
+  it("documents the saved render Method with the final assistant summary", () => {
+    const bundle = buildRenderBundle(
+      artifact,
+      png,
+      [execution("analysis", "analysis")],
+      [evidence],
+      "The selected field contains the fewest cells."
+    );
+    const files = unzipSync(bundle.archive);
+    expect(strFromU8(files["analysis.py"])).toContain(
+      "# The selected field contains the fewest cells."
+    );
+    expect(bundle.sourceCode).toBe('result = "analysis"');
+    expect(bundle.manifest.assistant_summary).toBe(
+      "The selected field contains the fewest cells."
+    );
+  });
 });

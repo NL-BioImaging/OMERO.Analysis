@@ -11,8 +11,62 @@
     <span class="oa-object-badge">{{ context.object_type }}</span>
   </header>
 
+  <div class="oa-actions">
+    <button class="oa-button oa-button-primary oa-open-notebook" type="button">
+      <span aria-hidden="true">&#8599;</span> Open Analysis Notebook
+    </button>
+  </div>
+  <p class="oa-panel-status" role="status" aria-live="polite"></p>
+
   <section class="oa-card">
-    <div class="oa-section-heading"><h3>Attached notebooks</h3></div>
+    <div class="oa-section-heading">
+      <div>
+        <span class="oa-step">1</span>
+        <h3>Select data attachments</h3>
+      </div>
+      <span class="oa-selected-count">0 selected</span>
+    </div>
+    <p class="oa-help">
+      Choose one or more directly attached databases, workbooks, or tables.
+      They are made available to the Notebook under <code>/input</code>.
+    </p>
+    <ul class="oa-attachments">
+      {% for attachment in context.supported_attachments %}
+        <li class="oa-data-card">
+          <label>
+            <input type="checkbox" class="oa-data-attachment"
+                   value="{{ attachment.annotation_id }}">
+            <span class="oa-file-icon" aria-hidden="true">DATA</span>
+            <span class="oa-file-details">
+              <strong>{{ attachment.name }}</strong>
+              <small>
+                {{ attachment.mimetype }} · {{ attachment.size }} bytes
+                <span class="oa-annotation-id">Annotation {{ attachment.annotation_id }}</span>
+              </small>
+            </span>
+            <span class="oa-checkmark" aria-hidden="true">&#10003;</span>
+          </label>
+        </li>
+      {% empty %}
+        <li class="oa-empty-state">
+          <strong>No supported data attachments yet</strong>
+          <span>You can still open Analysis and add browser-local inputs.</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="oa-card">
+    <div class="oa-section-heading">
+      <div>
+        <span class="oa-step">2</span>
+        <h3>Use attached Notebooks</h3>
+      </div>
+    </div>
+    <p class="oa-help">
+      Select an attached Python notebook, or upload and attach one to this
+      OMERO object.
+    </p>
     <ul class="oa-attachments">
       {% for notebook in context.notebooks %}
         <li class="oa-data-card">
@@ -24,46 +78,23 @@
               <strong>{{ notebook.name }}</strong>
               <small>{{ notebook.size }} bytes · Annotation {{ notebook.annotation_id }}</small>
             </span>
+            <span class="oa-checkmark" aria-hidden="true">&#10003;</span>
           </label>
         </li>
       {% empty %}
         <li class="oa-empty-state"><strong>No attached notebooks</strong></li>
       {% endfor %}
     </ul>
-  </section>
-
-  <section class="oa-card">
-    <div class="oa-section-heading"><h3>Data for /input</h3></div>
-    <ul class="oa-attachments">
-      {% for attachment in context.supported_attachments %}
-        <li class="oa-data-card">
-          <label>
-            <input type="checkbox" class="oa-data-attachment"
-                   value="{{ attachment.annotation_id }}">
-            <span class="oa-file-details"><strong>{{ attachment.name }}</strong></span>
-          </label>
-        </li>
-      {% empty %}
-        <li class="oa-empty-state"><span>No supported data attachments.</span></li>
-      {% endfor %}
-    </ul>
-  </section>
-
-  {% if context.can_annotate %}
-    <section class="oa-card">
-      <label>
-        <strong>Upload and attach a Python notebook</strong>
-        <input type="file" class="oa-notebook-upload" accept=".ipynb,application/x-ipynb+json">
+    {% if context.can_annotate %}
+      <label class="oa-notebook-upload-row">
+        <strong>Upload Notebook</strong>
+        <input type="file" class="oa-notebook-upload"
+               accept=".ipynb,application/x-ipynb+json">
       </label>
-    </section>
-  {% else %}
-    <p class="oa-help">This context is read-only. Existing notebooks can be opened.</p>
-  {% endif %}
+    {% else %}
+      <p class="oa-help">This context is read-only. Existing notebooks can be opened.</p>
+    {% endif %}
+  </section>
 
-  <div class="oa-actions">
-    <button class="oa-button oa-button-primary oa-open-notebook" type="button">
-      Open Analysis Notebook
-    </button>
-  </div>
-  <p class="oa-panel-status" role="status" aria-live="polite"></p>
+  {% include "omero_analysis/analysis_library_tree.html" %}
 </section>

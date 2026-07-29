@@ -15,6 +15,11 @@ urlpatterns = [
         name="omero_analysis_runtime_asset",
     ),
     re_path(
+        r"^api/session/keepalive/$",
+        views.session_keepalive,
+        name="omero_analysis_session_keepalive",
+    ),
+    re_path(
         r"^panel/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.panel,
         name="omero_analysis_panel",
@@ -79,6 +84,45 @@ urlpatterns = [
         r"^api/notebooks/(?P<object_type>\w+)/(?P<object_id>\d+)/upload/$",
         views.upload_notebook,
         name="omero_analysis_notebook_upload",
+    ),
+    re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/$",
+        views.workspace_sync_status,
+        name="omero_analysis_workspace_sync_status",
+    ),
+    re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/plan/$",
+        views.workspace_sync_plan,
+        name="omero_analysis_workspace_sync_plan",
+    ),
+    re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/apply/$",
+        views.workspace_sync_apply,
+        name="omero_analysis_workspace_sync_apply",
+    ),
+    re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/remove/$",
+        views.workspace_sync_remove,
+        name="omero_analysis_workspace_sync_remove",
+    ),
+    re_path(
+        r"^api/workspace-library/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
+        views.workspace_library,
+        name="omero_analysis_workspace_library",
+    ),
+    re_path(
+        r"^api/workspace-library/item/(?P<annotation_id>\d+)/download/$",
+        views.workspace_library_download,
+        name="omero_analysis_workspace_library_download",
+    ),
+    re_path(
+        r"^api/settings/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
+        views.analysis_settings,
+        name="omero_analysis_settings",
     ),
     re_path(
         r"^api/workflow-skills/$",

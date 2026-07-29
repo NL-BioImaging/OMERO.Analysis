@@ -42,8 +42,17 @@ export interface Bootstrap {
   pipelineDownloadTemplate: string;
   notebookDownloadTemplate: string;
   notebookUploadTemplate: string;
+  workspaceSyncStatusTemplate: string;
+  workspaceSyncPlanTemplate: string;
+  workspaceSyncApplyTemplate: string;
+  workspaceSyncRemoveTemplate: string;
+  workspaceLibraryTemplate: string;
+  workspaceLibraryDownloadTemplate: string;
+  analysisSettingsTemplate: string;
   workflowSkillsUrl: string;
   zarrViewerStatusUrl: string;
+  keepaliveUrl: string;
+  keepaliveInterval: number;
   runtimeBase: string;
 }
 
@@ -171,6 +180,14 @@ export interface WorkspaceRecord {
     snapshotAnnotationId?: number;
   };
   zarrBindings?: Record<string, ZarrBinding>;
+  omeroSync?: {
+    projectId: number;
+    datasetId: number;
+    manifestAnnotationId: number;
+    remoteRevision: number;
+    inventoryDigest: string;
+    lastSyncedAt: string;
+  };
   revision?: number;
   deletedAt?: string;
   createdAt: string;
@@ -329,6 +346,7 @@ export interface MethodRecord {
   parameters?: ParameterDefinition[];
   requiredCapabilities?: string[];
   workspaceBindings?: Record<string, Record<string, string>>;
+  libraryOrigin?: LibraryOrigin;
   deletedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -350,6 +368,7 @@ export interface PipelineRecord {
   description: string;
   version: number;
   steps: PipelineStep[];
+  libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -528,6 +547,53 @@ export interface ProviderSettings {
   rememberKey: boolean;
 }
 
+export interface AiProfile {
+  id: string;
+  name: string;
+  settings: ProviderSettings;
+}
+
+export interface AiProfileStore {
+  activeProfileId: string;
+  profiles: AiProfile[];
+}
+
+export interface CustomSkill {
+  id: string;
+  name: string;
+  description: string;
+  filename: string;
+  sourceType: "upload" | "url";
+  sourceUrl?: string;
+  content: string;
+  sha256: string;
+  extensions: string[];
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface AnalysisSettingsBundle {
+  schema: "nl.bioimaging.analysis.settings.bundle.v1";
+  analysis: {
+    plotCsv: boolean;
+  };
+  ai: AiProfileStore;
+  skills: CustomSkill[];
+}
+
+export interface AnalysisSettingsStatus {
+  schema: "nl.bioimaging.analysis.settings.bundle.v1";
+  synced: boolean;
+  projectId?: number;
+  datasetId?: number;
+  annotationId?: number;
+  payload?: AnalysisSettingsBundle | null;
+  aiDatasetId?: number;
+  skillsDatasetId?: number;
+  profileCount?: number;
+  skillCount?: number;
+}
+
 export interface RuntimeOutput {
   stdout: string;
   stderr: string;
@@ -598,8 +664,121 @@ export interface NotebookRecord {
   sourceAnnotationId?: number;
   attachmentIds: number[];
   selectedDataFileIds: string[];
+  libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LibraryOrigin {
+  projectId: number;
+  datasetId: number;
+  workspaceId: string;
+  itemKey: string;
+  revision: number;
+  sha256: string;
+}
+
+export type SyncItemKind =
+  | "png-image"
+  | "result"
+  | "template-input"
+  | "chat-json"
+  | "chat-markdown"
+  | "method"
+  | "method-python"
+  | "pipeline"
+  | "notebook";
+
+export interface SyncInventoryItem {
+  key: string;
+  kind: SyncItemKind;
+  name: string;
+  mimetype: string;
+  size: number;
+  sha256: string;
+  logicalPath: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SyncInventory {
+  schema: "nl.bioimaging.analysis.sync.inventory.v1";
+  workspace: {
+    id: string;
+    name: string;
+    sourceObjectType: OmeroObjectType;
+    sourceObjectId: number;
+    sourceObjectName: string;
+    userId: number;
+    groupId: number;
+  };
+  items: SyncInventoryItem[];
+  digest: string;
+}
+
+export interface SyncPayload {
+  inventory: SyncInventory;
+  bytes: Map<string, Uint8Array>;
+}
+
+export interface SyncStatus {
+  schema: "nl.bioimaging.analysis.sync.status.v1";
+  canSync: boolean;
+  reason: string;
+  linked: boolean;
+  projectId?: number;
+  projectName?: string;
+  datasetId?: number;
+  datasetName?: string;
+  manifestAnnotationId?: number;
+  remoteRevision: number;
+  inventoryDigest: string;
+  itemCount: number;
+  lastSyncedAt?: string;
+}
+
+export interface SyncPlan {
+  schema: "nl.bioimaging.analysis.sync.plan.v1";
+  planToken: string;
+  projectName: string;
+  datasetName: string;
+  uploadKeys: string[];
+  create: number;
+  update: number;
+  delete: number;
+  unchanged: number;
+  uploadBytes: number;
+  remoteRevision: number;
+}
+
+export type LibraryItemKind = "method" | "pipeline" | "notebook";
+
+export interface LibraryItem {
+  key: string;
+  kind: LibraryItemKind;
+  name: string;
+  description: string;
+  version: number;
+  sha256: string;
+  size: number;
+  annotationId: number;
+  mimetype: string;
+  requiredCapabilities: string[];
+  requiredFormats: string[];
+  dependencies: string[];
+}
+
+export interface LibraryDataset {
+  projectId: number;
+  datasetId: number;
+  datasetName: string;
+  workspaceId: string;
+  workspaceName: string;
+  sourceObjectType: OmeroObjectType;
+  sourceObjectId: number;
+  sourceObjectName: string;
+  revision: number;
+  updatedAt: string;
+  items: LibraryItem[];
 }
 
 declare global {

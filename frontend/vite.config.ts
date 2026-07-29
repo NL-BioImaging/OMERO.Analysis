@@ -9,6 +9,11 @@ export default defineConfig({
       process.env.VITEST ? "test" : "production"
     )
   },
+  server: {
+    fs: {
+      allow: [resolve(__dirname, "..")]
+    }
+  },
   build: {
     outDir: resolve(__dirname, "../src/omero_analysis/static/omero_analysis"),
     emptyOutDir: false,

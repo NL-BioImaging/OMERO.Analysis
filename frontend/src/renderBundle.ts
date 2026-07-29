@@ -6,10 +6,12 @@ import type {
   WorkspaceFile,
   ZarrRenderRecipe
 } from "./types";
+import { withAssistantSummaryComments } from "./methodDocumentation";
 
 export interface RenderBundle {
   archive: Uint8Array;
   code: string;
+  sourceCode: string;
   recipe: ZarrRenderRecipe;
   manifest: Record<string, unknown>;
   execution: ExecutionRecord;
@@ -39,16 +41,18 @@ export function buildRenderBundle(
   artifact: ArtifactRecord,
   png: WorkspaceFile,
   executions: ExecutionRecord[],
-  evidence: EvidenceRecord[]
+  evidence: EvidenceRecord[],
+  assistantSummary = ""
 ): RenderBundle {
   const recipe = artifact.viewer?.renderRecipe;
   if (!recipe) throw new Error("This preview has no reproducible render recipe");
   if (!png.data) throw new Error("The rendered PNG is unavailable in this browser workspace");
   const selected = selectReproducibleExecutions(executions, artifact);
   if (!selected.length) throw new Error("No successful analysis or inspection code produced this render");
-  const code = Array.from(new Set(selected.map((item) => item.code.trimEnd()))).join(
+  const sourceCode = Array.from(new Set(selected.map((item) => item.code.trimEnd()))).join(
     "\n\n# Continued verified analysis\n"
   );
+  const code = withAssistantSummaryComments(sourceCode, assistantSummary);
   const citedIds = new Set(artifact.viewer?.evidenceIds || []);
   const cited = evidence.filter((item) =>
     item.status === "success" &&
@@ -63,6 +67,7 @@ export function buildRenderBundle(
       render_kind: artifact.viewer?.renderKind || "roi",
       png_sha256: png.sha256
     },
+    assistant_summary: assistantSummary || null,
     source_hashes: Array.from(new Set(cited.flatMap((item) => item.sourceHashes))).sort(),
     skill_hashes: Array.from(new Set(cited.flatMap((item) => item.skillHashes))).sort(),
     evidence: cited.map((item) => ({
@@ -90,5 +95,12 @@ export function buildRenderBundle(
     "render.png": new Uint8Array(png.data),
     "evidence-manifest.json": encoded(`${JSON.stringify(manifest, null, 2)}\n`)
   }, { level: 6 });
-  return { archive, code, recipe, manifest, execution: selected.at(-1)! };
+  return {
+    archive,
+    code,
+    sourceCode,
+    recipe,
+    manifest,
+    execution: selected.at(-1)!
+  };
 }

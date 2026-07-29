@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omero-analysis"
-version = "0.9.4"
+version = "0.10.0"
 description = "Browser-local Chat and run-only Notebook analysis for OMERO.web"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,9 @@ classifiers = [
 dependencies = [
   "omero-web>=5.6.0",
   "packaging>=23",
+  "numpy>=1.24,<3",
+  "Pillow>=10,<13",
+  "cryptography>=42,<50",
 ]
 
 [project.optional-dependencies]

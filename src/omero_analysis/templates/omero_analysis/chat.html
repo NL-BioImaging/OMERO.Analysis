@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <title>OMERO Analysis</title>
-  <link rel="stylesheet" href="{% static 'omero_analysis/app.css' %}">
+  <link rel="stylesheet" href="{% static 'omero_analysis/app.css' %}?v=0.10.0-settings-help2">
 </head>
 <body>
   <div id="root"
@@ -23,12 +23,21 @@
        data-pipeline-download-template="{% url 'omero_analysis_pipeline_download' annotation_id=1 %}"
        data-notebook-download-template="{% url 'omero_analysis_notebook_download' annotation_id=1 %}"
        data-notebook-upload-template="{% url 'omero_analysis_notebook_upload' object_type='TYPE' object_id=1 %}"
+       data-workspace-sync-status-template="{% url 'omero_analysis_workspace_sync_status' object_type='TYPE' object_id=1 workspace_id='WORKSPACE' %}"
+       data-workspace-sync-plan-template="{% url 'omero_analysis_workspace_sync_plan' object_type='TYPE' object_id=1 workspace_id='WORKSPACE' %}"
+       data-workspace-sync-apply-template="{% url 'omero_analysis_workspace_sync_apply' object_type='TYPE' object_id=1 workspace_id='WORKSPACE' %}"
+       data-workspace-sync-remove-template="{% url 'omero_analysis_workspace_sync_remove' object_type='TYPE' object_id=1 workspace_id='WORKSPACE' %}"
+       data-workspace-library-template="{% url 'omero_analysis_workspace_library' object_type='TYPE' object_id=1 %}"
+       data-workspace-library-download-template="{% url 'omero_analysis_workspace_library_download' annotation_id=1 %}"
+       data-analysis-settings-template="{% url 'omero_analysis_settings' object_type='TYPE' object_id=1 %}"
        data-workflow-skills-url="{% url 'omero_analysis_workflow_skills' %}"
        data-zarr-viewer-status-url="{% url 'omero_analysis_zarr_viewer_integration' %}"
+       data-keepalive-url="{% url 'omero_analysis_session_keepalive' %}"
+       data-keepalive-interval="{{ keepalive_interval }}"
        data-runtime-base="{% url 'omero_analysis_runtime_asset' asset_path='ASSET' %}">
     <div class="boot-message">Starting OMERO Analysis…</div>
   </div>
   {{ context|json_script:"omero-analysis-context" }}
-  <script type="module" src="{% static 'omero_analysis/app.js' %}"></script>
+  <script type="module" src="{% static 'omero_analysis/app.js' %}?v=0.10.0-settings-help2"></script>
 </body>
 </html>

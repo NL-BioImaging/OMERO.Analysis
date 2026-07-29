@@ -43,6 +43,9 @@ def test_context_token_reports_permissions():
         "pipeline_download",
         "notebook_download",
         "hierarchy",
+        "library_list",
+        "library_download",
+        "settings_read",
     ]
 
 
@@ -79,6 +82,13 @@ def test_runtime_sandbox_has_an_isolated_boot_policy():
     assert "connect-src http://testserver" in policy
     assert "default-src 'none'" in policy
     assert b'oa-bootstrap' in response.content
+
+
+def test_session_keepalive_marks_the_browser_session_for_renewal():
+    request = with_session(RequestFactory().get("/api/session/keepalive/"))
+    response = views.session_keepalive(request, conn=FakeConnection(FakeObject()))
+    assert response.status_code == 200
+    assert request.session.modified is True
 
 
 def test_workspace_snapshot_list_upload_and_download_are_separate_from_inputs():

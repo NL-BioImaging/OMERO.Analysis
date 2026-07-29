@@ -9,6 +9,12 @@ import type {
   WorkflowSkillCatalog,
   WorkflowSkillPackage,
   AnalysisSkillProviderCatalog,
+  LibraryDataset,
+  SyncInventory,
+  SyncPlan,
+  SyncStatus,
+  AnalysisSettingsBundle,
+  AnalysisSettingsStatus,
   ZarrViewerIntegrationStatus
 } from "./types";
 import { zarrViewerStatusFrom } from "./zarrViewer";
@@ -22,6 +28,24 @@ function route(template: string, objectType: string, objectId: number): string {
   return template.replace("TYPE", objectType).replace("/1/", `/${objectId}/`);
 }
 
+function workspaceRoute(
+  template: string,
+  objectType: string,
+  objectId: number,
+  workspaceId: string
+): string {
+  return route(template, objectType, objectId).replace(
+    "WORKSPACE",
+    encodeURIComponent(workspaceId)
+  );
+}
+
+export class OmeroApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 export class OmeroBridge {
   private contextToken = "";
   private operations = new Set<string>();
@@ -30,6 +54,14 @@ export class OmeroBridge {
 
   get canUpload(): boolean {
     return this.operations.has("upload");
+  }
+
+  get canSync(): boolean {
+    return this.operations.has("sync_plan") && this.operations.has("sync_apply");
+  }
+
+  get canSettingsSync(): boolean {
+    return this.operations.has("settings_sync");
   }
 
   async connect(): Promise<void> {
@@ -224,6 +256,158 @@ export class OmeroBridge {
     return attachmentFrom(body.notebook);
   }
 
+  async syncStatus(workspaceId: string): Promise<SyncStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for synchronization");
+    const response = await this.authorizedFetch(workspaceRoute(
+      this.bootstrap.workspaceSyncStatusTemplate,
+      context.object_type,
+      context.object_id,
+      workspaceId
+    ));
+    return syncStatusFrom(await readJson(response));
+  }
+
+  async planWorkspaceSync(inventory: SyncInventory): Promise<SyncPlan> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for synchronization");
+    const response = await this.authorizedFetch(workspaceRoute(
+      this.bootstrap.workspaceSyncPlanTemplate,
+      context.object_type,
+      context.object_id,
+      inventory.workspace.id
+    ), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken()
+      },
+      body: JSON.stringify(inventory)
+    });
+    return syncPlanFrom(await readJson(response));
+  }
+
+  async applyWorkspaceSync(
+    inventory: SyncInventory,
+    plan: SyncPlan,
+    bytes: Map<string, Uint8Array>
+  ): Promise<SyncStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for synchronization");
+    const form = new FormData();
+    form.append("inventory", JSON.stringify(inventory));
+    form.append("plan_token", plan.planToken);
+    const payloadKeys: string[] = [];
+    for (const key of plan.uploadKeys) {
+      const data = bytes.get(key);
+      const item = inventory.items.find((entry) => entry.key === key);
+      if (!data || !item) throw new Error(`Missing synchronization payload ${key}`);
+      payloadKeys.push(key);
+      form.append(
+        "payloads",
+        new Blob([data as BlobPart], { type: item.mimetype }),
+        item.name
+      );
+    }
+    form.append("payload_keys", JSON.stringify(payloadKeys));
+    const response = await this.authorizedFetch(workspaceRoute(
+      this.bootstrap.workspaceSyncApplyTemplate,
+      context.object_type,
+      context.object_id,
+      inventory.workspace.id
+    ), {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken() },
+      body: form
+    });
+    if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
+    return syncStatusFrom(await readJson(response));
+  }
+
+  async removeWorkspaceSync(workspaceId: string): Promise<{
+    removed: number;
+    datasetDeleted: boolean;
+    preservedUnmanaged: number;
+  }> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for synchronization");
+    const response = await this.authorizedFetch(workspaceRoute(
+      this.bootstrap.workspaceSyncRemoveTemplate,
+      context.object_type,
+      context.object_id,
+      workspaceId
+    ), {
+      method: "DELETE",
+      headers: { "X-CSRFToken": csrfToken() }
+    });
+    const body = await readJson(response);
+    return {
+      removed: Number(body.removed || 0),
+      datasetDeleted: Boolean(body.dataset_deleted),
+      preservedUnmanaged: Number(body.preserved_unmanaged || 0)
+    };
+  }
+
+  async workspaceLibrary(): Promise<LibraryDataset[]> {
+    const context = this.bootstrap.context;
+    if (!context) return [];
+    const response = await this.authorizedFetch(route(
+      this.bootstrap.workspaceLibraryTemplate,
+      context.object_type,
+      context.object_id
+    ));
+    const body = await readJson(response);
+    if (!Array.isArray(body.datasets)) throw new Error("OMERO returned an invalid library");
+    return body.datasets as LibraryDataset[];
+  }
+
+  async downloadLibraryItem(annotationId: number): Promise<ArrayBuffer> {
+    const url = this.bootstrap.workspaceLibraryDownloadTemplate.replace(
+      "/1/download/",
+      `/${annotationId}/download/`
+    );
+    const response = await this.authorizedFetch(url);
+    if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
+    return response.arrayBuffer();
+  }
+
+  async analysisSettings(): Promise<AnalysisSettingsStatus> {
+    const context = this.bootstrap.context;
+    if (!context) {
+      return {
+        schema: "nl.bioimaging.analysis.settings.bundle.v1",
+        synced: false,
+        payload: null
+      };
+    }
+    const response = await this.authorizedFetch(route(
+      this.bootstrap.analysisSettingsTemplate,
+      context.object_type,
+      context.object_id
+    ));
+    return await readJson(response) as AnalysisSettingsStatus;
+  }
+
+  async syncAnalysisSettings(
+    bundle: AnalysisSettingsBundle
+  ): Promise<AnalysisSettingsStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for settings synchronization");
+    const response = await this.authorizedFetch(route(
+      this.bootstrap.analysisSettingsTemplate,
+      context.object_type,
+      context.object_id
+    ), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken()
+      },
+      body: JSON.stringify(bundle)
+    });
+    return await readJson(response) as AnalysisSettingsStatus;
+  }
+
   async listWorkflowSkills(): Promise<WorkflowSkillCatalog> {
     const response = await fetch(this.bootstrap.workflowSkillsUrl, {
       credentials: "same-origin"
@@ -372,6 +556,29 @@ async function readJson(response: Response): Promise<any> {
     throw new Error(body.error?.message || `${response.status} ${response.statusText}`);
   }
   return body;
+}
+
+function syncStatusFrom(value: unknown): SyncStatus {
+  const item = record(value, "Workspace synchronization status");
+  if (
+    item.schema !== "nl.bioimaging.analysis.sync.status.v1" ||
+    typeof item.canSync !== "boolean" ||
+    typeof item.linked !== "boolean" ||
+    typeof item.remoteRevision !== "number" ||
+    typeof item.inventoryDigest !== "string"
+  ) throw new Error("OMERO returned an invalid synchronization status");
+  return item as unknown as SyncStatus;
+}
+
+function syncPlanFrom(value: unknown): SyncPlan {
+  const item = record(value, "Workspace synchronization plan");
+  if (
+    item.schema !== "nl.bioimaging.analysis.sync.plan.v1" ||
+    typeof item.planToken !== "string" ||
+    !Array.isArray(item.uploadKeys) ||
+    item.uploadKeys.some((key) => typeof key !== "string")
+  ) throw new Error("OMERO returned an invalid synchronization plan");
+  return item as unknown as SyncPlan;
 }
 
 function record(value: unknown, label: string): Record<string, any> {
@@ -551,6 +758,73 @@ export async function completeChat(
   return settings.protocol === "anthropic"
     ? completeAnthropic(settings, messages, signal, onDelta, tools)
     : completeOpenAi(settings, messages, signal, onDelta, tools);
+}
+
+export async function validateProviderConnection(
+  settings: ProviderSettings,
+  signal: AbortSignal
+): Promise<string> {
+  if (!settings.endpoint.trim()) throw new Error("The API endpoint is empty");
+  if (!settings.model.trim()) throw new Error("The model or deployment is empty");
+  if (!settings.apiKey.trim()) throw new Error("The API key is empty");
+  const endpoint = providerEndpoint(settings);
+  const isAnthropic = settings.protocol === "anthropic";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (isAnthropic) {
+    headers["x-api-key"] = settings.apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+  } else if (settings.authMode === "api-key") {
+    headers["api-key"] = settings.apiKey;
+  } else {
+    headers.Authorization = `Bearer ${settings.apiKey}`;
+  }
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      signal,
+      headers,
+      body: JSON.stringify(isAnthropic ? {
+        model: settings.model,
+        max_tokens: 1,
+        messages: [{ role: "user", content: "Reply OK" }]
+      } : {
+        model: settings.model,
+        max_tokens: 1,
+        messages: [{ role: "user", content: "Reply OK" }]
+      })
+    });
+  } catch (error) {
+    if (signal.aborted) throw new Error("Connection validation timed out");
+    throw new Error(
+      `The browser could not reach the endpoint. Check the URL, TLS certificate, network, and CORS policy. ${String(error)}`
+    );
+  }
+  if (!response.ok) {
+    const detail = await errorText(response);
+    const hint = response.status === 401 || response.status === 403
+      ? " Check the API key and authentication-header type."
+      : response.status === 404
+        ? " Check whether the endpoint is a base URL or a complete API route."
+        : response.status === 400
+          ? " Check the model/deployment name and provider protocol."
+          : "";
+    throw new Error(`${response.status} ${detail}.${hint}`.replace(/\.\./g, "."));
+  }
+  const body = await response.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    throw new Error("The provider responded, but its response was not valid JSON");
+  }
+  if (isAnthropic) {
+    if (!Array.isArray((body as any).content)) {
+      throw new Error("The endpoint responded but not with an Anthropic Messages response");
+    }
+  } else if (!Array.isArray((body as any).choices)) {
+    throw new Error("The endpoint responded but not with an OpenAI-compatible response");
+  }
+  return `Connection validated for ${settings.model} at ${endpoint}`;
 }
 
 export function providerLabel(settings: ProviderSettings): string {

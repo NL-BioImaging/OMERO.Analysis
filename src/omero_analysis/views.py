@@ -4,7 +4,14 @@ from functools import wraps
 from pathlib import Path
 from urllib.parse import quote
 
-from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
+from django.conf import settings
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpResponse,
+    HttpResponseBadRequest,
+    JsonResponse,
+)
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
@@ -40,6 +47,16 @@ from .services import (
     upload_pipeline_annotation,
 )
 from .tokens import make_context_token, validate_context_token
+from .settings_store import load_settings, save_settings
+from .workspace_sync import (
+    apply_sync,
+    library_annotation,
+    library_datasets,
+    plan_sync,
+    remove_sync,
+    sync_status,
+    validate_inventory,
+)
 
 logger = logging.getLogger(__name__)
 WORKFLOW_SKILLS_CONSUMER = "omero-analysis"
@@ -117,6 +134,14 @@ def runtime_sandbox(request, **kwargs):
     return response
 
 
+@require_GET
+@login_required(ignore_login_fail=True)
+def session_keepalive(request, conn=None, **kwargs):
+    """Refresh the browser session and ping the connected OMERO server."""
+    request.session.modified = True
+    return HttpResponse("OK", content_type="text/plain")
+
+
 @login_required(setGroupContext=True)
 def chat(request, conn=None, **kwargs):
     context = None
@@ -161,7 +186,16 @@ def chat(request, conn=None, **kwargs):
                 context["selected_notebook"] = notebook_info.to_dict()
         except AnalysisError as exc:
             return HttpResponseBadRequest(str(exc))
-    response = render(request, "omero_analysis/chat.html", {"context": context})
+    response = render(
+        request,
+        "omero_analysis/chat.html",
+        {
+            "context": context,
+            "keepalive_interval": max(
+                0, int(getattr(settings, "PING_INTERVAL", 60000))
+            ),
+        },
+    )
     response["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self'; "
@@ -176,23 +210,65 @@ def chat(request, conn=None, **kwargs):
     return response
 
 
+def _panel_library_datasets(conn, obj, allowed_kinds=None):
+    kinds = (
+        ("method", "Methods"),
+        ("pipeline", "Pipelines"),
+        ("notebook", "Notebooks"),
+    )
+    datasets = []
+    allowed = set(allowed_kinds or (kind for kind, _label in kinds))
+    for dataset in library_datasets(conn, obj):
+        groups = [
+            {
+                "kind": kind,
+                "label": label,
+                "items": [
+                    item for item in dataset["items"] if item["kind"] == kind
+                ],
+            }
+            for kind, label in kinds
+            if kind in allowed
+        ]
+        visible_groups = [group for group in groups if group["items"]]
+        if not visible_groups:
+            continue
+        visible_items = [
+            item for group in visible_groups for item in group["items"]
+        ]
+        datasets.append({
+            **dataset,
+            "items": visible_items,
+            "groups": visible_groups,
+        })
+    return datasets
+
+
 @login_required(setGroupContext=True)
 def panel(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    context = object_context(object_type, object_id, obj, conn)
+    context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
     return render(
         request,
         "omero_analysis/panel.html",
-        {"context": object_context(object_type, object_id, obj, conn)},
+        {"context": context},
     )
 
 
 @login_required(setGroupContext=True)
 def notebook_panel(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    context = object_context(object_type, object_id, obj, conn)
+    context["analysis_library_datasets"] = _panel_library_datasets(
+        conn, obj, {"notebook"}
+    )
+    context["analysis_library_step"] = "3"
+    context["analysis_library_notebooks_only"] = True
     return render(
         request,
         "omero_analysis/notebook_panel.html",
-        {"context": object_context(object_type, object_id, obj, conn)},
+        {"context": context},
     )
 
 
@@ -365,10 +441,22 @@ def context_token(request, conn=None, **kwargs):
         "pipeline_download",
         "notebook_download",
         "hierarchy",
+        "library_list",
+        "library_download",
+        "settings_read",
     ]
     if can_annotate(obj):
         operations.extend(
-            ["upload", "workspace_upload", "pipeline_upload", "notebook_upload"]
+            [
+                "upload",
+                "workspace_upload",
+                "pipeline_upload",
+                "notebook_upload",
+                "sync_plan",
+                "sync_apply",
+                "sync_remove",
+                "settings_sync",
+            ]
         )
     token, expires_at = make_context_token(
         request, conn, object_type, object_id, obj, operations
@@ -579,3 +667,153 @@ def download_notebook(request, annotation_id, conn=None, **kwargs):
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+def _sync_context(request, conn, operation, object_type, object_id):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    validate_context_token(request, conn, operation, object_type, object_id, obj)
+    return object_type, object_id, obj
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_sync_status(
+    request, object_type, object_id, workspace_id, conn=None, **kwargs
+):
+    _, _, obj = _sync_context(
+        request, conn, "context", object_type, object_id
+    )
+    return JsonResponse(sync_status(conn, obj, workspace_id))
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_sync_plan(
+    request, object_type, object_id, workspace_id, conn=None, **kwargs
+):
+    object_type, object_id, obj = _sync_context(
+        request, conn, "sync_plan", object_type, object_id
+    )
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Request body must be valid JSON") from exc
+    inventory = validate_inventory(
+        payload, workspace_id, object_type, object_id, obj, conn
+    )
+    return JsonResponse(plan_sync(request, conn, obj, inventory))
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_sync_apply(
+    request, object_type, object_id, workspace_id, conn=None, **kwargs
+):
+    object_type, object_id, obj = _sync_context(
+        request, conn, "sync_apply", object_type, object_id
+    )
+    try:
+        inventory_payload = json.loads(request.POST.get("inventory") or "{}")
+        payload_keys = json.loads(request.POST.get("payload_keys") or "[]")
+    except json.JSONDecodeError as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Synchronization multipart metadata must be valid JSON") from exc
+    if not isinstance(payload_keys, list) or not all(
+        isinstance(key, str) for key in payload_keys
+    ):
+        from .errors import InvalidObject
+
+        raise InvalidObject("Synchronization payload keys are invalid")
+    inventory = validate_inventory(
+        inventory_payload, workspace_id, object_type, object_id, obj, conn
+    )
+    result = apply_sync(
+        request,
+        conn,
+        obj,
+        inventory,
+        request.POST.get("plan_token") or "",
+        payload_keys,
+        request.FILES.getlist("payloads"),
+    )
+    return JsonResponse(result)
+
+
+@require_http_methods(["DELETE"])
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_sync_remove(
+    request, object_type, object_id, workspace_id, conn=None, **kwargs
+):
+    _, _, obj = _sync_context(
+        request, conn, "sync_remove", object_type, object_id
+    )
+    return JsonResponse(remove_sync(conn, obj, workspace_id))
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_library(request, object_type, object_id, conn=None, **kwargs):
+    _, _, obj = _sync_context(
+        request, conn, "library_list", object_type, object_id
+    )
+    return JsonResponse({"datasets": library_datasets(conn, obj)})
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def workspace_library_download(request, annotation_id, conn=None, **kwargs):
+    claims = validate_context_token(request, conn, "library_download")
+    _, _, obj = get_context_object(
+        conn, claims["object_type"], claims["object_id"]
+    )
+    validate_context_token(
+        request,
+        conn,
+        "library_download",
+        claims["object_type"],
+        claims["object_id"],
+        obj,
+    )
+    annotation, item = library_annotation(conn, obj, annotation_id)
+    response = ConnCleaningHttpResponse(
+        annotation.getFileInChunks(), content_type=item["mimetype"]
+    )
+    response.conn = conn
+    response["Content-Length"] = str(item["size"])
+    response["Content-Disposition"] = (
+        "attachment; filename*=UTF-8''" + quote(item["name"], safe="")
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@require_http_methods(["GET", "POST"])
+@login_required(setGroupContext=True)
+@api_errors
+def analysis_settings(request, object_type, object_id, conn=None, **kwargs):
+    operation = "settings_read" if request.method == "GET" else "settings_sync"
+    _, _, obj = _sync_context(
+        request, conn, operation, object_type, object_id
+    )
+    from .services import object_group_id
+
+    group_id = object_group_id(obj)
+    if request.method == "GET":
+        return JsonResponse(load_settings(conn, group_id))
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Settings request body must be valid JSON") from exc
+    return JsonResponse(save_settings(conn, group_id, payload), status=201)

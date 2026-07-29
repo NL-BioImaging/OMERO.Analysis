@@ -1,0 +1,98 @@
+{% load static %}
+<section class="oa-card oa-library-card">
+  <div class="oa-section-heading">
+    <div>
+      <span class="oa-step">{{ context.analysis_library_step|default:"+" }}</span>
+      <h3>Reuse from AnalysisWorkspaces</h3>
+    </div>
+    <span class="oa-library-selected-count">0 selected</span>
+    </div>
+    <p class="oa-help">
+      {% if context.analysis_library_notebooks_only %}
+        Browse synchronized Datasets and select reusable Notebooks. Methods and
+        Pipelines are intentionally omitted from this Notebook launcher.
+      {% else %}
+        Browse synchronized Datasets and select reusable Methods, Pipelines, or
+        Notebooks.
+      {% endif %}
+      Analysis opens the library import window with your selection.
+    </p>
+  <label class="oa-library-search">
+    <span class="oa-visually-hidden">Filter AnalysisWorkspaces</span>
+    <input type="search" placeholder="Filter Datasets or reusable items…">
+  </label>
+  <div class="oa-library-tree" role="tree" aria-label="AnalysisWorkspaces library">
+    <div class="oa-tree-root" role="treeitem" aria-expanded="true">
+      <span class="oa-tree-chevron">&#8964;</span>
+      <img class="oa-tree-folder"
+           src="{% static 'webclient/image/folder16.png' %}"
+           alt="">
+      <strong>+AnalysisWorkspaces</strong>
+      <small>{{ context.analysis_library_datasets|length }} Dataset{{ context.analysis_library_datasets|length|pluralize }}</small>
+    </div>
+    <div class="oa-tree-children">
+      {% for dataset in context.analysis_library_datasets %}
+        <details class="oa-tree-dataset"
+                 data-search-text="{{ dataset.datasetName }} {{ dataset.sourceObjectType }} {{ dataset.sourceObjectName }}">
+          <summary>
+            <span class="oa-tree-chevron">&#8250;</span>
+            <img class="oa-tree-folder"
+                 src="{% static 'webclient/image/folder_image16.png' %}"
+                 alt="">
+            <span>
+              <strong>{{ dataset.datasetName }}</strong>
+              <small>
+                {{ dataset.sourceObjectType }}-{{ dataset.sourceObjectId }} ·
+                revision {{ dataset.revision }}
+              </small>
+            </span>
+            <small>{{ dataset.items|length }}</small>
+          </summary>
+          <div class="oa-tree-children">
+            {% for group in dataset.groups %}
+              <details class="oa-tree-group" open>
+                <summary>
+                  <span class="oa-tree-chevron">&#8250;</span>
+                  <img class="oa-tree-folder"
+                       src="{% static 'webclient/image/folder_yellow16.png' %}"
+                       alt="">
+                  <strong>{{ group.label }}</strong>
+                  <small>{{ group.items|length }}</small>
+                </summary>
+                <ul>
+                  {% for item in group.items %}
+                    <li class="oa-library-item"
+                        data-search-text="{{ item.name }} {{ item.kind }} {{ item.description }}">
+                      <label>
+                        <input type="checkbox"
+                               class="oa-library-item-input"
+                               value="{{ item.annotationId }}"
+                               data-kind="{{ item.kind }}">
+                        <span class="oa-library-kind oa-library-kind-{{ item.kind }}">
+                          {% if item.kind == "method" %}Py{% elif item.kind == "pipeline" %}PL{% else %}NB{% endif %}
+                        </span>
+                        <span class="oa-file-details">
+                          <strong>{{ item.name }}</strong>
+                          <small>
+                            v{{ item.version }} · {{ item.size }} bytes
+                            {% if item.description %} · {{ item.description }}{% endif %}
+                          </small>
+                        </span>
+                      </label>
+                    </li>
+                  {% endfor %}
+                </ul>
+              </details>
+            {% endfor %}
+          </div>
+        </details>
+      {% empty %}
+        <div class="oa-empty-state">
+          <strong>No synchronized Analysis Workspaces</strong>
+          <span>Synchronize a browser Workspace to make reusable items available here.</span>
+        </div>
+      {% endfor %}
+      <div class="oa-library-no-match" hidden>No matching reusable items.</div>
+    </div>
+  </div>
+</section>

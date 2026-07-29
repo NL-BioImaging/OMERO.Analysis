@@ -1,5 +1,8 @@
 # OMERO.Analysis
 
+The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
+and through the modeless **Help** window in OMERO.Analysis.
+
 OMERO.Analysis is a browser-local research workspace for OMERO.web. Its one
 Analysis shell has three routable tabs:
 
@@ -51,6 +54,34 @@ automatically creates and links a FileAnnotation in namespace
 The standalone `omero-jupyterlite` package is deprecated and is explicitly
 removed by the Analysis deployment image and update script. Existing OMERO
 FileAnnotations are preserved.
+
+## AnalysisWorkspaces library
+
+**Sync to OMERO** creates a private, managed `+AnalysisWorkspaces` Project for
+the current user and group, then mirrors the browser Workspace into a Dataset.
+Projects, Datasets, imported Images, and source links are discovered through
+`nl.bioimaging.analysis.sync.v1` MapAnnotations; an unmarked same-name Project
+is never adopted.
+
+Synchronization is explicit, one-way, and last-writer-wins. PNG results become
+real grayscale or RGB OMERO Images. Other results, Chats, complete Method
+history, Pipelines, and validated Python notebooks are stored as typed
+FileAnnotations. Source inputs and Workspace snapshot ZIPs are excluded.
+Unchanged objects are reused by stable key and SHA-256; managed remote
+deletions follow local deletions. Unmanaged Dataset content is never changed.
+
+Workspace actions can synchronize, browse/import reusable Methods, Pipelines,
+and Notebooks, or remove the managed mirror. Imports are independent local
+copies carrying library provenance. Pipeline imports also copy their exact
+Method-version dependencies. Imported notebooks select ready local inputs and
+open without running.
+
+Default synchronization limits can be overridden with OMERO.web settings:
+
+- `omero.web.analysis.max_sync_items`: 10,000
+- `omero.web.analysis.max_upload_bytes`: 256 MiB per item
+- `omero.web.analysis.max_sync_changed_bytes`: 512 MiB per synchronization
+- `omero.web.analysis.max_png_pixels`: 100 megapixels
 
 ## Clean-break formats
 
@@ -112,6 +143,13 @@ GET      /omero_analysis/api/pipeline-template/<annotation_id>/download/
 
 GET  /omero_analysis/api/notebook/<annotation_id>/download/
 POST /omero_analysis/api/notebooks/<object_type>/<object_id>/upload/
+
+GET    /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/
+POST   /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/plan/
+POST   /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/apply/
+DELETE /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/remove/
+GET    /omero_analysis/api/workspace-library/<object_type>/<object_id>/
+GET    /omero_analysis/api/workspace-library/item/<annotation_id>/download/
 ```
 
 All object-bound endpoints require an OMERO login, active group context,

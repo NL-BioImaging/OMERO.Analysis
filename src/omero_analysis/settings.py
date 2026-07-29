@@ -42,6 +42,18 @@ def max_notebook_cells():
     return int(_setting("max_notebook_cells", 10000))
 
 
+def max_sync_items():
+    return int(_setting("max_sync_items", 10000))
+
+
+def max_sync_changed_bytes():
+    return int(_setting("max_sync_changed_bytes", 512 * 1024 * 1024))
+
+
+def max_png_pixels():
+    return int(_setting("max_png_pixels", 100_000_000))
+
+
 def allowed_result_extensions():
     value = _setting("allowed_result_extensions", DEFAULT_EXTENSIONS)
     if isinstance(value, str):

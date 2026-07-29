@@ -22,8 +22,17 @@ window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   pipelineDownloadTemplate: value("pipelineDownloadTemplate"),
   notebookDownloadTemplate: value("notebookDownloadTemplate"),
   notebookUploadTemplate: value("notebookUploadTemplate"),
+  workspaceSyncStatusTemplate: value("workspaceSyncStatusTemplate"),
+  workspaceSyncPlanTemplate: value("workspaceSyncPlanTemplate"),
+  workspaceSyncApplyTemplate: value("workspaceSyncApplyTemplate"),
+  workspaceSyncRemoveTemplate: value("workspaceSyncRemoveTemplate"),
+  workspaceLibraryTemplate: value("workspaceLibraryTemplate"),
+  workspaceLibraryDownloadTemplate: value("workspaceLibraryDownloadTemplate"),
+  analysisSettingsTemplate: value("analysisSettingsTemplate"),
   workflowSkillsUrl: value("workflowSkillsUrl"),
   zarrViewerStatusUrl: value("zarrViewerStatusUrl"),
+  keepaliveUrl: value("keepaliveUrl"),
+  keepaliveInterval: Number(value("keepaliveInterval")) || 0,
   runtimeBase: value("runtimeBase").replace(/ASSET$/, "")
 };
 

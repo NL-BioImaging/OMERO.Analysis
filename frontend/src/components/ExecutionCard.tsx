@@ -7,13 +7,15 @@ export function ExecutionCard({
   files,
   onSave,
   onRerun,
-  viewerPreparation = false
+  viewerPreparation = false,
+  saveDisabled = false
 }: {
   execution: ExecutionRecord;
   files: WorkspaceFile[];
   onSave: () => void;
   onRerun: () => void;
   viewerPreparation?: boolean;
+  saveDisabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const outputs = execution.outputFileIds
@@ -37,7 +39,13 @@ export function ExecutionCard({
         onClick={() => setExpanded((value) => !value)}
       >{expanded ? "Collapse" : "Show details"}</button>
       {showReusableActions && (
-        <button onClick={onSave}>Save as method</button>
+        <button
+          disabled={saveDisabled}
+          title={saveDisabled ? "Wait until the assistant has finished its summary" : undefined}
+          onClick={onSave}
+        >
+          Save as method
+        </button>
       )}
       {showReusableActions && <button onClick={onRerun}>Rerun</button>}
       <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>

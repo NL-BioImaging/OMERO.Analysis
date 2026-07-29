@@ -375,12 +375,14 @@ export function ViewerPreviewCard({
   artifact,
   file,
   onInspect,
-  onSaveBundle
+  onSaveBundle,
+  saveDisabled = false
 }: {
   artifact: ArtifactRecord;
   file?: WorkspaceFile;
   onInspect: (file: WorkspaceFile) => void;
   onSaveBundle: (artifact: ArtifactRecord, file: WorkspaceFile) => void;
+  saveDisabled?: boolean;
 }) {
   const viewer = artifact.viewer || file?.viewer;
   if (!viewer) return null;
@@ -414,6 +416,8 @@ export function ViewerPreviewCard({
           {viewer.renderRecipe && (
             <button
               className="button-link"
+              disabled={saveDisabled}
+              title={saveDisabled ? "Wait until the assistant has finished its summary" : undefined}
               onClick={() => onSaveBundle(artifact, file)}
             >
               Save analysis + render

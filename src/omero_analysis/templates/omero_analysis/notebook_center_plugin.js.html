@@ -1,5 +1,5 @@
 {% load static %}
-<link rel="stylesheet" href="{% static 'omero_analysis/panel.css' %}">
+<link rel="stylesheet" href="{% static 'omero_analysis/panel.css' %}?v=0.10.0-settings-help">
 <script>
 $(function () {
   "use strict";
@@ -18,7 +18,42 @@ $(function () {
     var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : "";
   }
-  function analysisUrl(root, notebookId) {
+  function selectedLibraryIds(root) {
+    return Array.from(root.querySelectorAll(".oa-library-item-input:checked"))
+      .map(function (input) { return input.value; });
+  }
+  function updateLibrarySelection(root) {
+    var badge = root.querySelector(".oa-library-selected-count");
+    var count = selectedLibraryIds(root).length;
+    if (badge) badge.textContent = count + " selected";
+  }
+  function filterLibrary(root, query) {
+    var normalized = String(query || "").trim().toLowerCase();
+    var anyDataset = false;
+    root.querySelectorAll(".oa-tree-dataset").forEach(function (dataset) {
+      var datasetText = String(dataset.dataset.searchText || "").toLowerCase();
+      var anyItem = false;
+      dataset.querySelectorAll(".oa-library-item").forEach(function (item) {
+        var visible = !normalized ||
+          datasetText.indexOf(normalized) >= 0 ||
+          String(item.dataset.searchText || "").toLowerCase().indexOf(normalized) >= 0;
+        item.hidden = !visible;
+        if (visible) anyItem = true;
+      });
+      dataset.hidden = !anyItem;
+      if (normalized && anyItem) {
+        dataset.open = true;
+        dataset.querySelectorAll(".oa-tree-group").forEach(function (group) {
+          group.open = Array.from(group.querySelectorAll(".oa-library-item"))
+            .some(function (item) { return !item.hidden; });
+        });
+      }
+      if (anyItem) anyDataset = true;
+    });
+    var empty = root.querySelector(".oa-library-no-match");
+    if (empty) empty.hidden = !normalized || anyDataset;
+  }
+  function analysisUrl(root, notebookId, libraryIds) {
     var url = analysisBase + "?tab=notebook&type=" +
       encodeURIComponent(root.dataset.objectType) + "&id=" +
       encodeURIComponent(root.dataset.objectId);
@@ -26,6 +61,12 @@ $(function () {
       url += "&data_annotation=" + encodeURIComponent(input.value);
     });
     if (notebookId) url += "&notebook_annotation=" + encodeURIComponent(notebookId);
+    if (libraryIds.length) {
+      url += "&open_library=1";
+      libraryIds.forEach(function (annotationId) {
+        url += "&library_item=" + encodeURIComponent(annotationId);
+      });
+    }
     return url;
   }
   function selectedNotebook(root) {
@@ -44,7 +85,11 @@ $(function () {
         if (!response.ok) throw new Error("Could not load notebooks (HTTP " + response.status + ")");
         return response.text();
       })
-      .then(function (html) { panel.html(html); })
+      .then(function (html) {
+        panel.html(html);
+        var root = panel[0].querySelector("[data-object-type]");
+        if (root) updateLibrarySelection(root);
+      })
       .catch(function (error) {
         panel.html('<p class="oa-panel-error"></p>');
         panel.find(".oa-panel-error").text(error.message);
@@ -56,6 +101,14 @@ $(function () {
     supported_obj_types: ["image", "dataset", "plate", "screen"],
     load_plugin_content: function (selected, dtype, oid) { renderSelection(dtype, oid); }
   });
+  panel.on("change", ".oa-library-item-input", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    if (root) updateLibrarySelection(root);
+  });
+  panel.on("input", ".oa-library-search input", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    if (root) filterLibrary(root, event.currentTarget.value);
+  });
   panel.on("click", ".oa-open-notebook", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     var fileInput = root && root.querySelector(".oa-notebook-upload");
@@ -63,11 +116,13 @@ $(function () {
     if (!root) return;
     if (!file) {
       var notebookId = selectedNotebook(root);
-      if (!notebookId) {
-        root.querySelector(".oa-panel-status").textContent = "Select or upload a notebook.";
+      var libraryIds = selectedLibraryIds(root);
+      if (!notebookId && !libraryIds.length) {
+        root.querySelector(".oa-panel-status").textContent =
+          "Select an attached notebook, upload one, or select one from AnalysisWorkspaces.";
         return;
       }
-      window.open(analysisUrl(root, notebookId), "_blank", "noopener");
+      window.open(analysisUrl(root, notebookId, libraryIds), "_blank", "noopener");
       return;
     }
     var status = root.querySelector(".oa-panel-status");
@@ -95,7 +150,11 @@ $(function () {
         return body.notebook.annotation_id;
       }); })
       .then(function (notebookId) {
-        window.open(analysisUrl(root, notebookId), "_blank", "noopener");
+        window.open(
+          analysisUrl(root, notebookId, selectedLibraryIds(root)),
+          "_blank",
+          "noopener"
+        );
       })
       .catch(function (error) { status.textContent = error.message; });
   });

@@ -373,6 +373,8 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
 }
 
 export const settingsKey = "provider:generic";
+export const aiProfilesKey = "provider:profiles:v1";
+export const customSkillsKey = "skills:custom:v1";
 export const defaultSettings: ProviderSettings = {
   protocol: "openai",
   endpoint: "",

@@ -1,4 +1,9 @@
-import { completeChat, OmeroBridge, providerEndpoint } from "./api";
+import {
+  completeChat,
+  OmeroBridge,
+  providerEndpoint,
+  validateProviderConnection
+} from "./api";
 import type { Bootstrap } from "./types";
 
 const bootstrap: Bootstrap = {
@@ -24,8 +29,17 @@ const bootstrap: Bootstrap = {
   pipelineDownloadTemplate: "/pipeline/1/download/",
   notebookDownloadTemplate: "/notebook/1/download/",
   notebookUploadTemplate: "/notebooks/TYPE/1/upload/",
+  workspaceSyncStatusTemplate: "/workspace-sync/TYPE/1/WORKSPACE/",
+  workspaceSyncPlanTemplate: "/workspace-sync/TYPE/1/WORKSPACE/plan/",
+  workspaceSyncApplyTemplate: "/workspace-sync/TYPE/1/WORKSPACE/apply/",
+  workspaceSyncRemoveTemplate: "/workspace-sync/TYPE/1/WORKSPACE/remove/",
+  workspaceLibraryTemplate: "/workspace-library/TYPE/1/",
+  workspaceLibraryDownloadTemplate: "/workspace-library/item/1/download/",
+  analysisSettingsTemplate: "/settings/TYPE/1/",
   workflowSkillsUrl: "/workflow-skills/",
   zarrViewerStatusUrl: "/integrations/zarr-viewer/",
+  keepaliveUrl: "/webclient/keepalive_ping/",
+  keepaliveInterval: 60000,
   runtimeBase: "/runtime/"
 };
 
@@ -249,6 +263,45 @@ describe("AI completion requests", () => {
 
     expect(requestBody).not.toHaveProperty("tools");
     expect(requestBody).not.toHaveProperty("tool_choice");
+    vi.unstubAllGlobals();
+  });
+
+  it("validates a generic OpenAI-compatible endpoint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { role: "assistant", content: "OK" } }]
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    const message = await validateProviderConnection({
+      protocol: "openai",
+      endpoint: "https://provider.example/v1",
+      authMode: "bearer",
+      model: "model",
+      apiKey: "key",
+      rememberKey: false,
+      contextWindow: 0
+    }, new AbortController().signal);
+    expect(message).toContain("Connection validated");
+    expect(fetch).toHaveBeenCalledWith(
+      "https://provider.example/v1/chat/completions",
+      expect.objectContaining({ method: "POST" })
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("reports authentication failures with a useful hint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      error: { message: "invalid key" }
+    }), { status: 401, headers: { "Content-Type": "application/json" } })));
+    await expect(validateProviderConnection({
+      protocol: "openai",
+      endpoint: "https://provider.example/v1",
+      authMode: "api-key",
+      model: "model",
+      apiKey: "bad",
+      rememberKey: false,
+      contextWindow: 0
+    }, new AbortController().signal)).rejects.toThrow(
+      "API key and authentication-header type"
+    );
     vi.unstubAllGlobals();
   });
 });
