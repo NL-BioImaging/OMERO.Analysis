@@ -1,13 +1,13 @@
-import type { ProjectWorkspace } from "./types";
+import type { AnalysisWorkspace } from "./types";
 import {
-  normalizeProjectName,
-  renameProjectWorkspace,
-  trashProjectOutputs
-} from "./projectModel";
+  normalizeWorkspaceName,
+  renameAnalysisWorkspace,
+  trashWorkspaceOutputs
+} from "./workspaceModel";
 
 const workspace = {
-  project: {
-    id: "project",
+  workspace: {
+    id: "workspace",
     contextKey: "7:4:Screen:101:import:1",
     rootPath: "OMERO/Screen-101--2wellstest--imported",
     name: "2Wellstest (imported)",
@@ -23,7 +23,7 @@ const workspace = {
   chats: [],
   files: [{
     id: "file",
-    projectId: "project",
+    workspaceId: "workspace",
     name: "result.csv",
     logicalPath: "OMERO/Screen-101--2wellstest--imported/chats/chat/outputs/result.csv",
     type: "text/csv",
@@ -34,34 +34,35 @@ const workspace = {
     createdAt: "2026-07-26T00:00:00Z"
   }],
   executions: [],
-  scripts: [],
-  workflows: [],
+  methods: [],
+  pipelines: [],
+  notebooks: [],
   artifacts: [],
   audits: [],
   evidence: []
-} satisfies ProjectWorkspace;
+} satisfies AnalysisWorkspace;
 
-describe("project renaming", () => {
+describe("workspace renaming", () => {
   it("normalizes unsafe names", () => {
-    expect(normalizeProjectName("  New / analysis\\project  ")).toBe(
-      "New analysis project"
+    expect(normalizeWorkspaceName("  New / analysis\\workspace  ")).toBe(
+      "New analysis workspace"
     );
   });
 
   it("renames the logical root and every stored file path", () => {
-    const renamed = renameProjectWorkspace(
+    const renamed = renameAnalysisWorkspace(
       workspace,
       "Two well comparison",
       "2026-07-27T12:00:00Z"
     );
-    expect(renamed.project.name).toBe("Two well comparison");
-    expect(renamed.project.rootPath).toBe(
+    expect(renamed.workspace.name).toBe("Two well comparison");
+    expect(renamed.workspace.rootPath).toBe(
       "OMERO/Screen-101--two-well-comparison"
     );
     expect(renamed.files[0].logicalPath).toBe(
       "OMERO/Screen-101--two-well-comparison/chats/chat/outputs/result.csv"
     );
-    expect(workspace.project.rootPath).toBe(
+    expect(workspace.workspace.rootPath).toBe(
       "OMERO/Screen-101--2wellstest--imported"
     );
   });
@@ -80,7 +81,7 @@ describe("bulk output deletion", () => {
       files: [...workspace.files, secondOutput],
       executions: [{
         id: "execution",
-        projectId: "project",
+        workspaceId: "workspace",
         chatId: "chat",
         promptId: "prompt",
         code: "print('test')",
@@ -96,8 +97,8 @@ describe("bulk output deletion", () => {
         model: "model",
         createdAt: "2026-07-26T00:00:00Z"
       }]
-    } satisfies ProjectWorkspace;
-    const deleted = trashProjectOutputs(
+    } satisfies AnalysisWorkspace;
+    const deleted = trashWorkspaceOutputs(
       withProvenance,
       ["file", "second-output"],
       "2026-07-27T12:00:00Z"

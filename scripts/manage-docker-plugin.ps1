@@ -15,11 +15,15 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ContainerPython = "/opt/omero/web/venv3/bin/python"
 $ContainerOmero = "/opt/omero/web/venv3/bin/omero"
 $ContainerConfig = "/opt/omero/web/config/90-omero-analysis.omero"
+$ContainerCleanup = "/startup/49-omero-analysis-cleanup.py"
 $ContainerStatic = "/opt/omero/web/OMERO.web/var/static/omero_analysis"
 $PackageName = "omero-analysis"
 $LegacyContainerConfig = "/opt/omero/web/config/90-omero-analysis-chat.omero"
 $LegacyContainerStatic = "/opt/omero/web/OMERO.web/var/static/omero_analysis_chat"
 $LegacyPackageName = "omero-analysis-chat"
+$JupyterConfig = "/opt/omero/web/config/90-omero-jupyterlite.omero"
+$JupyterStatic = "/opt/omero/web/OMERO.web/var/static/omero_jupyterlite"
+$JupyterPackage = "omero-jupyterlite"
 
 function Resolve-WebContainer {
     if ($Container) {
@@ -85,10 +89,16 @@ function Restart-Web([bool] $ExpectActive) {
 function Show-Status {
     $version = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('$PackageName'))" 2>$null
     Write-Host $(if ($LASTEXITCODE -eq 0) { "Package: installed ($version)" } else { "Package: not installed" })
-    $catalogVersion = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('omero-workflow-skills'))" 2>$null
+    $catalogVersion = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('biomero-workflow-skills'))" 2>$null
     Write-Host $(if ($LASTEXITCODE -eq 0) { "Catalog: installed ($catalogVersion)" } else { "Catalog: not installed" })
     $apps = docker exec $Container $ContainerOmero config get omero.web.apps 2>$null
     Write-Host $(if ($apps -match "omero_analysis") { "OMERO.web: app active" } else { "OMERO.web: app inactive" })
+    $jupyter = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('$JupyterPackage'))" 2>$null
+    Write-Host $(if ($LASTEXITCODE -eq 0 -or $apps -match "omero_jupyterlite") {
+        "JupyterLite: removal incomplete"
+    } else {
+        "JupyterLite: removed"
+    })
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker CLI was not found." }
@@ -107,17 +117,20 @@ switch ($Action) {
 import importlib.metadata as m
 from packaging.version import Version
 try:
-    installed = Version(m.version("omero-workflow-skills"))
+    installed = Version(m.version("biomero-workflow-skills"))
 except m.PackageNotFoundError:
     raise SystemExit(0)
-if not (Version("0.2") <= installed < Version("0.3")):
-    raise SystemExit(f"Incompatible installed omero-workflow-skills {installed}")
+if not (Version("0.3") <= installed < Version("0.4")):
+    raise SystemExit(f"Incompatible installed biomero-workflow-skills {installed}")
 "@
         docker exec $Container $ContainerPython -c $compatibility
-        if ($LASTEXITCODE -ne 0) { throw "The installed workflow catalog is incompatible; the container was not changed." }
+        if ($LASTEXITCODE -ne 0) { throw "The installed measurement-skill provider is incompatible; the container was not changed." }
         docker exec --user root $Container rm -f $LegacyContainerConfig
         docker exec --user root $Container rm -rf $LegacyContainerStatic
         docker exec --user root $Container $ContainerPython -m pip uninstall -y $LegacyPackageName *> $null
+        docker exec --user root $Container rm -f $JupyterConfig
+        docker exec --user root $Container rm -rf $JupyterStatic
+        docker exec --user root $Container $ContainerPython -m pip uninstall -y $JupyterPackage *> $null
         docker exec $Container $ContainerPython -c "import importlib.metadata as m; m.distribution('$LegacyPackageName')" *> $null
         if ($LASTEXITCODE -eq 0) {
             throw "The legacy $LegacyPackageName distribution is still installed; the container was not changed further."
@@ -129,6 +142,8 @@ if not (Version("0.2") <= installed < Version("0.3")):
             --no-index --find-links $remote --upgrade `
             "$remote/$($wheel.Name)"
         if ($LASTEXITCODE -ne 0) { throw "Offline plugin installation failed." }
+        docker cp (Join-Path $RepoRoot "docker\49-omero-analysis-cleanup.py") "${Container}:$ContainerCleanup"
+        docker exec --user root $Container chmod 0755 $ContainerCleanup
         docker cp (Join-Path $RepoRoot "docker\90-omero-analysis.omero") "${Container}:$ContainerConfig"
         docker exec --user root $Container chmod 0644 $ContainerConfig
         docker exec --user root $Container rm -rf $ContainerStatic
@@ -149,15 +164,15 @@ for distribution in m.distributions():
             requirement = Requirement(raw)
         except InvalidRequirement:
             continue
-        if requirement.name.lower().replace("_", "-") == "omero-workflow-skills":
+        if requirement.name.lower().replace("_", "-") == "biomero-workflow-skills":
             users.append(distribution.metadata.get("Name", "unknown"))
 print(",".join(sorted(set(users))))
 "@
         $catalogUsers = (docker exec $Container $ContainerPython -c $reverseDependencies 2>$null).Trim()
         if (-not $catalogUsers) {
-            docker exec --user root $Container $ContainerPython -m pip uninstall -y omero-workflow-skills
+            docker exec --user root $Container $ContainerPython -m pip uninstall -y biomero-workflow-skills
         } else {
-            Write-Host "Keeping omero-workflow-skills; required by $catalogUsers"
+            Write-Host "Keeping biomero-workflow-skills; required by $catalogUsers"
         }
         docker exec --user root $Container rm -rf $ContainerStatic
         Restart-Web $false

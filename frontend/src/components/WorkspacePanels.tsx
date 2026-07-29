@@ -1,6 +1,8 @@
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   ArtifactRecord,
   DataProfile,
+  NotebookRecord,
   ProviderSettings,
   RuntimeProgress,
   TokenUsage,
@@ -59,6 +61,42 @@ export function parseDelimited(text: string, delimiter: string): string[][] {
   return rows.map((cells) => cells.slice(0, 50));
 }
 
+export function delimitedShape(text: string, delimiter: string): {
+  rows: number;
+  columns: number;
+} {
+  let quoted = false;
+  let cells = 1;
+  let columns = 0;
+  let rows = 0;
+  let hasContent = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === "\"") {
+      if (quoted && text[index + 1] === "\"") index += 1;
+      else quoted = !quoted;
+      hasContent = true;
+    } else if (character === delimiter && !quoted) {
+      cells += 1;
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      if (hasContent || cells > 1) {
+        if (!columns) columns = cells;
+        else rows += 1;
+      }
+      cells = 1;
+      hasContent = false;
+    } else if (!/\s/.test(character)) {
+      hasContent = true;
+    }
+  }
+  if (hasContent || cells > 1) {
+    if (!columns) columns = cells;
+    else rows += 1;
+  }
+  return { rows, columns };
+}
+
 function FilePreview({ file }: { file: WorkspaceFile }) {
   if (file.type === "image/png" || file.type === "image/svg+xml") {
     return <Artifact file={file} />;
@@ -89,6 +127,247 @@ function FilePreview({ file }: { file: WorkspaceFile }) {
     <p className="artifact-help">
       Preview is not available for this file type. Use Download to open the file.
     </p>
+  );
+}
+
+export function PythonPreview({ code }: { code: string }) {
+  const tokenPattern = /("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[^\n]*|\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield)\b|\b\d+(?:\.\d+)?\b)/g;
+  const parts: Array<{ value: string; kind?: string }> = [];
+  let offset = 0;
+  for (const match of code.matchAll(tokenPattern)) {
+    if (match.index! > offset) parts.push({ value: code.slice(offset, match.index) });
+    const value = match[0];
+    const kind = value.startsWith("#")
+      ? "comment"
+      : /^["']/.test(value)
+        ? "string"
+        : /^\d/.test(value)
+          ? "number"
+          : "keyword";
+    parts.push({ value, kind });
+    offset = match.index! + value.length;
+  }
+  if (offset < code.length) parts.push({ value: code.slice(offset) });
+  return (
+    <pre className="artifact-text-preview artifact-code-preview">
+      <code>{parts.map((part, index) =>
+        part.kind
+          ? <span className={`syntax-${part.kind}`} key={index}>{part.value}</span>
+          : part.value
+      )}</code>
+    </pre>
+  );
+}
+
+function markdownInline(value: string): ReactNode[] {
+  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\([^) \n]+\))/g;
+  const parts: ReactNode[] = [];
+  let offset = 0;
+  for (const match of value.matchAll(pattern)) {
+    if (match.index! > offset) parts.push(value.slice(offset, match.index));
+    const token = match[0];
+    if (token.startsWith("`")) {
+      parts.push(<code key={match.index}>{token.slice(1, -1)}</code>);
+    } else if (token.startsWith("**") || token.startsWith("__")) {
+      parts.push(<strong key={match.index}>{token.slice(2, -2)}</strong>);
+    } else {
+      const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      const href = link?.[2] || "";
+      parts.push(
+        /^https?:\/\//i.test(href)
+          ? <a key={match.index} href={href} target="_blank" rel="noopener noreferrer">{link?.[1]}</a>
+          : token
+      );
+    }
+    offset = match.index! + token.length;
+  }
+  if (offset < value.length) parts.push(value.slice(offset));
+  return parts;
+}
+
+export function MarkdownPreview({ markdown }: { markdown: string }) {
+  const lines = markdown.slice(0, 128 * 1024).replace(/\r\n?/g, "\n").split("\n");
+  const blocks: ReactNode[] = [];
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const fence = line.match(/^\s*```([\w+-]*)\s*$/);
+    if (fence) {
+      const code: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      blocks.push(
+        <pre className="markdown-code" key={blocks.length}>
+          <code data-language={fence[1] || undefined}>{code.join("\n")}</code>
+        </pre>
+      );
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const Heading = `h${heading[1].length}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+      blocks.push(<Heading key={blocks.length}>{markdownInline(heading[2])}</Heading>);
+      index += 1;
+      continue;
+    }
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) {
+      blocks.push(<blockquote key={blocks.length}>{markdownInline(quote[1])}</blockquote>);
+      index += 1;
+      continue;
+    }
+    const listMatch = line.match(/^\s*(?:[-*+]|\d+\.)\s+(.+)$/);
+    if (listMatch) {
+      const ordered = /^\s*\d+\./.test(line);
+      const items: ReactNode[] = [];
+      while (index < lines.length) {
+        const item = lines[index].match(
+          ordered ? /^\s*\d+\.\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/
+        );
+        if (!item) break;
+        items.push(<li key={items.length}>{markdownInline(item[1])}</li>);
+        index += 1;
+      }
+      blocks.push(
+        ordered
+          ? <ol key={blocks.length}>{items}</ol>
+          : <ul key={blocks.length}>{items}</ul>
+      );
+      continue;
+    }
+    const paragraph: string[] = [line];
+    index += 1;
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !/^(?:#{1,6}\s|>\s?|```|\s*(?:[-*+]|\d+\.)\s+)/.test(lines[index])
+    ) {
+      paragraph.push(lines[index]);
+      index += 1;
+    }
+    blocks.push(
+      <p key={blocks.length}>
+        {paragraph.map((part, partIndex) => (
+          <Fragment key={partIndex}>
+            {partIndex > 0 && <br />}
+            {markdownInline(part)}
+          </Fragment>
+        ))}
+      </p>
+    );
+  }
+  return <div className="artifact-markdown-preview">{blocks}</div>;
+}
+
+function DatabaseSchemaPreview({ profile }: { profile: DataProfile }) {
+  const tables = Array.isArray(profile.summary.tables)
+    ? profile.summary.tables as Array<{
+        name?: unknown;
+        columns?: Array<{ name?: unknown; type?: unknown }>;
+      }>
+    : [];
+  if (!tables.length) return null;
+  return (
+    <section className="database-schema-preview">
+      <h3>Database schema</h3>
+      {tables.map((table, tableIndex) => {
+        const columns = Array.isArray(table.columns) ? table.columns : [];
+        return (
+          <details key={`${String(table.name)}-${tableIndex}`}>
+            <summary>{String(table.name || `Table ${tableIndex + 1}`)} <small>{columns.length} columns</small></summary>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Column</th><th>Type</th></tr></thead>
+                <tbody>
+                  {columns.map((column, columnIndex) => (
+                    <tr key={columnIndex}>
+                      <td>{String(column.name || "")}</td>
+                      <td>{String(column.type || "")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        );
+      })}
+    </section>
+  );
+}
+
+function notebookOutput(output: Record<string, any>, index: number): ReactNode {
+  if (output.output_type === "stream") {
+    const text = Array.isArray(output.text) ? output.text.join("") : String(output.text || "");
+    return <pre className="notebook-inspector-output" key={index}>{text.slice(0, 16 * 1024)}</pre>;
+  }
+  if (output.output_type === "error") {
+    return (
+      <pre className="notebook-inspector-output error" key={index}>
+        {`${output.ename || "Error"}: ${output.evalue || ""}`}
+      </pre>
+    );
+  }
+  const data = output.data && typeof output.data === "object" ? output.data : {};
+  const png = data["image/png"];
+  if (typeof png === "string" || Array.isArray(png)) {
+    return (
+      <img
+        className="notebook-inspector-image"
+        key={index}
+        alt="Notebook PNG output"
+        src={`data:image/png;base64,${(Array.isArray(png) ? png.join("") : png).replace(/\s/g, "")}`}
+      />
+    );
+  }
+  if ("application/json" in data) {
+    return (
+      <pre className="notebook-inspector-output" key={index}>
+        {JSON.stringify(data["application/json"], null, 2).slice(0, 16 * 1024)}
+      </pre>
+    );
+  }
+  if ("text/plain" in data) {
+    const text = Array.isArray(data["text/plain"])
+      ? data["text/plain"].join("")
+      : String(data["text/plain"]);
+    return <pre className="notebook-inspector-output" key={index}>{text.slice(0, 16 * 1024)}</pre>;
+  }
+  return <p className="artifact-help" key={index}>Unsupported rich output hidden for safety.</p>;
+}
+
+function NotebookInspectorPreview({ notebook }: { notebook: NotebookRecord }) {
+  return (
+    <div className="notebook-inspector-preview">
+      {notebook.document.cells.map((cell, index) => {
+        const source = Array.isArray(cell.source) ? cell.source.join("") : cell.source;
+        return (
+          <article key={cell.id || index}>
+            <div className="notebook-inspector-cell-heading">
+              <strong>{cell.cell_type === "code" ? `Code [${cell.execution_count ?? " "}]` : "Markdown"}</strong>
+              <span>Cell {index + 1}</span>
+            </div>
+            {cell.cell_type === "code"
+              ? <PythonPreview code={source} />
+              : cell.cell_type === "markdown"
+                ? <MarkdownPreview markdown={source} />
+                : <pre className="artifact-text-preview">{source}</pre>}
+            {cell.cell_type === "code" && Boolean(cell.outputs?.length) && (
+              <div className="notebook-inspector-outputs">
+                {(cell.outputs || []).map((output, outputIndex) =>
+                  notebookOutput(output as Record<string, any>, outputIndex))}
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -192,11 +471,11 @@ export function ComposerPanel({
       )}
       <div className="status" role="status">{status}</div>
       <div className="usage-status">
-        <span>Azure receives prompts, generated code, bounded schemas/previews/statistics, summaries, and errors — never source files.</span>
+        <span>The configured AI provider receives prompts, generated code, bounded schemas/previews/statistics, summaries, and errors — never source files.</span>
         <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
       </div>
       {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
-      {!settings.apiKey || !settings.model ? <div className="blocker">Enter the AmsterdamUMC deployment name and API key in AI settings.</div> : null}
+      {!settings.endpoint || !settings.apiKey || !settings.model ? <div className="blocker">Enter an AI endpoint, model, and API key in Settings.</div> : null}
       <div className="composer">
         <div className={`composer-state ${canChat ? "ready" : "waiting"}`}>
           <span aria-hidden="true">{canChat ? "●" : "◷"}</span>
@@ -224,44 +503,96 @@ export function ComposerPanel({
 }
 
 export function ArtifactInspector({
-  open,
-  file,
+  item,
   profiles,
   canUpload,
-  onToggle,
   onDownload,
   onAttach
 }: {
-  open: boolean;
-  file?: WorkspaceFile | null;
+  item?: InspectorItem | null;
   profiles: DataProfile[];
   canUpload: boolean;
-  onToggle: () => void;
   onDownload: (file: WorkspaceFile) => void;
   onAttach: (file: WorkspaceFile) => void;
 }) {
+  const file = item?.file;
+  const fileProfile = file
+    ? profiles.find((profile) =>
+        profile.path.replace(/\\/g, "/").endsWith(`/${file.name}`))
+    : undefined;
+  const localDelimitedShape = useMemo(() => {
+    if (
+      !file?.data ||
+      file.data.byteLength > 32 * 1024 * 1024 ||
+      !/\.(csv|tsv)$/i.test(file.name)
+    ) return undefined;
+    const text = new TextDecoder().decode(file.data);
+    return delimitedShape(text, /\.tsv$/i.test(file.name) ? "\t" : ",");
+  }, [file?.id, file?.data, file?.name]);
+  const profileColumns = fileProfile && Array.isArray(fileProfile.summary.columns)
+    ? fileProfile.summary.columns
+    : [];
+  const profileRows = fileProfile && typeof fileProfile.summary.rows === "number"
+    ? fileProfile.summary.rows
+    : localDelimitedShape?.rows;
+  const profileColumnCount = profileColumns.length || localDelimitedShape?.columns || 0;
+  const [imageDimensions, setImageDimensions] =
+    useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    setImageDimensions(null);
+    if (!file?.data || file.type !== "image/png") return;
+    const url = URL.createObjectURL(new Blob([file.data], { type: file.type }));
+    const image = new Image();
+    image.onload = () => {
+      setImageDimensions({ width: image.naturalWidth, height: image.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    image.onerror = () => URL.revokeObjectURL(url);
+    image.src = url;
+    return () => URL.revokeObjectURL(url);
+  }, [file?.id, file?.data, file?.type]);
   return (
-    <aside className={`artifact-inspector ${open ? "open" : ""}`}>
+    <aside className="artifact-inspector open">
       <div className="artifact-header">
         <div>
           <span>Artifact inspector</span>
-          <strong>{file?.name || "Data profile"}</strong>
+          <strong>{item?.title || "Workspace overview"}</strong>
         </div>
-        <button
-          aria-label={open ? "Close artifact inspector" : "Open artifact inspector"}
-          onClick={onToggle}
-        >
-          {open ? "×" : "›"}
-        </button>
       </div>
-      {open && (
-        <div className="artifact-body">
-          {file ? (
+      <div className="artifact-body">
+          {item && !file ? (
+            <>
+              {item.description && <p className="artifact-help">{item.description}</p>}
+              {item.metadata && (
+                <dl className="artifact-metadata">
+                  {Object.entries(item.metadata).flatMap(([key, value]) => [
+                    <dt key={`${key}-term`}>{key}</dt>,
+                    <dd key={`${key}-value`}>{String(value)}</dd>
+                  ])}
+                </dl>
+              )}
+              {item.content && (
+                item.language === "python"
+                  ? <PythonPreview code={item.content} />
+                  : item.language === "markdown"
+                    ? <MarkdownPreview markdown={item.content} />
+                  : <pre className="artifact-text-preview">{item.content}</pre>
+              )}
+              {item.notebook && <NotebookInspectorPreview notebook={item.notebook} />}
+            </>
+          ) : file ? (
             <>
               <FilePreview file={file} />
+              {fileProfile && ["duckdb", "sqlite", "sqlite3"].includes(fileProfile.format) && (
+                <DatabaseSchemaPreview profile={fileProfile} />
+              )}
               <dl className="artifact-metadata">
                 <dt>Size</dt><dd>{bytesLabel(file.size)}</dd>
-                <dt>SHA-256</dt><dd>{file.sha256}</dd>
+                {profileRows != null && <><dt>Rows</dt><dd>{profileRows.toLocaleString()}</dd></>}
+                {profileColumnCount > 0 && <><dt>Columns</dt><dd>{profileColumnCount}</dd></>}
+                {imageDimensions && (
+                  <><dt>Pixels</dt><dd>{imageDimensions.width} × {imageDimensions.height}</dd></>
+                )}
                 <dt>Created</dt><dd>{new Date(file.createdAt).toLocaleString()}</dd>
               </dl>
               <div className="artifact-buttons">
@@ -282,7 +613,7 @@ export function ArtifactInspector({
           ) : (
             <>
               <p className="artifact-help">
-                Local schema profiles are generated without sending source files to Azure.
+                Local schema profiles are generated without sending source files to the AI provider.
               </p>
               {profiles.map((profile) => (
                 <details key={profile.path} open>
@@ -295,7 +626,17 @@ export function ArtifactInspector({
             </>
           )}
         </div>
-      )}
     </aside>
   );
+}
+
+export interface InspectorItem {
+  kind: "workspace" | "folder" | "chat" | "file" | "method" | "pipeline" | "notebook" | "zarr";
+  title: string;
+  description?: string;
+  metadata?: Record<string, string | number>;
+  content?: string;
+  language?: "python" | "json" | "markdown";
+  notebook?: NotebookRecord;
+  file?: WorkspaceFile;
 }

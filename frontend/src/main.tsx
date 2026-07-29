@@ -18,8 +18,10 @@ window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   snapshotsTemplate: value("snapshotsTemplate"),
   snapshotUploadTemplate: value("snapshotUploadTemplate"),
   snapshotDownloadTemplate: value("snapshotDownloadTemplate"),
-  workflowTemplatesTemplate: value("workflowTemplatesTemplate"),
-  workflowDownloadTemplate: value("workflowDownloadTemplate"),
+  pipelineTemplatesTemplate: value("pipelineTemplatesTemplate"),
+  pipelineDownloadTemplate: value("pipelineDownloadTemplate"),
+  notebookDownloadTemplate: value("notebookDownloadTemplate"),
+  notebookUploadTemplate: value("notebookUploadTemplate"),
   workflowSkillsUrl: value("workflowSkillsUrl"),
   zarrViewerStatusUrl: value("zarrViewerStatusUrl"),
   runtimeBase: value("runtimeBase").replace(/ASSET$/, "")

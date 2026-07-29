@@ -27,6 +27,11 @@ export function selectReproducibleExecutions(
     )
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const analysis = successful.filter((item) => item.purpose !== "inspection");
+  const citedIds = new Set(artifact.viewer?.evidenceIds || []);
+  const citedAnalysis = analysis.filter(
+    (item) => item.evidenceId && citedIds.has(item.evidenceId)
+  );
+  if (citedAnalysis.length) return citedAnalysis;
   return analysis.length ? analysis : successful.filter((item) => item.purpose === "inspection");
 }
 
@@ -38,7 +43,7 @@ export function buildRenderBundle(
 ): RenderBundle {
   const recipe = artifact.viewer?.renderRecipe;
   if (!recipe) throw new Error("This preview has no reproducible render recipe");
-  if (!png.data) throw new Error("The rendered PNG is unavailable in this browser project");
+  if (!png.data) throw new Error("The rendered PNG is unavailable in this browser workspace");
   const selected = selectReproducibleExecutions(executions, artifact);
   if (!selected.length) throw new Error("No successful analysis or inspection code produced this render");
   const code = Array.from(new Set(selected.map((item) => item.code.trimEnd()))).join(

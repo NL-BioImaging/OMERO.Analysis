@@ -1,4 +1,4 @@
-import type { RuntimeOutput, RuntimeProgress, WorkspaceFile } from "./types";
+import type { OmeroContext, RuntimeOutput, RuntimeProgress, WorkspaceFile } from "./types";
 
 interface Pending {
   resolve: (value: any) => void;
@@ -51,6 +51,24 @@ async function boot() {
   progress(90, "Preparing the browser workspace…");
   pyodide.FS.mkdirTree("/input");
   pyodide.FS.mkdirTree("/output");
+  pyodide.FS.mkdirTree("/selected_measurements");
+  pyodide.FS.mkdirTree("/.omero");
+  await pyodide.runPythonAsync(\`
+import sys as _oa_sys, types as _oa_types
+_oa_approved_packages = {
+    "numpy", "pandas", "matplotlib", "seaborn", "scipy", "duckdb",
+    "pyarrow", "python-calamine", "xlrd"
+}
+async def _oa_piplite_install(package, *args, **kwargs):
+    packages = [package] if isinstance(package, str) else list(package)
+    denied = [name for name in packages if name not in _oa_approved_packages]
+    if denied:
+        raise ValueError("Package download is disabled; not approved: " + ", ".join(denied))
+    return None
+_oa_piplite = _oa_types.ModuleType("piplite")
+_oa_piplite.install = _oa_piplite_install
+_oa_sys.modules["piplite"] = _oa_piplite
+\`);
   // Package assets are loaded. Generated Python must not use the browser as a
   // network client, even to the public plugin origin.
   globalThis.fetch = denyNetwork;
@@ -216,12 +234,16 @@ for _oa_name in list(globals()):
       send(message.id, "begin", true);
     } else if (message.type === "clear_inputs") {
       removeTree("/input");
+      removeTree("/selected_measurements");
       inputSecrets.clear();
       send(message.id, "clear_inputs", true);
     } else if (message.type === "file") {
       const safe = String(message.value.name).replace(/[^A-Za-z0-9._ -]/g, "_");
       const bytes = new Uint8Array(message.value.data);
       pyodide.FS.writeFile("/input/" + safe, bytes);
+      pyodide.FS.mkdirTree("/input/selected_measurements");
+      pyodide.FS.writeFile("/input/selected_measurements/" + safe, bytes);
+      pyodide.FS.writeFile("/selected_measurements/" + safe, bytes);
       if (bytes.length <= 1024 * 1024) {
         try {
           const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes).trim();
@@ -234,6 +256,12 @@ for _oa_name in list(globals()):
         }
       }
       send(message.id, "file", safe);
+    } else if (message.type === "context") {
+      const encoded = new TextEncoder().encode(JSON.stringify(message.value || {}));
+      pyodide.FS.mkdirTree("/input/.omero");
+      pyodide.FS.writeFile("/.omero/context.json", encoded);
+      pyodide.FS.writeFile("/input/.omero/context.json", encoded);
+      send(message.id, "context", true);
     } else if (message.type === "profile") {
       const profileNames = pyodide.FS.readdir("/input").join(" ");
       await ensurePackages(
@@ -316,7 +344,10 @@ export class PythonRuntime {
   private readyPromise: Promise<void> | null = null;
   private onProgress: ((progress: RuntimeProgress) => void) | null = null;
 
-  constructor(private readonly runtimeBase: string) {
+  constructor(
+    private readonly runtimeBase: string,
+    private readonly context: OmeroContext | null = null
+  ) {
     window.addEventListener("message", this.receive);
   }
 
@@ -347,6 +378,11 @@ export class PythonRuntime {
         "*"
       );
       await this.request("ping", true, 120_000);
+      await this.request("context", this.context ? {
+        object_type: this.context.object_type,
+        object_id: this.context.object_id,
+        group_id: this.context.group_id
+      } : {}, 30_000);
       for (let index = 0; index < this.inputs.length; index += 1) {
         const file = this.inputs[index];
         this.report({
@@ -367,6 +403,48 @@ export class PythonRuntime {
     return this.request("run", { code }, 120_000);
   }
 
+  async runNotebookCell(source: string): Promise<RuntimeOutput> {
+    if (/^\s*[!%]/m.test(source)) {
+      throw new Error("Notebook magics and shell commands are disabled");
+    }
+    const packageRequests = Array.from(
+      source.matchAll(/piplite\.install\(\s*["']([^"']+)["']/g),
+      (match) => match[1]
+    );
+    const approved = new Set([
+      "numpy", "pandas", "matplotlib", "seaborn", "scipy", "duckdb",
+      "pyarrow", "python-calamine", "xlrd"
+    ]);
+    const denied = packageRequests.find((name) => !approved.has(name));
+    if (denied) {
+      throw new Error(`Package ${denied} is not in the approved notebook package set`);
+    }
+    const encoded = JSON.stringify(source);
+    return this.run(`
+import ast as _oa_ast
+globals().pop("result", None)
+_oa_source = ${encoded}
+_oa_tree = _oa_ast.parse(_oa_source, filename="<notebook-cell>", mode="exec")
+if _oa_tree.body and isinstance(_oa_tree.body[-1], _oa_ast.Expr):
+    _oa_tree.body[-1] = _oa_ast.Assign(
+        targets=[_oa_ast.Name(id="result", ctx=_oa_ast.Store())],
+        value=_oa_tree.body[-1].value,
+    )
+    _oa_ast.fix_missing_locations(_oa_tree)
+exec(compile(_oa_tree, "<notebook-cell>", "exec"), globals(), globals())
+try:
+    import matplotlib.pyplot as _oa_plt
+    for _oa_figure_number in _oa_plt.get_fignums():
+        _oa_plt.figure(_oa_figure_number).savefig(
+            f"/output/notebook-figure-{_oa_figure_number}.png",
+            format="png",
+            bbox_inches="tight",
+        )
+except Exception:
+    pass
+`);
+  }
+
   async syncInputs(inputs: WorkspaceFile[]): Promise<void> {
     this.inputs = inputs.filter((file) => file.state === "ready" && file.data);
     if (!this.readyPromise) {
@@ -375,6 +453,11 @@ export class PythonRuntime {
     }
     await this.readyPromise;
     await this.request("clear_inputs", true, 30_000);
+    await this.request("context", this.context ? {
+      object_type: this.context.object_type,
+      object_id: this.context.object_id,
+      group_id: this.context.group_id
+    } : {}, 30_000);
     for (let index = 0; index < this.inputs.length; index += 1) {
       const file = this.inputs[index];
       this.report({

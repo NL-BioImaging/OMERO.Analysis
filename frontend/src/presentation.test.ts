@@ -2,7 +2,7 @@ import {
   activityText,
   executionActivityText,
   formatDuration,
-  projectRowClassName,
+  workspaceRowClassName,
   workflowSkillTooltip
 } from "./presentation";
 import type { WorkflowSkillCatalog } from "./types";
@@ -23,18 +23,18 @@ describe("chat timing presentation", () => {
   });
 });
 
-describe("browser-local project selection", () => {
-  it("selects the clicked project independently from the open project", () => {
-    expect(projectRowClassName("imported", "imported", "older")).toBe(
-      "browser-row project-row open"
+describe("browser-local workspace selection", () => {
+  it("selects the clicked workspace independently from the open workspace", () => {
+    expect(workspaceRowClassName("imported", "imported", "older")).toBe(
+      "browser-row workspace-row open"
     );
-    expect(projectRowClassName("older", "imported", "older")).toBe(
-      "browser-row project-row selected"
+    expect(workspaceRowClassName("older", "imported", "older")).toBe(
+      "browser-row workspace-row selected"
     );
   });
 });
 
-describe("workflow-skill tooltip", () => {
+describe("measurement-skill tooltip", () => {
   const catalog = {
     schema: "nl.bioimaging.omero-workflow-skills.v1",
     consumer: "omero-analysis",
@@ -82,12 +82,12 @@ describe("workflow-skill tooltip", () => {
   it("keeps catalog skills visible when a non-fatal warning is present", () => {
     const tooltip = workflowSkillTooltip(
       catalog,
-      "Workflow guidance is using an unchanged cached revision.",
+      "Measurement guidance is using an unchanged cached revision.",
       ["cisegmentation/analyze-measurements"]
     );
-    expect(tooltip).toContain("Warning: Workflow guidance");
+    expect(tooltip).toContain("Warning: Measurement guidance");
     expect(tooltip).toContain("✓ cisegmentation: analyze-measurements v1");
-    expect(tooltip).not.toContain("Workflow-specific guidance is unavailable");
+    expect(tooltip).not.toContain("Measurement-specific guidance is unavailable");
   });
 
   it("explains an empty catalog", () => {
@@ -95,6 +95,6 @@ describe("workflow-skill tooltip", () => {
       { ...catalog, workflows: [] },
       "",
       []
-    )).toContain("No workflow skills are currently available");
+    )).toContain("No measurement skills are currently available");
   });
 });

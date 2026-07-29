@@ -16,13 +16,15 @@ docker build \
   --build-arg OMERO_WEB_IMAGE=<current-omeroweb-image> \
   --build-arg ANALYSIS_WHEEL=dist/<wheel-file>.whl \
   --file docker/Dockerfile.omeroweb \
-  --tag local/nl-biomero-omeroweb-analysis:0.8.1 \
+  --tag local/nl-biomero-omeroweb-analysis:0.9.0 \
   .
 ```
 
 For an existing deployment, `<current-omeroweb-image>` must be the current
-derived image so JupyterLite, ZarrViewer, and other baked-in plugins remain
-installed. `scripts/build-docker-image.ps1` automates this check.
+derived image so ZarrViewer and unrelated baked-in plugins remain installed.
+The Analysis layer deliberately removes OMERO.JupyterLite, its configuration,
+and its static assets. `scripts/build-docker-image.ps1` automates the base-image
+check.
 
 Set the `omeroweb` service image in the selected NL-BIOMERO Compose scenario to
 the derived tag and recreate only that service. The existing reverse proxy
@@ -31,11 +33,17 @@ continues to route `/omero_analysis/` through OMERO.web.
 ## Verify
 
 1. Sign in to OMERO.web.
-2. Select an Image, Dataset, Plate, or Screen with a supported FileAnnotation.
-3. Open the Analysis center panel, select data, and open the chat.
-4. Confirm the composer stays disabled until every attachment is downloaded.
-5. Configure AmsterdamUMC, run an analysis, download a result, and explicitly
-   attach it to the selected object.
+2. Confirm the top navigation contains one **Analysis** link and no
+   **JupyterLab** link.
+3. Select an Image, Dataset, Plate, or Screen and confirm the center panel
+   contains **Analysis Chat** and **Analysis Notebook**, with no **Jupyter**
+   entry.
+4. Open Chat, select data, and confirm the composer stays disabled until every
+   attachment is downloaded.
+5. Open Notebook, upload a Python nbformat-4 notebook, and confirm it is
+   attached before the run-only tab opens.
+6. Confirm Settings lists the optional BIOMERO measurement provider and
+   ZarrViewer provider independently when installed.
 
 For temporary local installation:
 

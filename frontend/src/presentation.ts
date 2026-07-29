@@ -34,17 +34,17 @@ export function executionActivityText(
     : `Worked for ${duration}`;
 }
 
-export function projectRowClassName(
+export function workspaceRowClassName(
   itemId: string,
-  openProjectId: string,
-  selectedProjectId: string | null
+  openWorkspaceId: string,
+  selectedWorkspaceId: string | null
 ): string {
-  const selected = itemId === (selectedProjectId || openProjectId);
+  const selected = itemId === (selectedWorkspaceId || openWorkspaceId);
   return [
     "browser-row",
-    "project-row",
+    "workspace-row",
     selected ? "selected" : "",
-    itemId === openProjectId ? "open" : ""
+    itemId === openWorkspaceId ? "open" : ""
   ].filter(Boolean).join(" ");
 }
 
@@ -54,10 +54,10 @@ export function workflowSkillTooltip(
   matchingSkillKeys: string[]
 ): string {
   if (warning && !catalog) {
-    return `Workflow-specific guidance is unavailable.\n${warning}`;
+    return `Provider-specific guidance is unavailable.\n${warning}`;
   }
   if (!catalog) {
-    return "The workflow-skill catalog is still loading or is not configured.";
+    return "The skill-provider catalog is still loading or is not configured.";
   }
   const values = [...catalog.workflows, ...(catalog.applications || [])].flatMap((entry) =>
     entry.skills.map((skill) => ({
@@ -71,14 +71,14 @@ export function workflowSkillTooltip(
   );
   if (!values.length) {
     return [
-      "No workflow skills are currently available.",
-      "A configured workflow repository must publish compatible skills before they can be activated."
+      "No measurement skills are currently available.",
+      "A configured measurement provider must publish compatible skills before they can be activated."
     ].join("\n");
   }
   const matches = new Set(matchingSkillKeys);
   return [
     ...(warning ? [`Warning: ${warning}`, ""] : []),
-    `${values.length} validated workflow/application skill${values.length === 1 ? "" : "s"} discovered.`,
+    `${values.length} validated analysis skill${values.length === 1 ? "" : "s"} discovered.`,
     matches.size
       ? `${matches.size} match${matches.size === 1 ? "es" : ""} the current inputs (marked ✓).`
       : "None currently match the loaded inputs.",

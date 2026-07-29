@@ -26,16 +26,18 @@ from .integrations import zarr_viewer_status
 from .services import (
     can_annotate,
     checked_download,
-    checked_project_snapshot_download,
-    checked_workflow_download,
+    checked_notebook_download,
+    checked_workspace_snapshot_download,
+    checked_pipeline_download,
     get_context_object,
     get_direct_attachment,
     list_attachment_dicts,
     object_hierarchy,
     object_context,
-    upload_project_snapshot_annotation,
+    upload_notebook_annotation,
+    upload_workspace_snapshot_annotation,
     upload_result_annotation,
-    upload_workflow_annotation,
+    upload_pipeline_annotation,
 )
 from .tokens import make_context_token, validate_context_token
 
@@ -130,22 +132,33 @@ def chat(request, conn=None, **kwargs):
                 if info.annotation_id not in seen:
                     selected.append(info.to_dict())
                     seen.add(info.annotation_id)
-            selected_project_snapshot = None
-            snapshot_value = request.GET.get("project_annotation")
+            selected_workspace_snapshot = None
+            snapshot_value = request.GET.get("workspace_annotation")
             if snapshot_value:
                 _, snapshot_info = get_direct_attachment(obj, snapshot_value)
-                if snapshot_info.kind != "project":
+                if snapshot_info.kind != "workspace":
                     from .errors import UnsupportedMedia
 
                     raise UnsupportedMedia(
-                        "The selected FileAnnotation is not an Analysis project"
+                        "The selected FileAnnotation is not an Analysis workspace"
                     )
-                selected_project_snapshot = snapshot_info.to_dict()
+                selected_workspace_snapshot = snapshot_info.to_dict()
             context = {
                 **object_context(object_type, object_id, obj, conn),
                 "selected_attachments": selected,
-                "selected_project_snapshot": selected_project_snapshot,
+                "selected_workspace_snapshot": selected_workspace_snapshot,
+                "selected_notebook": None,
             }
+            notebook_value = request.GET.get("notebook_annotation")
+            if notebook_value:
+                _, notebook_info = get_direct_attachment(obj, notebook_value)
+                if notebook_info.kind != "notebook":
+                    from .errors import UnsupportedMedia
+
+                    raise UnsupportedMedia(
+                        "The selected FileAnnotation is not an Analysis notebook"
+                    )
+                context["selected_notebook"] = notebook_info.to_dict()
         except AnalysisError as exc:
             return HttpResponseBadRequest(str(exc))
     response = render(request, "omero_analysis/chat.html", {"context": context})
@@ -154,7 +167,7 @@ def chat(request, conn=None, **kwargs):
         "script-src 'self'; "
         "style-src 'self'; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self' https://aumc-aicode-openai-swedencentral-oai.openai.azure.com; "
+        "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; "
         "worker-src blob:; "
         "frame-src 'self' blob:; "
         "object-src 'none'; base-uri 'self'; form-action 'self'"
@@ -173,8 +186,25 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
     )
 
 
+@login_required(setGroupContext=True)
+def notebook_panel(request, object_type, object_id, conn=None, **kwargs):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    return render(
+        request,
+        "omero_analysis/notebook_panel.html",
+        {"context": object_context(object_type, object_id, obj, conn)},
+    )
+
+
 def _workflow_skill_catalog():
-    from omero_workflow_skills import WorkflowSkillCatalog
+    try:
+        from biomero_workflow_skills import WorkflowSkillCatalog
+    except ImportError:
+        try:
+            # Temporary compatibility with the pre-rename provider.
+            from omero_workflow_skills import WorkflowSkillCatalog
+        except ImportError:
+            return None
 
     return WorkflowSkillCatalog(
         package_url=_workflow_skill_package_url
@@ -212,7 +242,7 @@ def _current_workflow_skill_urls(payload):
 
 
 def _workflow_skill_error(exc):
-    logger.warning("OMERO workflow skill catalog request failed: %s", exc)
+    logger.warning("BIOMERO measurement skill catalog request failed: %s", exc)
     return JsonResponse(
         {
             "error": {
@@ -229,6 +259,25 @@ def _workflow_skill_error(exc):
 def workflow_skills(request, conn=None, **kwargs):
     try:
         catalog = _workflow_skill_catalog()
+        if catalog is None:
+            return JsonResponse(
+                {
+                    "schema": "nl.bioimaging.omero-workflow-skills.v1",
+                    "generated_at": "",
+                    "consumer": WORKFLOW_SKILLS_CONSUMER,
+                    "config_hash": "",
+                    "workflows": [],
+                    "applications": [],
+                    "diagnostics": [
+                        {
+                            "level": "info",
+                            "code": "provider-not-installed",
+                            "message": "BIOMERO.WorkflowSkills is not installed",
+                        }
+                    ],
+                    "service_status": {"available": False},
+                }
+            )
         payload = _current_workflow_skill_urls(
             catalog.get_catalog(WORKFLOW_SKILLS_CONSUMER).to_dict()
         )
@@ -250,7 +299,10 @@ def workflow_skill_package(
     request, workflow_key, skill_name, conn=None, **kwargs
 ):
     try:
-        package = _workflow_skill_catalog().get_package(
+        catalog = _workflow_skill_catalog()
+        if catalog is None:
+            raise RuntimeError("BIOMERO.WorkflowSkills is not installed")
+        package = catalog.get_package(
             workflow_key,
             skill_name,
             WORKFLOW_SKILLS_CONSUMER,
@@ -268,13 +320,15 @@ def refresh_workflow_skills(request, conn=None, **kwargs):
             {
                 "error": {
                     "code": "permission_denied",
-                    "message": "Only OMERO administrators can refresh workflow skills",
+                    "message": "Only OMERO administrators can refresh measurement skills",
                 }
             },
             status=403,
         )
     try:
         catalog = _workflow_skill_catalog()
+        if catalog is None:
+            raise RuntimeError("BIOMERO.WorkflowSkills is not installed")
         catalog.refresh()
         return JsonResponse(
             {
@@ -303,9 +357,19 @@ def context_token(request, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(
         conn, payload.get("object_type"), payload.get("object_id")
     )
-    operations = ["context", "list", "download", "snapshot_download", "hierarchy"]
+    operations = [
+        "context",
+        "list",
+        "download",
+        "workspace_download",
+        "pipeline_download",
+        "notebook_download",
+        "hierarchy",
+    ]
     if can_annotate(obj):
-        operations.extend(["upload", "snapshot_upload", "workflow_upload"])
+        operations.extend(
+            ["upload", "workspace_upload", "pipeline_upload", "notebook_upload"]
+        )
     token, expires_at = make_context_token(
         request, conn, object_type, object_id, obj, operations
     )
@@ -390,36 +454,36 @@ def upload_result(request, object_type, object_id, conn=None, **kwargs):
 @require_http_methods(["GET", "POST"])
 @login_required(setGroupContext=True)
 @api_errors
-def project_snapshots(request, object_type, object_id, conn=None, **kwargs):
+def workspace_snapshots(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     if request.method == "GET":
         validate_context_token(request, conn, "list", object_type, object_id, obj)
         values = [
-            value for value in list_attachment_dicts(obj) if value["kind"] == "project"
+            value for value in list_attachment_dicts(obj) if value["kind"] == "workspace"
         ]
         return JsonResponse({"snapshots": values})
-    validate_context_token(request, conn, "snapshot_upload", object_type, object_id, obj)
-    result = upload_project_snapshot_annotation(conn, obj, request.FILES.get("file"))
+    validate_context_token(request, conn, "workspace_upload", object_type, object_id, obj)
+    result = upload_workspace_snapshot_annotation(conn, obj, request.FILES.get("file"))
     return JsonResponse({"snapshot": result}, status=201)
 
 
 @require_GET
 @login_required(setGroupContext=True, doConnectionCleanup=False)
 @api_errors
-def download_project_snapshot(request, annotation_id, conn=None, **kwargs):
-    claims = validate_context_token(request, conn, "snapshot_download")
+def download_workspace_snapshot(request, annotation_id, conn=None, **kwargs):
+    claims = validate_context_token(request, conn, "workspace_download")
     _, _, obj = get_context_object(
         conn, claims["object_type"], claims["object_id"]
     )
     validate_context_token(
         request,
         conn,
-        "snapshot_download",
+        "workspace_download",
         claims["object_type"],
         claims["object_id"],
         obj,
     )
-    annotation, info = checked_project_snapshot_download(obj, annotation_id)
+    annotation, info = checked_workspace_snapshot_download(obj, annotation_id)
     response = ConnCleaningHttpResponse(
         annotation.getFileInChunks(), content_type=info.mimetype
     )
@@ -436,36 +500,76 @@ def download_project_snapshot(request, annotation_id, conn=None, **kwargs):
 @require_http_methods(["GET", "POST"])
 @login_required(setGroupContext=True)
 @api_errors
-def workflow_templates(request, object_type, object_id, conn=None, **kwargs):
+def pipeline_templates(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     if request.method == "GET":
         validate_context_token(request, conn, "list", object_type, object_id, obj)
         values = [
-            value for value in list_attachment_dicts(obj) if value["kind"] == "workflow"
+            value for value in list_attachment_dicts(obj) if value["kind"] == "pipeline"
         ]
-        return JsonResponse({"workflows": values})
-    validate_context_token(request, conn, "workflow_upload", object_type, object_id, obj)
-    result = upload_workflow_annotation(conn, obj, request.FILES.get("file"))
-    return JsonResponse({"workflow": result}, status=201)
+        return JsonResponse({"pipelines": values})
+    validate_context_token(request, conn, "pipeline_upload", object_type, object_id, obj)
+    result = upload_pipeline_annotation(conn, obj, request.FILES.get("file"))
+    return JsonResponse({"pipeline": result}, status=201)
 
 
 @require_GET
 @login_required(setGroupContext=True, doConnectionCleanup=False)
 @api_errors
-def download_workflow_template(request, annotation_id, conn=None, **kwargs):
-    claims = validate_context_token(request, conn, "download")
+def download_pipeline_template(request, annotation_id, conn=None, **kwargs):
+    claims = validate_context_token(request, conn, "pipeline_download")
     _, _, obj = get_context_object(conn, claims["object_type"], claims["object_id"])
     validate_context_token(
         request,
         conn,
-        "download",
+        "pipeline_download",
         claims["object_type"],
         claims["object_id"],
         obj,
     )
-    annotation, info = checked_workflow_download(obj, annotation_id)
+    annotation, info = checked_pipeline_download(obj, annotation_id)
     response = ConnCleaningHttpResponse(
         annotation.getFileInChunks(), content_type=info.mimetype
+    )
+    response.conn = conn
+    response["Content-Length"] = str(info.size)
+    response["Content-Disposition"] = (
+        "attachment; filename*=UTF-8''" + quote(info.name, safe="")
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def upload_notebook(request, object_type, object_id, conn=None, **kwargs):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    validate_context_token(
+        request, conn, "notebook_upload", object_type, object_id, obj
+    )
+    notebook = upload_notebook_annotation(conn, obj, request.FILES.get("file"))
+    return JsonResponse({"notebook": notebook}, status=201)
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def download_notebook(request, annotation_id, conn=None, **kwargs):
+    claims = validate_context_token(request, conn, "notebook_download")
+    _, _, obj = get_context_object(conn, claims["object_type"], claims["object_id"])
+    validate_context_token(
+        request,
+        conn,
+        "notebook_download",
+        claims["object_type"],
+        claims["object_id"],
+        obj,
+    )
+    annotation, info = checked_notebook_download(obj, annotation_id)
+    response = ConnCleaningHttpResponse(
+        annotation.getFileInChunks(), content_type="application/x-ipynb+json"
     )
     response.conn = conn
     response["Content-Length"] = str(info.size)

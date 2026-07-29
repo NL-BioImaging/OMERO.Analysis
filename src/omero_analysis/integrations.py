@@ -53,6 +53,9 @@ def zarr_viewer_status():
                 "biomero_zarr_viewer_plate_capabilities",
                 kwargs={"plate_id": 0},
             ),
+            "skill_catalog_url": reverse(
+                "biomero_zarr_viewer_analysis_skills"
+            ),
         }
     except NoReverseMatch:
         return {

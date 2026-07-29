@@ -1,0 +1,103 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'omero_analysis/panel.css' %}">
+<script>
+$(function () {
+  "use strict";
+  var panel = $("#omero_analysis_notebook_panel");
+  panel.addClass("omero-analysis-center");
+  var panelPattern = "{% url 'omero_analysis_notebook_panel' 'Image' 1 %}";
+  var tokenUrl = "{% url 'omero_analysis_token' %}";
+  var uploadPattern = "{% url 'omero_analysis_notebook_upload' 'Image' 1 %}";
+  var analysisBase = "{% url 'omero_analysis_index' %}";
+  var typeMap = {image: "Image", dataset: "Dataset", plate: "Plate", screen: "Screen"};
+
+  function objectUrl(pattern, type, id) {
+    return pattern.replace("/Image/1/", "/" + type + "/" + id + "/");
+  }
+  function csrfToken() {
+    var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+  function analysisUrl(root, notebookId) {
+    var url = analysisBase + "?tab=notebook&type=" +
+      encodeURIComponent(root.dataset.objectType) + "&id=" +
+      encodeURIComponent(root.dataset.objectId);
+    root.querySelectorAll(".oa-data-attachment:checked").forEach(function (input) {
+      url += "&data_annotation=" + encodeURIComponent(input.value);
+    });
+    if (notebookId) url += "&notebook_annotation=" + encodeURIComponent(notebookId);
+    return url;
+  }
+  function selectedNotebook(root) {
+    var input = root.querySelector(".oa-notebook:checked");
+    return input ? input.value : null;
+  }
+  function renderSelection(dtype, oid) {
+    var type = typeMap[String(dtype || "").toLowerCase()];
+    if (!type || !oid) {
+      panel.html('<div class="oa-empty-state"><strong>Select an Image, Dataset, Plate, or Screen</strong></div>');
+      return;
+    }
+    panel.html('<div class="oa-empty-state"><strong>Loading notebooks…</strong></div>');
+    fetch(objectUrl(panelPattern, type, oid), {credentials: "same-origin"})
+      .then(function (response) {
+        if (!response.ok) throw new Error("Could not load notebooks (HTTP " + response.status + ")");
+        return response.text();
+      })
+      .then(function (html) { panel.html(html); })
+      .catch(function (error) {
+        panel.html('<p class="oa-panel-error"></p>');
+        panel.find(".oa-panel-error").text(error.message);
+      });
+  }
+  panel.omeroweb_center_plugin({
+    plugin_index: {{ forloop.counter|default:"0" }},
+    empty_on_sel_change: false,
+    supported_obj_types: ["image", "dataset", "plate", "screen"],
+    load_plugin_content: function (selected, dtype, oid) { renderSelection(dtype, oid); }
+  });
+  panel.on("click", ".oa-open-notebook", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    var fileInput = root && root.querySelector(".oa-notebook-upload");
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if (!root) return;
+    if (!file) {
+      var notebookId = selectedNotebook(root);
+      if (!notebookId) {
+        root.querySelector(".oa-panel-status").textContent = "Select or upload a notebook.";
+        return;
+      }
+      window.open(analysisUrl(root, notebookId), "_blank", "noopener");
+      return;
+    }
+    var status = root.querySelector(".oa-panel-status");
+    status.textContent = "Uploading and attaching notebook…";
+    fetch(tokenUrl, {
+      method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
+      body: JSON.stringify({object_type: root.dataset.objectType, object_id: Number(root.dataset.objectId)})
+    })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) throw new Error((body.error && body.error.message) || "Could not authorize upload");
+        return body.context_token;
+      }); })
+      .then(function (token) {
+        var form = new FormData();
+        form.append("file", file, file.name);
+        return fetch(objectUrl(uploadPattern, root.dataset.objectType, root.dataset.objectId), {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrfToken(), "X-OMERO-Analysis-Context": token},
+          body: form
+        });
+      })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) throw new Error((body.error && body.error.message) || "Notebook upload failed");
+        return body.notebook.annotation_id;
+      }); })
+      .then(function (notebookId) {
+        window.open(analysisUrl(root, notebookId), "_blank", "noopener");
+      })
+      .catch(function (error) { status.textContent = error.message; });
+  });
+});
+</script>

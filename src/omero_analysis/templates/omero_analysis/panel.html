@@ -56,28 +56,28 @@
     </ul>
   </section>
 
-  {% if context.project_snapshots %}
+  {% if context.workspace_snapshots %}
     <section class="oa-card">
       <div class="oa-section-heading">
         <div>
           <span class="oa-step">2</span>
-          <h3>Resume a saved project</h3>
+          <h3>Open a saved workspace</h3>
         </div>
-        <span class="oa-project-count">{{ context.project_snapshots|length }} saved</span>
+        <span class="oa-workspace-count">{{ context.workspace_snapshots|length }} saved</span>
       </div>
       <p class="oa-help">
-        Select an attached Analysis project. It is restored into browser
+        Select an attached Analysis workspace. It is restored into browser
         storage, and referenced OMERO inputs are downloaded again if needed.
       </p>
       <ul class="oa-attachments">
-        {% for snapshot in context.project_snapshots %}
-          <li class="oa-data-card oa-project-card">
+        {% for snapshot in context.workspace_snapshots %}
+          <li class="oa-data-card oa-workspace-card">
             <label>
               <input type="radio"
-                     name="oa-project-snapshot"
-                     class="oa-project-snapshot"
+                     name="oa-workspace-snapshot"
+                     class="oa-workspace-snapshot"
                      value="{{ snapshot.annotation_id }}">
-              <span class="oa-file-icon oa-project-icon" aria-hidden="true">ZIP</span>
+              <span class="oa-file-icon oa-workspace-icon" aria-hidden="true">ZIP</span>
               <span class="oa-file-details">
                 <strong>{{ snapshot.name }}</strong>
                 <small>

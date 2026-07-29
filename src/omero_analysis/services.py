@@ -2,6 +2,7 @@ import mimetypes
 import json
 import re
 import tempfile
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -13,18 +14,24 @@ from .errors import (
     PermissionDenied,
     UnsupportedMedia,
 )
-from .settings import allowed_result_extensions, max_download_bytes, max_upload_bytes
+from .settings import (
+    allowed_result_extensions,
+    max_download_bytes,
+    max_notebook_bytes,
+    max_notebook_cells,
+    max_upload_bytes,
+)
 
 SUPPORTED_OBJECT_TYPES = ("Image", "Dataset", "Plate", "Screen")
 RESULT_NAMESPACE = "nl.bioimaging.analysis.result.v1"
-PROJECT_NAMESPACE = "nl.bioimaging.analysis.project.v1"
+WORKSPACE_NAMESPACE = "nl.bioimaging.analysis.workspace.v1"
 LEGACY_RESULT_NAMESPACES = {"nl.bioimaging.analysis-chat.result"}
-LEGACY_PROJECT_NAMESPACES = {
-    "nl.bioimaging.analysis-chat.project.v1",
-    "nl.bioimaging.analysis-chat.project.v2",
+PIPELINE_NAMESPACE = "nl.bioimaging.analysis.pipeline.v1"
+NOTEBOOK_NAMESPACE = "nl.bioimaging.analysis.notebook.v1"
+LEGACY_NOTEBOOK_NAMESPACES = {
+    "nl.bioimaging.jupyter.notebook",
+    "nl.bioimaging.omero-jupyterlite.notebook.v1",
 }
-WORKFLOW_NAMESPACE = "nl.bioimaging.analysis.workflow.v1"
-LEGACY_WORKFLOW_NAMESPACES = {"nl.bioimaging.analysis-chat.workflow.v1"}
 INPUT_EXTENSIONS = {
     ".csv",
     ".tsv",
@@ -151,10 +158,16 @@ def attachment_info(annotation):
     namespace = _plain(annotation.getNs()) if hasattr(annotation, "getNs") else None
     extension = Path(name).suffix.lower()
     kind = (
-        "project"
-        if namespace == PROJECT_NAMESPACE or namespace in LEGACY_PROJECT_NAMESPACES
-        else "workflow"
-        if namespace == WORKFLOW_NAMESPACE or namespace in LEGACY_WORKFLOW_NAMESPACES
+        "workspace"
+        if namespace == WORKSPACE_NAMESPACE
+        else "pipeline"
+        if namespace == PIPELINE_NAMESPACE
+        else "notebook"
+        if (
+            namespace == NOTEBOOK_NAMESPACE
+            or namespace in LEGACY_NOTEBOOK_NAMESPACES
+            or extension == ".ipynb"
+        )
         else "result"
         if namespace == RESULT_NAMESPACE or namespace in LEGACY_RESULT_NAMESPACES
         else "attachment"
@@ -209,11 +222,14 @@ def object_context(object_type, object_id, obj, conn=None):
         "can_annotate": can_annotate(obj),
         "max_snapshot_bytes": max_upload_bytes(),
         "attachments": attachments,
-        "project_snapshots": [
-            attachment for attachment in attachments if attachment["kind"] == "project"
+        "workspace_snapshots": [
+            attachment for attachment in attachments if attachment["kind"] == "workspace"
         ],
-        "workflow_templates": [
-            attachment for attachment in attachments if attachment["kind"] == "workflow"
+        "pipeline_templates": [
+            attachment for attachment in attachments if attachment["kind"] == "pipeline"
+        ],
+        "notebooks": [
+            attachment for attachment in attachments if attachment["kind"] == "notebook"
         ],
         "supported_attachments": [
             attachment for attachment in attachments if attachment["supported"]
@@ -303,10 +319,10 @@ def checked_download(obj, annotation_id):
     return annotation, info
 
 
-def checked_project_snapshot_download(obj, annotation_id):
+def checked_workspace_snapshot_download(obj, annotation_id):
     annotation, info = get_direct_attachment(obj, annotation_id)
-    if info.kind != "project":
-        raise UnsupportedMedia(f"{info.name} is not an Analysis project snapshot")
+    if info.kind != "workspace":
+        raise UnsupportedMedia(f"{info.name} is not an Analysis workspace snapshot")
     if info.size > max_download_bytes():
         raise FileTooLarge(
             f"Snapshot is {info.size} bytes; the limit is {max_download_bytes()}"
@@ -314,13 +330,24 @@ def checked_project_snapshot_download(obj, annotation_id):
     return annotation, info
 
 
-def checked_workflow_download(obj, annotation_id):
+def checked_pipeline_download(obj, annotation_id):
     annotation, info = get_direct_attachment(obj, annotation_id)
-    if info.kind != "workflow":
-        raise UnsupportedMedia(f"{info.name} is not an Analysis workflow template")
+    if info.kind != "pipeline":
+        raise UnsupportedMedia(f"{info.name} is not an Analysis pipeline template")
     if info.size > max_download_bytes():
         raise FileTooLarge(
-            f"Workflow is {info.size} bytes; the limit is {max_download_bytes()}"
+            f"Pipeline is {info.size} bytes; the limit is {max_download_bytes()}"
+        )
+    return annotation, info
+
+
+def checked_notebook_download(obj, annotation_id):
+    annotation, info = get_direct_attachment(obj, annotation_id)
+    if info.kind != "notebook":
+        raise UnsupportedMedia(f"{info.name} is not an Analysis notebook")
+    if info.size > max_notebook_bytes():
+        raise FileTooLarge(
+            f"Notebook is {info.size} bytes; the limit is {max_notebook_bytes()}"
         )
     return annotation, info
 
@@ -346,54 +373,114 @@ def validate_result(uploaded_file):
     return filename, supplied or canonical or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
-def validate_project_snapshot(uploaded_file):
+def validate_workspace_snapshot(uploaded_file):
     if uploaded_file is None:
         raise UnsupportedMedia("Multipart field 'file' is required")
     if int(uploaded_file.size) > max_upload_bytes():
         raise FileTooLarge(
-            f"Project snapshot is {uploaded_file.size} bytes; the limit is {max_upload_bytes()}"
+            f"Workspace snapshot is {uploaded_file.size} bytes; the limit is {max_upload_bytes()}"
         )
     filename = safe_filename(uploaded_file.name)
-    if not filename.lower().endswith((".oa.zip", ".oac.zip")):
-        raise UnsupportedMedia("Project snapshots must use the .oa.zip extension")
+    if not filename.lower().endswith(".oa-workspace.zip"):
+        raise UnsupportedMedia("Workspace snapshots must use the .oa-workspace.zip extension")
     supplied = (uploaded_file.content_type or "").lower().split(";", 1)[0].strip()
     if supplied and supplied not in {
         "application/zip",
         "application/octet-stream",
         "application/x-zip-compressed",
     }:
-        raise UnsupportedMedia(f"MIME type {supplied} is not allowed for a project snapshot")
+        raise UnsupportedMedia(f"MIME type {supplied} is not allowed for a workspace snapshot")
     position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
     signature = uploaded_file.read(4)
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(position)
     if signature not in {b"PK\x03\x04", b"PK\x05\x06"}:
-        raise UnsupportedMedia("Project snapshot is not a valid ZIP stream")
+        raise UnsupportedMedia("Workspace snapshot is not a valid ZIP stream")
+    try:
+        with zipfile.ZipFile(uploaded_file) as archive:
+            names = archive.namelist()
+            if "workspace.json" not in names:
+                raise UnsupportedMedia("Workspace snapshot must contain workspace.json")
+            if len(names) > 50000:
+                raise UnsupportedMedia("Workspace snapshot contains too many entries")
+            manifest = json.loads(archive.read("workspace.json"))
+    except UnsupportedMedia:
+        raise
+    except (zipfile.BadZipFile, KeyError, ValueError, UnicodeDecodeError) as exc:
+        raise UnsupportedMedia("Workspace snapshot is not a valid Analysis archive") from exc
+    finally:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(position)
+    if not isinstance(manifest, dict) or manifest.get("format") != WORKSPACE_NAMESPACE:
+        raise UnsupportedMedia("Unsupported workspace snapshot format")
     return filename, "application/zip"
 
 
-def validate_workflow_template(uploaded_file):
+def validate_pipeline_template(uploaded_file):
     if uploaded_file is None:
         raise UnsupportedMedia("Multipart field 'file' is required")
     if int(uploaded_file.size) > min(max_upload_bytes(), 4 * 1024 * 1024):
-        raise FileTooLarge("Workflow templates are limited to 4 MiB")
+        raise FileTooLarge("Pipeline templates are limited to 4 MiB")
     filename = safe_filename(uploaded_file.name)
-    if not filename.lower().endswith((".oa-workflow.json", ".oac-workflow.json")):
-        raise UnsupportedMedia("Workflow templates must use .oa-workflow.json")
+    if not filename.lower().endswith(".oa-pipeline.json"):
+        raise UnsupportedMedia("Pipeline templates must use .oa-pipeline.json")
     position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
     try:
         payload = json.load(uploaded_file)
     except (ValueError, UnicodeDecodeError) as exc:
-        raise UnsupportedMedia("Workflow template must contain valid JSON") from exc
+        raise UnsupportedMedia("Pipeline template must contain valid JSON") from exc
     finally:
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(position)
-    if payload.get("format") not in {
-        "nl.bioimaging.analysis.workflow.v1",
-        "nl.bioimaging.analysis-chat.workflow.v1",
-    }:
-        raise UnsupportedMedia("Unsupported workflow template format")
+    if payload.get("format") != PIPELINE_NAMESPACE:
+        raise UnsupportedMedia("Unsupported pipeline template format")
     return filename, "application/json"
+
+
+def validate_notebook(uploaded_file):
+    if uploaded_file is None:
+        raise UnsupportedMedia("Multipart field 'file' is required")
+    if int(uploaded_file.size) > max_notebook_bytes():
+        raise FileTooLarge(
+            f"Notebook is {uploaded_file.size} bytes; the limit is {max_notebook_bytes()}"
+        )
+    filename = safe_filename(uploaded_file.name)
+    if not filename.lower().endswith(".ipynb"):
+        raise UnsupportedMedia("Notebooks must use the .ipynb extension")
+    position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
+    try:
+        payload = json.load(uploaded_file)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise UnsupportedMedia("Notebook must contain valid JSON") from exc
+    finally:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(position)
+    if not isinstance(payload, dict) or payload.get("nbformat") != 4:
+        raise UnsupportedMedia("Only nbformat 4 notebooks are supported")
+    cells = payload.get("cells")
+    if not isinstance(cells, list) or len(cells) > max_notebook_cells():
+        raise UnsupportedMedia(
+            f"Notebook must contain at most {max_notebook_cells()} cells"
+        )
+    for cell in cells:
+        if not isinstance(cell, dict) or cell.get("cell_type") not in {
+            "code",
+            "markdown",
+            "raw",
+        }:
+            raise UnsupportedMedia("Notebook contains an invalid cell")
+        source = cell.get("source", "")
+        if not isinstance(source, (str, list)) or (
+            isinstance(source, list)
+            and not all(isinstance(line, str) for line in source)
+        ):
+            raise UnsupportedMedia("Notebook cell source must be text")
+    metadata = payload.get("metadata") or {}
+    language = str((metadata.get("language_info") or {}).get("name") or "python").lower()
+    kernel = str((metadata.get("kernelspec") or {}).get("language") or "python").lower()
+    if language not in {"python", "python3"} or kernel not in {"python", "python3"}:
+        raise UnsupportedMedia("Only Python notebooks are supported")
+    return filename, "application/x-ipynb+json"
 
 
 def _upload_annotation(conn, obj, uploaded_file, validator, namespace, description):
@@ -435,23 +522,34 @@ def upload_result_annotation(conn, obj, uploaded_file):
     )
 
 
-def upload_project_snapshot_annotation(conn, obj, uploaded_file):
+def upload_workspace_snapshot_annotation(conn, obj, uploaded_file):
     return _upload_annotation(
         conn,
         obj,
         uploaded_file,
-        validate_project_snapshot,
-        PROJECT_NAMESPACE,
-        "Portable OMERO Analysis project snapshot",
+        validate_workspace_snapshot,
+        WORKSPACE_NAMESPACE,
+        "Portable OMERO Analysis workspace snapshot",
     )
 
 
-def upload_workflow_annotation(conn, obj, uploaded_file):
+def upload_pipeline_annotation(conn, obj, uploaded_file):
     return _upload_annotation(
         conn,
         obj,
         uploaded_file,
-        validate_workflow_template,
-        WORKFLOW_NAMESPACE,
-        "Reusable OMERO Analysis workflow template",
+        validate_pipeline_template,
+        PIPELINE_NAMESPACE,
+        "Reusable OMERO Analysis pipeline template",
+    )
+
+
+def upload_notebook_annotation(conn, obj, uploaded_file):
+    return _upload_annotation(
+        conn,
+        obj,
+        uploaded_file,
+        validate_notebook,
+        NOTEBOOK_NAMESPACE,
+        "OMERO Analysis notebook",
     )

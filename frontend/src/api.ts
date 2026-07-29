@@ -1,4 +1,4 @@
-import { CHAT_URL, MAX_TOOL_TEXT, TEMPERATURE, TOOLS } from "./constants";
+import { MAX_TOOL_TEXT, TEMPERATURE, TOOLS } from "./constants";
 import type {
   Attachment,
   Bootstrap,
@@ -8,6 +8,7 @@ import type {
   WorkspaceFile,
   WorkflowSkillCatalog,
   WorkflowSkillPackage,
+  AnalysisSkillProviderCatalog,
   ZarrViewerIntegrationStatus
 } from "./types";
 import { zarrViewerStatusFrom } from "./zarrViewer";
@@ -132,7 +133,7 @@ export class OmeroBridge {
 
   async uploadSnapshot(name: string, data: Uint8Array): Promise<Attachment> {
     const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the project snapshot");
+    if (!context) throw new Error("No OMERO target for the workspace snapshot");
     const form = new FormData();
     form.append(
       "file",
@@ -163,37 +164,64 @@ export class OmeroBridge {
     return response.arrayBuffer();
   }
 
-  async listWorkflowTemplates(): Promise<Attachment[]> {
+  async listPipelineTemplates(): Promise<Attachment[]> {
     const context = this.bootstrap.context;
     if (!context) return [];
     const response = await this.authorizedFetch(
-      route(this.bootstrap.workflowTemplatesTemplate, context.object_type, context.object_id)
+      route(this.bootstrap.pipelineTemplatesTemplate, context.object_type, context.object_id)
     );
     const body = await readJson(response);
-    return attachmentList(body.workflows);
+    return attachmentList(body.pipelines);
   }
 
-  async uploadWorkflowTemplate(name: string, data: Uint8Array): Promise<Attachment> {
+  async uploadPipelineTemplate(name: string, data: Uint8Array): Promise<Attachment> {
     const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the workflow template");
+    if (!context) throw new Error("No OMERO target for the pipeline template");
     const form = new FormData();
     form.append("file", new Blob([data as BlobPart], { type: "application/json" }), name);
     const response = await this.authorizedFetch(
-      route(this.bootstrap.workflowTemplatesTemplate, context.object_type, context.object_id),
+      route(this.bootstrap.pipelineTemplatesTemplate, context.object_type, context.object_id),
       { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
     );
     const body = await readJson(response);
-    return attachmentFrom(body.workflow);
+    return attachmentFrom(body.pipeline);
   }
 
-  async downloadWorkflowTemplate(template: Attachment): Promise<ArrayBuffer> {
-    const url = this.bootstrap.workflowDownloadTemplate.replace(
+  async downloadPipelineTemplate(template: Attachment): Promise<ArrayBuffer> {
+    const url = this.bootstrap.pipelineDownloadTemplate.replace(
       "/1/download/",
       `/${template.annotation_id}/download/`
     );
     const response = await this.authorizedFetch(url);
     if (!response.ok) throw new Error(await errorText(response));
     return response.arrayBuffer();
+  }
+
+  async downloadNotebook(notebook: Attachment): Promise<ArrayBuffer> {
+    const url = this.bootstrap.notebookDownloadTemplate.replace(
+      "/1/download/",
+      `/${notebook.annotation_id}/download/`
+    );
+    const response = await this.authorizedFetch(url);
+    if (!response.ok) throw new Error(await errorText(response));
+    return response.arrayBuffer();
+  }
+
+  async uploadNotebook(name: string, data: Uint8Array): Promise<Attachment> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO target for the notebook");
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([data as BlobPart], { type: "application/x-ipynb+json" }),
+      name
+    );
+    const response = await this.authorizedFetch(
+      route(this.bootstrap.notebookUploadTemplate, context.object_type, context.object_id),
+      { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
+    );
+    const body = await readJson(response);
+    return attachmentFrom(body.notebook);
   }
 
   async listWorkflowSkills(): Promise<WorkflowSkillCatalog> {
@@ -208,6 +236,106 @@ export class OmeroBridge {
       credentials: "same-origin"
     });
     return zarrViewerStatusFrom(await readJson(response));
+  }
+
+  async loadZarrViewerSkill(): Promise<WorkflowSkillPackage> {
+    const catalog = await this.listZarrViewerSkills();
+    const summary = catalog.skills.find(
+      (item: unknown) => record(item, "ZarrViewer skill").name === "use-omero-zarr-viewer"
+    );
+    if (!summary || typeof summary.package_url !== "string") {
+      throw new Error("ZarrViewer operation skill is unavailable");
+    }
+    const body = record(
+      await readJson(await fetch(summary.package_url, { credentials: "same-origin" })),
+      "ZarrViewer skill package"
+    );
+    const skill = record(body.skill, "ZarrViewer skill");
+    if (
+      skill.name !== "use-omero-zarr-viewer" ||
+      typeof skill.version !== "string" ||
+      typeof skill.sha256 !== "string" ||
+      !Array.isArray(body.files)
+    ) {
+      throw new Error("ZarrViewer returned an invalid skill package");
+    }
+    const provider = record(body.provider, "ZarrViewer skill provider");
+    return {
+      source: {
+        workflow_key: "biomero-zarr-viewer",
+        source_kind: "application",
+        source_key: "biomero-zarr-viewer",
+        repository_url: "BIOMERO.ZarrViewer",
+        configured_ref: String(provider.version || ""),
+        resolved_commit: String(provider.version || ""),
+        skills_path: "bundled/analysis_skills",
+        ref_kind: "distribution"
+      },
+      skill: {
+        workflow_key: "biomero-zarr-viewer",
+        source_kind: "application",
+        source_key: "biomero-zarr-viewer",
+        name: skill.name,
+        description: String(skill.description || ""),
+        purpose: String(skill.purpose || "application-operation"),
+        consumers: Array.isArray(skill.consumers) ? skill.consumers : ["omero-analysis"],
+        version: skill.version,
+        sha256: skill.sha256,
+        package_url: summary.package_url,
+        required_resources: Array.isArray(skill.required_resources) ? skill.required_resources : [],
+        required_capabilities: Array.isArray(skill.required_capabilities) ? skill.required_capabilities : [],
+        match: skill.match || {
+          extensions: [], filename_globs: [], required_tables: [], auto_activate: false
+        }
+      },
+      files: body.files.map((item: unknown) => {
+        const file = record(item, "ZarrViewer skill file");
+        if (
+          typeof file.path !== "string" ||
+          typeof file.content !== "string" ||
+          typeof file.sha256 !== "string" ||
+          (file.path !== "SKILL.md" && !file.path.startsWith("references/"))
+        ) {
+          throw new Error("ZarrViewer returned an unsafe skill file");
+        }
+        return file;
+      })
+    } as WorkflowSkillPackage;
+  }
+
+  async listZarrViewerSkills(): Promise<AnalysisSkillProviderCatalog> {
+    const status = await this.zarrViewerStatus();
+    if (!status.available || !status.skill_catalog_url) {
+      throw new Error("ZarrViewer skill provider is unavailable");
+    }
+    const catalog = record(
+      await readJson(await fetch(status.skill_catalog_url, { credentials: "same-origin" })),
+      "ZarrViewer skill catalog"
+    );
+    const provider = record(catalog.provider, "ZarrViewer skill provider");
+    if (
+      catalog.schema !== "nl.bioimaging.analysis-skill-provider.v1" ||
+      !Array.isArray(catalog.skills) ||
+      typeof provider.name !== "string" ||
+      typeof provider.distribution !== "string" ||
+      typeof provider.version !== "string" ||
+      typeof provider.source !== "string" ||
+      typeof provider.health !== "string"
+    ) {
+      throw new Error("ZarrViewer returned an invalid skill catalog");
+    }
+    for (const raw of catalog.skills) {
+      const skill = record(raw, "ZarrViewer skill");
+      if (
+        typeof skill.name !== "string" ||
+        typeof skill.version !== "string" ||
+        typeof skill.sha256 !== "string" ||
+        typeof skill.package_url !== "string"
+      ) {
+        throw new Error("ZarrViewer returned invalid skill metadata");
+      }
+    }
+    return catalog as AnalysisSkillProviderCatalog;
   }
 
   async loadWorkflowSkill(
@@ -261,7 +389,7 @@ function attachmentFrom(value: unknown): Attachment {
     typeof item.name !== "string" ||
     typeof item.mimetype !== "string" ||
     typeof item.size !== "number" ||
-    !["attachment", "result", "project", "workflow"].includes(item.kind) ||
+    !["attachment", "result", "workspace", "pipeline", "notebook"].includes(item.kind) ||
     typeof item.supported !== "boolean"
   ) {
     throw new Error("OMERO returned invalid attachment metadata");
@@ -420,15 +548,45 @@ export async function completeChat(
   onDelta?: (content: string) => void,
   tools: readonly unknown[] = TOOLS
 ): Promise<AiResponse> {
+  return settings.protocol === "anthropic"
+    ? completeAnthropic(settings, messages, signal, onDelta, tools)
+    : completeOpenAi(settings, messages, signal, onDelta, tools);
+}
+
+export function providerLabel(settings: ProviderSettings): string {
+  return settings.protocol === "anthropic" ? "Anthropic" : "AI provider";
+}
+
+export function providerEndpoint(settings: ProviderSettings): string {
+  const value = settings.endpoint.trim().replace(/\/+$/, "");
+  if (!value) throw new Error("Configure an AI API endpoint in Settings");
+  if (settings.protocol === "anthropic") {
+    return /\/messages$/i.test(value) ? value : `${value}/v1/messages`;
+  }
+  return /\/chat\/completions$/i.test(value)
+    ? value
+    : `${value}/chat/completions`;
+}
+
+async function completeOpenAi(
+  settings: ProviderSettings,
+  messages: AiMessage[],
+  signal: AbortSignal,
+  onDelta?: (content: string) => void,
+  tools: readonly unknown[] = TOOLS
+): Promise<AiResponse> {
   const toolConfiguration = tools.length
     ? { tools, tool_choice: "auto" }
     : {};
-  const response = await fetch(CHAT_URL, {
+  const authorization: Record<string, string> = settings.authMode === "api-key"
+    ? { "api-key": settings.apiKey }
+    : { Authorization: `Bearer ${settings.apiKey}` };
+  const response = await fetch(providerEndpoint(settings), {
     method: "POST",
     signal,
     headers: {
       "Content-Type": "application/json",
-      "api-key": settings.apiKey
+      ...authorization
     },
     body: JSON.stringify({
       model: settings.model,
@@ -441,10 +599,10 @@ export async function completeChat(
   });
   if (!response.ok) throw new Error(await errorText(response));
   if (!onDelta || !response.headers.get("content-type")?.includes("text/event-stream")) {
-    return aiResponseFrom(await response.json());
+    return aiResponseFrom(await response.json(), providerLabel(settings));
   }
   const reader = response.body?.getReader();
-  if (!reader) throw new Error("AmsterdamUMC returned an empty response stream");
+  if (!reader) throw new Error(`${providerLabel(settings)} returned an empty response stream`);
   const decoder = new TextDecoder();
   let buffer = "";
   let content = "";
@@ -490,21 +648,181 @@ export async function completeChat(
       }
     }],
     usage
+  }, providerLabel(settings));
+}
+
+type AnthropicBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; tool_use_id: string; content: string };
+
+function anthropicMessages(messages: AiMessage[]) {
+  const system = messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content || "")
+    .filter(Boolean)
+    .join("\n\n");
+  const converted: Array<{ role: "user" | "assistant"; content: string | AnthropicBlock[] }> = [];
+  for (const message of messages.filter((item) => item.role !== "system")) {
+    let role: "user" | "assistant";
+    let content: string | AnthropicBlock[];
+    if (message.role === "assistant") {
+      role = "assistant";
+      const blocks: AnthropicBlock[] = [];
+      if (message.content) blocks.push({ type: "text", text: message.content });
+      for (const call of message.tool_calls || []) {
+        let input: unknown = {};
+        try {
+          input = JSON.parse(call.function.arguments || "{}");
+        } catch {
+          input = {};
+        }
+        blocks.push({
+          type: "tool_use",
+          id: call.id,
+          name: call.function.name,
+          input
+        });
+      }
+      content = blocks.length ? blocks : "";
+    } else if (message.role === "tool") {
+      role = "user";
+      content = [{
+        type: "tool_result",
+        tool_use_id: message.tool_call_id || "",
+        content: message.content || ""
+      }];
+    } else {
+      role = "user";
+      content = message.content || "";
+    }
+    const previous = converted.at(-1);
+    if (previous?.role === role) {
+      const priorBlocks: AnthropicBlock[] = typeof previous.content === "string"
+        ? [{ type: "text", text: previous.content }]
+        : previous.content;
+      const nextBlocks: AnthropicBlock[] = typeof content === "string"
+        ? [{ type: "text", text: content }]
+        : content;
+      previous.content = [...priorBlocks, ...nextBlocks];
+    } else {
+      converted.push({ role, content });
+    }
+  }
+  return { system, messages: converted };
+}
+
+function anthropicTools(tools: readonly unknown[]) {
+  return tools.flatMap((raw) => {
+    const outer = raw && typeof raw === "object"
+      ? raw as Record<string, unknown>
+      : {};
+    const fn = outer.function && typeof outer.function === "object"
+      ? outer.function as Record<string, unknown>
+      : {};
+    return typeof fn.name === "string"
+      ? [{
+          name: fn.name,
+          description: typeof fn.description === "string" ? fn.description : "",
+          input_schema: fn.parameters || {
+            type: "object",
+            properties: {},
+            additionalProperties: false
+          }
+        }]
+      : [];
   });
 }
 
-function aiResponseFrom(value: unknown): AiResponse {
+async function completeAnthropic(
+  settings: ProviderSettings,
+  messages: AiMessage[],
+  signal: AbortSignal,
+  onDelta?: (content: string) => void,
+  tools: readonly unknown[] = TOOLS
+): Promise<AiResponse> {
+  const converted = anthropicMessages(messages);
+  const response = await fetch(providerEndpoint(settings), {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": settings.apiKey,
+      "anthropic-version": "2023-06-01"
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      max_tokens: 4096,
+      temperature: TEMPERATURE,
+      system: converted.system || undefined,
+      messages: converted.messages,
+      tools: tools.length ? anthropicTools(tools) : undefined
+    })
+  });
+  if (!response.ok) throw new Error(await errorText(response));
+  const body = record(await response.json(), "Anthropic response");
+  if (!Array.isArray(body.content)) {
+    throw new Error("Anthropic returned an invalid response");
+  }
+  const text = body.content
+    .filter((block: unknown) =>
+      Boolean(block && typeof block === "object" &&
+        (block as Record<string, unknown>).type === "text")
+    )
+    .map((block: unknown) => String((block as Record<string, unknown>).text || ""))
+    .join("");
+  const toolCalls: ToolCall[] = body.content.flatMap((block: unknown) => {
+    const value = block && typeof block === "object"
+      ? block as Record<string, unknown>
+      : {};
+    if (
+      value.type !== "tool_use" ||
+      typeof value.id !== "string" ||
+      typeof value.name !== "string"
+    ) return [];
+    return [{
+      id: value.id,
+      type: "function" as const,
+      function: {
+        name: value.name,
+        arguments: JSON.stringify(value.input || {})
+      }
+    }];
+  });
+  const rawUsage = body.usage && typeof body.usage === "object"
+    ? body.usage as Record<string, unknown>
+    : {};
+  const promptTokens = Number(rawUsage.input_tokens || 0);
+  const completionTokens = Number(rawUsage.output_tokens || 0);
+  if (text && onDelta) onDelta(text);
+  return {
+    choices: [{
+      message: {
+        role: "assistant",
+        content: text || null,
+        tool_calls: toolCalls.length ? toolCalls : undefined
+      }
+    }],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens
+    }
+  };
+}
+
+function aiResponseFrom(value: unknown, provider = "AI provider"): AiResponse {
   const body = record(value, "AI response");
   if (!Array.isArray(body.choices) || !body.choices.length) {
-    throw new Error("AmsterdamUMC returned no response choices");
+    throw new Error(`${provider} returned no response choices`);
   }
   for (const choice of body.choices) {
     const message = record(record(choice, "AI choice").message, "AI message");
     if (message.role !== "assistant" || !(message.content == null || typeof message.content === "string")) {
-      throw new Error("AmsterdamUMC returned an invalid assistant message");
+      throw new Error(`${provider} returned an invalid assistant message`);
     }
     if (message.tool_calls != null) {
-      if (!Array.isArray(message.tool_calls)) throw new Error("AmsterdamUMC returned invalid tool calls");
+      if (!Array.isArray(message.tool_calls)) throw new Error(`${provider} returned invalid tool calls`);
       for (const raw of message.tool_calls) {
         const call = record(raw, "AI tool call");
         const fn = record(call.function, "AI tool function");
@@ -513,7 +831,7 @@ function aiResponseFrom(value: unknown): AiResponse {
           call.type !== "function" ||
           typeof fn.name !== "string" ||
           typeof fn.arguments !== "string"
-        ) throw new Error("AmsterdamUMC returned an invalid tool call");
+        ) throw new Error(`${provider} returned an invalid tool call`);
       }
     }
   }

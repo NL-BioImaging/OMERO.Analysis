@@ -9,7 +9,7 @@ const execution = (
   status: ExecutionRecord["status"] = "success"
 ): ExecutionRecord => ({
   id,
-  projectId: "project",
+  workspaceId: "workspace",
   chatId: "chat",
   promptId: "prompt",
   code: `result = "${id}"`,
@@ -30,7 +30,7 @@ const execution = (
 
 const artifact: ArtifactRecord = {
   id: "artifact",
-  projectId: "project",
+  workspaceId: "workspace",
   chatId: "chat",
   promptId: "prompt",
   fileId: "png",
@@ -72,7 +72,7 @@ const artifact: ArtifactRecord = {
 
 const png: WorkspaceFile = {
   id: "png",
-  projectId: "project",
+  workspaceId: "workspace",
   chatId: "chat",
   name: "render.png",
   logicalPath: "chats/chat/render.png",
@@ -87,7 +87,7 @@ const png: WorkspaceFile = {
 
 const evidence: EvidenceRecord = {
   id: "evidence-analysis",
-  projectId: "project",
+  workspaceId: "workspace",
   chatId: "chat",
   promptId: "prompt",
   kind: "navigation",
@@ -110,6 +110,13 @@ describe("reproducible render bundles", () => {
     expect(selected.map((item) => item.id)).toEqual(["analysis"]);
   });
 
+  it("keeps only analysis executions cited by the final viewer render", () => {
+    expect(selectReproducibleExecutions([
+      execution("draft", "analysis"),
+      execution("analysis", "analysis")
+    ], artifact).map((item) => item.id)).toEqual(["analysis"]);
+  });
+
   it("promotes successful inspection code for legacy renders", () => {
     expect(selectReproducibleExecutions([
       execution("failed", "analysis", "failed"),
@@ -117,7 +124,7 @@ describe("reproducible render bundles", () => {
     ], artifact).map((item) => item.id)).toEqual(["inspection"]);
   });
 
-  it("stores the exact recipe, PNG, script, and provenance manifest", () => {
+  it("stores the exact recipe, PNG, method, and provenance manifest", () => {
     const bundle = buildRenderBundle(
       artifact,
       png,

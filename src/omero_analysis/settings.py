@@ -34,6 +34,14 @@ def max_upload_bytes():
     return int(_setting("max_upload_bytes", 268435456))
 
 
+def max_notebook_bytes():
+    return int(_setting("max_notebook_bytes", 32 * 1024 * 1024))
+
+
+def max_notebook_cells():
+    return int(_setting("max_notebook_cells", 10000))
+
+
 def allowed_result_extensions():
     value = _setting("allowed_result_extensions", DEFAULT_EXTENSIONS)
     if isinstance(value, str):

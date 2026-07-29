@@ -167,7 +167,12 @@ it("discards capability credentials and builds a validated deep link", async () 
     initial_path: "A/1/5",
     channels: [{ index: 0, label: "DNA", active: true }],
     labels: [{ id: "cells", name: "cells", path: "labels/cells" }],
-    plate: { wells: [{ path: "A/1", fields: [{ path: "A/1/5", name: "5" }] }] }
+    plate: {
+      name: "20220714_TKI_482",
+      rows: ["A", "B"],
+      columns: ["1", "2"],
+      wells: [{ path: "A/1", fields: [{ path: "A/1/5", name: "5" }] }]
+    }
   }), { status: 200, headers: { "Content-Type": "application/json" } })));
   const capability = await fetchZarrCapability(status, {
     type: "Plate",
@@ -181,6 +186,11 @@ it("discards capability credentials and builds a validated deep link", async () 
     uuid: storeUuid,
     roi_url: "/biomero_zarr_viewer/api/images/201/roi.png",
     render_url: "/biomero_zarr_viewer/api/images/201/render.png"
+  });
+  expect(capability.plate).toMatchObject({
+    name: "20220714_TKI_482",
+    rows: ["A", "B"],
+    columns: ["1", "2"]
   });
   expect(JSON.stringify(capability)).not.toContain("secret-store");
   const url = new URL(zarrViewerUrl(status, capability, zarrFocusFromToolArgs({

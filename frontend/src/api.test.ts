@@ -1,4 +1,4 @@
-import { completeChat, OmeroBridge } from "./api";
+import { completeChat, OmeroBridge, providerEndpoint } from "./api";
 import type { Bootstrap } from "./types";
 
 const bootstrap: Bootstrap = {
@@ -20,8 +20,10 @@ const bootstrap: Bootstrap = {
   snapshotsTemplate: "/snapshots/TYPE/1/",
   snapshotUploadTemplate: "/snapshots/TYPE/1/",
   snapshotDownloadTemplate: "/snapshot/1/download/",
-  workflowTemplatesTemplate: "/workflows/TYPE/1/",
-  workflowDownloadTemplate: "/workflow/1/download/",
+  pipelineTemplatesTemplate: "/pipelines/TYPE/1/",
+  pipelineDownloadTemplate: "/pipeline/1/download/",
+  notebookDownloadTemplate: "/notebook/1/download/",
+  notebookUploadTemplate: "/notebooks/TYPE/1/upload/",
   workflowSkillsUrl: "/workflow-skills/",
   zarrViewerStatusUrl: "/integrations/zarr-viewer/",
   runtimeBase: "/runtime/"
@@ -77,7 +79,7 @@ describe("OMERO capability renewal", () => {
   });
 });
 
-describe("workflow skill adapter", () => {
+describe("BIOMERO measurement-skill adapter", () => {
   it("validates catalog and package payloads", async () => {
     const source = {
       workflow_key: "example",
@@ -176,7 +178,8 @@ describe("workflow skill adapter", () => {
           reason: "ready",
           viewer_url: "/biomero_zarr_viewer/",
           image_capabilities_template: "/images/0/capabilities/",
-          plate_capabilities_template: "/plates/0/capabilities/"
+          plate_capabilities_template: "/plates/0/capabilities/",
+          skill_catalog_url: "/biomero_zarr_viewer/api/analysis-skills/"
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify({
@@ -198,6 +201,27 @@ describe("workflow skill adapter", () => {
 });
 
 describe("AI completion requests", () => {
+  it("uses only the user-configured endpoint", () => {
+    expect(providerEndpoint({
+      protocol: "openai",
+      endpoint: "https://provider.example/v1",
+      authMode: "bearer",
+      model: "model",
+      apiKey: "key",
+      rememberKey: false,
+      contextWindow: 0
+    })).toBe("https://provider.example/v1/chat/completions");
+    expect(providerEndpoint({
+      protocol: "anthropic",
+      endpoint: "https://claude.example",
+      authMode: "bearer",
+      model: "model",
+      apiKey: "key",
+      rememberKey: false,
+      contextWindow: 0
+    })).toBe("https://claude.example/v1/messages");
+  });
+
   it("omits tool configuration during forced final synthesis", async () => {
     let requestBody: Record<string, unknown> = {};
     vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -209,6 +233,9 @@ describe("AI completion requests", () => {
 
     await completeChat(
       {
+        protocol: "openai",
+        endpoint: "https://provider.example/v1",
+        authMode: "bearer",
         model: "gpt-test",
         apiKey: "key",
         rememberKey: false,

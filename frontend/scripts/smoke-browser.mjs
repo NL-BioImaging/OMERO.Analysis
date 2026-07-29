@@ -42,7 +42,7 @@ const server = createServer(async (request, response) => {
     response.setHeader(
       "Content-Security-Policy",
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
-      "connect-src 'self' https://aumc-aicode-openai-swedencentral-oai.openai.azure.com; " +
+      "connect-src 'self' https:; " +
       "worker-src blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
     );
     response.end(`<!doctype html><meta charset="utf-8"><title>Analysis smoke</title>
@@ -101,7 +101,7 @@ const page = await browser.newPage();
 const errors = [];
 let completions = 0;
 await page.route(
-  "https://aumc-aicode-openai-swedencentral-oai.openai.azure.com/**",
+  "https://provider.example/**",
   async (route) => {
     const request = route.request();
     const cors = {
@@ -118,11 +118,11 @@ await page.route(
       throw new Error(`Unexpected provider payload: ${JSON.stringify(payload)}`);
     }
     if (request.headers()["api-key"] !== "smoke-key") {
-      throw new Error("Azure api-key header was not preserved");
+      throw new Error("Configured api-key header was not preserved");
     }
     completions += 1;
     if (request.postData().includes("group,value\\na,1\\nb,2")) {
-      throw new Error("A complete source file was included in the Azure request");
+      throw new Error("A complete source file was included in the AI provider request");
     }
     let message;
     if (completions === 1) {
@@ -384,7 +384,7 @@ try {
   const archiveEntries = unzipSync(new Uint8Array(archiveBytes));
   const projectManifest = JSON.parse(strFromU8(archiveEntries["project.json"]));
   if (JSON.stringify(projectManifest).toLowerCase().includes("smoke-key")) {
-    throw new Error("Project snapshot leaked the Azure API key");
+    throw new Error("Workspace snapshot leaked the AI provider API key");
   }
   if (!Object.keys(archiveEntries).some((name) => name.includes("inputs/local/"))) {
     throw new Error("Project snapshot omitted its eligible local input");
@@ -417,7 +417,7 @@ try {
   );
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log(
-    "Browser smoke passed: opaque iframe/worker, CSP, file transfer, fixed Azure contract, " +
+    "Browser smoke passed: opaque iframe/worker, CSP, file transfer, configurable AI contract, " +
     "local Python and plot-CSV repair, seaborn, token usage, table preview, and generated result"
   );
 } catch (error) {

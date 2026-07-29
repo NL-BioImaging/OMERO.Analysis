@@ -1,12 +1,12 @@
 import {
   loadOrCreateWorkspace,
   loadWorkspace,
-  listUserProjects,
+  listUserWorkspaces,
   newChat,
-  deleteProjectCascade,
+  deleteWorkspaceCascade,
   saveChat,
   saveEvidenceLedger,
-  saveProject,
+  saveWorkspaceRecord,
   setValue
 } from "./storage";
 import type { OmeroContext } from "./types";
@@ -21,31 +21,31 @@ const context: OmeroContext = {
   selected_attachments: []
 };
 
-describe("normalized project storage", () => {
-  it("creates an exact-object project and stores chats separately", async () => {
+describe("normalized workspace storage", () => {
+  it("creates an exact-object workspace and stores chats separately", async () => {
     const workspace = await loadOrCreateWorkspace(context);
-    expect(workspace.project.rootPath).toBe("OMERO/Dataset-42--cells");
-    expect(workspace.project.plotCsv).toBe(true);
-    const chat = newChat(workspace.project.id, "Second chat");
+    expect(workspace.workspace.rootPath).toBe("OMERO/Dataset-42--cells");
+    expect(workspace.workspace.plotCsv).toBe(true);
+    const chat = newChat(workspace.workspace.id, "Second chat");
     await saveChat(chat);
-    await saveProject({ ...workspace.project, activeChatId: chat.id });
-    const loaded = await loadWorkspace(workspace.project.id);
+    await saveWorkspaceRecord({ ...workspace.workspace, activeChatId: chat.id });
+    const loaded = await loadWorkspace(workspace.workspace.id);
     expect(loaded?.chats.map((item) => item.title)).toContain("Second chat");
-    expect(loaded?.project.activeChatId).toBe(chat.id);
+    expect(loaded?.workspace.activeChatId).toBe(chat.id);
   });
 
-  it("migrates the old monolithic workspace into an imported chat", async () => {
+  it("ignores an old monolithic browser value", async () => {
     const legacyContext = { ...context, object_id: 43 };
     await setValue("workspace:7:4:Dataset:43", {
       messages: [{ id: "legacy-message", role: "user", content: "Old question" }],
       files: []
     });
-    const migrated = await loadOrCreateWorkspace(legacyContext);
-    expect(migrated.chats[0].title).toBe("Imported chat");
-    expect(migrated.chats[0].messages[0].content).toBe("Old question");
+    const created = await loadOrCreateWorkspace(legacyContext);
+    expect(created.chats[0].title).toBe("New analysis");
+    expect(created.chats[0].messages).toEqual([]);
   });
 
-  it("lists destination projects for the same OMERO user and group", async () => {
+  it("lists destination workspaces for the same OMERO user and group", async () => {
     const first = await loadOrCreateWorkspace({ ...context, object_id: 50 });
     const second = await loadOrCreateWorkspace({
       ...context,
@@ -59,29 +59,29 @@ describe("normalized project storage", () => {
       group_id: 99,
       name: "Other group"
     });
-    const projects = await listUserProjects({ ...context, object_id: 50 });
-    expect(projects.map((project) => project.id)).toContain(first.project.id);
-    expect(projects.map((project) => project.id)).toContain(second.project.id);
-    expect(projects.some((project) => project.groupId === 99)).toBe(false);
+    const workspaces = await listUserWorkspaces({ ...context, object_id: 50 });
+    expect(workspaces.map((workspace) => workspace.id)).toContain(first.workspace.id);
+    expect(workspaces.map((workspace) => workspace.id)).toContain(second.workspace.id);
+    expect(workspaces.some((workspace) => workspace.groupId === 99)).toBe(false);
   });
 
-  it("serializes rapid writes and deletes an entire project transactionally", async () => {
+  it("serializes rapid writes and deletes an entire workspace transactionally", async () => {
     const workspace = await loadOrCreateWorkspace({ ...context, object_id: 60 });
     await Promise.all([
-      saveProject({ ...workspace.project, name: "first" }),
-      saveProject({ ...workspace.project, name: "latest" })
+      saveWorkspaceRecord({ ...workspace.workspace, name: "first" }),
+      saveWorkspaceRecord({ ...workspace.workspace, name: "latest" })
     ]);
-    expect((await loadWorkspace(workspace.project.id))?.project.name).toBe("latest");
-    await deleteProjectCascade(workspace.project.id);
-    expect(await loadWorkspace(workspace.project.id)).toBeUndefined();
+    expect((await loadWorkspace(workspace.workspace.id))?.workspace.name).toBe("latest");
+    await deleteWorkspaceCascade(workspace.workspace.id);
+    expect(await loadWorkspace(workspace.workspace.id)).toBeUndefined();
   });
 
   it("persists a bounded replacement evidence ledger per chat", async () => {
     const workspace = await loadOrCreateWorkspace({ ...context, object_id: 61 });
-    const chatId = workspace.project.activeChatId;
+    const chatId = workspace.workspace.activeChatId;
     const evidence = (id: string) => ({
       id,
-      projectId: workspace.project.id,
+      workspaceId: workspace.workspace.id,
       chatId,
       promptId: "prompt",
       kind: "tool-result" as const,
@@ -95,7 +95,7 @@ describe("normalized project storage", () => {
     });
     await saveEvidenceLedger(chatId, [evidence("old"), evidence("keep")]);
     await saveEvidenceLedger(chatId, [evidence("keep")]);
-    expect((await loadWorkspace(workspace.project.id))?.evidence.map((item) => item.id))
+    expect((await loadWorkspace(workspace.workspace.id))?.evidence.map((item) => item.id))
       .toEqual(["keep"]);
   });
 });

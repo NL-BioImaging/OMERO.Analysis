@@ -3,7 +3,7 @@
 <script>
 $(function () {
   "use strict";
-  var panel = $("#omero_analysis_panel");
+  var panel = $("#omero_analysis_chat_panel");
   panel.addClass("omero-analysis-center");
   var panelPattern = "{% url 'omero_analysis_panel' 'Image' 1 %}";
   var chatUrl = "{% url 'omero_analysis_index' %}";
@@ -23,16 +23,16 @@ $(function () {
       .map(function (input) { return input.value; });
   }
 
-  function selectedProjectId(root) {
-    var input = root.querySelector(".oa-project-snapshot:checked");
+  function selectedWorkspaceId(root) {
+    var input = root.querySelector(".oa-workspace-snapshot:checked");
     return input ? input.value : null;
   }
 
-  function analysisUrl(type, id, annotationIds, projectAnnotationId) {
+  function analysisUrl(type, id, annotationIds, workspaceAnnotationId) {
     var url = chatUrl + "?type=" + encodeURIComponent(type) +
-      "&id=" + encodeURIComponent(id);
-    if (projectAnnotationId) {
-      return url + "&project_annotation=" + encodeURIComponent(projectAnnotationId);
+      "&id=" + encodeURIComponent(id) + "&tab=chat";
+    if (workspaceAnnotationId) {
+      return url + "&workspace_annotation=" + encodeURIComponent(workspaceAnnotationId);
     }
     annotationIds.forEach(function (annotationId) {
       url += "&data_annotation=" + encodeURIComponent(annotationId);
@@ -42,22 +42,22 @@ $(function () {
 
   function updateSelection(root) {
     var count = selectedAnnotationIds(root).length;
-    var projectId = selectedProjectId(root);
+    var workspaceId = selectedWorkspaceId(root);
     var countBadge = root.querySelector(".oa-selected-count");
     var status = root.querySelector(".oa-panel-status");
     var button = root.querySelector(".oa-open-chat");
     if (countBadge) countBadge.textContent = count + " selected";
     if (status) {
-      status.textContent = projectId
-        ? "The saved project will be restored locally and its OMERO inputs synchronized."
+      status.textContent = workspaceId
+        ? "The saved workspace will be restored locally and its OMERO inputs synchronized."
         : count
         ? count + " attachment" + (count === 1 ? "" : "s") +
           " will be downloaded before chat unlocks."
         : "No OMERO data selected; you can add local files after opening the chat.";
     }
     if (button) {
-      button.innerHTML = projectId
-        ? '<span aria-hidden="true">&#8635;</span> Resume selected project'
+      button.innerHTML = workspaceId
+        ? '<span aria-hidden="true">&#8635;</span> Open selected workspace'
         : count
         ? '<span aria-hidden="true">&#8599;</span> Open with ' + count +
           " attachment" + (count === 1 ? "" : "s")
@@ -102,14 +102,14 @@ $(function () {
   panel.on("change", ".oa-data-attachment", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (root) {
-      root.querySelectorAll(".oa-project-snapshot").forEach(function (input) {
+      root.querySelectorAll(".oa-workspace-snapshot").forEach(function (input) {
         input.checked = false;
       });
       updateSelection(root);
     }
   });
 
-  panel.on("change", ".oa-project-snapshot", function (event) {
+  panel.on("change", ".oa-workspace-snapshot", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (root) {
       root.querySelectorAll(".oa-data-attachment").forEach(function (input) {
@@ -127,7 +127,7 @@ $(function () {
         root.dataset.objectType,
         root.dataset.objectId,
         selectedAnnotationIds(root),
-        selectedProjectId(root)
+        selectedWorkspaceId(root)
       ),
       "_blank",
       "noopener"

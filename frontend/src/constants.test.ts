@@ -1,35 +1,27 @@
 import { toolErrorText, toolResultText } from "./api";
 import {
-  BASE_URL,
-  CHAT_URL,
-  PROVIDER_NAME,
   SYSTEM_PROMPT,
   TEMPERATURE,
   TOOLS
 } from "./constants";
 
-describe("AmsterdamUMC provider", () => {
-  it("keeps the exact endpoint contract and fixed temperature", () => {
-    expect(PROVIDER_NAME).toBe("AmsterdamUMC");
-    expect(BASE_URL).toBe(
-      "https://aumc-aicode-openai-swedencentral-oai.openai.azure.com/openai/v1"
-    );
-    expect(CHAT_URL).toBe(`${BASE_URL}/chat/completions`);
+describe("generic AI provider", () => {
+  it("keeps the analysis temperature contract", () => {
     expect(TEMPERATURE).toBe(1);
   });
 
-  it("exposes bounded analysis and user-approved saved-script tools", () => {
+  it("exposes bounded analysis and user-approved saved-method tools", () => {
     expect(TOOLS.map((tool) => tool.function.name)).toEqual([
       "discover_skills",
       "load_skill",
       "list_workspace_files",
       "run_python",
       "reset_python",
-      "list_saved_scripts",
-      "read_saved_script",
-      "run_saved_script",
-      "list_saved_workflows",
-      "run_saved_workflow"
+      "list_saved_methods",
+      "read_saved_method",
+      "run_saved_method",
+      "list_saved_pipelines",
+      "run_saved_pipeline"
     ]);
   });
 
@@ -67,7 +59,7 @@ describe("AmsterdamUMC provider", () => {
     expect(SYSTEM_PROMPT).toContain('purpose="analysis"');
   });
 
-  it("never forwards local stdout or generated file contents to Azure", () => {
+  it("never forwards local stdout or generated file contents to the AI provider", () => {
     const payload = toolResultText({
       stdout: "CANARY COMPLETE SOURCE FILE",
       stderr: "",

@@ -9,7 +9,7 @@ export interface Attachment {
   mimetype: string;
   size: number;
   namespace?: string | null;
-  kind: "attachment" | "result" | "project" | "workflow";
+  kind: "attachment" | "result" | "workspace" | "pipeline" | "notebook";
   supported: boolean;
 }
 
@@ -22,7 +22,9 @@ export interface OmeroContext {
   can_annotate: boolean;
   max_snapshot_bytes?: number;
   selected_attachments: Attachment[];
-  selected_project_snapshot?: Attachment | null;
+  selected_workspace_snapshot?: Attachment | null;
+  selected_notebook?: Attachment | null;
+  notebooks?: Attachment[];
 }
 
 export interface Bootstrap {
@@ -36,8 +38,10 @@ export interface Bootstrap {
   snapshotsTemplate: string;
   snapshotUploadTemplate: string;
   snapshotDownloadTemplate: string;
-  workflowTemplatesTemplate: string;
-  workflowDownloadTemplate: string;
+  pipelineTemplatesTemplate: string;
+  pipelineDownloadTemplate: string;
+  notebookDownloadTemplate: string;
+  notebookUploadTemplate: string;
   workflowSkillsUrl: string;
   zarrViewerStatusUrl: string;
   runtimeBase: string;
@@ -113,6 +117,28 @@ export interface WorkflowSkillPackage {
   }>;
 }
 
+export interface AnalysisSkillProviderCatalog {
+  schema: "nl.bioimaging.analysis-skill-provider.v1";
+  provider: {
+    name: string;
+    distribution: string;
+    version: string;
+    source: string;
+    health: string;
+  };
+  skills: Array<{
+    name: string;
+    description: string;
+    purpose: string;
+    consumers: string[];
+    version: string;
+    sha256: string;
+    package_url: string;
+    required_resources: string[];
+    required_capabilities: string[];
+  }>;
+}
+
 export interface HierarchyItem {
   type: string;
   id: number;
@@ -126,7 +152,7 @@ export interface OmeroHierarchy {
   children: HierarchyItem[];
 }
 
-export interface ProjectRecord {
+export interface WorkspaceRecord {
   id: string;
   contextKey: string;
   rootPath: string;
@@ -137,7 +163,7 @@ export interface ProjectRecord {
   groupId: number;
   activeChatId: string;
   plotCsv: boolean;
-  sourceSnapshotAnnotationId?: number;
+  sourceWorkspaceSnapshotAnnotationId?: number;
   origin?: {
     contextKey: string;
     userId: number;
@@ -153,7 +179,7 @@ export interface ProjectRecord {
 
 export interface ChatRecord {
   id: string;
-  projectId: string;
+  workspaceId: string;
   title: string;
   summary: string;
   archived: boolean;
@@ -166,8 +192,11 @@ export interface ChatRecord {
 
 export interface WorkspaceFile {
   id: string;
-  projectId: string;
+  workspaceId: string;
   chatId?: string;
+  methodId?: string;
+  pipelineId?: string;
+  notebookId?: string;
   executionId?: string;
   name: string;
   logicalPath: string;
@@ -208,11 +237,11 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export type ExecutionPurpose = "inspection" | "analysis" | "script";
+export type ExecutionPurpose = "inspection" | "analysis" | "method" | "notebook";
 
 export interface ExecutionRecord {
   id: string;
-  projectId: string;
+  workspaceId: string;
   chatId: string;
   promptId: string;
   code: string;
@@ -246,7 +275,7 @@ export type EvidenceKind =
 
 export interface EvidenceRecord {
   id: string;
-  projectId: string;
+  workspaceId: string;
   chatId: string;
   promptId: string;
   kind: EvidenceKind;
@@ -260,7 +289,7 @@ export interface EvidenceRecord {
   createdAt: string;
 }
 
-export interface ScriptVersion {
+export interface MethodVersion {
   version: number;
   code: string;
   codeHash: string;
@@ -289,37 +318,38 @@ export interface ParameterDefinition {
   required: boolean;
 }
 
-export interface ScriptRecord {
+export interface MethodRecord {
   id: string;
-  projectId: string;
+  workspaceId: string;
   name: string;
   description: string;
-  versions: ScriptVersion[];
+  versions: MethodVersion[];
   currentVersion: number;
   inputContract?: InputContract;
   parameters?: ParameterDefinition[];
-  projectBindings?: Record<string, Record<string, string>>;
+  requiredCapabilities?: string[];
+  workspaceBindings?: Record<string, Record<string, string>>;
   deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface WorkflowStep {
+export interface PipelineStep {
   id: string;
-  scriptId: string;
-  scriptVersion: number;
+  methodId: string;
+  methodVersion: number;
   name: string;
   inputBindings: Record<string, string>;
   parameters: Record<string, string | number | boolean>;
 }
 
-export interface WorkflowRecord {
+export interface PipelineRecord {
   id: string;
-  projectId: string;
+  workspaceId: string;
   name: string;
   description: string;
   version: number;
-  steps: WorkflowStep[];
+  steps: PipelineStep[];
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -327,7 +357,7 @@ export interface WorkflowRecord {
 
 export interface ArtifactRecord {
   id: string;
-  projectId: string;
+  workspaceId: string;
   chatId: string;
   executionId?: string;
   fileId?: string;
@@ -350,18 +380,22 @@ export interface ZarrViewerIntegrationStatus {
   viewer_url?: string;
   image_capabilities_template?: string;
   plate_capabilities_template?: string;
+  skill_catalog_url?: string;
 }
 
 export interface ZarrViewerCapability {
   schema_version: 1;
   supported: true;
   image: { id: number; name: string };
-  store: { uuid: string; roi_url: string; render_url: string };
+  store: { uuid: string; name?: string; roi_url: string; render_url: string };
   kind: "image" | "plate";
   initial_path: string;
   channels: Array<{ index: number; label: string; active: boolean }>;
   labels: Array<{ id: string; name: string; path: string }>;
   plate?: {
+    name: string;
+    rows: string[];
+    columns: string[];
     wells: Array<{
       path: string;
       fields: Array<{ path: string; name: string }>;
@@ -467,7 +501,7 @@ export interface ModelPayload {
 
 export interface OutboundPayloadAudit {
   id: string;
-  projectId: string;
+  workspaceId: string;
   chatId: string;
   executionId?: string;
   categories: string[];
@@ -485,6 +519,9 @@ export interface DataProfile {
 }
 
 export interface ProviderSettings {
+  protocol: "openai" | "anthropic";
+  endpoint: string;
+  authMode: "bearer" | "api-key";
   apiKey: string;
   model: string;
   contextWindow: number;
@@ -512,16 +549,57 @@ export interface TokenUsage {
   estimated: boolean;
 }
 
-export interface ProjectWorkspace {
-  project: ProjectRecord;
+export interface AnalysisWorkspace {
+  workspace: WorkspaceRecord;
   chats: ChatRecord[];
   files: WorkspaceFile[];
   executions: ExecutionRecord[];
-  scripts: ScriptRecord[];
-  workflows: WorkflowRecord[];
+  methods: MethodRecord[];
+  pipelines: PipelineRecord[];
+  notebooks: NotebookRecord[];
   artifacts: ArtifactRecord[];
   audits: OutboundPayloadAudit[];
   evidence: EvidenceRecord[];
+}
+
+export interface NotebookOutput {
+  output_type: "stream" | "execute_result" | "display_data" | "error";
+  name?: "stdout" | "stderr";
+  text?: string | string[];
+  data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  execution_count?: number | null;
+  ename?: string;
+  evalue?: string;
+  traceback?: string[];
+}
+
+export interface NotebookCell {
+  id?: string;
+  cell_type: "markdown" | "code" | "raw";
+  source: string | string[];
+  metadata: Record<string, unknown>;
+  execution_count?: number | null;
+  outputs?: NotebookOutput[];
+}
+
+export interface NotebookDocument {
+  nbformat: 4;
+  nbformat_minor: number;
+  metadata: Record<string, any>;
+  cells: NotebookCell[];
+}
+
+export interface NotebookRecord {
+  id: string;
+  workspaceId: string;
+  name: string;
+  document: NotebookDocument;
+  sourceAnnotationId?: number;
+  attachmentIds: number[];
+  selectedDataFileIds: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 declare global {

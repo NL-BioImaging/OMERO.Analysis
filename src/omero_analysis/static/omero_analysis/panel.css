@@ -29,7 +29,7 @@
 }
 .omero-analysis-center .oa-object-badge,
 .omero-analysis-center .oa-selected-count,
-.omero-analysis-center .oa-project-count {
+.omero-analysis-center .oa-workspace-count {
   background: var(--oa-accent-soft); border: 1px solid #cae3e9; border-radius: 999px;
   color: var(--oa-accent-dark); font-size: 11px; font-weight: 650; padding: 4px 9px;
 }
@@ -99,7 +99,7 @@
   display: inline-flex; flex: 0 0 auto; font-size: 9px; font-weight: 800;
   height: 34px; justify-content: center; letter-spacing: .04em; width: 38px;
 }
-.omero-analysis-center .oa-project-icon {
+.omero-analysis-center .oa-workspace-icon {
   background: #f2e9d8; color: #8b6425;
 }
 .omero-analysis-center .oa-file-details {

@@ -56,7 +56,7 @@ function defaultStem(scriptName: string): string {
   return scriptName
     .replace(/\.py$/i, "")
     .replace(/-analysis$/i, "")
-    .replace(/^analysis-/, "") || "saved-script-gallery";
+    .replace(/^analysis-/, "") || "saved-method-gallery";
 }
 
 export function savedGalleryRequest(

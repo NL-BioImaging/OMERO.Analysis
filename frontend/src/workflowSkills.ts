@@ -82,7 +82,7 @@ export function matchWorkflowSkills(
         skill.match.required_tables.length > 0;
       if (!hasRules) {
         score += 1;
-        reasons.push("general workflow guidance");
+        reasons.push("general analysis guidance");
       }
       if (score > 0) matches.push({ entry, skill, score, reasons });
     }
@@ -106,7 +106,7 @@ export function packageInstructions(value: WorkflowSkillPackage): string {
   });
   const capabilities = value.skill.required_capabilities || [];
   return [
-    `Active ${value.source.source_kind === "application" ? "application-operation" : "workflow"} skill: ${value.skill.name} v${value.skill.version}`,
+    `Active ${value.source.source_kind === "application" ? "application-operation" : "measurement"} skill: ${value.skill.name} v${value.skill.version}`,
     `Source: ${value.source.repository_url}@${value.source.configured_ref}`,
     `Resolved commit: ${value.source.resolved_commit}`,
     `Package hash: ${value.skill.sha256}`,

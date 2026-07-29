@@ -69,7 +69,8 @@ export function zarrViewerStatusFrom(value: unknown): ZarrViewerIntegrationStatu
     (
       typeof body.viewer_url !== "string" ||
       typeof body.image_capabilities_template !== "string" ||
-      typeof body.plate_capabilities_template !== "string"
+      typeof body.plate_capabilities_template !== "string" ||
+      typeof body.skill_catalog_url !== "string"
     )
   ) {
     throw new Error("The available ZarrViewer integration has no route templates");
@@ -118,8 +119,18 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
   let plate: ZarrViewerCapability["plate"];
   if (body.plate != null) {
     const rawPlate = object(body.plate, "ZarrViewer plate");
-    if (!Array.isArray(rawPlate.wells)) throw new Error("ZarrViewer returned an invalid plate");
+    if (
+      typeof rawPlate.name !== "string" ||
+      !Array.isArray(rawPlate.rows) ||
+      !rawPlate.rows.every((value: unknown) => typeof value === "string") ||
+      !Array.isArray(rawPlate.columns) ||
+      !rawPlate.columns.every((value: unknown) => typeof value === "string") ||
+      !Array.isArray(rawPlate.wells)
+    ) throw new Error("ZarrViewer returned an invalid plate");
     plate = {
+      name: rawPlate.name,
+      rows: rawPlate.rows,
+      columns: rawPlate.columns,
       wells: rawPlate.wells.map((rawWell: unknown) => {
         const well = object(rawWell, "ZarrViewer well");
         if (typeof well.path !== "string" || !Array.isArray(well.fields)) {
@@ -146,6 +157,7 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
     image: { id: image.id, name: image.name },
     store: {
       uuid: store.uuid.toLowerCase(),
+      name: typeof store.name === "string" ? store.name : undefined,
       roi_url: store.roi_url,
       render_url: store.render_url
     },

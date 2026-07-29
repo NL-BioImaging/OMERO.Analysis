@@ -10,8 +10,8 @@ def test_center_panel_supports_expected_omero_objects():
     ).read_text(encoding="utf-8")
     assert '["image", "dataset", "plate", "screen"]' in source
     assert "data_annotation=" in source
-    assert "project_annotation=" in source
-    assert "oa-project-snapshot" in source
+    assert "workspace_annotation=" in source
+    assert "oa-workspace-snapshot" in source
     assert "omeroweb_center_plugin" in source
     assert "load_plugin_content" in source
     assert "ACTIVE_OBJECT" not in source
@@ -24,10 +24,10 @@ def test_center_panel_supports_expected_omero_objects():
     assert "oa-panel-header" in panel
     assert "oa-card" in panel
     assert "supported_attachments" in panel
-    assert "project_snapshots" in panel
+    assert "workspace_snapshots" in panel
 
 
-def test_chat_has_no_notebook_surface_and_includes_runtime_config():
+def test_combined_shell_includes_notebook_runtime_contract():
     source = (
         ROOT / "src/omero_analysis/templates/omero_analysis/chat.html"
     ).read_text(encoding="utf-8")
@@ -35,7 +35,15 @@ def test_chat_has_no_notebook_surface_and_includes_runtime_config():
     assert "window.OMERO_ANALYSIS" not in source
     assert "data-snapshot-upload-template" in source
     assert "JupyterLab" not in source
-    assert "notebook" not in source.lower()
+    assert "data-notebook-download-template" in source
+    assert "data-notebook-upload-template" in source
+
+    notebook_panel = (
+        ROOT / "src/omero_analysis/templates/omero_analysis/notebook_panel.html"
+    ).read_text(encoding="utf-8")
+    assert "Attached notebooks" in notebook_panel
+    assert "oa-notebook-upload" in notebook_panel
+    assert "context.notebooks" in notebook_panel
 
     sandbox = (
         ROOT

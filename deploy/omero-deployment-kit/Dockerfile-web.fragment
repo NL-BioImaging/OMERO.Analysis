@@ -1,10 +1,15 @@
 # Add after FROM and before `omero web syncmedia`.
 USER root
 COPY omero_analysis-*.whl /tmp/
+COPY 49-omero-analysis-cleanup.py /startup/49-omero-analysis-cleanup.py
 RUN rm -f /opt/omero/web/config/90-omero-analysis-chat.omero \
+        /opt/omero/web/config/90-omero-jupyterlite.omero \
     && rm -rf /opt/omero/web/OMERO.web/var/static/omero_analysis_chat \
-    && (/opt/omero/web/venv3/bin/python -m pip uninstall -y omero-analysis-chat || true) \
+        /opt/omero/web/OMERO.web/var/static/omero_jupyterlite \
+    && (/opt/omero/web/venv3/bin/python -m pip uninstall -y \
+        omero-analysis-chat omero-jupyterlite || true) \
     && /opt/omero/web/venv3/bin/python -m pip install --no-deps \
         /tmp/omero_analysis-*.whl \
-    && rm -f /tmp/omero_analysis-*.whl
+    && rm -f /tmp/omero_analysis-*.whl \
+    && chmod 0755 /startup/49-omero-analysis-cleanup.py
 USER omero-web

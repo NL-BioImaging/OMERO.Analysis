@@ -6,7 +6,7 @@ const createdAt = "2026-07-28T08:00:00Z";
 function file(id: string, name: string, type = "image/png"): WorkspaceFile {
   return {
     id,
-    projectId: "project",
+    workspaceId: "workspace",
     chatId: "chat",
     name,
     logicalPath: `OMERO/Image-1/outputs/${name}`,
@@ -23,7 +23,7 @@ function file(id: string, name: string, type = "image/png"): WorkspaceFile {
 function artifact(value: Partial<ArtifactRecord>): ArtifactRecord {
   return {
     id: value.id || "artifact",
-    projectId: "project",
+    workspaceId: "workspace",
     chatId: "chat",
     kind: value.kind || "plot",
     title: value.title || "",

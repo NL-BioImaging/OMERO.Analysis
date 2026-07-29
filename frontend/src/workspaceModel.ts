@@ -1,6 +1,6 @@
-import type { ProjectWorkspace } from "./types";
+import type { AnalysisWorkspace } from "./types";
 
-function projectSlug(value: string): string {
+function workspaceSlug(value: string): string {
   return value
     .normalize("NFKD")
     .replace(/[^\w\s-]/g, "")
@@ -11,7 +11,7 @@ function projectSlug(value: string): string {
     .toLowerCase() || "analysis";
 }
 
-export function normalizeProjectName(value: string): string {
+export function normalizeWorkspaceName(value: string): string {
   return value
     .replace(/[\u0000-\u001f\\/]+/g, " ")
     .replace(/\s+/g, " ")
@@ -19,16 +19,16 @@ export function normalizeProjectName(value: string): string {
     .slice(0, 100);
 }
 
-export function renameProjectWorkspace(
-  workspace: ProjectWorkspace,
+export function renameAnalysisWorkspace(
+  workspace: AnalysisWorkspace,
   requestedName: string,
   updatedAt: string
-): ProjectWorkspace {
-  const name = normalizeProjectName(requestedName);
-  if (!name) throw new Error("Project name cannot be empty");
-  const previousRoot = workspace.project.rootPath;
+): AnalysisWorkspace {
+  const name = normalizeWorkspaceName(requestedName);
+  if (!name) throw new Error("Workspace name cannot be empty");
+  const previousRoot = workspace.workspace.rootPath;
   const objectRoot = previousRoot.split("--", 1)[0] || "OMERO/Local";
-  const rootPath = `${objectRoot}--${projectSlug(name)}`;
+  const rootPath = `${objectRoot}--${workspaceSlug(name)}`;
   const files = workspace.files.map((file) => ({
     ...file,
     logicalPath: file.logicalPath.startsWith(`${previousRoot}/`)
@@ -37,8 +37,8 @@ export function renameProjectWorkspace(
   }));
   return {
     ...workspace,
-    project: {
-      ...workspace.project,
+    workspace: {
+      ...workspace.workspace,
       name,
       rootPath,
       updatedAt
@@ -47,11 +47,11 @@ export function renameProjectWorkspace(
   };
 }
 
-export function trashProjectOutputs(
-  workspace: ProjectWorkspace,
+export function trashWorkspaceOutputs(
+  workspace: AnalysisWorkspace,
   outputIds: Iterable<string>,
   deletedAt: string
-): ProjectWorkspace {
+): AnalysisWorkspace {
   const ids = new Set(outputIds);
   return {
     ...workspace,

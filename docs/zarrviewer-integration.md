@@ -21,7 +21,7 @@ Analysis then performs a browser-side capability check against the current
 OMERO object. An Image is checked directly. A Dataset checks its Image
 children, a Plate is checked directly, and a Screen checks its Plate children.
 Candidates are probed four at a time and must return the exact database UUID.
-If multiple objects match, the user chooses one. Projects cache the verified
+If multiple objects match, the user chooses one. Workspaces cache the verified
 UUID-to-object binding for the active group and revalidate it after snapshot
 import.
 
@@ -44,7 +44,7 @@ from the authenticated hierarchy.
   repeated image and label planes can be reused.
 - Crops are at most 2048 × 2048 and a returned PNG is limited to 32 MiB.
 
-The preview is stored as a browser-local project output with UUID, field, ROI,
+The preview is stored as a browser-local Workspace result with UUID, field, ROI,
 channel, label, viewer-version, and resolved-object provenance. It is not
 automatically attached to OMERO and does not require a same-stem CSV even when
 Plot + CSV is enabled. **Save analysis + render** persists the versioned Python
@@ -61,14 +61,14 @@ source pixels.
 
 ## Troubleshooting
 
-The workflow-skills badge tooltip reports both cataloged application skills and
-whether a compatible ZarrViewer is enabled. If a preview cannot be created:
+Settings reports the ZarrViewer-hosted skill provider and whether a compatible
+viewer is enabled. If a preview cannot be created:
 
 1. confirm `biomero-zarr-viewer>=0.4.0` is installed and present in
    `omero.web.apps`;
-2. configure its tagged GitHub source under `[APPLICATIONS]`;
-3. refresh the workflow catalog as an OMERO administrator;
-4. confirm the selected Screen/Plate or Dataset/Image refers to the same
+2. confirm its authenticated `/api/analysis-skills/` provider route is
+   available;
+3. confirm the selected Screen/Plate or Dataset/Image refers to the same
    OME-Zarr store UUID recorded in the database;
-5. confirm the database field path, dimensions, channels, label path, and
+4. confirm the database field path, dimensions, channels, label path, and
    label value are present rather than inferred.

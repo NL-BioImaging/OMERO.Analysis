@@ -1,4 +1,4 @@
-import { savedGalleryRequest } from "./savedScriptRender";
+import { savedGalleryRequest } from "./savedMethodRender";
 
 const panels = [
   {
@@ -15,7 +15,7 @@ const panels = [
   }
 ];
 
-describe("saved script gallery replay", () => {
+describe("saved method gallery replay", () => {
   it("replays the exact evidence-backed panels with the new evidence id", () => {
     const request = savedGalleryRequest(JSON.stringify({
       ok: true,
@@ -60,7 +60,7 @@ describe("saved script gallery replay", () => {
     });
   });
 
-  it("does not render ordinary scripts or results without fresh evidence", () => {
+  it("does not render ordinary methods or results without fresh evidence", () => {
     expect(savedGalleryRequest(JSON.stringify({
       evidence_id: "evidence",
       preview: { result: [1, 2, 3] }

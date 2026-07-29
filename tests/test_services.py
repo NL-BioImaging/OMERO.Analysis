@@ -1,4 +1,6 @@
 from io import BytesIO
+import json
+import zipfile
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,9 +13,10 @@ from omero_analysis.errors import (
     UnsupportedMedia,
 )
 from omero_analysis.services import (
-    PROJECT_NAMESPACE,
+    WORKSPACE_NAMESPACE,
+    NOTEBOOK_NAMESPACE,
     RESULT_NAMESPACE,
-    WORKFLOW_NAMESPACE,
+    PIPELINE_NAMESPACE,
     canonical_object_type,
     checked_download,
     direct_file_annotations,
@@ -22,15 +25,27 @@ from omero_analysis.services import (
     object_context,
     object_hierarchy,
     safe_filename,
-    upload_project_snapshot_annotation,
+    upload_workspace_snapshot_annotation,
     upload_result_annotation,
-    upload_workflow_annotation,
-    validate_project_snapshot,
+    upload_pipeline_annotation,
+    upload_notebook_annotation,
+    validate_workspace_snapshot,
     validate_result,
-    validate_workflow_template,
+    validate_pipeline_template,
+    validate_notebook,
 )
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
+
+
+def workspace_archive(format_name=WORKSPACE_NAMESPACE):
+    stream = BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr(
+            "workspace.json",
+            json.dumps({"format": format_name, "version": 1}),
+        )
+    return stream.getvalue()
 
 
 @pytest.mark.parametrize("value", ["image", "Dataset", "PLATE", "screen"])
@@ -40,7 +55,7 @@ def test_supported_object_types(value):
 
 def test_unsupported_object_type_is_rejected():
     with pytest.raises(InvalidObject):
-        canonical_object_type("project")
+        canonical_object_type("workspace")
 
 
 def test_only_direct_file_annotations_are_listed_and_marked_supported():
@@ -114,100 +129,101 @@ def test_result_upload_requires_permission_and_uses_analysis_namespace():
     assert obj.linked == [conn.created]
 
 
-def test_project_snapshots_have_separate_kind_namespace_and_zip_validation():
+def test_workspace_snapshots_have_separate_kind_namespace_and_zip_validation():
     uploaded = SimpleUploadedFile(
-        "screen-1.oa.zip",
-        b"PK\x03\x04project",
+        "screen-1.oa-workspace.zip",
+        workspace_archive(),
         content_type="application/zip",
     )
-    assert validate_project_snapshot(uploaded) == (
-        "screen-1.oa.zip",
+    assert validate_workspace_snapshot(uploaded) == (
+        "screen-1.oa-workspace.zip",
         "application/zip",
     )
     obj = FakeObject()
     conn = FakeConnection(obj)
-    result = upload_project_snapshot_annotation(conn, obj, uploaded)
-    assert result["namespace"] == PROJECT_NAMESPACE
-    assert result["kind"] == "project"
+    result = upload_workspace_snapshot_annotation(conn, obj, uploaded)
+    assert result["namespace"] == WORKSPACE_NAMESPACE
+    assert result["kind"] == "workspace"
     assert result["supported"] is False
     with pytest.raises(UnsupportedMedia):
-        validate_project_snapshot(
-            SimpleUploadedFile("project.zip", b"PK\x03\x04x", content_type="application/zip")
+        validate_workspace_snapshot(
+            SimpleUploadedFile("workspace.zip", workspace_archive(), content_type="application/zip")
         )
     with pytest.raises(UnsupportedMedia):
-        validate_project_snapshot(
+        validate_workspace_snapshot(
             SimpleUploadedFile(
-                "project.oa.zip", b"not-a-zip", content_type="application/zip"
+                "workspace.oa-workspace.zip", b"not-a-zip", content_type="application/zip"
             )
         )
-    assert validate_project_snapshot(
+    with pytest.raises(UnsupportedMedia):
+        validate_workspace_snapshot(
         SimpleUploadedFile(
-            "legacy.oac.zip", b"PK\x03\x04legacy", content_type="application/zip"
+            "legacy.oa-workspace.zip",
+            workspace_archive("nl.bioimaging.analysis.project.v1"),
+            content_type="application/zip",
         )
-    ) == ("legacy.oac.zip", "application/zip")
+    )
 
 
-def test_object_context_lists_project_snapshots_separately():
+def test_object_context_lists_workspace_snapshots_separately():
     snapshot = FakeAnnotation(
         21,
-        "saved.oa.zip",
+        "saved.oa-workspace.zip",
         b"PK\x03\x04snapshot",
-        namespace=PROJECT_NAMESPACE,
+        namespace=WORKSPACE_NAMESPACE,
     )
     context = object_context("Image", 1, FakeObject(annotations=[snapshot]))
-    assert context["project_snapshots"][0]["annotation_id"] == 21
+    assert context["workspace_snapshots"][0]["annotation_id"] == 21
     assert context["supported_attachments"] == []
 
 
-def test_workflow_templates_are_validated_and_listed_separately():
-    data = b'{"format":"nl.bioimaging.analysis.workflow.v1","workflow":{},"scripts":[]}'
+def test_pipeline_templates_are_validated_and_listed_separately():
+    data = b'{"format":"nl.bioimaging.analysis.pipeline.v1","pipeline":{},"scripts":[]}'
     uploaded = SimpleUploadedFile(
-        "counts.oa-workflow.json", data, content_type="application/json"
+        "counts.oa-pipeline.json", data, content_type="application/json"
     )
-    assert validate_workflow_template(uploaded) == (
-        "counts.oa-workflow.json",
+    assert validate_pipeline_template(uploaded) == (
+        "counts.oa-pipeline.json",
         "application/json",
     )
     obj = FakeObject()
     conn = FakeConnection(obj)
-    result = upload_workflow_annotation(conn, obj, uploaded)
-    assert result["namespace"] == WORKFLOW_NAMESPACE
-    assert result["kind"] == "workflow"
+    result = upload_pipeline_annotation(conn, obj, uploaded)
+    assert result["namespace"] == PIPELINE_NAMESPACE
+    assert result["kind"] == "pipeline"
     context = object_context("Dataset", 1, FakeObject(annotations=[conn.created]))
-    assert context["workflow_templates"][0]["kind"] == "workflow"
+    assert context["pipeline_templates"][0]["kind"] == "pipeline"
     assert context["supported_attachments"] == []
     with pytest.raises(UnsupportedMedia):
-        validate_workflow_template(
+        validate_pipeline_template(
             SimpleUploadedFile(
-                "bad.oa-workflow.json",
+                "bad.oa-pipeline.json",
                 b'{"format":"other"}',
                 content_type="application/json",
             )
         )
     legacy = SimpleUploadedFile(
-        "legacy.oac-workflow.json",
-        b'{"format":"nl.bioimaging.analysis-chat.workflow.v1","workflow":{},"scripts":[]}',
+        "legacy.oac-pipeline.json",
+        b'{"format":"nl.bioimaging.analysis-chat.pipeline.v1","pipeline":{},"scripts":[]}',
         content_type="application/json",
     )
-    assert validate_workflow_template(legacy) == (
-        "legacy.oac-workflow.json",
-        "application/json",
-    )
+    with pytest.raises(UnsupportedMedia):
+        validate_pipeline_template(legacy)
 
 
-def test_legacy_analysis_chat_namespaces_remain_readable():
+def test_legacy_analysis_namespaces_are_not_classified_as_workspace_or_pipeline():
     annotations = [
         FakeAnnotation(
             31,
             "legacy.oac.zip",
             b"PK\x03\x04snapshot",
-            namespace="nl.bioimaging.analysis-chat.project.v2",
+            namespace="nl.bioimaging.analysis-chat.workspace.v2",
         ),
         FakeAnnotation(
             32,
-            "legacy.oac-workflow.json",
+            "legacy.oac-pipeline.json",
             b"{}",
-            namespace="nl.bioimaging.analysis-chat.workflow.v1",
+            namespace="nl.bioimaging.analysis-chat.pipeline.v1",
         ),
         FakeAnnotation(
             33,
@@ -217,10 +233,44 @@ def test_legacy_analysis_chat_namespaces_remain_readable():
         ),
     ]
     context = object_context("Dataset", 1, FakeObject(annotations=annotations))
-    assert context["project_snapshots"][0]["annotation_id"] == 31
-    assert context["workflow_templates"][0]["annotation_id"] == 32
+    assert context["workspace_snapshots"] == []
+    assert context["pipeline_templates"] == []
     result = next(item for item in context["attachments"] if item["annotation_id"] == 33)
     assert result["kind"] == "result"
+
+
+def test_python_nbformat4_notebooks_are_validated_attached_and_discovered():
+    payload = json.dumps({
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {
+            "kernelspec": {"language": "python"},
+            "language_info": {"name": "python"},
+        },
+        "cells": [{"cell_type": "code", "source": ["1 + 1"], "metadata": {}}],
+    }).encode()
+    uploaded = SimpleUploadedFile(
+        "analysis.ipynb", payload, content_type="application/x-ipynb+json"
+    )
+    assert validate_notebook(uploaded) == (
+        "analysis.ipynb", "application/x-ipynb+json"
+    )
+    obj = FakeObject()
+    conn = FakeConnection(obj)
+    result = upload_notebook_annotation(conn, obj, uploaded)
+    assert result["namespace"] == NOTEBOOK_NAMESPACE
+    assert result["kind"] == "notebook"
+    context = object_context("Image", 1, FakeObject(annotations=[conn.created]))
+    assert context["notebooks"][0]["annotation_id"] == conn.created.getId()
+    with pytest.raises(UnsupportedMedia):
+        validate_notebook(SimpleUploadedFile(
+            "r.ipynb",
+            json.dumps({"nbformat": 4, "metadata": {
+                "language_info": {"name": "r"},
+                "kernelspec": {"language": "r"},
+            }, "cells": []}).encode(),
+            content_type="application/x-ipynb+json",
+        ))
 
 
 def test_hierarchy_uses_wrapper_relations_without_webclient_api():

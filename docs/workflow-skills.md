@@ -1,10 +1,10 @@
-# Dynamic BIOMERO workflow skills
+# Optional BIOMERO measurement skills
 
-OMERO.Analysis uses `omero-workflow-skills>=0.2.1,<0.3` as a shared,
-framework-neutral catalog. It reads the existing BIOMERO workflow
+OMERO.Analysis can use `biomero-workflow-skills>=0.3,<0.4` as an optional,
+framework-neutral catalog. It reads the existing BIOMERO pipeline
 configuration, resolves each configured GitHub tag, branch, or commit, and
-accepts only validated UTF-8 Agent Skill instructions and text references. It
-does not modify or depend on `OMERO.biomero`.
+accepts only validated UTF-8 attachment-analysis skill instructions and text
+references. Analysis starts with generic Chat when the provider is absent.
 
 Authenticated routes expose a consumer-filtered catalog and package:
 
@@ -27,33 +27,23 @@ discovery is not repeated. The user does not need to request a skill.
 
 Skill source URL, configured ref, resolved commit, version, and hash are stored
 with chat turns and executions and participate in execution-cache keys.
-Specialized workflow knowledge has been removed from the global system prompt;
+Specialized measurement knowledge is absent from the global system prompt;
 privacy, browser paths, execution limits, and tools remain plugin-owned. If the
 catalog is unavailable, generic schema-first analysis continues with a visible
 warning.
 
-Catalog 0.2 also discovers application-operation skills from the optional
-`[APPLICATIONS]` configuration. These skills are never auto-activated merely
-because a database is present. Analysis exposes them to the model when an
-application is installed and loads them for an explicit operation request,
-such as showing a measured object in ZarrViewer. This keeps workflow analysis
-knowledge separate from application-specific routes and UI behavior.
+`[APPLICATIONS]` is not a discovery source. Applications publish their own
+authenticated provider endpoints. BIOMERO.ZarrViewer therefore serves
+`use-omero-zarr-viewer` itself, and Analysis loads that package only for an
+explicit ZarrViewer operation.
 
-Example application configuration:
-
-```ini
-[APPLICATIONS]
-omero-zarr-viewer_repo = https://github.com/NL-BioImaging/BIOMERO.ZarrViewer/tree/v0.4.0
-omero-zarr-viewer_skills_path = _agents/skills
-```
-
-Workflow authors should follow the contract documented by
-[OMERO.WorkflowSkills](https://github.com/NL-BioImaging/OMERO.WorkflowSkills).
-Publish portable skills in a tagged workflow release before changing the
-BIOMERO repository pin. Tags/commits are immutable in cache, branches are
+Skill authors should follow the contract documented by
+[BIOMERO.WorkflowSkills](https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills).
+Publish portable measurement skills in a tagged release before changing the
+BIOMERO repository pin. Tags and commits are immutable in cache, branches are
 revalidated hourly, and only transient failures of the same source may use
 stale data.
 
 The Docker installer uses an offline wheelhouse containing the plugin and its
-tested companion wheel. Removing Analysis keeps the library if
-OMERO.JupyterLite or another installed consumer still requires it.
+tested optional companion wheel. Notebook execution never requests this
+catalog or injects skill instructions.

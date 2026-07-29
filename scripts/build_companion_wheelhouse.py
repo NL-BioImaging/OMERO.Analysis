@@ -25,12 +25,12 @@ def main() -> int:
         else None
     )
     root = Path(__file__).resolve().parents[1]
-    catalog = (
-        args.catalog_repo
-        or root.parent / "OMERO.WorkflowSkills"
-    ).resolve()
+    default_catalog = root.parent / "BIOMERO.WorkflowSkills"
+    if not default_catalog.is_dir():
+        default_catalog = root.parent / "OMERO.WorkflowSkills"
+    catalog = (args.catalog_repo or default_catalog).resolve()
     if not (catalog / "pyproject.toml").is_file():
-        raise SystemExit(f"OMERO.WorkflowSkills repository not found at {catalog}")
+        raise SystemExit(f"BIOMERO.WorkflowSkills repository not found at {catalog}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     for existing in output.iterdir():

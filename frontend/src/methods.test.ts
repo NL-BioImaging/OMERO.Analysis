@@ -1,10 +1,10 @@
-import { bindScriptInputs } from "./App";
-import type { WorkspaceFile } from "./types";
+import { bindMethodInputs, methodUsesZarrViewer } from "./App";
+import type { MethodRecord, WorkspaceFile } from "./types";
 
 function input(name: string): WorkspaceFile {
   return {
     id: name,
-    projectId: "project",
+    workspaceId: "workspace",
     name,
     logicalPath: `OMERO/Dataset-1/inputs/${name}`,
     type: "application/octet-stream",
@@ -17,9 +17,9 @@ function input(name: string): WorkspaceFile {
   };
 }
 
-describe("portable saved scripts", () => {
+describe("portable saved methods", () => {
   it("keeps an exact destination input name", () => {
-    const result = bindScriptInputs(
+    const result = bindMethodInputs(
       `path = "/input/measurements.duckdb"`,
       [input("measurements.duckdb")]
     );
@@ -28,7 +28,7 @@ describe("portable saved scripts", () => {
   });
 
   it("binds a missing source name to the only compatible destination input", () => {
-    const result = bindScriptInputs(
+    const result = bindMethodInputs(
       `path = "/input/source.duckdb"`,
       [input("new-screen.duckdb"), input("notes.csv")]
     );
@@ -39,9 +39,18 @@ describe("portable saved scripts", () => {
   });
 
   it("blocks ambiguous destination bindings", () => {
-    expect(() => bindScriptInputs(
+    expect(() => bindMethodInputs(
       `path = "/input/source.csv"`,
       [input("one.csv"), input("two.csv")]
     )).toThrow(/ambiguous/);
+  });
+
+  it("identifies ZarrViewer-dependent Methods so Notebook conversion can skip them", () => {
+    const method = {
+      requiredCapabilities: ["zarrviewer"]
+    } as MethodRecord;
+    expect(methodUsesZarrViewer(method, "print('ordinary Python')")).toBe(true);
+    expect(methodUsesZarrViewer({} as MethodRecord, "render_panels(store_uuid)")).toBe(true);
+    expect(methodUsesZarrViewer({} as MethodRecord, "print('ordinary Python')")).toBe(false);
   });
 });

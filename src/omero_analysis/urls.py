@@ -19,6 +19,11 @@ urlpatterns = [
         views.panel,
         name="omero_analysis_panel",
     ),
+    re_path(
+        r"^notebook-panel/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
+        views.notebook_panel,
+        name="omero_analysis_notebook_panel",
+    ),
     re_path(r"^api/context-token/$", views.context_token, name="omero_analysis_token"),
     re_path(
         r"^api/context/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
@@ -46,24 +51,34 @@ urlpatterns = [
         name="omero_analysis_upload",
     ),
     re_path(
-        r"^api/projects/(?P<object_type>\w+)/(?P<object_id>\d+)/snapshots/$",
-        views.project_snapshots,
-        name="omero_analysis_project_snapshots",
+        r"^api/workspaces/(?P<object_type>\w+)/(?P<object_id>\d+)/snapshots/$",
+        views.workspace_snapshots,
+        name="omero_analysis_workspace_snapshots",
     ),
     re_path(
-        r"^api/project-snapshot/(?P<annotation_id>\d+)/download/$",
-        views.download_project_snapshot,
-        name="omero_analysis_project_snapshot_download",
+        r"^api/workspace-snapshot/(?P<annotation_id>\d+)/download/$",
+        views.download_workspace_snapshot,
+        name="omero_analysis_workspace_snapshot_download",
     ),
     re_path(
-        r"^api/workflows/(?P<object_type>\w+)/(?P<object_id>\d+)/templates/$",
-        views.workflow_templates,
-        name="omero_analysis_workflow_templates",
+        r"^api/pipelines/(?P<object_type>\w+)/(?P<object_id>\d+)/templates/$",
+        views.pipeline_templates,
+        name="omero_analysis_pipeline_templates",
     ),
     re_path(
-        r"^api/workflow-template/(?P<annotation_id>\d+)/download/$",
-        views.download_workflow_template,
-        name="omero_analysis_workflow_download",
+        r"^api/pipeline-template/(?P<annotation_id>\d+)/download/$",
+        views.download_pipeline_template,
+        name="omero_analysis_pipeline_download",
+    ),
+    re_path(
+        r"^api/notebook/(?P<annotation_id>\d+)/download/$",
+        views.download_notebook,
+        name="omero_analysis_notebook_download",
+    ),
+    re_path(
+        r"^api/notebooks/(?P<object_type>\w+)/(?P<object_id>\d+)/upload/$",
+        views.upload_notebook,
+        name="omero_analysis_notebook_upload",
     ),
     re_path(
         r"^api/workflow-skills/$",

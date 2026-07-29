@@ -8,6 +8,7 @@ from omero_analysis import views
 from omero_analysis.tokens import make_context_token
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
+from .test_services import workspace_archive
 
 
 def with_session(request):
@@ -38,7 +39,9 @@ def test_context_token_reports_permissions():
         "context",
         "list",
         "download",
-        "snapshot_download",
+        "workspace_download",
+        "pipeline_download",
+        "notebook_download",
         "hierarchy",
     ]
 
@@ -78,12 +81,12 @@ def test_runtime_sandbox_has_an_isolated_boot_policy():
     assert b'oa-bootstrap' in response.content
 
 
-def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
+def test_workspace_snapshot_list_upload_and_download_are_separate_from_inputs():
     snapshot = FakeAnnotation(
         21,
-        "analysis.oa.zip",
+        "analysis.oa-workspace.zip",
         b"PK\x03\x04snapshot",
-        namespace="nl.bioimaging.analysis.project.v1",
+        namespace="nl.bioimaging.analysis.workspace.v1",
     )
     obj = FakeObject(annotations=[snapshot])
     conn = FakeConnection(obj)
@@ -91,54 +94,96 @@ def test_project_snapshot_list_upload_and_download_are_separate_from_inputs():
     list_token = token_for(conn, obj, ["list"])
     request = with_session(RequestFactory().get("/"))
     request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = list_token
-    response = views.project_snapshots(request, "Image", 1, conn=conn)
+    response = views.workspace_snapshots(request, "Image", 1, conn=conn)
     body = json.loads(response.content)
-    assert body["snapshots"][0]["kind"] == "project"
+    assert body["snapshots"][0]["kind"] == "workspace"
     assert body["snapshots"][0]["supported"] is False
 
-    download_token = token_for(conn, obj, ["snapshot_download"])
+    download_token = token_for(conn, obj, ["workspace_download"])
     request = with_session(RequestFactory().get("/"))
     request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = download_token
-    response = views.download_project_snapshot(request, 21, conn=conn)
+    response = views.download_workspace_snapshot(request, 21, conn=conn)
     assert response.status_code == 200
     assert b"".join(response.streaming_content) == b"PK\x03\x04snapshot"
 
-    upload_token = token_for(conn, obj, ["snapshot_upload"])
+    upload_token = token_for(conn, obj, ["workspace_upload"])
     request = with_session(
         RequestFactory().post(
             "/",
             data={
                 "file": SimpleUploadedFile(
-                    "saved.oa.zip",
-                    b"PK\x03\x04data",
+                    "saved.oa-workspace.zip",
+                    workspace_archive(),
                     content_type="application/zip",
                 )
             },
         )
     )
     request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = upload_token
-    response = views.project_snapshots(request, "Image", 1, conn=conn)
+    response = views.workspace_snapshots(request, "Image", 1, conn=conn)
     assert response.status_code == 201
 
 
-def test_chat_bootstrap_accepts_only_attached_project_snapshot():
+def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
     snapshot = FakeAnnotation(
         21,
-        "analysis.oa.zip",
+        "analysis.oa-workspace.zip",
         b"PK\x03\x04snapshot",
-        namespace="nl.bioimaging.analysis.project.v1",
+        namespace="nl.bioimaging.analysis.workspace.v1",
     )
     obj = FakeObject(annotations=[snapshot])
     request = with_session(
         RequestFactory().get(
-            "/?type=Image&id=1&project_annotation=21"
+            "/?type=Image&id=1&workspace_annotation=21"
         )
     )
     response = views.chat(request, conn=FakeConnection(obj))
     assert response.status_code == 200
-    assert b'"selected_project_snapshot"' in response.content
+    assert b'"selected_workspace_snapshot"' in response.content
     assert b'"annotation_id": 21' in response.content
     assert response["Content-Security-Policy"].startswith("default-src 'self'")
-    assert "aumc-aicode-openai-swedencentral-oai.openai.azure.com" in response[
-        "Content-Security-Policy"
-    ]
+    assert "connect-src 'self' https:" in response["Content-Security-Policy"]
+    assert "aumc-aicode" not in response["Content-Security-Policy"]
+
+
+def test_notebook_upload_download_and_bootstrap_selection():
+    payload = json.dumps({
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {"kernelspec": {"language": "python"}},
+        "cells": [],
+    }).encode()
+    notebook = FakeAnnotation(
+        31,
+        "analysis.ipynb",
+        payload,
+        namespace="nl.bioimaging.analysis.notebook.v1",
+    )
+    obj = FakeObject(annotations=[notebook])
+    conn = FakeConnection(obj)
+
+    request = with_session(RequestFactory().get(
+        "/?tab=notebook&type=Image&id=1&notebook_annotation=31"
+    ))
+    response = views.chat(request, conn=conn)
+    assert response.status_code == 200
+    assert b'"selected_notebook"' in response.content
+    assert b'"annotation_id": 31' in response.content
+
+    token = token_for(conn, obj, ["notebook_download"])
+    request = with_session(RequestFactory().get("/"))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token
+    response = views.download_notebook(request, 31, conn=conn)
+    assert response.status_code == 200
+    assert b"".join(response.streaming_content) == payload
+
+    token = token_for(conn, obj, ["notebook_upload"])
+    request = with_session(RequestFactory().post("/", data={
+        "file": SimpleUploadedFile(
+            "uploaded.ipynb", payload, content_type="application/x-ipynb+json"
+        )
+    }))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token
+    response = views.upload_notebook(request, "Image", 1, conn=conn)
+    assert response.status_code == 201
+    assert json.loads(response.content)["notebook"]["kind"] == "notebook"

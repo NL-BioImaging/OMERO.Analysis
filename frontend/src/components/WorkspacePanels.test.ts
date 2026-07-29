@@ -1,4 +1,12 @@
-import { parseDelimited } from "./WorkspacePanels";
+import { render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import {
+  ArtifactInspector,
+  delimitedShape,
+  MarkdownPreview,
+  parseDelimited
+} from "./WorkspacePanels";
+import type { NotebookRecord, WorkspaceFile } from "../types";
 
 describe("artifact delimited previews", () => {
   it("renders bounded CSV rows and preserves quoted delimiters", () => {
@@ -11,5 +19,105 @@ describe("artifact delimited previews", () => {
   it("limits previews to one header and one hundred data rows", () => {
     const source = ["value", ...Array.from({ length: 150 }, (_, index) => String(index))].join("\n");
     expect(parseDelimited(source, ",")).toHaveLength(101);
+  });
+
+  it("counts quoted CSV rows and columns without treating embedded newlines as rows", () => {
+    expect(delimitedShape('a,b\n1,"two\nlines"\n3,4\n', ",")).toEqual({
+      rows: 2,
+      columns: 2
+    });
+  });
+
+  it("renders Chat Markdown without activating embedded HTML or unsafe links", () => {
+    const { container } = render(MarkdownPreview({
+      markdown: "# Chat\n\n**Result**\n\n<script>alert(1)</script>\n\n[unsafe](javascript:alert(1))"
+    }));
+    expect(screen.getByRole("heading", { name: "Chat" })).toBeInTheDocument();
+    expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("a")).toBeNull();
+    expect(screen.getByText(/<script>alert/)).toBeInTheDocument();
+  });
+
+  it("shows local CSV dimensions from the bounded data profile", () => {
+    const file: WorkspaceFile = {
+      id: "csv", workspaceId: "workspace", name: "values.csv",
+      logicalPath: "Workspace/Input/values.csv", type: "text/csv", size: 12,
+      sha256: "hash", source: "local", state: "ready",
+      data: new TextEncoder().encode("a,b\n1,2\n").buffer,
+      createdAt: "2026-07-29T10:00:00Z"
+    };
+    render(createElement(ArtifactInspector, {
+      item: { kind: "file", title: file.name, file },
+      profiles: [{
+        path: "/input/values.csv", format: "csv", size: 12,
+        summary: {
+          rows: 240,
+          columns: [{ name: "a", type: "int64" }, { name: "b", type: "int64" }]
+        }
+      }],
+      canUpload: false,
+      onDownload: () => undefined,
+      onAttach: () => undefined
+    }));
+    expect(screen.getByText("240")).toBeInTheDocument();
+    expect(screen.getByText("Columns").nextElementSibling).toHaveTextContent("2");
+  });
+
+  it("shows DuckDB tables and columns instead of an opaque binary preview", () => {
+    const file: WorkspaceFile = {
+      id: "db", workspaceId: "workspace", name: "measurements.duckdb",
+      logicalPath: "Workspace/Input/measurements.duckdb",
+      type: "application/octet-stream", size: 100, sha256: "hash",
+      source: "local", state: "ready", data: new ArrayBuffer(1),
+      createdAt: "2026-07-29T10:00:00Z"
+    };
+    render(createElement(ArtifactInspector, {
+      item: { kind: "file", title: file.name, file },
+      profiles: [{
+        path: "/input/measurements.duckdb", format: "duckdb", size: 100,
+        summary: {
+          tables: [{
+            name: "object_features",
+            columns: [{ name: "object_id", type: "BIGINT" }]
+          }]
+        }
+      }],
+      canUpload: false,
+      onDownload: () => undefined,
+      onAttach: () => undefined
+    }));
+    expect(screen.getByText("Database schema")).toBeInTheDocument();
+    expect(screen.getByText(/object_features/)).toBeInTheDocument();
+  });
+
+  it("presents Notebook cells and safe outputs without dumping encoded JSON", () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "analysis.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: {
+        nbformat: 4, nbformat_minor: 5, metadata: {},
+        cells: [{
+          id: "cell", cell_type: "code", source: "value = 1",
+          metadata: {}, execution_count: 1,
+          outputs: [{
+            output_type: "display_data", metadata: {},
+            data: { "image/png": "aGVsbG8=" }
+          }]
+        }]
+      },
+      createdAt: "2026-07-29T10:00:00Z",
+      updatedAt: "2026-07-29T10:00:00Z"
+    } as NotebookRecord;
+    const { container } = render(createElement(ArtifactInspector, {
+      item: { kind: "notebook", title: notebook.name, notebook },
+      profiles: [],
+      canUpload: false,
+      onDownload: () => undefined,
+      onAttach: () => undefined
+    }));
+    expect(container).toHaveTextContent("value = 1");
+    expect(container.querySelector("img[alt='Notebook PNG output']")).not.toBeNull();
+    expect(screen.queryByText(/aGVsbG8=/)).toBeNull();
   });
 });

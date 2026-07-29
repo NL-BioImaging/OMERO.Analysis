@@ -7,13 +7,13 @@ export function ExecutionCard({
   files,
   onSave,
   onRerun,
-  allowInspectionSave = false
+  viewerPreparation = false
 }: {
   execution: ExecutionRecord;
   files: WorkspaceFile[];
   onSave: () => void;
   onRerun: () => void;
-  allowInspectionSave?: boolean;
+  viewerPreparation?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const outputs = execution.outputFileIds
@@ -24,6 +24,10 @@ export function ExecutionCard({
     : outputs.filter((file) => file.type === "image/png" || file.type === "image/svg+xml");
   const purpose = execution.purpose || "analysis";
   const isInspection = purpose === "inspection";
+  const showReusableActions =
+    !isInspection &&
+    !viewerPreparation &&
+    ["success", "reused"].includes(execution.status);
   const timing = executionActivityText(purpose, execution.durationMs);
   const controls = (position: "top" | "bottom") => (
     <div className={`execution-actions ${position}`}>
@@ -32,11 +36,10 @@ export function ExecutionCard({
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >{expanded ? "Collapse" : "Show details"}</button>
-      {(!isInspection || allowInspectionSave) &&
-        ["success", "reused"].includes(execution.status) && (
-        <button onClick={onSave}>Save as script</button>
+      {showReusableActions && (
+        <button onClick={onSave}>Save as method</button>
       )}
-      {!isInspection && <button onClick={onRerun}>Rerun</button>}
+      {showReusableActions && <button onClick={onRerun}>Rerun</button>}
       <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
     </div>
   );
@@ -52,6 +55,8 @@ export function ExecutionCard({
               ? "Reused Python run"
               : isInspection
                 ? "AI data inspection (local)"
+                : viewerPreparation
+                  ? "Zarr render preparation (local)"
                 : "Python code (local)"}
           </span>
           {controls("top")}
@@ -59,9 +64,12 @@ export function ExecutionCard({
         {timing && <p className="activity-timing">{timing}</p>}
         {isInspection && (
           <p className="inspection-note">
-            {allowInspectionSave
-              ? "This successful legacy inspection can be promoted because no analysis-purpose execution exists for the request."
-              : "This code was generated only to inspect bounded data for the assistant. It is not a reusable analysis script."}
+            This code was generated only to inspect bounded data for the assistant. It is not a reusable analysis method.
+          </p>
+        )}
+        {viewerPreparation && (
+          <p className="inspection-note">
+            This intermediate code prepared and validated the ZarrViewer render. Save the complete analysis and render from the image card below.
           </p>
         )}
         <div className="execution-content" hidden={!expanded}>
@@ -71,7 +79,7 @@ export function ExecutionCard({
           {execution.modelPayload && (
             <details className="model-payload">
               <summary>Data sent to AI</summary>
-              <p>Only this bounded envelope was returned to AmsterdamUMC.</p>
+              <p>Only this bounded envelope was returned to the configured AI provider.</p>
               <pre>{JSON.stringify(execution.modelPayload, null, 2)}</pre>
             </details>
           )}

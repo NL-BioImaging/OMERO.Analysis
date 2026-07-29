@@ -14,33 +14,34 @@ import {
   type AiMessage,
   type ToolCall
 } from "./api";
-import { exportProject, importProject } from "./archive";
+import { exportWorkspace, importWorkspace } from "./archive";
 import {
   MAX_FILE_BYTES,
   MAX_TOOL_TEXT,
   MAX_WORKSPACE_BYTES,
-  PROVIDER_NAME,
   SYSTEM_PROMPT,
   TOOLS,
   ZARR_VIEWER_TOOLS
 } from "./constants";
 import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
+import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
 import {
   defaultSettings,
-  deleteProjectCascade,
+  deleteWorkspaceCascade,
   deleteFile as deleteStoredFile,
   getValue,
-  listContextProjects,
-  listUserProjects,
+  listContextWorkspaces,
+  listUserWorkspaces,
   loadOrCreateWorkspace,
   loadWorkspace,
   newChat,
   saveChat,
   saveExecution,
   saveFile,
-  saveProject,
-  saveScript,
-  saveWorkflow,
+  saveWorkspaceRecord,
+  saveMethod,
+  savePipeline,
+  saveNotebook,
   saveAudit,
   saveArtifact,
   saveEvidenceLedger,
@@ -57,14 +58,14 @@ import type {
   ChatRecord,
   ExecutionRecord,
   ExecutionPurpose,
-  ProjectRecord,
-  ProjectWorkspace,
+  WorkspaceRecord,
+  AnalysisWorkspace,
   ProviderSettings,
   RuntimeOutput,
   RuntimeProgress,
-  ScriptRecord,
-  ScriptVersion,
-  WorkflowRecord,
+  MethodRecord,
+  MethodVersion,
+  PipelineRecord,
   OutboundPayloadAudit,
   ArtifactRecord,
   InputContract,
@@ -78,14 +79,17 @@ import type {
   ZarrViewerCapability,
   ZarrViewerIntegrationStatus,
   EvidenceRecord,
-  ZarrRenderRecipe
+  ZarrRenderRecipe,
+  NotebookRecord,
+  AnalysisSkillProviderCatalog
 } from "./types";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
 import {
   ArtifactInspector,
   ComposerPanel,
-  ViewerPreviewCard
+  ViewerPreviewCard,
+  type InspectorItem
 } from "./components/WorkspacePanels";
 import {
   matchWorkflowSkills,
@@ -116,12 +120,12 @@ import {
   upsertBoundedEvidence
 } from "./evidence";
 import { buildRenderBundle } from "./renderBundle";
-import { savedGalleryRequest } from "./savedScriptRender";
+import { savedGalleryRequest } from "./savedMethodRender";
 import { visualSaveTitle } from "./saveSuggestions";
 import {
   activityText,
   formatDuration,
-  projectRowClassName,
+  workspaceRowClassName,
   workflowSkillTooltip
 } from "./presentation";
 import {
@@ -130,10 +134,10 @@ import {
   MAX_TOOL_ROUNDS
 } from "./chatRounds";
 import {
-  normalizeProjectName,
-  renameProjectWorkspace,
-  trashProjectOutputs
-} from "./projectModel";
+  normalizeWorkspaceName,
+  renameAnalysisWorkspace,
+  trashWorkspaceOutputs
+} from "./workspaceModel";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -189,7 +193,7 @@ function listFiles(files: WorkspaceFile[]): string {
   );
 }
 
-export function bindScriptInputs(
+export function bindMethodInputs(
   code: string,
   files: WorkspaceFile[]
 ): { code: string; bindings: Array<{ from: string; to: string }> } {
@@ -204,8 +208,8 @@ export function bindScriptInputs(
     if (candidates.length !== 1) {
       throw new Error(
         candidates.length
-          ? `Script input ${sourceName} is ambiguous: ${candidates.map((file) => file.name).join(", ")}`
-          : `Script input ${sourceName} has no compatible file in this project`
+          ? `Method input ${sourceName} is ambiguous: ${candidates.map((file) => file.name).join(", ")}`
+          : `Method input ${sourceName} has no compatible file in this workspace`
       );
     }
     bindings.push({ from: sourceName, to: candidates[0].name });
@@ -234,13 +238,13 @@ function bytesLabel(value: number): string {
   return `${value} bytes`;
 }
 
-function projectBytes(workspace: ProjectWorkspace | null): number {
-  return workspace?.files.filter((file) => !file.deletedAt)
+function workspaceBytes(analysisWorkspace: AnalysisWorkspace | null): number {
+  return analysisWorkspace?.files.filter((file) => !file.deletedAt)
     .reduce((sum, file) => sum + file.size, 0) || 0;
 }
 
-function workspaceInputHashes(workspace: ProjectWorkspace): string[] {
-  return workspace.files
+function workspaceInputHashes(analysisWorkspace: AnalysisWorkspace): string[] {
+  return analysisWorkspace.files
     .filter((file) => file.source !== "result" && file.state === "ready" && !file.deletedAt)
     .map((file) => file.sha256)
     .sort();
@@ -259,18 +263,84 @@ interface BrowserMenuState {
   actions: BrowserMenuAction[];
 }
 
+interface InspectorSelection {
+  kind: InspectorItem["kind"];
+  id: string;
+}
+
+interface ExecutionOrigin {
+  methodId?: string;
+  pipelineId?: string;
+}
+
+interface VisibleZarrSource {
+  id: string;
+  name: string;
+  contextName: string;
+  storeUuid: string;
+  objectType: string;
+  objectId: number;
+  zarrName: string;
+  plateRows: number;
+  plateColumns: number;
+  wellsWithData: number;
+  fieldsWithData: number;
+}
+
+export function methodUsesZarrViewer(method: MethodRecord, code: string): boolean {
+  return Boolean(
+    method.requiredCapabilities?.includes("zarrviewer") ||
+    /(?:store_uuid|render_panels|zarrviewer|ome[-_.]?zarr)/i.test(code)
+  );
+}
+
+function executionPreparesViewer(
+  workspace: Pick<AnalysisWorkspace, "artifacts">,
+  execution: ExecutionRecord
+): boolean {
+  if (execution.purpose === "inspection") return false;
+  if (workspace.artifacts.some((artifact) =>
+    artifact.chatId === execution.chatId &&
+    artifact.promptId === execution.promptId &&
+    Boolean(artifact.viewer)
+  )) return true;
+  const payload = execution.modelPayload
+    ? JSON.stringify(execution.modelPayload)
+    : "";
+  return (
+    /\brender_panels\b/i.test(execution.code) ||
+    /"render_panels"\s*:/i.test(payload) ||
+    (
+      /\bstore_uuid\b/i.test(execution.code) &&
+      /\b(?:field|roi|source_channels|overlays)\b/i.test(execution.code)
+    ) ||
+    (
+      /"store_uuid"\s*:/i.test(payload) &&
+      /"(?:field|roi|source_channels|overlays)"\s*:/i.test(payload)
+    )
+  );
+}
+
 export default function App() {
   const bootstrap = window.OMERO_ANALYSIS;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
-  const runtime = useMemo(() => new PythonRuntime(bootstrap.runtimeBase), [bootstrap]);
+  const runtime = useMemo(
+    () => new PythonRuntime(bootstrap.runtimeBase, bootstrap.context),
+    [bootstrap]
+  );
   const dialogs = useDialogs();
-  const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
-  const workspaceRef = useRef<ProjectWorkspace | null>(null);
-  const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
+  const initialTab = new URLSearchParams(window.location.search).get("tab");
+  const [activeTab, setActiveTabState] = useState<"chat" | "notebook" | "settings">(
+    initialTab === "notebook" || initialTab === "settings" ? initialTab : "chat"
+  );
+  const [analysisWorkspace, setWorkspace] = useState<AnalysisWorkspace | null>(null);
+  const workspaceRef = useRef<AnalysisWorkspace | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
+  const [userWorkspaces, setUserWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [snapshots, setSnapshots] = useState<Attachment[]>([]);
   const [hierarchy, setHierarchy] = useState<OmeroHierarchy | null>(null);
-  const [workflowTemplates, setWorkflowTemplates] = useState<Attachment[]>([]);
+  const [pipelineTemplates, setPipelineTemplates] = useState<Attachment[]>([]);
+  const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
   const [workflowSkillCatalog, setWorkflowSkillCatalog] =
     useState<WorkflowSkillCatalog | null>(null);
   const workflowSkillCatalogRef = useRef<WorkflowSkillCatalog | null>(null);
@@ -279,7 +349,10 @@ export default function App() {
   const [zarrViewerStatus, setZarrViewerStatus] =
     useState<ZarrViewerIntegrationStatus | null>(null);
   const [zarrViewerWarning, setZarrViewerWarning] = useState("");
+  const [zarrSkillCatalog, setZarrSkillCatalog] =
+    useState<AnalysisSkillProviderCatalog | null>(null);
   const zarrCapabilities = useRef(new Map<string, ZarrViewerCapability>());
+  const [visibleZarrSources, setVisibleZarrSources] = useState<VisibleZarrSource[]>([]);
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -288,69 +361,92 @@ export default function App() {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const runtimeStarted = useRef(false);
   const [profiles, setProfiles] = useState<DataProfile[]>([]);
-  const [selectedArtifactFileId, setSelectedArtifactFileId] = useState<string | null>(null);
+  const [inspectorSelection, setInspectorSelection] =
+    useState<InspectorSelection | null>(null);
   const [explorerWidth, setExplorerWidth] = useState(320);
-  const [artifactOpen, setArtifactOpen] = useState(true);
+  const [artifactWidth, setArtifactWidth] = useState(360);
+  const [notebookRunRequest, setNotebookRunRequest] =
+    useState<{ id: string; nonce: number } | null>(null);
   const [explorerQuery, setExplorerQuery] = useState("");
-  const [status, setStatus] = useState("Preparing project…");
-  const [showSettings, setShowSettings] = useState(false);
+  const [status, setStatus] = useState("Preparing workspace…");
   const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
   const [browserAtParent, setBrowserAtParent] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [selectedMethodIds, setSelectedMethodIds] = useState<Set<string>>(new Set());
+  const [selectedPipelineIds, setSelectedPipelineIds] = useState<Set<string>>(new Set());
   const [selectedOutputIds, setSelectedOutputIds] = useState<Set<string>>(new Set());
-  const [showScriptTransfer, setShowScriptTransfer] = useState(false);
-  const [scriptTransferTarget, setScriptTransferTarget] = useState("");
+  const [showMethodTransfer, setShowMethodTransfer] = useState(false);
+  const [methodTransferTarget, setMethodTransferTarget] = useState("");
   const [openFolders, setOpenFolders] = useState({
+    chat: true,
     inputs: true,
-    outputs: true,
-    scripts: true,
-    workflows: true,
+    methods: true,
+    pipelines: true,
+    notebooks: true,
     trash: false,
     snapshots: false
   });
   const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [runtimeProgress, setRuntimeProgress] = useState<RuntimeProgress>({
     percent: 0,
-    message: "Preparing the browser workspace…"
+    message: "Preparing the browser analysisWorkspace…"
   });
   const [storage, setStorage] = useState({ usage: 0, quota: 0 });
   const abort = useRef<AbortController | null>(null);
   const messagesElement = useRef<HTMLDivElement | null>(null);
   const importInput = useRef<HTMLInputElement | null>(null);
   const addFilesInput = useRef<HTMLInputElement | null>(null);
+  const notebookUploadInput = useRef<HTMLInputElement | null>(null);
   const turnOutputNames = useRef(new Set<string>());
   const turnWorkflowSkills =
     useRef<NonNullable<ChatMessage["workflowSkills"]>>([]);
-  workspaceRef.current = workspace;
+  workspaceRef.current = analysisWorkspace;
   workflowSkillCatalogRef.current = workflowSkillCatalog;
 
-  const project = workspace?.project || null;
-  const chats = workspace?.chats || [];
-  const activeChat = chats.find((chat) => chat.id === project?.activeChatId) || chats[0] || null;
-  const inputFiles = (workspace?.files || []).filter(
+  function setActiveTab(tab: "chat" | "notebook" | "settings") {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url);
+    setActiveTabState(tab);
+  }
+
+  const workspace = analysisWorkspace?.workspace || null;
+  const chats = analysisWorkspace?.chats || [];
+  const activeChat = chats.find((chat) => chat.id === workspace?.activeChatId) || chats[0] || null;
+  const inputFiles = (analysisWorkspace?.files || []).filter(
     (file) => file.source !== "result" && !file.deletedAt
   );
-  const outputFiles = (workspace?.files || []).filter(
-    (file) => file.source === "result" && file.chatId === activeChat?.id && !file.deletedAt
+  const outputFiles = (analysisWorkspace?.files || []).filter(
+    (file) => file.source === "result" && !file.deletedAt
+  );
+  const notebookOutputFiles = outputFiles.filter((file) => Boolean(file.notebookId));
+  const pipelineOutputFiles = outputFiles.filter((file) =>
+    Boolean(file.pipelineId) && !file.notebookId
+  );
+  const methodOutputFiles = outputFiles.filter((file) =>
+    Boolean(file.methodId) && !file.pipelineId && !file.notebookId
+  );
+  const chatOutputFiles = outputFiles.filter((file) =>
+    !file.notebookId && !file.pipelineId && !file.methodId
   );
   const blockedFiles = inputFiles.filter((file) => file.state !== "ready");
-  const selectedArtifactFile = workspace?.files.find(
-    (file) => file.id === selectedArtifactFileId && !file.deletedAt
-  ) || outputFiles.at(-1) || null;
+  const selectedArtifactFileId = inspectorSelection?.kind === "file"
+    ? inspectorSelection.id
+    : null;
+  const setSelectedArtifactFileId = (value: string | null) =>
+    setInspectorSelection(value ? { kind: "file", id: value } : null);
   const matchesExplorer = (value: string) =>
     !explorerQuery.trim() || value.toLowerCase().includes(explorerQuery.trim().toLowerCase());
   const visibleInputs = inputFiles.filter((file) => matchesExplorer(file.name));
-  const visibleOutputs = outputFiles.filter((file) => matchesExplorer(file.name));
-  const trashedFiles = (workspace?.files || []).filter((file) => Boolean(file.deletedAt));
-  const activeScripts = (workspace?.scripts || []).filter((script) => !script.deletedAt);
-  const trashedScripts = (workspace?.scripts || []).filter((script) => Boolean(script.deletedAt));
-  const trashedWorkflows = (workspace?.workflows || []).filter((workflow) => Boolean(workflow.deletedAt));
+  const trashedFiles = (analysisWorkspace?.files || []).filter((file) => Boolean(file.deletedAt));
+  const activeMethods = (analysisWorkspace?.methods || []).filter((method) => !method.deletedAt);
+  const trashedMethods = (analysisWorkspace?.methods || []).filter((method) => Boolean(method.deletedAt));
+  const trashedPipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => Boolean(pipeline.deletedAt));
   const canChat =
     Boolean(activeChat) &&
     runtimeReady &&
     blockedFiles.length === 0 &&
-    Boolean(settings.apiKey && settings.model) &&
+    Boolean(settings.endpoint && settings.apiKey && settings.model) &&
     !busy;
   const composerPlaceholder = busy
     ? "Analysis in progress — wait for the answer or press Stop…"
@@ -360,8 +456,8 @@ export default function App() {
         ? "Downloading selected data — chat will unlock when every file is ready…"
         : !runtimeReady
           ? `${runtimeProgress.message} (${Math.round(runtimeProgress.percent)}%) — please wait…`
-          : !settings.apiKey || !settings.model
-            ? "Configure the AmsterdamUMC deployment and API key before asking a question…"
+          : !settings.endpoint || !settings.apiKey || !settings.model
+            ? "Configure the AI endpoint, model, and API key before asking a question…"
             : "Ask a question about the loaded data…";
 
   useEffect(() => {
@@ -371,11 +467,11 @@ export default function App() {
       element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeChat?.messages, workspace?.executions, workspace?.files]);
+  }, [activeChat?.messages, analysisWorkspace?.executions, analysisWorkspace?.files]);
 
   useEffect(() => {
     setSelectedOutputIds(new Set());
-  }, [project?.id, activeChat?.id]);
+  }, [workspace?.id, activeChat?.id]);
 
   useEffect(() => {
     if (!browserMenu) return;
@@ -398,7 +494,7 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [savedSettings, baseProject] = await Promise.all([
+      const [savedSettings, baseWorkspace] = await Promise.all([
         getValue<ProviderSettings>(settingsKey),
         loadOrCreateWorkspace(bootstrap.context)
       ]);
@@ -419,6 +515,11 @@ export default function App() {
       ]);
       setHierarchy(loadedHierarchy);
       setZarrViewerStatus(viewerStatus);
+      if (viewerStatus.available) {
+        setZarrSkillCatalog(
+          await bridge.listZarrViewerSkills().catch(() => null)
+        );
+      }
       setZarrViewerWarning(
         viewerStatus.available
           ? ""
@@ -434,56 +535,109 @@ export default function App() {
           setWorkflowSkillCatalog(catalog);
           setWorkflowSkillWarning(
             catalog.workflows.some((entry) => entry.status === "stale")
-              ? "Workflow guidance is using an unchanged cached revision."
+              ? "Measurement guidance is using an unchanged cached revision."
               : ""
           );
         }
       } catch (error) {
         if (alive) {
           setWorkflowSkillWarning(
-            `Workflow-specific guidance unavailable: ${String(error)}`
+            `Measurement-specific guidance unavailable: ${String(error)}`
           );
         }
       }
-      let initial = baseProject;
-      const requestedSnapshot = bootstrap.context?.selected_project_snapshot;
+      let initial = baseWorkspace;
+      const requestedSnapshot = bootstrap.context?.selected_workspace_snapshot;
       if (requestedSnapshot) {
-        setRuntimeProgress({ percent: 8, message: "Restoring the selected OMERO project…" });
-        const localProjects = await listContextProjects(bootstrap.context);
-        const existing = localProjects.find(
-          (item) => item.sourceSnapshotAnnotationId === requestedSnapshot.annotation_id
+        setRuntimeProgress({ percent: 8, message: "Restoring the selected OMERO workspace…" });
+        const localWorkspaces = await listContextWorkspaces(bootstrap.context);
+        const existing = localWorkspaces.find(
+          (item) => item.sourceWorkspaceSnapshotAnnotationId === requestedSnapshot.annotation_id
         );
         if (existing) {
-          initial = await loadWorkspace(existing.id) || baseProject;
+          initial = await loadWorkspace(existing.id) || baseWorkspace;
         } else {
-          const imported = await importProject(
+          const imported = await importWorkspace(
             await bridge.downloadSnapshot(requestedSnapshot),
             bootstrap.context
           );
           if (
             bootstrap.context &&
-            (imported.project.objectType !== bootstrap.context.object_type ||
-              imported.project.objectId !== bootstrap.context.object_id)
+            (imported.workspace.objectType !== bootstrap.context.object_type ||
+              imported.workspace.objectId !== bootstrap.context.object_id)
           ) {
-            throw new Error("The selected project belongs to a different OMERO object");
+            throw new Error("The selected workspace belongs to a different OMERO object");
           }
-          imported.project = {
-            ...imported.project,
-            sourceSnapshotAnnotationId: requestedSnapshot.annotation_id,
+          imported.workspace = {
+            ...imported.workspace,
+            sourceWorkspaceSnapshotAnnotationId: requestedSnapshot.annotation_id,
             updatedAt: now()
           };
           await saveWorkspace(imported);
           initial = imported;
         }
       }
+      for (const attached of bootstrap.context?.notebooks || []) {
+        if (initial.notebooks.some(
+          (item) => item.sourceAnnotationId === attached.annotation_id
+        )) continue;
+        try {
+          const timestamp = now();
+          initial = {
+            ...initial,
+            notebooks: [...initial.notebooks, {
+              id: id(),
+              workspaceId: initial.workspace.id,
+              name: attached.name,
+              document: parseNotebook(await bridge.downloadNotebook(attached)),
+              sourceAnnotationId: attached.annotation_id,
+              attachmentIds: [attached.annotation_id],
+              selectedDataFileIds: [],
+              createdAt: timestamp,
+              updatedAt: timestamp
+            }]
+          };
+        } catch (error) {
+          console.warn(`Skipped invalid attached notebook ${attached.name}`, error);
+        }
+      }
+      const requestedNotebook = bootstrap.context?.selected_notebook;
+      if (requestedNotebook) {
+        let notebook = initial.notebooks.find(
+          (item) => item.sourceAnnotationId === requestedNotebook.annotation_id
+        );
+        if (!notebook) {
+          const document = parseNotebook(
+            await bridge.downloadNotebook(requestedNotebook)
+          );
+          const timestamp = now();
+          notebook = {
+            id: id(),
+            workspaceId: initial.workspace.id,
+            name: requestedNotebook.name,
+            document,
+            sourceAnnotationId: requestedNotebook.annotation_id,
+            attachmentIds: [requestedNotebook.annotation_id],
+            selectedDataFileIds: [],
+            createdAt: timestamp,
+            updatedAt: timestamp
+          };
+          initial = { ...initial, notebooks: [...initial.notebooks, notebook] };
+          await saveWorkspace(initial);
+        }
+        setActiveNotebookId(notebook.id);
+      } else if (initial.notebooks.length) {
+        setActiveNotebookId(initial.notebooks[0].id);
+      }
+      await saveWorkspace(initial);
       let prepared = await prepareInputs(initial);
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
-      setProjects(await listContextProjects(bootstrap.context));
-      setUserProjects(await listUserProjects(bootstrap.context));
+      setWorkspaces(await listContextWorkspaces(bootstrap.context));
+      setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
       setSnapshots(await bridge.listSnapshots());
-      setWorkflowTemplates(await bridge.listWorkflowTemplates());
+      setPipelineTemplates(await bridge.listPipelineTemplates());
       await startRuntime(prepared.files);
       setProfiles(await runtime.profileInputs());
       if (alive) {
@@ -494,8 +648,8 @@ export default function App() {
       }
     })().catch((error) => {
       if (!alive) return;
-      setStatus(`Project failed: ${String(error)}`);
-      setRuntimeProgress({ percent: 0, message: `Project failed: ${String(error)}` });
+      setStatus(`Workspace failed: ${String(error)}`);
+      setRuntimeProgress({ percent: 0, message: `Workspace failed: ${String(error)}` });
     });
     return () => {
       alive = false;
@@ -503,7 +657,59 @@ export default function App() {
     };
   }, [bootstrap, bridge, runtime]);
 
-  async function prepareInputs(initial: ProjectWorkspace): Promise<ProjectWorkspace> {
+  useEffect(() => {
+    let cancelled = false;
+    const context = bootstrap.context;
+    const viewer = zarrViewerStatus;
+    if (!context || !viewer?.available || !hierarchy) {
+      setVisibleZarrSources([]);
+      return;
+    }
+    const candidates = zarrCandidates(context, hierarchy).slice(0, 50);
+    void Promise.allSettled(candidates.map(async (candidate) => {
+      const cacheKey = `${candidate.type}:${candidate.id}`;
+      const capability = zarrCapabilities.current.get(cacheKey) ||
+        await fetchZarrCapability(viewer, candidate);
+      zarrCapabilities.current.set(cacheKey, capability);
+      return { candidate, capability };
+    })).then((settled) => {
+      if (cancelled) return;
+      const byUuid = new Map<string, VisibleZarrSource>();
+      for (const result of settled) {
+        if (result.status !== "fulfilled" || !result.value.capability.store.uuid) continue;
+        const { candidate, capability } = result.value;
+        const storeUuid = capability.store.uuid.toLowerCase();
+        if (byUuid.has(storeUuid)) continue;
+        byUuid.set(storeUuid, {
+          id: storeUuid,
+          name: capability.store.name || "OME-Zarr source",
+          contextName: context.name,
+          storeUuid,
+          objectType: candidate.type,
+          objectId: candidate.id,
+          zarrName: capability.plate?.name || capability.image.name,
+          plateRows: capability.plate?.rows.length || 0,
+          plateColumns: capability.plate?.columns.length || 0,
+          wellsWithData: capability.plate?.wells.length || 0,
+          fieldsWithData: capability.plate?.wells.reduce(
+            (total, well) => total + well.fields.length,
+            0
+          ) || 0
+        });
+      }
+      setVisibleZarrSources(Array.from(byUuid.values()));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bootstrap.context,
+    hierarchy,
+    zarrViewerStatus?.available,
+    zarrViewerStatus?.version
+  ]);
+
+  async function prepareInputs(initial: AnalysisWorkspace): Promise<AnalysisWorkspace> {
     let next = initial;
     const existing = new Map(
       next.files.filter((file) => file.annotationId).map((file) => [file.annotationId!, file])
@@ -513,9 +719,9 @@ export default function App() {
       if (existing.has(attachment.annotation_id)) continue;
       const file: WorkspaceFile = {
         id: id(),
-        projectId: next.project.id,
+        workspaceId: next.workspace.id,
         name: attachment.name,
-        logicalPath: `${next.project.rootPath}/inputs/${attachment.annotation_id}--${attachment.name}`,
+        logicalPath: `${next.workspace.rootPath}/inputs/${attachment.annotation_id}--${attachment.name}`,
         type: attachment.mimetype,
         size: attachment.size,
         sha256: "",
@@ -607,14 +813,14 @@ export default function App() {
     setStatus(finalStatus);
   }
 
-  function updateProject(next: ProjectRecord) {
+  function updateWorkspaceRecord(next: WorkspaceRecord) {
     const current = workspaceRef.current;
     if (current) {
-      const updated = { ...current, project: next };
+      const updated = { ...current, workspace: next };
       workspaceRef.current = updated;
       setWorkspace(updated);
     }
-    void saveProject(next);
+    void saveWorkspaceRecord(next);
   }
 
   function updateChat(next: ChatRecord) {
@@ -715,10 +921,354 @@ export default function App() {
     await setValue(settingsKey, next.rememberKey ? next : { ...next, apiKey: "" });
   }
 
-  async function addLocalFiles(list: FileList | null) {
-    if (!list || !workspace) return;
+  async function uploadNotebookFile(file: File) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    if (!file.name.toLowerCase().endsWith(".ipynb")) {
+      setStatus("Only .ipynb notebooks can be uploaded");
+      return;
+    }
+    if (file.size > 32 * 1024 * 1024) {
+      setStatus("Notebook exceeds the 32 MiB upload limit");
+      return;
+    }
+    try {
+      const data = await file.arrayBuffer();
+      const document = parseNotebook(data);
+      const attachment = bootstrap.context && bridge.canUpload
+        ? await bridge.uploadNotebook(file.name, new Uint8Array(data))
+        : null;
+      const timestamp = now();
+      const record: NotebookRecord = {
+        id: id(),
+        workspaceId: current.workspace.id,
+        name: attachment?.name || file.name,
+        document,
+        sourceAnnotationId: attachment?.annotation_id,
+        attachmentIds: attachment ? [attachment.annotation_id] : [],
+        selectedDataFileIds: current.files
+          .filter((item) => item.source !== "result" && !item.deletedAt)
+          .map((item) => item.id),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      const updated = { ...current, notebooks: [...current.notebooks, record] };
+      workspaceRef.current = updated;
+      setWorkspace(updated);
+      setActiveNotebookId(record.id);
+      setInspectorSelection({ kind: "notebook", id: record.id });
+      setActiveTab("notebook");
+      await saveNotebook(record);
+      setStatus(
+        attachment
+          ? `Uploaded and attached ${record.name}`
+          : `Uploaded ${record.name} to this browser workspace`
+      );
+    } catch (error) {
+      setStatus(`Notebook upload failed: ${String(error)}`);
+    }
+  }
+
+  async function saveConvertedNotebook(
+    suggestedName: string,
+    title: string,
+    cells: NotebookRecord["document"]["cells"],
+    provenance: Record<string, unknown>,
+    skipped: string[]
+  ) {
+    const current = workspaceRef.current;
+    if (!current || !cells.some((cell) => cell.cell_type === "code")) {
+      setStatus(
+        skipped.length
+          ? `Notebook conversion skipped every ZarrViewer-dependent item: ${skipped.join(", ")}`
+          : "Notebook conversion found no executable Python"
+      );
+      return;
+    }
+    const requested = (await dialogs.askText(
+      "Notebook filename",
+      `${slug(suggestedName.replace(/\.ipynb$/i, ""))}.ipynb`,
+      "The generated Notebook is run-only and uses the current Workspace input data."
+    ))?.trim();
+    if (!requested) return;
+    const stem = slug(requested.replace(/\.ipynb$/i, ""));
+    let name = `${stem}.ipynb`;
+    let suffix = 2;
+    while (current.notebooks.some((notebook) =>
+      notebook.name.toLowerCase() === name.toLowerCase()
+    )) {
+      name = `${stem}-${suffix}.ipynb`;
+      suffix += 1;
+    }
+    const timestamp = now();
+    const skippedCell: NotebookRecord["document"]["cells"] = skipped.length
+      ? [{
+          id: id(),
+          cell_type: "markdown",
+          source: `## Skipped ZarrViewer items\n\n${skipped.map((item) => `- ${item}`).join("\n")}\n\nThese items require ZarrViewer and cannot run in Notebook.`,
+          metadata: {}
+        }]
+      : [];
+    const record: NotebookRecord = {
+      id: id(),
+      workspaceId: current.workspace.id,
+      name,
+      document: {
+        nbformat: 4,
+        nbformat_minor: 5,
+        metadata: {
+          kernelspec: {
+            display_name: "Python (Pyodide)",
+            language: "python",
+            name: "python"
+          },
+          language_info: { name: "python" },
+          omero_analysis: {
+            generated_from: provenance,
+            created_at: timestamp
+          }
+        },
+        cells: [{
+          id: id(),
+          cell_type: "markdown",
+          source: `# ${title}\n\nGenerated from OMERO.Analysis. Inputs are attached from the current Workspace when Run is pressed.`,
+          metadata: {}
+        }, ...skippedCell, ...cells]
+      },
+      attachmentIds: [],
+      selectedDataFileIds: current.files
+        .filter((file) => file.source !== "result" && !file.deletedAt)
+        .map((file) => file.id),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    const updated = { ...current, notebooks: [...current.notebooks, record] };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    setActiveNotebookId(record.id);
+    setInspectorSelection({ kind: "notebook", id: record.id });
+    setSelectedMethodIds(new Set());
+    setSelectedPipelineIds(new Set());
+    await saveNotebook(record);
+    setStatus(
+      skipped.length
+        ? `Created ${record.name}; skipped ${skipped.length} ZarrViewer-dependent item(s)`
+        : `Created ${record.name}`
+    );
+  }
+
+  async function convertSelectedMethodsToNotebook() {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const selected = current.methods.filter((method) =>
+      !method.deletedAt && selectedMethodIds.has(method.id)
+    );
+    if (!selected.length) {
+      setStatus("Select at least one Method to convert");
+      return;
+    }
+    const skipped: string[] = [];
+    const cells: NotebookRecord["document"]["cells"] = [];
+    for (const method of selected) {
+      const version = method.versions.find(
+        (item) => item.version === method.currentVersion
+      );
+      if (!version) continue;
+      if (methodUsesZarrViewer(method, version.code)) {
+        skipped.push(method.name);
+        continue;
+      }
+      cells.push({
+        id: id(),
+        cell_type: "markdown",
+        source: `## ${method.description || method.name}\n\nMethod: \`${method.name}\` · version ${version.version}`,
+        metadata: {}
+      }, {
+        id: id(),
+        cell_type: "code",
+        source: version.code,
+        metadata: {},
+        execution_count: null,
+        outputs: []
+      });
+    }
+    await saveConvertedNotebook(
+      selected.length === 1 ? selected[0].name : "combined-methods",
+      selected.length === 1 ? selected[0].description || selected[0].name : "Combined Methods",
+      cells,
+      {
+        kind: "methods",
+        methods: selected.map((method) => ({
+          id: method.id,
+          name: method.name,
+          version: method.currentVersion
+        }))
+      },
+      skipped
+    );
+  }
+
+  async function convertSelectedPipelinesToNotebook() {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const selected = current.pipelines.filter((pipeline) =>
+      !pipeline.deletedAt && selectedPipelineIds.has(pipeline.id)
+    );
+    if (!selected.length) {
+      setStatus("Select at least one Pipeline to convert");
+      return;
+    }
+    const skipped: string[] = [];
+    const cells: NotebookRecord["document"]["cells"] = [];
+    for (const pipeline of selected) {
+      if (selected.length > 1) {
+        cells.push({
+          id: id(),
+          cell_type: "markdown",
+          source: `# Pipeline: ${pipeline.name}\n\n${pipeline.description}`,
+          metadata: {}
+        });
+      }
+      for (const step of pipeline.steps) {
+        const method = current.methods.find((item) =>
+          item.id === step.methodId && !item.deletedAt
+        );
+        const version = method?.versions.find((item) =>
+          item.version === step.methodVersion
+        );
+        if (!method || !version) {
+          skipped.push(`${pipeline.name} / ${step.name} (unavailable)`);
+          continue;
+        }
+        if (methodUsesZarrViewer(method, version.code)) {
+          skipped.push(`${pipeline.name} / ${step.name}`);
+          continue;
+        }
+        cells.push({
+          id: id(),
+          cell_type: "markdown",
+          source: `## ${step.name}\n\nPipeline \`${pipeline.name}\` · Method version ${step.methodVersion}`,
+          metadata: {}
+        }, {
+          id: id(),
+          cell_type: "code",
+          source: version.code,
+          metadata: {},
+          execution_count: null,
+          outputs: []
+        });
+      }
+    }
+    await saveConvertedNotebook(
+      selected.length === 1 ? selected[0].name : "combined-pipelines",
+      selected.length === 1 ? selected[0].name : "Combined Pipelines",
+      cells,
+      {
+        kind: "pipelines",
+        pipelines: selected.map((pipeline) => ({
+          id: pipeline.id,
+          name: pipeline.name,
+          version: pipeline.version
+        }))
+      },
+      skipped
+    );
+  }
+
+  function openNotebook(record: NotebookRecord) {
+    setActiveNotebookId(record.id);
+    setInspectorSelection({ kind: "notebook", id: record.id });
+    setActiveTab("notebook");
+  }
+
+  function runNotebook(record: NotebookRecord) {
+    openNotebook(record);
+    setNotebookRunRequest({ id: record.id, nonce: Date.now() });
+  }
+
+  async function updateNotebook(record: NotebookRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const updated = {
+      ...current,
+      notebooks: current.notebooks.map((item) => item.id === record.id ? record : item)
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    await saveNotebook(record);
+  }
+
+  async function saveNotebookFiles(
+    record: NotebookRecord,
+    generated: RuntimeOutput["files"]
+  ) {
+    const current = workspaceRef.current;
+    if (!current || !generated.length) return;
     const additions: WorkspaceFile[] = [];
-    let total = projectBytes(workspace);
+    for (const output of generated) {
+      const data = output.data.slice(0);
+      additions.push({
+        id: id(),
+        workspaceId: current.workspace.id,
+        notebookId: record.id,
+        name: output.name,
+        logicalPath: `${current.workspace.rootPath}/Notebooks/Results/${record.name}/${output.name}`,
+        type: output.type,
+        size: data.byteLength,
+        sha256: await sha256(data),
+        source: "result",
+        state: "ready",
+        data,
+        createdAt: now()
+      });
+    }
+    upsertFiles(additions);
+  }
+
+  async function attachExecutedNotebook(record: NotebookRecord) {
+    const current = workspaceRef.current;
+    if (!current || !bootstrap.context || !bridge.canUpload) return;
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const stem = record.name.replace(/\.ipynb$/i, "");
+      const document = {
+        ...record.document,
+        metadata: {
+          ...record.document.metadata,
+          omero_analysis: {
+            runtime: RUNTIME_VERSION,
+            source_annotation: record.sourceAnnotationId || null,
+            input_hashes: current.files
+              .filter((file) => file.source !== "result" && !file.deletedAt)
+              .map((file) => ({ name: file.name, sha256: file.sha256 })),
+            context: {
+              object_type: bootstrap.context.object_type,
+              object_id: bootstrap.context.object_id,
+              group_id: bootstrap.context.group_id
+            },
+            attached_at: now()
+          }
+        }
+      };
+      const attachment = await bridge.uploadNotebook(
+        `${stem}-executed-${timestamp}.ipynb`,
+        serializeNotebook(document)
+      );
+      await updateNotebook({
+        ...record,
+        attachmentIds: [...record.attachmentIds, attachment.annotation_id],
+        updatedAt: now()
+      });
+      setStatus(`Attached executed copy as FileAnnotation ${attachment.annotation_id}`);
+    } catch (error) {
+      setStatus(`Executed notebook attachment failed: ${String(error)}`);
+    }
+  }
+
+  async function addLocalFiles(list: FileList | null) {
+    if (!list || !analysisWorkspace) return;
+    const additions: WorkspaceFile[] = [];
+    let total = workspaceBytes(analysisWorkspace);
     for (const source of Array.from(list)) {
       if (!supported.test(source.name)) {
         setStatus(`${source.name} is not a supported tabular data file`);
@@ -730,22 +1280,22 @@ export default function App() {
       }
       total += source.size;
       if (total > MAX_WORKSPACE_BYTES) {
-        setStatus("The project would exceed 512 MiB");
+        setStatus("The workspace would exceed 512 MiB");
         break;
       }
       const data = await source.arrayBuffer();
       const digest = await sha256(data);
-      if ([...workspace.files, ...additions].some(
+      if ([...analysisWorkspace.files, ...additions].some(
         (file) => file.sha256 === digest && file.size === data.byteLength
       )) {
-        setStatus(`${source.name} matches a file already stored in this project`);
+        setStatus(`${source.name} matches a file already stored in this workspace`);
         continue;
       }
       additions.push({
         id: id(),
-        projectId: workspace.project.id,
+        workspaceId: analysisWorkspace.workspace.id,
         name: source.name,
-        logicalPath: `${workspace.project.rootPath}/inputs/${source.name}`,
+        logicalPath: `${analysisWorkspace.workspace.rootPath}/inputs/${source.name}`,
         type: source.type || fileType(source.name),
         size: data.byteLength,
         sha256: digest,
@@ -755,15 +1305,15 @@ export default function App() {
         createdAt: now()
       });
     }
-    const nextFiles = [...workspace.files, ...additions];
+    const nextFiles = [...analysisWorkspace.files, ...additions];
     upsertFiles(additions);
     await restartRuntime(nextFiles, "Local inputs added; browser Python is ready");
     setStorage(await storageEstimate());
   }
 
   async function removeFile(fileId: string) {
-    if (!workspace) return;
-    const file = workspace.files.find((item) => item.id === fileId);
+    if (!analysisWorkspace) return;
+    const file = analysisWorkspace.files.find((item) => item.id === fileId);
     if (!file) return;
     if (file.source === "result") {
       const tombstone = { ...file, deletedAt: now() };
@@ -774,11 +1324,11 @@ export default function App() {
         return next;
       });
       if (selectedArtifactFileId === file.id) setSelectedArtifactFileId(null);
-      setStatus(`Moved ${file.name} to project trash; provenance is preserved`);
+      setStatus(`Moved ${file.name} to workspace trash; provenance is preserved`);
       return;
     }
-    const nextFiles = workspace.files.filter((item) => item.id !== fileId);
-    const updated = { ...workspace, files: nextFiles };
+    const nextFiles = analysisWorkspace.files.filter((item) => item.id !== fileId);
+    const updated = { ...analysisWorkspace, files: nextFiles };
     workspaceRef.current = updated;
     setWorkspace(updated);
     await deleteStoredFile(fileId);
@@ -787,8 +1337,8 @@ export default function App() {
   }
 
   async function retryFile(fileId: string) {
-    if (!workspace) return;
-    const file = workspace.files.find((item) => item.id === fileId);
+    if (!analysisWorkspace) return;
+    const file = analysisWorkspace.files.find((item) => item.id === fileId);
     if (!file?.annotationId) return;
     const loading = { ...file, state: "loading" as const, error: undefined };
     upsertFiles([loading]);
@@ -810,33 +1360,35 @@ export default function App() {
         state: "ready" as const,
         error: undefined
       };
-      const nextFiles = workspace.files.map((item) => item.id === file.id ? ready : item);
+      const nextFiles = analysisWorkspace.files.map((item) => item.id === file.id ? ready : item);
       upsertFiles([ready]);
-      await restartRuntime(nextFiles, "OMERO input restored; project ready");
+      await restartRuntime(nextFiles, "OMERO input restored; workspace ready");
     } catch (error) {
       upsertFiles([{ ...file, state: "failed", error: String(error) }]);
     }
   }
 
   async function newConversation() {
-    if (!workspace) return;
-    const chat = newChat(workspace.project.id);
-    const nextProject = { ...workspace.project, activeChatId: chat.id, updatedAt: now() };
-    const updated = { ...workspace, project: nextProject, chats: [...workspace.chats, chat] };
+    if (!analysisWorkspace) return;
+    const chat = newChat(analysisWorkspace.workspace.id);
+    const nextWorkspace = { ...analysisWorkspace.workspace, activeChatId: chat.id, updatedAt: now() };
+    const updated = { ...analysisWorkspace, workspace: nextWorkspace, chats: [...analysisWorkspace.chats, chat] };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    await Promise.all([saveChat(chat), saveProject(nextProject)]);
+    await Promise.all([saveChat(chat), saveWorkspaceRecord(nextWorkspace)]);
+    setActiveTab("chat");
     setUsage(null);
     turnOutputNames.current.clear();
     await runtime.beginTurn();
   }
 
   function switchChat(chatId: string) {
-    if (!workspace) return;
-    const chat = workspace.chats.find((item) => item.id === chatId);
+    if (!analysisWorkspace) return;
+    const chat = analysisWorkspace.chats.find((item) => item.id === chatId);
     if (chat?.archived) updateChat({ ...chat, archived: false, updatedAt: now() });
-    const next = { ...workspace.project, activeChatId: chatId, updatedAt: now() };
-    updateProject(next);
+    const next = { ...analysisWorkspace.workspace, activeChatId: chatId, updatedAt: now() };
+    updateWorkspaceRecord(next);
+    setActiveTab("chat");
     setUsage(null);
   }
 
@@ -881,76 +1433,92 @@ export default function App() {
     window.addEventListener("mouseup", stop);
   }
 
-  async function refreshProject() {
-    if (!project) return;
-    setBrowserMenu(null);
-    setProjects(await listContextProjects(bootstrap.context));
-    setUserProjects(await listUserProjects(bootstrap.context));
-    await switchProject(project.id);
+  function beginArtifactResize(event: ReactMouseEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = artifactWidth;
+    const move = (moveEvent: MouseEvent) =>
+      setArtifactWidth(
+        Math.max(280, Math.min(720, startWidth + startX - moveEvent.clientX))
+      );
+    const stop = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", stop);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", stop);
   }
 
-  async function removeLocalProject(target: ProjectRecord) {
-    if (target.id === project?.id) {
-      setStatus("Open another local project before deleting this one");
+  async function refreshWorkspace() {
+    if (!workspace) return;
+    setBrowserMenu(null);
+    setWorkspaces(await listContextWorkspaces(bootstrap.context));
+    setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
+    await switchWorkspace(workspace.id);
+  }
+
+  async function removeLocalWorkspace(target: WorkspaceRecord) {
+    if (target.id === workspace?.id) {
+      setStatus("Open another local workspace before deleting this one");
       return;
     }
     if (!await dialogs.confirm(
-      "Delete browser-local project?",
-      `${target.name} and its local chats, scripts, workflows, and outputs will be permanently removed. OMERO attachments are unchanged.`,
-      "Delete local project",
+      "Delete browser-local workspace?",
+      `${target.name} and its local chats, methods, pipelines, and outputs will be permanently removed. OMERO attachments are unchanged.`,
+      "Delete local workspace",
       true
     )) return;
-    await deleteProjectCascade(target.id);
-    setProjects(await listContextProjects(bootstrap.context));
-    setUserProjects(await listUserProjects(bootstrap.context));
-    setStatus(`Deleted browser-local project ${target.name}`);
+    await deleteWorkspaceCascade(target.id);
+    setWorkspaces(await listContextWorkspaces(bootstrap.context));
+    setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
+    setStatus(`Deleted browser-local workspace ${target.name}`);
   }
 
-  async function renameProject(target: ProjectRecord) {
+  async function renameWorkspace(target: WorkspaceRecord) {
     const requested = await dialogs.askText(
-      "Rename project",
+      "Rename workspace",
       target.name,
-      "This changes the browser-local project name and logical project folder. OMERO object and attachment names are unchanged."
+      "This changes the browser-local workspace name and logical workspace folder. OMERO object and attachment names are unchanged."
     );
     if (requested == null) return;
-    const name = normalizeProjectName(requested);
+    const name = normalizeWorkspaceName(requested);
     if (!name) {
-      setStatus("Project name cannot be empty");
+      setStatus("Workspace name cannot be empty");
       return;
     }
     if (name === target.name) return;
-    const siblings = await listContextProjects(bootstrap.context);
+    const siblings = await listContextWorkspaces(bootstrap.context);
     if (siblings.some((item) =>
       item.id !== target.id &&
       item.name.toLocaleLowerCase() === name.toLocaleLowerCase()
     )) {
-      setStatus(`A project named ${name} already exists for this OMERO object`);
+      setStatus(`A workspace named ${name} already exists for this OMERO object`);
       return;
     }
     const current = workspaceRef.current;
-    const targetWorkspace = current?.project.id === target.id
+    const targetWorkspace = current?.workspace.id === target.id
       ? current
       : await loadWorkspace(target.id);
     if (!targetWorkspace) {
-      setStatus("The browser-local project could not be loaded");
+      setStatus("The browser-local workspace could not be loaded");
       return;
     }
-    const renamed = renameProjectWorkspace(targetWorkspace, name, now());
+    const renamed = renameAnalysisWorkspace(targetWorkspace, name, now());
     if (siblings.some((item) =>
       item.id !== target.id &&
-      item.rootPath.toLocaleLowerCase() === renamed.project.rootPath.toLocaleLowerCase()
+      item.rootPath.toLocaleLowerCase() === renamed.workspace.rootPath.toLocaleLowerCase()
     )) {
-      setStatus(`The project folder ${renamed.project.rootPath} already exists`);
+      setStatus(`The workspace folder ${renamed.workspace.rootPath} already exists`);
       return;
     }
     await saveWorkspace(renamed);
-    if (current?.project.id === target.id) {
+    if (current?.workspace.id === target.id) {
       workspaceRef.current = renamed;
       setWorkspace(renamed);
     }
-    setProjects(await listContextProjects(bootstrap.context));
-    setUserProjects(await listUserProjects(bootstrap.context));
-    setStatus(`Renamed project to ${name}`);
+    setWorkspaces(await listContextWorkspaces(bootstrap.context));
+    setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
+    setStatus(`Renamed workspace to ${name}`);
   }
 
   async function renameWorkspaceFile(file: WorkspaceFile) {
@@ -1029,26 +1597,27 @@ export default function App() {
   }
 
   function archiveChat(chat: ChatRecord) {
-    if (!workspace || workspace.chats.filter((item) => !item.archived).length <= 1) {
+    if (!analysisWorkspace || analysisWorkspace.chats.filter((item) => !item.archived).length <= 1) {
       setStatus("Create another chat before archiving this one");
       return;
     }
     const archived = { ...chat, archived: true, updatedAt: now() };
-    const fallback = workspace.chats.find((item) => item.id !== chat.id && !item.archived)!;
+    const fallback = analysisWorkspace.chats.find((item) => item.id !== chat.id && !item.archived)!;
     updateChat(archived);
-    updateProject({ ...workspace.project, activeChatId: fallback.id, updatedAt: now() });
+    updateWorkspaceRecord({ ...analysisWorkspace.workspace, activeChatId: fallback.id, updatedAt: now() });
   }
 
-  async function switchProject(projectId: string) {
-    const selected = await loadWorkspace(projectId);
+  async function switchWorkspace(workspaceId: string) {
+    const selected = await loadWorkspace(workspaceId);
     if (!selected) return;
     const prepared = await prepareInputs(selected);
     setWorkspace(prepared);
     workspaceRef.current = prepared;
-    setSelectedProjectId(projectId);
+    setSelectedWorkspaceId(workspaceId);
     setBrowserAtParent(false);
-    setSelectedScriptIds(new Set());
-    await restartRuntime(prepared.files, "Project loaded");
+    setSelectedMethodIds(new Set());
+    setSelectedPipelineIds(new Set());
+    await restartRuntime(prepared.files, "Workspace loaded");
   }
 
   async function resolveZarrTarget(
@@ -1067,7 +1636,7 @@ export default function App() {
         "No compatible OMERO Image or Plate is available in the current object hierarchy"
       );
     }
-    const cachedBinding = current.project.zarrBindings?.[storeUuid];
+    const cachedBinding = current.workspace.zarrBindings?.[storeUuid];
     const cachedCandidate = cachedBinding && cachedBinding.groupId === context.group_id
       ? candidates.find(
         (candidate) =>
@@ -1163,10 +1732,10 @@ export default function App() {
       context.group_id,
       viewer.version
     );
-    updateProject({
-      ...workspaceRef.current!.project,
+    updateWorkspaceRecord({
+      ...workspaceRef.current!.workspace,
       zarrBindings: {
-        ...(workspaceRef.current!.project.zarrBindings || {}),
+        ...(workspaceRef.current!.workspace.zarrBindings || {}),
         [storeUuid]: binding
       },
       updatedAt: now()
@@ -1200,16 +1769,16 @@ export default function App() {
 
     if (includePreview) {
       const data = await renderZarrPreview(capability, focus);
-      if (projectBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
-        throw new Error("The rendered preview would exceed the 512 MiB project limit");
+      if (workspaceBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
+        throw new Error("The rendered preview would exceed the 512 MiB workspace limit");
       }
       const filename = `${slug(focus.title)}.png`;
       createdFile = {
         id: id(),
-        projectId: current.project.id,
+        workspaceId: current.workspace.id,
         chatId,
         name: filename,
-        logicalPath: `${current.project.rootPath}/chats/${chatId}/outputs/zarr/${filename}`,
+        logicalPath: `${current.workspace.rootPath}/chats/${chatId}/outputs/zarr/${filename}`,
         type: "image/png",
         size: data.byteLength,
         sha256: await sha256(data),
@@ -1224,7 +1793,7 @@ export default function App() {
 
     const artifact: ArtifactRecord = {
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       fileId: createdFile?.id,
       kind: "viewer-preview",
@@ -1247,13 +1816,12 @@ export default function App() {
       createdAt: now()
     });
     if (createdFile) setSelectedArtifactFileId(createdFile.id);
-    setArtifactOpen(true);
     const renderEvidenceId = id();
     const sourceHashes = workspaceInputHashes(current);
     const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
     upsertEvidence({
       id: renderEvidenceId,
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       promptId,
       kind: "render",
@@ -1280,7 +1848,8 @@ export default function App() {
   async function createZarrGalleryResult(
     args: Record<string, unknown>,
     chatId: string,
-    promptId: string
+    promptId: string,
+    origin: ExecutionOrigin = {}
   ): Promise<string> {
     const current = workspaceRef.current;
     if (!current || !zarrViewerStatus?.available) {
@@ -1296,17 +1865,20 @@ export default function App() {
     requireGalleryEvidence(args, evidenceIds, ledger);
     const { binding, capability } = await resolveZarrTarget(recipe.storeUuid);
     const data = await renderZarrRecipe(capability, recipe);
-    if (projectBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
-      throw new Error("The rendered gallery would exceed the 512 MiB project limit");
+    if (workspaceBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
+      throw new Error("The rendered gallery would exceed the 512 MiB workspace limit");
     }
     const filename = `${slug(recipe.filename || recipe.title || "zarr-gallery").replace(/-png$/, "")}.png`;
     const viewerMetadata = zarrGalleryProvenance(binding, recipe, evidenceIds);
     const file: WorkspaceFile = {
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
+      ...origin,
       name: filename,
-      logicalPath: `${current.project.rootPath}/chats/${chatId}/outputs/zarr/${filename}`,
+      logicalPath: `${current.workspace.rootPath}/${
+        origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
+      }/Results/zarr/${filename}`,
       type: "image/png",
       size: data.byteLength,
       sha256: await sha256(data),
@@ -1319,7 +1891,7 @@ export default function App() {
     upsertFiles([file]);
     const artifact: ArtifactRecord = {
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       fileId: file.id,
       kind: "viewer-preview",
@@ -1340,13 +1912,12 @@ export default function App() {
       createdAt: now()
     });
     setSelectedArtifactFileId(file.id);
-    setArtifactOpen(true);
     const renderEvidenceId = id();
     const sourceHashes = workspaceInputHashes(current);
     const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
     upsertEvidence({
       id: renderEvidenceId,
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       promptId,
       kind: "render",
@@ -1373,7 +1944,8 @@ export default function App() {
     chatId: string,
     promptId: string,
     scriptName: string,
-    recipe?: ZarrRenderRecipe
+    recipe?: ZarrRenderRecipe,
+    origin: ExecutionOrigin = {}
   ): Promise<string | null> {
     const request = savedGalleryRequest(
       executionResult,
@@ -1381,29 +1953,32 @@ export default function App() {
       recipe
     );
     if (!request) return null;
-    return createZarrGalleryResult(request, chatId, promptId);
+    return createZarrGalleryResult(request, chatId, promptId, origin);
   }
 
-  async function executeSavedScriptVersion(
-    script: ScriptRecord,
-    version: ScriptVersion,
+  async function executeSavedMethodVersion(
+    method: MethodRecord,
+    version: MethodVersion,
     code: string,
     chatId: string,
-    promptId: string
+    promptId: string,
+    origin: ExecutionOrigin = {}
   ): Promise<{ executionResult: string; renderResult: string | null }> {
     const executionResult = await executeCode(
       code,
       chatId,
       promptId,
       true,
-      "script"
+      "method",
+      origin
     );
     const renderResult = await replaySavedGallery(
       executionResult,
       chatId,
       promptId,
-      script.name,
-      version.renderRecipe
+      method.name,
+      version.renderRecipe,
+      origin
     );
     return { executionResult, renderResult };
   }
@@ -1425,10 +2000,11 @@ export default function App() {
     chatId: string,
     promptId: string,
     force = false,
-    purpose: ExecutionPurpose = "analysis"
+    purpose: ExecutionPurpose = "analysis",
+    origin: ExecutionOrigin = {}
   ): Promise<string> {
     const current = workspaceRef.current;
-    if (!current) return toolErrorText("Project is not ready");
+    if (!current) return toolErrorText("Workspace is not ready");
     const startedAt = performance.now();
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
@@ -1438,7 +2014,7 @@ export default function App() {
       .sort();
     const cacheKey = await sha256(
       `${codeHash}|${inputHashes.join(",")}|${skillHashes.join(",")}|` +
-      `${RUNTIME_VERSION}|plotCsv=${current.project.plotCsv}`
+      `${RUNTIME_VERSION}|plotCsv=${current.workspace.plotCsv}`
     );
     const previous = current.executions
       .filter((execution) => execution.cacheKey === cacheKey && execution.status !== "running")
@@ -1461,7 +2037,7 @@ export default function App() {
         role: "assistant",
         content: reused.status === "reused"
           ? "Reused a previous successful local Python run because its code and inputs are unchanged."
-          : "Skipped unchanged Python that already failed; AmsterdamUMC must correct the code.",
+          : "Skipped unchanged Python that already failed; the AI provider must correct the code.",
         kind: "execution",
         executionId: reused.id,
         createdAt: now()
@@ -1472,7 +2048,7 @@ export default function App() {
           evidenceId = id();
           upsertEvidence({
             id: evidenceId,
-            projectId: current.project.id,
+            workspaceId: current.workspace.id,
             chatId,
             promptId,
             kind: evidenceKind(previous.code),
@@ -1510,7 +2086,7 @@ export default function App() {
 
     const execution: ExecutionRecord = {
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       promptId,
       code: normalizedCode,
@@ -1555,7 +2131,7 @@ export default function App() {
       upsertExecution(failed);
       upsertEvidence({
         id: evidenceId,
-        projectId: current.project.id,
+        workspaceId: current.workspace.id,
         chatId,
         promptId,
         kind: "failed-approah",
@@ -1568,7 +2144,7 @@ export default function App() {
         payload: boundedEvidencePayload({ code: normalizedCode, error: detail }),
         createdAt: now()
       });
-      setStatus("Python error sent to AmsterdamUMC; waiting for corrected code…");
+      setStatus("Python error sent to the AI provider; waiting for corrected code…");
       setAnalysisPhase("repairing");
       return toolErrorText(error);
     }
@@ -1578,11 +2154,14 @@ export default function App() {
       const fileId = id();
       generated.push({
         id: fileId,
-        projectId: current.project.id,
+        workspaceId: current.workspace.id,
         chatId,
+        ...origin,
         executionId: execution.id,
         name: file.name,
-        logicalPath: `${current.project.rootPath}/chats/${chatId}/outputs/${execution.id}/${file.name}`,
+        logicalPath: `${current.workspace.rootPath}/${
+          origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
+        }/Results/${execution.id}/${file.name}`,
         type: file.type,
         size: file.data.byteLength,
         sha256: await sha256(file.data),
@@ -1596,7 +2175,7 @@ export default function App() {
     upsertFiles(generated);
     upsertArtifacts(generated.map((file) => ({
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       executionId: execution.id,
       fileId: file.id,
@@ -1606,7 +2185,7 @@ export default function App() {
       createdAt: now()
     })));
 
-    const missing = current.project.plotCsv
+    const missing = current.workspace.plotCsv
       ? Array.from(turnOutputNames.current)
         .filter((name) => /\.(png|svg)$/i.test(name))
         .filter((name) => !turnOutputNames.current.has(name.replace(/\.(png|svg)$/i, ".csv")))
@@ -1628,7 +2207,7 @@ export default function App() {
     upsertExecution(completed);
     upsertEvidence({
       id: evidenceId,
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       promptId,
       kind: evidenceKind(normalizedCode),
@@ -1654,7 +2233,7 @@ export default function App() {
     const modelPayloadText = JSON.stringify(output.modelPayload);
     upsertAudit({
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       chatId,
       executionId: execution.id,
       categories: ["bounded-preview", "generated-file-metadata", ...(output.modelPayload.stderr ? ["error"] : [])],
@@ -1703,12 +2282,12 @@ export default function App() {
       return toolErrorText(`Invalid JSON tool arguments: ${String(error)}`);
     }
     const current = workspaceRef.current;
-    if (!current) return toolErrorText("Project is not ready");
+    if (!current) return toolErrorText("Workspace is not ready");
     if (call.function.name === "discover_skills") {
       const catalog = workflowSkillCatalogRef.current;
       if (!catalog) {
         return toolErrorText(
-          workflowSkillWarning || "No workflow skill catalog is available"
+          workflowSkillWarning || "No pipeline skill catalog is available"
         );
       }
       const matchedWorkflowSkills = matchWorkflowSkills(
@@ -1835,36 +2414,36 @@ export default function App() {
       try {
         await runtime.beginTurn();
         turnOutputNames.current.clear();
-        return "Python state reset; canonical project inputs remain available.";
+        return "Python state reset; canonical workspace inputs remain available.";
       } catch (error) {
         return toolErrorText(error);
       }
     }
-    if (call.function.name === "list_saved_scripts") {
-      return JSON.stringify(current.scripts.filter((script) => !script.deletedAt).map((script) => ({
-        id: script.id,
-        name: script.name,
-        description: script.description,
-        current_version: script.currentVersion,
-        updated_at: script.updatedAt
+    if (call.function.name === "list_saved_methods") {
+      return JSON.stringify(current.methods.filter((method) => !method.deletedAt).map((method) => ({
+        id: method.id,
+        name: method.name,
+        description: method.description,
+        current_version: method.currentVersion,
+        updated_at: method.updatedAt
       })));
     }
-    if (call.function.name === "read_saved_script") {
-      const script = current.scripts.find((item) => item.id === args.script_id && !item.deletedAt);
-      if (!script) return toolErrorText("Saved script was not found");
-      const version = script.versions.find((item) => item.version === script.currentVersion);
+    if (call.function.name === "read_saved_method") {
+      const method = current.methods.find((item) => item.id === args.method_id && !item.deletedAt);
+      if (!method) return toolErrorText("Saved method was not found");
+      const version = method.versions.find((item) => item.version === method.currentVersion);
       return version
-        ? JSON.stringify({ id: script.id, name: script.name, version: version.version, code: version.code })
-        : toolErrorText("Saved script has no readable current version");
+        ? JSON.stringify({ id: method.id, name: method.name, version: version.version, code: version.code })
+        : toolErrorText("Saved method has no readable current version");
     }
-    if (call.function.name === "run_saved_script") {
-      const script = current.scripts.find((item) => item.id === args.script_id && !item.deletedAt);
-      const version = script?.versions.find((item) => item.version === script.currentVersion);
-      if (!script || !version) return toolErrorText("Saved script was not found");
+    if (call.function.name === "run_saved_method") {
+      const method = current.methods.find((item) => item.id === args.method_id && !item.deletedAt);
+      const version = method?.versions.find((item) => item.version === method.currentVersion);
+      if (!method || !version) return toolErrorText("Saved method was not found");
       try {
-        const bound = bindScriptInputs(version.code, current.files);
-        const { executionResult, renderResult } = await executeSavedScriptVersion(
-          script,
+        const bound = bindMethodInputs(version.code, current.files);
+        const { executionResult, renderResult } = await executeSavedMethodVersion(
+          method,
           version,
           bound.code,
           chatId,
@@ -1879,32 +2458,32 @@ export default function App() {
         return toolErrorText(error);
       }
     }
-    if (call.function.name === "list_saved_workflows") {
-      return JSON.stringify(current.workflows.filter((workflow) => !workflow.deletedAt).map((workflow) => ({
-        id: workflow.id,
-        name: workflow.name,
-        description: workflow.description,
-        version: workflow.version,
-        steps: workflow.steps.map((step) => step.name)
+    if (call.function.name === "list_saved_pipelines") {
+      return JSON.stringify(current.pipelines.filter((pipeline) => !pipeline.deletedAt).map((pipeline) => ({
+        id: pipeline.id,
+        name: pipeline.name,
+        description: pipeline.description,
+        version: pipeline.version,
+        steps: pipeline.steps.map((step) => step.name)
       })));
     }
-    if (call.function.name === "run_saved_workflow") {
-      const workflow = current.workflows.find(
-        (item) => item.id === args.workflow_id && !item.deletedAt
+    if (call.function.name === "run_saved_pipeline") {
+      const pipeline = current.pipelines.find(
+        (item) => item.id === args.pipeline_id && !item.deletedAt
       );
-      if (!workflow) return toolErrorText("Saved workflow was not found");
+      if (!pipeline) return toolErrorText("Saved pipeline was not found");
       const results: string[] = [];
       let renders = 0;
-      for (const step of workflow.steps) {
+      for (const step of pipeline.steps) {
         const latest = workspaceRef.current!;
-        const script = latest.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
-        const version = script?.versions.find((item) => item.version === step.scriptVersion);
-        if (!script || !version) return toolErrorText(`Workflow step ${step.name} is unavailable`);
+        const method = latest.methods.find((item) => item.id === step.methodId && !item.deletedAt);
+        const version = method?.versions.find((item) => item.version === step.methodVersion);
+        if (!method || !version) return toolErrorText(`Pipeline step ${step.name} is unavailable`);
         try {
           await runtime.beginTurn();
-          const bound = bindScriptInputs(version.code, latest.files);
-          const outcome = await executeSavedScriptVersion(
-            script,
+          const bound = bindMethodInputs(version.code, latest.files);
+          const outcome = await executeSavedMethodVersion(
+            method,
             version,
             bound.code,
             chatId,
@@ -1913,12 +2492,12 @@ export default function App() {
           results.push(outcome.executionResult);
           if (outcome.renderResult) renders += 1;
         } catch (error) {
-          return toolErrorText(`Workflow step ${step.name} failed: ${String(error)}`);
+          return toolErrorText(`Pipeline step ${step.name} failed: ${String(error)}`);
         }
       }
       return JSON.stringify({
-        workflow: workflow.name,
-        steps: workflow.steps.length,
+        pipeline: pipeline.name,
+        steps: pipeline.steps.length,
         renders,
         results
       }).slice(0, MAX_TOOL_TEXT);
@@ -1934,7 +2513,7 @@ export default function App() {
   async function sendPrompt() {
     const text = prompt.trim();
     const current = workspaceRef.current;
-    const chat = current?.chats.find((item) => item.id === current.project.activeChatId);
+    const chat = current?.chats.find((item) => item.id === current.workspace.activeChatId);
     if (!text || !canChat || !current || !chat) return;
     setPrompt("");
     setBusy(true);
@@ -1964,32 +2543,20 @@ export default function App() {
         activeSkillPackages.push(skill);
       } catch (error) {
         activeSkillWarning =
-          `Workflow-specific guidance unavailable: ${String(error)}`;
+          `Measurement-specific guidance unavailable: ${String(error)}`;
       }
     }
     if (visualIntent && zarrViewerStatus?.available) {
-      const application = (workflowSkillCatalogRef.current?.applications || [])
-        .flatMap((entry) => entry.skills.map((skill) => ({ entry, skill })))
-        .find(({ skill }) =>
-          skill.required_capabilities?.some((capability) =>
-            capability === "zarr-render-v2" || capability === "zarr-gallery-v1"
-          ) || /zarr.*viewer/i.test(skill.name)
-        );
-      if (application) {
-        try {
-          const skill = await loadWorkflowSkill(
-            application.entry.source.workflow_key,
-            application.skill.name
-          );
-          if (!activeSkillPackages.some((item) => item.skill.sha256 === skill.skill.sha256)) {
-            activeSkillPackages.push(skill);
-          }
-        } catch (error) {
-          activeSkillWarning = [
-            activeSkillWarning,
-            `ZarrViewer operation guidance unavailable: ${String(error)}`
-          ].filter(Boolean).join(" ");
+      try {
+        const skill = await bridge.loadZarrViewerSkill();
+        if (!activeSkillPackages.some((item) => item.skill.sha256 === skill.skill.sha256)) {
+          activeSkillPackages.push(skill);
         }
+      } catch (error) {
+        activeSkillWarning = [
+          activeSkillWarning,
+          `ZarrViewer operation guidance unavailable: ${String(error)}`
+        ].filter(Boolean).join(" ");
       }
     }
     turnWorkflowSkills.current = activeSkillPackages.map(skillProvenance);
@@ -2036,14 +2603,14 @@ export default function App() {
     }
     const dynamicPrompt = `${SYSTEM_PROMPT}
 
-Project root: ${current.project.rootPath}
-Exact current project files (already discovered; do not call list_workspace_files):
+Workspace root: ${current.workspace.rootPath}
+Exact current workspace files (already discovered; do not call list_workspace_files):
 ${listFiles(current.files)}
 
 ${evidencePrompt(ledger)}
 
-The user has ${current.scripts.filter((script) => !script.deletedAt).length} saved scripts. ${
-  current.project.plotCsv
+The user has ${current.methods.filter((method) => !method.deletedAt).length} saved methods. ${
+  current.workspace.plotCsv
     ? "Plot CSV mode is ON: every PNG or SVG must have a same-stem CSV containing its plotted data."
     : "Plot CSV mode is OFF."
 }
@@ -2053,8 +2620,8 @@ ${zarrViewerStatus?.available
 
 ${activeSkillInstructions || (
   activeSkillWarning || workflowSkillWarning
-    ? `No specialized workflow skill was loaded. ${activeSkillWarning || workflowSkillWarning}`
-    : "No compatible specialized workflow skill matched; use generic schema-first analysis."
+    ? `No specialized pipeline skill was loaded. ${activeSkillWarning || workflowSkillWarning}`
+    : "No compatible specialized pipeline skill matched; use generic schema-first analysis."
 )}
 
 Efficiency contract: answer an initial most-foci request within four tool rounds and a follow-up
@@ -2101,7 +2668,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           policy.tools
         );
         const answer = response.choices[0]?.message;
-        if (!answer) throw new Error("AmsterdamUMC returned no response");
+        if (!answer) throw new Error("The AI provider returned no response");
         const responseDurationMs = performance.now() - responseStartedAt;
         const promptTokens = response.usage?.prompt_tokens ?? estimatedPrompt;
         const completionTokens =
@@ -2135,7 +2702,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         setStreamingText("");
         if (!answer.tool_calls?.length) break;
         if (policy.finalSynthesis) {
-          throw new Error("AmsterdamUMC attempted another tool call during final synthesis");
+          throw new Error("The AI provider attempted another tool call during final synthesis");
         }
         usedTools = true;
         setAnalysisPhase(turn ? "repairing" : "running");
@@ -2174,10 +2741,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     void restartRuntime(workspaceRef.current?.files || [], "Ready — analysis runs locally in this browser");
   }
 
-  async function saveAsScript(execution: ExecutionRecord) {
+  async function saveAsMethod(execution: ExecutionRecord) {
     const current = workspaceRef.current;
     if (
       !current ||
+      execution.purpose === "inspection" ||
+      executionPreparesViewer(current, execution) ||
       !["success", "reused"].includes(execution.status)
     ) return;
     const chat = current.chats.find((item) => item.id === execution.chatId);
@@ -2189,11 +2758,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         ["success", "reused"].includes(item.status)
       )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const reusable = successful.filter((item) => item.purpose !== "inspection");
-    const related = reusable.length
-      ? reusable
-      : successful.filter((item) => item.purpose === "inspection");
-    if (execution.purpose === "inspection" && reusable.length) return;
+    const related = successful.filter((item) =>
+      item.purpose !== "inspection" &&
+      !executionPreparesViewer(current, item)
+    );
     const scriptCode = Array.from(new Set(related.map((item) => item.code))).join(
       "\n\n# Continued analysis / automatic repair\n"
     ) || execution.code;
@@ -2206,27 +2774,35 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         promptId: execution.promptId,
         executionIds: related.map((item) => item.id)
       }
-    ) || titleFromPrompt(promptMessage?.content || "Analysis script");
+    ) || titleFromPrompt(promptMessage?.content || "Analysis method");
     const suggested = `${slug(suggestedTitle)}-analysis.py`;
     const name = (await dialogs.askText(
-      "Script filename",
+      "Method filename",
       suggested,
-      "Scripts are versioned and can be copied to compatible OMERO projects."
+      "Methods are versioned and can be copied to compatible OMERO workspaces."
     ))?.trim();
     if (!name) return;
     const safeName = `${slug(name.replace(/\.py$/i, ""))}.py`;
     const description = (await dialogs.askText(
-      "Script title",
+      "Method title",
       suggestedTitle,
       "Suggested from the generated graph or image title."
     ))?.trim() || "";
-    const existing = current.scripts.find((script) =>
-      !script.deletedAt && script.name.toLowerCase() === safeName.toLowerCase()
+    const existing = current.methods.find((method) =>
+      !method.deletedAt && method.name.toLowerCase() === safeName.toLowerCase()
     );
-    const script: ScriptRecord = existing
+    const requiredCapabilities = current.artifacts.some((artifact) =>
+      artifact.chatId === execution.chatId &&
+      artifact.promptId === execution.promptId &&
+      Boolean(artifact.viewer)
+    ) || /(?:store_uuid|render_panels|zarrviewer|ome[-_.]?zarr)/i.test(scriptCode)
+      ? ["zarrviewer"]
+      : [];
+    const method: MethodRecord = existing
       ? {
         ...existing,
         description,
+        requiredCapabilities,
         currentVersion: existing.currentVersion + 1,
         versions: [...existing.versions, {
           version: existing.currentVersion + 1,
@@ -2239,9 +2815,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       }
       : {
         id: id(),
-        projectId: current.project.id,
+        workspaceId: current.workspace.id,
         name: safeName,
         description,
+        requiredCapabilities,
         inputContract: inputContractFromCode(scriptCode),
         parameters: [],
         currentVersion: 1,
@@ -2255,20 +2832,20 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         createdAt: now(),
         updatedAt: now()
       };
-    script.inputContract = inputContractFromCode(scriptCode);
+    method.inputContract = inputContractFromCode(scriptCode);
     const latest = workspaceRef.current;
     if (latest) {
       const updated = {
         ...latest,
-        scripts: existing
-          ? latest.scripts.map((item) => item.id === script.id ? script : item)
-          : [...latest.scripts, script]
+        methods: existing
+          ? latest.methods.map((item) => item.id === method.id ? method : item)
+          : [...latest.methods, method]
       };
       workspaceRef.current = updated;
       setWorkspace(updated);
     }
-    await saveScript(script);
-    setStatus(`Saved ${script.name} version ${script.currentVersion}`);
+    await saveMethod(method);
+    setStatus(`Saved ${method.name} version ${method.currentVersion}`);
   }
 
   async function saveAnalysisRender(artifact: ArtifactRecord, png: WorkspaceFile) {
@@ -2285,25 +2862,25 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         }
       ) || artifact.title || png.name.replace(/\.png$/i, "") || "Zarr render";
       const requestedName = (await dialogs.askText(
-        "Script filename",
+        "Method filename",
         `${slug(suggestedTitle)}-analysis.py`,
         "The analysis, render recipe, PNG, and provenance will be saved together."
       ))?.trim();
       if (!requestedName) return;
       const scriptName = `${slug(requestedName.replace(/\.py$/i, ""))}.py`;
       const scriptTitle = (await dialogs.askText(
-        "Script title",
+        "Method title",
         suggestedTitle,
         "Suggested from the rendered image or gallery title."
       ))?.trim();
       if (!scriptTitle) return;
       const base = slug(scriptName.replace(/\.py$/i, "").replace(/-analysis$/i, ""));
-      const existing = current.scripts.find((item) =>
+      const existing = current.methods.find((item) =>
         !item.deletedAt && item.name.toLowerCase() === scriptName.toLowerCase()
       );
       const version = (existing?.currentVersion || 0) + 1;
       const codeHash = await sha256(bundle.code);
-      const script: ScriptRecord = existing
+      const method: MethodRecord = existing
         ? {
           ...existing,
           description: scriptTitle,
@@ -2321,7 +2898,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         }
         : {
           id: id(),
-          projectId: current.project.id,
+          workspaceId: current.workspace.id,
           name: scriptName,
           description: scriptTitle,
           currentVersion: version,
@@ -2365,10 +2942,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         ) as ArrayBuffer;
         files.push({
           id: id(),
-          projectId: current.project.id,
+          workspaceId: current.workspace.id,
           chatId: artifact.chatId,
           name: item.name,
-          logicalPath: `${current.project.rootPath}/chats/${artifact.chatId}/outputs/render-bundles/${item.name}`,
+          logicalPath: `${current.workspace.rootPath}/chats/${artifact.chatId}/outputs/render-bundles/${item.name}`,
           type: item.type,
           size: item.data.byteLength,
           sha256: await sha256(data),
@@ -2382,116 +2959,127 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       if (!latest) return;
       const updated = {
         ...latest,
-        scripts: existing
-          ? latest.scripts.map((item) => item.id === script.id ? script : item)
-          : [...latest.scripts, script]
+        methods: existing
+          ? latest.methods.map((item) => item.id === method.id ? method : item)
+          : [...latest.methods, method]
       };
       workspaceRef.current = updated;
       setWorkspace(updated);
-      await saveScript(script);
+      await saveMethod(method);
       upsertFiles(files);
       downloadBytes(`${base}-v${version}.zip`, bundle.archive, "application/zip");
       setStatus(
-        `Saved ${script.name} version ${version}, render recipe, provenance manifest, PNG, and downloadable ZIP`
+        `Saved ${method.name} version ${version}, render recipe, provenance manifest, PNG, and downloadable ZIP`
       );
     } catch (error) {
       setStatus(`Could not save analysis + render: ${String(error)}`);
     }
   }
 
-  async function runScript(script: ScriptRecord) {
+  async function runMethod(method: MethodRecord) {
     const current = workspaceRef.current;
-    if (!current?.project.activeChatId) return;
-    const version = script.versions.find((item) => item.version === script.currentVersion);
+    if (!current?.workspace.activeChatId) return;
+    setActiveTab("chat");
+    const version = method.versions.find((item) => item.version === method.currentVersion);
     if (!version) return;
-    let bound: ReturnType<typeof bindScriptInputs>;
+    let bound: ReturnType<typeof bindMethodInputs>;
     try {
-      bound = bindScriptInputs(version.code, current.files);
+      bound = bindMethodInputs(version.code, current.files);
     } catch (error) {
-      setStatus(`Cannot bind ${script.name}: ${String(error)}`);
+      setStatus(`Cannot bind ${method.name}: ${String(error)}`);
       return;
     }
     setBusy(true);
     turnOutputNames.current.clear();
     await runtime.beginTurn();
     const promptId = id();
-    appendMessage(current.project.activeChatId, {
+    appendMessage(current.workspace.activeChatId, {
       id: promptId,
       role: "user",
-      content: `Run saved script ${script.name} version ${script.currentVersion}` +
+      content: `Run saved method ${method.name} version ${method.currentVersion}` +
         (bound.bindings.length
-          ? ` with project input binding ${bound.bindings.map((item) => `${item.from} → ${item.to}`).join(", ")}`
+          ? ` with workspace input binding ${bound.bindings.map((item) => `${item.from} → ${item.to}`).join(", ")}`
           : ""),
       createdAt: now()
     });
     try {
-      const { renderResult } = await executeSavedScriptVersion(
-        script,
+      const { renderResult } = await executeSavedMethodVersion(
+        method,
         version,
         bound.code,
-        current.project.activeChatId,
-        promptId
+        current.workspace.activeChatId,
+        promptId,
+        { methodId: method.id }
       );
       setStatus(
         renderResult
-          ? `Ran ${script.name} locally and rendered its PNG gallery`
-          : `Ran ${script.name} locally`
+          ? `Ran ${method.name} locally and rendered its PNG gallery`
+          : `Ran ${method.name} locally`
       );
     } catch (error) {
-      setStatus(`Could not complete ${script.name}: ${String(error)}`);
+      setStatus(`Could not complete ${method.name}: ${String(error)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function renameScript(script: ScriptRecord) {
-    const name = (await dialogs.askText("Rename script", script.name))?.trim();
+  async function renameMethod(method: MethodRecord) {
+    const name = (await dialogs.askText("Rename method", method.name))?.trim();
     if (!name) return;
-    const updated = { ...script, name: `${slug(name.replace(/\.py$/i, ""))}.py`, updatedAt: now() };
+    const updated = { ...method, name: `${slug(name.replace(/\.py$/i, ""))}.py`, updatedAt: now() };
     const current = workspaceRef.current;
     if (current) {
       const next = {
         ...current,
-        scripts: current.scripts.map((item) => item.id === script.id ? updated : item)
+        methods: current.methods.map((item) => item.id === method.id ? updated : item)
       };
       workspaceRef.current = next;
       setWorkspace(next);
     }
-    void saveScript(updated);
+    void saveMethod(updated);
   }
 
-  async function removeScript(script: ScriptRecord) {
+  async function removeMethod(method: MethodRecord) {
     if (!await dialogs.confirm(
-      "Delete saved script?",
-      `${script.name} and all of its versions will be moved out of the active project.`,
-      "Delete script",
+      "Delete saved method?",
+      `${method.name} and all of its versions will be moved out of the active workspace.`,
+      "Delete method",
       true
     )) {
       return;
     }
     const current = workspaceRef.current;
     if (!current) return;
-    const deleted = { ...script, deletedAt: now(), updatedAt: now() };
+    const deleted = { ...method, deletedAt: now(), updatedAt: now() };
     const updated = {
       ...current,
-      scripts: current.scripts.map((item) => item.id === script.id ? deleted : item)
+      methods: current.methods.map((item) => item.id === method.id ? deleted : item)
     };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    setSelectedScriptIds((selected) => {
+    setSelectedMethodIds((selected) => {
       const next = new Set(selected);
-      next.delete(script.id);
+      next.delete(method.id);
       return next;
     });
-    await saveScript(deleted);
-    setStatus(`Moved script ${script.name} to trash`);
+    await saveMethod(deleted);
+    setStatus(`Moved method ${method.name} to trash`);
   }
 
-  function toggleScriptSelection(scriptId: string) {
-    setSelectedScriptIds((current) => {
+  function toggleMethodSelection(methodId: string) {
+    setSelectedMethodIds((current) => {
       const next = new Set(current);
-      if (next.has(scriptId)) next.delete(scriptId);
-      else next.add(scriptId);
+      if (next.has(methodId)) next.delete(methodId);
+      else next.add(methodId);
+      return next;
+    });
+  }
+
+  function togglePipelineSelection(pipelineId: string) {
+    setSelectedPipelineIds((current) => {
+      const next = new Set(current);
+      if (next.has(pipelineId)) next.delete(pipelineId);
+      else next.add(pipelineId);
       return next;
     });
   }
@@ -2505,8 +3093,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     });
   }
 
-  function toggleVisibleOutputSelection() {
-    const visibleIds = visibleOutputs.map((file) => file.id);
+  function toggleOutputGroupSelection(files: WorkspaceFile[]) {
+    const visibleIds = files.filter((file) => matchesExplorer(file.name)).map((file) => file.id);
     const allSelected = visibleIds.length > 0 &&
       visibleIds.every((outputId) => selectedOutputIds.has(outputId));
     setSelectedOutputIds((current) => {
@@ -2526,7 +3114,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     const outputs = current.files.filter((file) =>
       requested.has(file.id) &&
       file.source === "result" &&
-      file.chatId === current.project.activeChatId &&
       !file.deletedAt
     );
     if (!outputs.length) return;
@@ -2535,7 +3122,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     const description = outputs.length === 1
       ? `${outputs[0].name} will be hidden, while its provenance record remains intact.`
       : [
-        `${outputs.length} outputs will be moved to project trash. Their provenance records remain intact.`,
+        `${outputs.length} outputs will be moved to workspace trash. Their provenance records remain intact.`,
         names.join(", ") + (extra > 0 ? `, and ${extra} more` : "")
       ].join("\n\n");
     if (!await dialogs.confirm(
@@ -2545,7 +3132,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       true
     )) return;
     const deletedAt = now();
-    const updated = trashProjectOutputs(
+    const updated = trashWorkspaceOutputs(
       current,
       outputs.map((file) => file.id),
       deletedAt
@@ -2570,76 +3157,77 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     );
     setStatus(
       outputs.length === 1
-        ? `Moved ${outputs[0].name} to project trash`
-        : `Moved ${outputs.length} outputs to project trash`
+        ? `Moved ${outputs[0].name} to workspace trash`
+        : `Moved ${outputs.length} outputs to workspace trash`
     );
   }
 
-  async function combineSelectedScripts() {
+  async function combineSelectedMethods() {
     const current = workspaceRef.current;
     if (!current) return;
-    const selected = current.scripts.filter((script) => !script.deletedAt && selectedScriptIds.has(script.id));
+    const selected = current.methods.filter((method) => !method.deletedAt && selectedMethodIds.has(method.id));
     if (selected.length < 2) {
-      setStatus("Select at least two scripts to combine");
+      setStatus("Select at least two methods to combine");
       return;
     }
-    const suggested = slug(selected.map((script) => script.name.replace(/\.py$/i, "")).join("-"));
+    const suggested = slug(selected.map((method) => method.name.replace(/\.py$/i, "")).join("-"));
     const requested = (await dialogs.askText(
-      "Workflow name",
+      "Pipeline name",
       suggested,
-      "The selected scripts will become isolated, ordered workflow steps."
+      "The selected methods will become isolated, ordered pipeline steps."
     ))?.trim();
     if (!requested) return;
     const stem = slug(requested);
     let name = stem;
     let suffix = 2;
-    while (current.workflows.some((workflow) =>
-      !workflow.deletedAt && workflow.name.toLowerCase() === name.toLowerCase()
+    while (current.pipelines.some((pipeline) =>
+      !pipeline.deletedAt && pipeline.name.toLowerCase() === name.toLowerCase()
     )) {
       name = `${stem}-${suffix}`;
       suffix += 1;
     }
     const description = (await dialogs.askText(
-      "Workflow description",
-      `Runs ${selected.map((script) => script.name).join(", ")} in sequence`
+      "Pipeline description",
+      `Runs ${selected.map((method) => method.name).join(", ")} in sequence`
     ))?.trim() || "";
     const createdAt = now();
-    const workflow: WorkflowRecord = {
+    const pipeline: PipelineRecord = {
       id: id(),
-      projectId: current.project.id,
+      workspaceId: current.workspace.id,
       name,
       description,
       version: 1,
-      steps: selected.map((script) => ({
+      steps: selected.map((method) => ({
         id: id(),
-        scriptId: script.id,
-        scriptVersion: script.currentVersion,
-        name: script.name,
+        methodId: method.id,
+        methodVersion: method.currentVersion,
+        name: method.name,
         inputBindings: {},
         parameters: {}
       })),
       createdAt,
       updatedAt: createdAt
     };
-    const updated = { ...current, workflows: [...current.workflows, workflow] };
+    const updated = { ...current, pipelines: [...current.pipelines, pipeline] };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    setSelectedScriptIds(new Set());
-    await saveWorkflow(workflow);
-    setStatus(`Created workflow ${workflow.name} with ${selected.length} isolated steps`);
+    setSelectedMethodIds(new Set());
+    await savePipeline(pipeline);
+    setStatus(`Created pipeline ${pipeline.name} with ${selected.length} isolated steps`);
   }
 
-  async function runWorkflow(workflow: WorkflowRecord) {
+  async function runPipeline(pipeline: PipelineRecord) {
     const current = workspaceRef.current;
-    if (!current?.project.activeChatId || busy) return;
+    if (!current?.workspace.activeChatId || busy) return;
+    setActiveTab("chat");
     setBusy(true);
     const workflowStartedAt = performance.now();
-    const chatId = current.project.activeChatId;
+    const chatId = current.workspace.activeChatId;
     const promptId = id();
     appendMessage(chatId, {
       id: promptId,
       role: "user",
-      content: `Run workflow ${workflow.name} version ${workflow.version}`,
+      content: `Run pipeline ${pipeline.name} version ${pipeline.version}`,
       createdAt: now()
     });
     try {
@@ -2647,22 +3235,23 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
       );
       let rendered = 0;
-      for (let index = 0; index < workflow.steps.length; index += 1) {
-        const step = workflow.steps[index];
+      for (let index = 0; index < pipeline.steps.length; index += 1) {
+        const step = pipeline.steps[index];
         const latest = workspaceRef.current!;
-        const script = latest.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
-        const version = script?.versions.find((item) => item.version === step.scriptVersion);
-        if (!script || !version) throw new Error(`Workflow step ${step.name} is unavailable`);
-        setStatus(`Workflow ${workflow.name}: step ${index + 1} of ${workflow.steps.length}`);
+        const method = latest.methods.find((item) => item.id === step.methodId && !item.deletedAt);
+        const version = method?.versions.find((item) => item.version === step.methodVersion);
+        if (!method || !version) throw new Error(`Pipeline step ${step.name} is unavailable`);
+        setStatus(`Pipeline ${pipeline.name}: step ${index + 1} of ${pipeline.steps.length}`);
         await runtime.beginTurn();
         turnOutputNames.current.clear();
-        const bound = bindScriptInputs(version.code, availableInputs);
-        const outcome = await executeSavedScriptVersion(
-          script,
+        const bound = bindMethodInputs(version.code, availableInputs);
+        const outcome = await executeSavedMethodVersion(
+          method,
           version,
           bound.code,
           chatId,
-          promptId
+          promptId,
+          { methodId: method.id, pipelineId: pipeline.id }
         );
         if (outcome.renderResult) rendered += 1;
         const produced = workspaceRef.current!.files.filter(
@@ -2672,49 +3261,49 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             ) && !file.deletedAt
         );
         availableInputs = [...availableInputs, ...produced];
-        if (index < workflow.steps.length - 1) await runtime.syncInputs(availableInputs);
+        if (index < pipeline.steps.length - 1) await runtime.syncInputs(availableInputs);
       }
       await runtime.syncInputs(current.files.filter(
         (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
       ));
       setStatus(
-        `Workflow ${workflow.name} completed` +
+        `Pipeline ${pipeline.name} completed` +
         (rendered ? ` and rendered ${rendered} PNG ${rendered === 1 ? "image" : "images"}` : "")
       );
     } catch (error) {
       appendMessage(chatId, {
         id: id(),
         role: "assistant",
-        content: `Workflow stopped: ${String(error)}`,
+        content: `Pipeline stopped: ${String(error)}`,
         kind: "error",
         activity: "worked",
         durationMs: performance.now() - workflowStartedAt,
         createdAt: now()
       });
-      setStatus(`Workflow ${workflow.name} failed`);
+      setStatus(`Pipeline ${pipeline.name} failed`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function removeWorkflow(workflow: WorkflowRecord) {
+  async function removePipeline(pipeline: PipelineRecord) {
     if (!await dialogs.confirm(
-      "Delete workflow?",
-      `${workflow.name} will be moved to project trash. Its source scripts remain available.`,
-      "Delete workflow",
+      "Delete pipeline?",
+      `${pipeline.name} will be moved to workspace trash. Its source methods remain available.`,
+      "Delete pipeline",
       true
     )) return;
     const current = workspaceRef.current;
     if (!current) return;
-    const deleted = { ...workflow, deletedAt: now(), updatedAt: now() };
+    const deleted = { ...pipeline, deletedAt: now(), updatedAt: now() };
     const updated = {
       ...current,
-      workflows: current.workflows.map((item) => item.id === workflow.id ? deleted : item)
+      pipelines: current.pipelines.map((item) => item.id === pipeline.id ? deleted : item)
     };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    await saveWorkflow(deleted);
-    setStatus(`Moved workflow ${workflow.name} to project trash`);
+    await savePipeline(deleted);
+    setStatus(`Moved pipeline ${pipeline.name} to workspace trash`);
   }
 
   async function restoreTrashedFile(file: WorkspaceFile) {
@@ -2724,116 +3313,116 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     setStatus(`Restored ${file.name}`);
   }
 
-  async function restoreTrashedScript(script: ScriptRecord) {
+  async function restoreTrashedMethod(method: MethodRecord) {
     const current = workspaceRef.current;
     if (!current) return;
-    const restored = { ...script, deletedAt: undefined, updatedAt: now() };
+    const restored = { ...method, deletedAt: undefined, updatedAt: now() };
     const next = {
       ...current,
-      scripts: current.scripts.map((item) => item.id === script.id ? restored : item)
+      methods: current.methods.map((item) => item.id === method.id ? restored : item)
     };
     workspaceRef.current = next;
     setWorkspace(next);
-    await saveScript(restored);
+    await saveMethod(restored);
   }
 
-  async function restoreTrashedWorkflow(workflow: WorkflowRecord) {
+  async function restoreTrashedPipeline(pipeline: PipelineRecord) {
     const current = workspaceRef.current;
     if (!current) return;
-    const restored = { ...workflow, deletedAt: undefined, updatedAt: now() };
+    const restored = { ...pipeline, deletedAt: undefined, updatedAt: now() };
     const updated = {
       ...current,
-      workflows: current.workflows.map((item) => item.id === workflow.id ? restored : item)
+      pipelines: current.pipelines.map((item) => item.id === pipeline.id ? restored : item)
     };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    await saveWorkflow(restored);
-    setStatus(`Restored workflow ${workflow.name}`);
+    await savePipeline(restored);
+    setStatus(`Restored pipeline ${pipeline.name}`);
   }
 
-  async function publishWorkflow(workflow: WorkflowRecord) {
+  async function publishPipeline(pipeline: PipelineRecord) {
     const current = workspaceRef.current;
     if (!current || !bridge.canUpload) return;
-    const scriptIds = new Set(workflow.steps.map((step) => step.scriptId));
+    const methodIds = new Set(pipeline.steps.map((step) => step.methodId));
     const payload = {
-      format: "nl.bioimaging.analysis.workflow.v1",
+      format: "nl.bioimaging.analysis.pipeline.v1",
       exportedAt: now(),
-      workflow,
-      scripts: current.scripts.filter((script) => !script.deletedAt && scriptIds.has(script.id))
+      pipeline,
+      methods: current.methods.filter((method) => !method.deletedAt && methodIds.has(method.id))
     };
-    const name = `${slug(workflow.name)}.oa-workflow.json`;
-    const result = await bridge.uploadWorkflowTemplate(
+    const name = `${slug(pipeline.name)}.oa-pipeline.json`;
+    const result = await bridge.uploadPipelineTemplate(
       name,
       new TextEncoder().encode(JSON.stringify(payload, null, 2))
     );
-    setWorkflowTemplates((values) => [...values, result]);
-    setStatus(`Published workflow template as FileAnnotation ${result.annotation_id}`);
+    setPipelineTemplates((values) => [...values, result]);
+    setStatus(`Published pipeline template as FileAnnotation ${result.annotation_id}`);
   }
 
-  async function importWorkflowTemplate(template: Attachment) {
+  async function importPipelineTemplate(template: Attachment) {
     const current = workspaceRef.current;
     if (!current) return;
     try {
       const payload = JSON.parse(
-        new TextDecoder().decode(await bridge.downloadWorkflowTemplate(template))
+        new TextDecoder().decode(await bridge.downloadPipelineTemplate(template))
       );
       if (
-        payload.format !== "nl.bioimaging.analysis.workflow.v1" ||
-        !payload.workflow ||
-        !Array.isArray(payload.scripts)
-      ) throw new Error("Unsupported workflow template");
-      const scriptIds = new Map<string, string>();
-      const scripts: ScriptRecord[] = payload.scripts.map((script: ScriptRecord) => {
-        const scriptId = id();
-        scriptIds.set(script.id, scriptId);
+        payload.format !== "nl.bioimaging.analysis.pipeline.v1" ||
+        !payload.pipeline ||
+        !Array.isArray(payload.methods)
+      ) throw new Error("Unsupported pipeline template");
+      const methodIds = new Map<string, string>();
+      const methods: MethodRecord[] = payload.methods.map((method: MethodRecord) => {
+        const methodId = id();
+        methodIds.set(method.id, methodId);
         return {
-          ...script,
-          id: scriptId,
-          projectId: current.project.id,
-          name: `${script.name.replace(/\.py$/i, "")}-template.py`,
+          ...method,
+          id: methodId,
+          workspaceId: current.workspace.id,
+          name: `${method.name.replace(/\.py$/i, "")}-template.py`,
           createdAt: now(),
           updatedAt: now()
         };
       });
-      const workflow: WorkflowRecord = {
-        ...payload.workflow,
+      const pipeline: PipelineRecord = {
+        ...payload.pipeline,
         id: id(),
-        projectId: current.project.id,
-        name: `${payload.workflow.name}-template`,
-        steps: payload.workflow.steps.map((step: WorkflowRecord["steps"][number]) => ({
+        workspaceId: current.workspace.id,
+        name: `${payload.pipeline.name}-template`,
+        steps: payload.pipeline.steps.map((step: PipelineRecord["steps"][number]) => ({
           ...step,
           id: id(),
-          scriptId: scriptIds.get(step.scriptId) || step.scriptId
+          methodId: methodIds.get(step.methodId) || step.methodId
         })),
         createdAt: now(),
         updatedAt: now()
       };
-      await Promise.all([...scripts.map(saveScript), saveWorkflow(workflow)]);
+      await Promise.all([...methods.map(saveMethod), savePipeline(pipeline)]);
       const updated = {
         ...current,
-        scripts: [...current.scripts, ...scripts],
-        workflows: [...current.workflows, workflow]
+        methods: [...current.methods, ...methods],
+        pipelines: [...current.pipelines, pipeline]
       };
       workspaceRef.current = updated;
       setWorkspace(updated);
-      setStatus(`Imported workflow template ${workflow.name}`);
+      setStatus(`Imported pipeline template ${pipeline.name}`);
     } catch (error) {
-      setStatus(`Workflow template import failed: ${String(error)}`);
+      setStatus(`Pipeline template import failed: ${String(error)}`);
     }
   }
 
-  async function batchRunWorkflow(workflow: WorkflowRecord) {
+  async function batchRunPipeline(pipeline: PipelineRecord) {
     const source = workspaceRef.current;
     if (!source || busy) return;
-    const targets = userProjects.filter((item) => item.id !== source.project.id);
+    const targets = userWorkspaces.filter((item) => item.id !== source.workspace.id);
     if (!targets.length) {
       setStatus("Open the destination OMERO objects in Analysis once before batch execution");
       return;
     }
     if (!await dialogs.confirm(
-      "Batch-run workflow?",
-      `${workflow.name} will run locally on the compatible browser projects for: ${targets.map((item) => `${item.objectType} ${item.objectId} (${item.name})`).join(", ")}. Incompatible projects will be skipped.`,
-      "Run compatible projects"
+      "Batch-run pipeline?",
+      `${pipeline.name} will run locally on the compatible browser workspaces for: ${targets.map((item) => `${item.objectType} ${item.objectId} (${item.name})`).join(", ")}. Incompatible workspaces will be skipped.`,
+      "Run compatible workspaces"
     )) return;
     setBusy(true);
     const completed: string[] = [];
@@ -2843,19 +3432,19 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         const target = await loadWorkspace(targetRecord.id);
         if (!target) continue;
         const preparedSteps: Array<{
-          script: ScriptRecord;
-          version: ScriptVersion;
+          method: MethodRecord;
+          version: MethodVersion;
           code: string;
         }> = [];
         try {
-          for (const step of workflow.steps) {
-            const script = source.scripts.find((item) => item.id === step.scriptId && !item.deletedAt);
-            const version = script?.versions.find((item) => item.version === step.scriptVersion);
-            if (!script || !version) throw new Error(`Missing ${step.name}`);
+          for (const step of pipeline.steps) {
+            const method = source.methods.find((item) => item.id === step.methodId && !item.deletedAt);
+            const version = method?.versions.find((item) => item.version === step.methodVersion);
+            if (!method || !version) throw new Error(`Missing ${step.name}`);
             preparedSteps.push({
-              script,
+              method,
               version,
-              code: bindScriptInputs(version.code, target.files).code
+              code: bindMethodInputs(version.code, target.files).code
             });
           }
         } catch {
@@ -2864,8 +3453,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         }
         const targetStartedAt = performance.now();
         try {
-          const chat = newChat(target.project.id, `${workflow.name} batch run`);
-          target.project = { ...target.project, activeChatId: chat.id, updatedAt: now() };
+          const chat = newChat(target.workspace.id, `${pipeline.name} batch run`);
+          target.workspace = { ...target.workspace, activeChatId: chat.id, updatedAt: now() };
           target.chats = [...target.chats, chat];
           workspaceRef.current = target;
           setWorkspace(target);
@@ -2876,14 +3465,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           appendMessage(chat.id, {
             id: promptId,
             role: "user",
-            content: `Batch run workflow ${workflow.name} on ${targetRecord.objectType} ${targetRecord.objectId}`,
+            content: `Batch run pipeline ${pipeline.name} on ${targetRecord.objectType} ${targetRecord.objectId}`,
             createdAt: now()
           });
           for (const step of preparedSteps) {
             await runtime.beginTurn();
             turnOutputNames.current.clear();
-            await executeSavedScriptVersion(
-              step.script,
+            await executeSavedMethodVersion(
+              step.method,
               step.version,
               step.code,
               chat.id,
@@ -2894,14 +3483,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           completed.push(targetRecord.name);
         } catch (error) {
           const failed = workspaceRef.current;
-          if (failed?.project.id === target.project.id) {
-            const failedChat = failed.chats.find((chat) => chat.id === failed.project.activeChatId);
+          if (failed?.workspace.id === target.workspace.id) {
+            const failedChat = failed.chats.find((chat) => chat.id === failed.workspace.activeChatId);
             if (failedChat) {
               appendMessage(failedChat.id, {
                 id: id(),
                 role: "assistant",
                 kind: "error",
-                content: `Batch workflow failed for this object: ${String(error)}`,
+                content: `Batch pipeline failed for this object: ${String(error)}`,
                 activity: "worked",
                 durationMs: performance.now() - targetStartedAt,
                 createdAt: now()
@@ -2921,43 +3510,43 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       setBusy(false);
     }
     setStatus(
-      `Batch workflow completed for ${completed.length} project(s)` +
+      `Batch pipeline completed for ${completed.length} workspace(s)` +
       (skipped.length ? `; incompatible: ${skipped.join(", ")}` : "")
     );
   }
 
-  function beginScriptTransfer(scriptIds?: string[]) {
-    const ids = scriptIds || Array.from(selectedScriptIds);
+  function beginMethodTransfer(methodIds?: string[]) {
+    const ids = methodIds || Array.from(selectedMethodIds);
     if (!ids.length) {
-      setStatus("Select one or more scripts to copy");
+      setStatus("Select one or more methods to copy");
       return;
     }
-    setSelectedScriptIds(new Set(ids));
-    const firstTarget = userProjects.find((item) => item.id !== project?.id);
+    setSelectedMethodIds(new Set(ids));
+    const firstTarget = userWorkspaces.find((item) => item.id !== workspace?.id);
     if (!firstTarget) {
-      setStatus("Open another OMERO Dataset, Screen, Plate, or Image once before copying scripts to it");
+      setStatus("Open another OMERO Dataset, Screen, Plate, or Image once before copying methods to it");
       return;
     }
-    setScriptTransferTarget(firstTarget.id);
-    setShowScriptTransfer(true);
+    setMethodTransferTarget(firstTarget.id);
+    setShowMethodTransfer(true);
   }
 
-  async function copySelectedScripts() {
+  async function copySelectedMethods() {
     const current = workspaceRef.current;
-    if (!current || !scriptTransferTarget) return;
-    const target = await loadWorkspace(scriptTransferTarget);
+    if (!current || !methodTransferTarget) return;
+    const target = await loadWorkspace(methodTransferTarget);
     if (!target) {
-      setStatus("The destination project is no longer available");
+      setStatus("The destination workspace is no longer available");
       return;
     }
-    const selected = current.scripts.filter((script) => !script.deletedAt && selectedScriptIds.has(script.id));
+    const selected = current.methods.filter((method) => !method.deletedAt && selectedMethodIds.has(method.id));
     if (!selected.length) return;
     const compatibility = new Map<string, Record<string, string>>();
     for (const source of selected) {
       const version = source.versions.find((item) => item.version === source.currentVersion);
       if (!version) continue;
       try {
-        const bound = bindScriptInputs(version.code, target.files);
+        const bound = bindMethodInputs(version.code, target.files);
         compatibility.set(
           source.id,
           Object.fromEntries(bound.bindings.map((binding) => [binding.from, binding.to]))
@@ -2967,8 +3556,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         return;
       }
     }
-    const targetNames = new Set(target.scripts.filter((script) => !script.deletedAt).map((script) => script.name.toLowerCase()));
-    const copied: ScriptRecord[] = [];
+    const targetNames = new Set(target.methods.filter((method) => !method.deletedAt).map((method) => method.name.toLowerCase()));
+    const copied: MethodRecord[] = [];
     for (const source of selected) {
       const stem = source.name.replace(/\.py$/i, "");
       let name = source.name;
@@ -2982,12 +3571,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       copied.push({
         ...source,
         id: id(),
-        projectId: target.project.id,
+        workspaceId: target.workspace.id,
         name,
-        description: `${source.description}${source.description ? " · " : ""}Copied from ${current.project.name}`,
-        projectBindings: {
-          ...(source.projectBindings || {}),
-          [target.project.id]: compatibility.get(source.id) || {}
+        description: `${source.description}${source.description ? " · " : ""}Copied from ${current.workspace.name}`,
+        workspaceBindings: {
+          ...(source.workspaceBindings || {}),
+          [target.workspace.id]: compatibility.get(source.id) || {}
         },
         versions: source.versions.map((version) => ({
           ...version,
@@ -2997,17 +3586,17 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         updatedAt: timestamp
       });
     }
-    await Promise.all(copied.map(saveScript));
-    if (target.project.id === current.project.id) {
-      const updated = { ...current, scripts: [...current.scripts, ...copied] };
+    await Promise.all(copied.map(saveMethod));
+    if (target.workspace.id === current.workspace.id) {
+      const updated = { ...current, methods: [...current.methods, ...copied] };
       workspaceRef.current = updated;
       setWorkspace(updated);
     }
-    setShowScriptTransfer(false);
-    const destination = userProjects.find((item) => item.id === target.project.id);
+    setShowMethodTransfer(false);
+    const destination = userWorkspaces.find((item) => item.id === target.workspace.id);
     setStatus(
-      `Copied ${copied.length} script${copied.length === 1 ? "" : "s"} to ${destination?.name || "the destination project"}. ` +
-      "When run there, the scripts use that project's current inputs."
+      `Copied ${copied.length} method${copied.length === 1 ? "" : "s"} to ${destination?.name || "the destination workspace"}. ` +
+      "When run there, the methods use that workspace's current inputs."
     );
   }
 
@@ -3025,22 +3614,22 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (file.data) downloadBytes(file.name, file.data, file.type);
   }
 
-  function downloadScript(script: ScriptRecord) {
-    const version = script.versions.find((item) => item.version === script.currentVersion);
-    if (version) downloadBytes(script.name, new TextEncoder().encode(version.code), "text/x-python");
+  function downloadMethod(method: MethodRecord) {
+    const version = method.versions.find((item) => item.version === method.currentVersion);
+    if (version) downloadBytes(method.name, new TextEncoder().encode(version.code), "text/x-python");
   }
 
   function downloadReproducibilityReport() {
     const current = workspaceRef.current;
     if (!current) return;
-    const chat = current.chats.find((item) => item.id === current.project.activeChatId);
+    const chat = current.chats.find((item) => item.id === current.workspace.activeChatId);
     if (!chat) return;
     const executions = current.executions.filter((item) => item.chatId === chat.id);
     const lines = [
       `# ${chat.title}`,
       "",
-      `OMERO object: ${current.project.objectType || "Local"} ${current.project.objectId || ""}`,
-      `Project: ${current.project.name}`,
+      `OMERO object: ${current.workspace.objectType || "Local"} ${current.workspace.objectId || ""}`,
+      `Workspace: ${current.workspace.name}`,
       `Generated: ${now()}`,
       `Runtime: ${RUNTIME_VERSION}`,
       "",
@@ -3099,8 +3688,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   async function createArchive() {
     const current = workspaceRef.current;
-    if (!current) throw new Error("Project is not ready");
-    return exportProject(
+    if (!current) throw new Error("Workspace is not ready");
+    return exportWorkspace(
       current,
       bootstrap.context?.max_snapshot_bytes ?? DEFAULT_MAX_SNAPSHOT_BYTES
     );
@@ -3112,11 +3701,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       downloadBytes(archive.filename, archive.data, "application/zip");
       setStatus(
         archive.omittedLocalInputs.length
-          ? `Project downloaded; omitted local inputs: ${archive.omittedLocalInputs.join(", ")}`
-          : "Complete project downloaded"
+          ? `Workspace downloaded; omitted local inputs: ${archive.omittedLocalInputs.join(", ")}`
+          : "Complete workspace downloaded"
       );
     } catch (error) {
-      setStatus(`Project export failed: ${String(error)}`);
+      setStatus(`Workspace export failed: ${String(error)}`);
     }
   }
 
@@ -3131,9 +3720,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       )) return;
       const snapshot = await bridge.uploadSnapshot(archive.filename, archive.data);
       setSnapshots((current) => [...current, snapshot]);
-      setStatus(`Saved project snapshot as FileAnnotation ${snapshot.annotation_id}`);
+      setStatus(`Saved workspace snapshot as FileAnnotation ${snapshot.annotation_id}`);
     } catch (error) {
-      setStatus(`OMERO project snapshot failed: ${String(error)}`);
+      setStatus(`OMERO workspace snapshot failed: ${String(error)}`);
     }
   }
 
@@ -3144,26 +3733,26 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         bootstrap.context?.max_snapshot_bytes ?? DEFAULT_MAX_SNAPSHOT_BYTES;
       if (file.size > limit) {
         throw new Error(
-          `Project archive exceeds the configured ${Math.floor(limit / 1024 / 1024)} MiB limit`
+          `Workspace archive exceeds the configured ${Math.floor(limit / 1024 / 1024)} MiB limit`
         );
       }
-      const imported = await importProject(await file.arrayBuffer(), bootstrap.context);
+      const imported = await importWorkspace(await file.arrayBuffer(), bootstrap.context);
       if (
         bootstrap.context &&
-        (imported.project.objectType !== bootstrap.context.object_type ||
-          imported.project.objectId !== bootstrap.context.object_id)
+        (imported.workspace.objectType !== bootstrap.context.object_type ||
+          imported.workspace.objectId !== bootstrap.context.object_id)
       ) {
-        throw new Error("Project snapshot belongs to a different OMERO object");
+        throw new Error("Workspace snapshot belongs to a different OMERO object");
       }
       await saveWorkspace(imported);
       const prepared = await prepareInputs(imported);
       setWorkspace(prepared);
       workspaceRef.current = prepared;
-      setProjects(await listContextProjects(bootstrap.context));
-      setUserProjects(await listUserProjects(bootstrap.context));
-      await restartRuntime(prepared.files, "Imported project restored");
+      setWorkspaces(await listContextWorkspaces(bootstrap.context));
+      setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
+      await restartRuntime(prepared.files, "Imported workspace restored");
     } catch (error) {
-      setStatus(`Project import failed: ${String(error)}`);
+      setStatus(`Workspace import failed: ${String(error)}`);
     } finally {
       if (importInput.current) importInput.current.value = "";
     }
@@ -3172,32 +3761,32 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
   async function resumeSnapshot(snapshot: Attachment) {
     try {
       setStatus(`Downloading ${snapshot.name}…`);
-      const imported = await importProject(
+      const imported = await importWorkspace(
         await bridge.downloadSnapshot(snapshot),
         bootstrap.context
       );
       if (
         bootstrap.context &&
-        (imported.project.objectType !== bootstrap.context.object_type ||
-          imported.project.objectId !== bootstrap.context.object_id)
+        (imported.workspace.objectType !== bootstrap.context.object_type ||
+          imported.workspace.objectId !== bootstrap.context.object_id)
       ) {
-        throw new Error("Project snapshot belongs to a different OMERO object");
+        throw new Error("Workspace snapshot belongs to a different OMERO object");
       }
       await saveWorkspace(imported);
       const prepared = await prepareInputs(imported);
       setWorkspace(prepared);
       workspaceRef.current = prepared;
-      setProjects(await listContextProjects(bootstrap.context));
-      setUserProjects(await listUserProjects(bootstrap.context));
-      await restartRuntime(prepared.files, "OMERO project snapshot restored");
+      setWorkspaces(await listContextWorkspaces(bootstrap.context));
+      setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
+      await restartRuntime(prepared.files, "OMERO workspace snapshot restored");
     } catch (error) {
       setStatus(`Snapshot restore failed: ${String(error)}`);
     }
   }
 
   function togglePlotCsv() {
-    if (!project) return;
-    updateProject({ ...project, plotCsv: !project.plotCsv, updatedAt: now() });
+    if (!workspace) return;
+    updateWorkspaceRecord({ ...workspace, plotCsv: !workspace.plotCsv, updatedAt: now() });
   }
 
   function inputActions(file: WorkspaceFile): BrowserMenuAction[] {
@@ -3215,7 +3804,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       });
     }
     actions.push({
-      label: "Remove from project",
+      label: "Remove from workspace",
       danger: true,
       run: () => void removeFile(file.id)
     });
@@ -3242,145 +3831,351 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     ];
   }
 
-  function scriptActions(script: ScriptRecord): BrowserMenuAction[] {
+  function methodActions(method: MethodRecord): BrowserMenuAction[] {
     return [
-      { label: "Run", run: () => void runScript(script) },
-      { label: "Rename", run: () => void renameScript(script) },
-      { label: "Download", run: () => downloadScript(script) },
-      { label: "Copy to another project…", run: () => beginScriptTransfer([script.id]) },
-      { label: "Delete script", danger: true, run: () => void removeScript(script) }
+      { label: "Run", run: () => void runMethod(method) },
+      { label: "Rename", run: () => void renameMethod(method) },
+      { label: "Download", run: () => downloadMethod(method) },
+      { label: "Copy to another workspace…", run: () => beginMethodTransfer([method.id]) },
+      { label: "Delete method", danger: true, run: () => void removeMethod(method) }
     ];
   }
 
   function snapshotActions(snapshot: Attachment): BrowserMenuAction[] {
     return [{
-      label: "Resume as new project",
+      label: "Resume as new workspace",
       run: () => void resumeSnapshot(snapshot)
     }];
   }
 
-  if (!workspace || !project || !activeChat) {
+  if (!analysisWorkspace || !workspace || !activeChat) {
     return <main className="app-shell"><div className="boot-message">{status}</div></main>;
   }
 
   const quotaPercent = storage.quota ? Math.round(storage.usage / storage.quota * 100) : 0;
   const matchingWorkflowSkills = matchWorkflowSkills(
     workflowSkillCatalog,
-    workspace.files,
+    analysisWorkspace.files,
     profiles
-  );
-  const workflowSkillTitle = workflowSkillTooltip(
-    workflowSkillCatalog,
-    workflowSkillWarning,
-    matchingWorkflowSkills.map(
-      (match) => `${match.entry.source.workflow_key}/${match.skill.name}`
-    )
-  ) + (
-    zarrViewerStatus?.available
-      ? `\n\nZarrViewer ${zarrViewerStatus.version}: available for explicit image and field requests.`
-      : `\n\n${zarrViewerWarning}`
   );
   const catalogSkillCount = [
     ...(workflowSkillCatalog?.workflows || []),
     ...(workflowSkillCatalog?.applications || [])
-  ].reduce((total, entry) => total + entry.skills.length, 0);
+  ].reduce((total, entry) => total + entry.skills.length, 0) +
+    (zarrSkillCatalog?.skills.length || 0);
+  const activeNotebook = analysisWorkspace.notebooks.find(
+    (item) => item.id === activeNotebookId
+  ) || analysisWorkspace.notebooks[0] || null;
+  const selectedInspectorItem: InspectorItem = (() => {
+    const selection = inspectorSelection;
+    if (!selection || selection.kind === "workspace") {
+      return {
+        kind: "workspace",
+        title: workspace.name,
+        description: "Browser-local Analysis Workspace for the current OMERO context.",
+        metadata: {
+          "OMERO object": `${workspace.objectType} ${workspace.objectId}`,
+          Chats: chats.length,
+          Inputs: inputFiles.length,
+          Results: outputFiles.length,
+          Methods: activeMethods.length,
+          Pipelines: analysisWorkspace.pipelines.filter((item) => !item.deletedAt).length,
+          Notebooks: analysisWorkspace.notebooks.length,
+          Updated: new Date(workspace.updatedAt).toLocaleString()
+        }
+      };
+    }
+    if (selection.kind === "file") {
+      const file = analysisWorkspace.files.find(
+        (item) => item.id === selection.id && !item.deletedAt
+      );
+      if (file) return { kind: "file", title: file.name, file };
+    }
+    if (selection.kind === "chat") {
+      const chat = chats.find((item) => item.id === selection.id);
+      if (chat) return {
+        kind: "chat",
+        title: chat.title,
+        description: chat.archived ? "Archived Chat conversation." : "Active Chat conversation.",
+        metadata: {
+          Messages: chat.messages.length,
+          "Pinned messages": chat.pinnedMessageIds?.length || 0,
+          Updated: new Date(chat.updatedAt).toLocaleString()
+        },
+        content: [
+          `# ${chat.title}`,
+          ...(chat.summary
+            ? ["", "## Conversation summary", "", chat.summary]
+            : []),
+          ...chat.messages
+            .filter((message) => message.kind !== "execution")
+            .flatMap((message) => [
+              "",
+              `## ${message.role === "user" ? "User" : "Assistant"}`,
+              "",
+              message.content
+            ])
+        ].join("\n"),
+        language: "markdown"
+      };
+    }
+    if (selection.kind === "method") {
+      const method = analysisWorkspace.methods.find(
+        (item) => item.id === selection.id && !item.deletedAt
+      );
+      const version = method?.versions.find(
+        (item) => item.version === method.currentVersion
+      );
+      if (method) return {
+        kind: "method",
+        title: method.name,
+        description: method.description || "Reusable Python analysis Method.",
+        metadata: {
+          Version: method.currentVersion,
+          "Saved versions": method.versions.length,
+          Capabilities: method.requiredCapabilities?.join(", ") || "Browser Python",
+          Updated: new Date(method.updatedAt).toLocaleString()
+        },
+        content: version?.code || "",
+        language: "python"
+      };
+    }
+    if (selection.kind === "pipeline") {
+      const pipeline = analysisWorkspace.pipelines.find(
+        (item) => item.id === selection.id && !item.deletedAt
+      );
+      if (pipeline) return {
+        kind: "pipeline",
+        title: pipeline.name,
+        description: pipeline.description || "Ordered multi-step Method execution.",
+        metadata: {
+          Version: pipeline.version,
+          Steps: pipeline.steps.length,
+          Updated: new Date(pipeline.updatedAt).toLocaleString()
+        },
+        content: JSON.stringify(pipeline.steps, null, 2)
+      };
+    }
+    if (selection.kind === "notebook") {
+      const notebook = analysisWorkspace.notebooks.find(
+        (item) => item.id === selection.id
+      );
+      if (notebook) return {
+        kind: "notebook",
+        title: notebook.name,
+        description: "Read-only Python nbformat-4 Notebook.",
+        metadata: {
+          Cells: notebook.document.cells.length,
+          "Attached versions": notebook.attachmentIds.length,
+          "Selected inputs": notebook.selectedDataFileIds.length,
+          Updated: new Date(notebook.updatedAt).toLocaleString()
+        },
+        notebook
+      };
+    }
+    if (selection.kind === "zarr") {
+      const source = visibleZarrSources.find((item) => item.id === selection.id);
+      if (source) return {
+        kind: "zarr",
+        title: source.name,
+        description: "OME-Zarr source served by the installed ZarrViewer. It is not downloaded into this browser Workspace.",
+        metadata: {
+          Screen: source.contextName,
+          "OMERO source": `${source.objectType} ${source.objectId}`,
+          "OME-Zarr name": source.zarrName,
+          ...(source.plateRows && source.plateColumns ? {
+            "Plate size": `${source.plateRows * source.plateColumns}-well (${source.plateRows} × ${source.plateColumns})`,
+            "Wells with data": source.wellsWithData,
+            "Image fields": source.fieldsWithData
+          } : {}),
+          "Store UUID": source.storeUuid
+        }
+      };
+    }
+    if (selection.kind === "folder") {
+      const folders: Record<string, InspectorItem> = {
+        inputs: {
+          kind: "folder",
+          title: "Input",
+          description: "Source data available to Chat, Methods, Pipelines, and Notebooks.",
+          metadata: {
+            "Downloaded inputs": inputFiles.length,
+            "ZarrViewer sources": visibleZarrSources.length
+          }
+        },
+        chat: {
+          kind: "folder",
+          title: "Chat",
+          description: "Autosaved conversations and readable transcripts.",
+          metadata: { Items: chats.length }
+        },
+        "chat-results": {
+          kind: "folder",
+          title: "Chat results",
+          description: "Files generated directly by Chat analyses.",
+          metadata: { Items: chatOutputFiles.length }
+        },
+        "methods-results": {
+          kind: "folder",
+          title: "Methods results",
+          description: "Files generated by reusable Method runs.",
+          metadata: { Items: methodOutputFiles.length }
+        },
+        "pipelines-results": {
+          kind: "folder",
+          title: "Pipelines results",
+          description: "Files generated while running Pipelines.",
+          metadata: { Items: pipelineOutputFiles.length }
+        },
+        "notebooks-results": {
+          kind: "folder",
+          title: "Notebooks results",
+          description: "Files generated by run-only Notebooks.",
+          metadata: { Items: notebookOutputFiles.length }
+        },
+        methods: {
+          kind: "folder",
+          title: "Methods",
+          description: "Reusable Python analyses.",
+          metadata: { Items: activeMethods.length }
+        },
+        pipelines: {
+          kind: "folder",
+          title: "Pipelines",
+          description: "Ordered multi-step Method analyses.",
+          metadata: {
+            Items: analysisWorkspace.pipelines.filter((item) => !item.deletedAt).length
+          }
+        },
+        notebooks: {
+          kind: "folder",
+          title: "Notebooks",
+          description: "Uploaded or OMERO-attached run-only Notebooks.",
+          metadata: { Items: analysisWorkspace.notebooks.length }
+        }
+      };
+      if (folders[selection.id]) return folders[selection.id];
+    }
+    return {
+      kind: "workspace",
+      title: workspace.name,
+      description: "Select any Workspace item to inspect it."
+    };
+  })();
+  const loadedSkillHashes = new Set(
+    analysisWorkspace.chats.flatMap((chat) =>
+      chat.messages.flatMap((message) =>
+        (message.workflowSkills || []).map((skill) => skill.sha256)
+      )
+    )
+  );
+  const workspaceActionsMenu = () => (
+    <details className="workspace-actions">
+      <summary>Workspace actions</summary>
+      <div>
+        <button onClick={() => void renameWorkspace(workspace)}>Rename workspace</button>
+        <button onClick={() => void downloadArchive()}>Download workspace</button>
+        <button onClick={() => importInput.current?.click()}>Import workspace</button>
+        {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save snapshot to OMERO</button>}
+      </div>
+    </details>
+  );
+  const resultFolder = (
+    title: string,
+    inspectorId: string,
+    files: WorkspaceFile[]
+  ) => {
+    const visible = files.filter((file) => matchesExplorer(file.name));
+    const allSelected = visible.length > 0 &&
+      visible.every((file) => selectedOutputIds.has(file.id));
+    const selected = files.filter((file) => selectedOutputIds.has(file.id));
+    return (
+      <details className="browser-subfolder result-subfolder">
+        <summary onClick={() => setInspectorSelection({ kind: "folder", id: inspectorId })}>
+          <Icon name="chevron" className="folder-chevron" />
+          <Icon name="folder" />
+          <strong>{title}</strong><small>{files.length}</small>
+        </summary>
+        {files.length > 0 && (
+          <div className="output-selection-toolbar">
+            <span>{selected.length} selected</span>
+            <button onClick={() => toggleOutputGroupSelection(files)}>
+              {allSelected ? "Clear" : "Select all"}
+            </button>
+            <button disabled={!selected.length}
+              onClick={() => void trashOutputs(selected.map((file) => file.id))}>
+              Delete selected
+            </button>
+          </div>
+        )}
+        <ul className="browser-list result-browser-list">
+          {visible.map((file) => (
+            <li
+              key={file.id}
+              className={`browser-row output-row ${selectedOutputIds.has(file.id) ? "selected" : ""}`}
+              onClick={() => setSelectedArtifactFileId(file.id)}
+              onDoubleClick={() => downloadFile(file)}
+              onContextMenu={(event) => openBrowserMenu(event, file.name, outputActions(file))}
+            >
+              <input
+                className="output-selector"
+                type="checkbox"
+                aria-label={`Select output ${file.name}`}
+                checked={selectedOutputIds.has(file.id)}
+                onClick={(event) => event.stopPropagation()}
+                onChange={() => toggleOutputSelection(file.id)}
+                onDoubleClick={(event) => event.stopPropagation()}
+              />
+              <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
+              <div className="browser-name">
+                <strong>{file.name}</strong>
+                <small>double-click to download</small>
+              </div>
+              <span className="browser-size">{bytesLabel(file.size)}</span>
+              <button className="browser-more" aria-label={`Actions for ${file.name}`}
+                onClick={(event) => openBrowserMenu(event, file.name, outputActions(file))}>
+                <Icon name="more" />
+              </button>
+            </li>
+          ))}
+          {!visible.length && (
+            <li className="browser-empty">
+              {files.length ? "No matching results" : "No results yet"}
+            </li>
+          )}
+        </ul>
+      </details>
+    );
+  };
   return (
     <main className="app-shell">
       {dialogs.element}
-      <header className="project-header">
-        <div>
+      <header className="workspace-header">
+        <div className="header-brand">
           <h1>OMERO.Analysis</h1>
-          <p>{project.rootPath}</p>
+          <p>{workspace.rootPath}</p>
         </div>
         <div className="header-actions">
-          <label className="csv-toggle" title="Require a matching CSV for every generated plot">
-            <input type="checkbox" checked={project.plotCsv} onChange={togglePlotCsv} />
-            Plot + CSV
-          </label>
-          <span className="privacy-badge">Source data stay in this browser</span>
-          <span
-            className={workflowSkillWarning ? "skill-badge warning" : "skill-badge"}
-            title={workflowSkillTitle}
-            aria-label={workflowSkillTitle}
+          <button
+            className={activeTab === "settings" ? "active" : ""}
+            onClick={() => setActiveTab("settings")}
           >
-            {!workflowSkillCatalog && workflowSkillWarning
-              ? "Generic guidance"
-              : `${catalogSkillCount} workflow skills`}
-          </span>
-          <button onClick={() => setShowSettings(!showSettings)}>AI settings</button>
+            Settings
+          </button>
         </div>
       </header>
 
-      {showSettings && (
-        <form className="settings-card" onSubmit={(event) => event.preventDefault()}>
-          <h2>AmsterdamUMC</h2>
-          <p className="warning">
-            The API key is kept only for this tab unless you explicitly choose to remember it.
-            Remembered keys are stored unencrypted and never included in project snapshots.
-          </p>
-          <label>Deployment/model
-            <input value={settings.model} onChange={(event) => void saveSettings({ ...settings, model: event.target.value })} placeholder="GPT-5 deployment name" />
-          </label>
-          <label>API key
-            <input type="password" value={settings.apiKey} onChange={(event) => void saveSettings({ ...settings, apiKey: event.target.value })} autoComplete="off" />
-          </label>
-          <label className="remember-key">
-            <input
-              type="checkbox"
-              checked={settings.rememberKey}
-              onChange={(event) => void saveSettings({ ...settings, rememberKey: event.target.checked })}
-            />
-            Remember this key in this browser profile
-          </label>
-          <label>Model context window (optional)
-            <input type="number" min="0" value={settings.contextWindow || ""} onChange={(event) => void saveSettings({ ...settings, contextWindow: Math.max(0, Number(event.target.value) || 0) })} />
-          </label>
-          <p>Temperature is fixed at 1.</p>
-          <button onClick={() => void saveSettings({ ...settings, apiKey: "" })}>Forget API key</button>
-        </form>
-      )}
-
-      <div className="project-toolbar">
-        <div className="active-project-label"><span>Project</span><strong>{project.name}</strong></div>
-        <label>Chat
-          <select value={activeChat.id} onChange={(event) => switchChat(event.target.value)}>
-            <optgroup label="Active chats">
-              {chats.filter((chat) => !chat.archived).map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}
-            </optgroup>
-            {chats.some((chat) => chat.archived) && (
-              <optgroup label="Archived chats">
-                {chats.filter((chat) => chat.archived).map((chat) => <option key={chat.id} value={chat.id}>{chat.title} (archived)</option>)}
-              </optgroup>
-            )}
-          </select>
-        </label>
-        <button onClick={() => void newConversation()}>New chat</button>
-        <button onClick={() => void renameChat(activeChat)}>Rename chat</button>
-        <button onClick={() => archiveChat(activeChat)}>Archive</button>
-        <details className="project-menu">
-          <summary>Project actions</summary>
-          <div>
-            <button onClick={() => void renameProject(project)}>Rename project</button>
-            <button onClick={downloadReproducibilityReport}>Download reproducibility report</button>
-            <button onClick={() => void downloadArchive()}>Download project ZIP</button>
-            <button onClick={() => importInput.current?.click()}>Import project ZIP</button>
-            {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save project to OMERO</button>}
-          </div>
-        </details>
-        <input ref={importInput} hidden type="file" accept=".zip,.oa.zip,.oac.zip" onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
-      </div>
-
-      {showScriptTransfer && (
+      {activeTab === "chat" && showMethodTransfer && (
         <div className="dialog-backdrop" role="presentation">
-          <section className="script-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="script-transfer-title">
-            <h2 id="script-transfer-title">Copy scripts to another project</h2>
+          <section className="method-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="method-transfer-title">
+            <h2 id="method-transfer-title">Copy methods to another workspace</h2>
             <p>
-              The copied scripts keep their code and versions. When run in the
-              destination, they automatically use that project’s current input files.
+              The copied methods keep their code and versions. When run in the
+              destination, they automatically use that workspace’s current input files.
             </p>
-            <label>Destination project
-              <select value={scriptTransferTarget} onChange={(event) => setScriptTransferTarget(event.target.value)}>
-                {userProjects.filter((item) => item.id !== project.id).map((item) => (
+            <label>Destination workspace
+              <select value={methodTransferTarget} onChange={(event) => setMethodTransferTarget(event.target.value)}>
+                {userWorkspaces.filter((item) => item.id !== workspace.id).map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.objectType} {item.objectId} — {item.name}
                   </option>
@@ -3392,19 +4187,22 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               Analysis at least once.
             </small>
             <div className="dialog-actions">
-              <button onClick={() => setShowScriptTransfer(false)}>Cancel</button>
-              <button disabled={!scriptTransferTarget} onClick={() => void copySelectedScripts()}>Copy selected scripts</button>
+              <button onClick={() => setShowMethodTransfer(false)}>Cancel</button>
+              <button disabled={!methodTransferTarget} onClick={() => void copySelectedMethods()}>Copy selected methods</button>
             </div>
           </section>
         </div>
       )}
 
       <div
-        className={`workspace ${artifactOpen ? "artifact-visible" : ""}`}
-        style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}
+        className="workspace artifact-visible"
+        style={{
+          "--explorer-width": `${explorerWidth}px`,
+          "--artifact-width": `${artifactWidth}px`
+        } as CSSProperties}
       >
         <aside
-          className="project-tree"
+          className="workspace-tree"
           onDragOver={(event) => {
             event.preventDefault();
             event.dataTransfer.dropEffect = "copy";
@@ -3416,45 +4214,47 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         >
           <div
             className="file-browser-heading"
-            onContextMenu={(event) => openBrowserMenu(event, project.name, [
+            onClick={() => setInspectorSelection({ kind: "workspace", id: workspace.id })}
+            onContextMenu={(event) => openBrowserMenu(event, workspace.name, [
               { label: "Add files", run: () => addFilesInput.current?.click() },
               { label: "New chat", run: () => void newConversation() },
               { label: "Rename current chat", run: () => void renameChat(activeChat) },
-              { label: "Rename project", run: () => void renameProject(project) },
-              { label: "Refresh", run: () => void refreshProject() }
+              { label: "Rename workspace", run: () => void renameWorkspace(workspace) },
+              { label: "Refresh", run: () => void refreshWorkspace() }
             ])}
           >
-            <div><h2>Project files</h2><small>{bytesLabel(projectBytes(workspace))} · browser {quotaPercent || "?"}%</small></div>
+            <div><h2>Workspace files</h2><small>{bytesLabel(workspaceBytes(analysisWorkspace))} · browser {quotaPercent || "?"}%</small></div>
             <button
               className="browser-more"
-              aria-label="Project actions"
-              title="Project actions"
-              onClick={(event) => openBrowserMenu(event, project.name, [
+              aria-label="Workspace actions"
+              title="Workspace actions"
+              onClick={(event) => openBrowserMenu(event, workspace.name, [
                 { label: "Add files", run: () => addFilesInput.current?.click() },
                 { label: "New chat", run: () => void newConversation() },
                 { label: "Rename current chat", run: () => void renameChat(activeChat) },
-                { label: "Rename project", run: () => void renameProject(project) },
-                { label: "Refresh", run: () => void refreshProject() }
+                { label: "Rename workspace", run: () => void renameWorkspace(workspace) },
+                { label: "Refresh", run: () => void refreshWorkspace() }
               ])}
             ><Icon name="more" /></button>
           </div>
-          <div className="file-browser-toolbar" role="toolbar" aria-label="Project file actions">
+          <div className="file-browser-toolbar" role="toolbar" aria-label="Workspace file actions">
             <button
-              title="Up to OMERO object projects"
-              aria-label="Up to OMERO object projects"
+              title="Up to OMERO object workspaces"
+              aria-label="Up to OMERO object workspaces"
               disabled={browserAtParent}
               onClick={() => setBrowserAtParent(true)}
             ><Icon name="up" /></button>
             <button title="Add files" aria-label="Add files" onClick={() => addFilesInput.current?.click()}><Icon name="upload" /></button>
-            <button title="Refresh project" aria-label="Refresh project" onClick={() => void refreshProject()}><Icon name="refresh" /></button>
+            <button title="Refresh workspace" aria-label="Refresh workspace" onClick={() => void refreshWorkspace()}><Icon name="refresh" /></button>
             <button
               title="Collapse all folders"
               aria-label="Collapse all folders"
               onClick={() => setOpenFolders({
+                chat: false,
                 inputs: false,
-                outputs: false,
-                scripts: false,
-                workflows: false,
+                methods: false,
+                pipelines: false,
+                notebooks: false,
                 trash: false,
                 snapshots: false
               })}
@@ -3462,21 +4262,23 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <input ref={addFilesInput} hidden type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} />
           </div>
           <label className="explorer-search">
-            <span className="sr-only">Search project files</span>
+            <span className="sr-only">Search workspace files</span>
             <input
               type="search"
+              name="workspace-search"
+              autoComplete="off"
               value={explorerQuery}
-              placeholder="Search files, scripts, workflows…"
+              placeholder="Search files, methods, pipelines…"
               onChange={(event) => setExplorerQuery(event.target.value)}
             />
           </label>
           <div
             className="browser-path"
-            title={browserAtParent ? `OMERO/${project.objectType}-${project.objectId}` : project.rootPath}
+            title={browserAtParent ? `OMERO/${workspace.objectType}-${workspace.objectId}` : workspace.rootPath}
             onDoubleClick={() => setBrowserAtParent(true)}
           >
             <Icon name="root" />
-            <span>{browserAtParent ? `OMERO/${project.objectType}-${project.objectId}` : project.rootPath}</span>
+            <span>{browserAtParent ? `OMERO/${workspace.objectType}-${workspace.objectId}` : workspace.rootPath}</span>
           </div>
           <div className="browser-columns"><span>Name</span><span>Size</span></div>
           {browserAtParent ? (
@@ -3504,28 +4306,28 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 <p>No readable immediate OMERO relations.</p>
               )}
             </div>
-            <div className="hierarchy-section-title">Browser-local projects for this object</div>
-            <ul className="browser-list project-list">
-              {projects.map((item) => (
+            <div className="hierarchy-section-title">Browser-local workspaces for this object</div>
+            <ul className="browser-list workspace-list">
+              {workspaces.map((item) => (
                 <li
                   key={item.id}
-                  className={projectRowClassName(
+                  className={workspaceRowClassName(
                     item.id,
-                    project.id,
-                    selectedProjectId
+                    workspace.id,
+                    selectedWorkspaceId
                   )}
-                  aria-selected={item.id === (selectedProjectId || project.id)}
-                  onClick={() => setSelectedProjectId(item.id)}
-                  onDoubleClick={() => void switchProject(item.id)}
+                  aria-selected={item.id === (selectedWorkspaceId || workspace.id)}
+                  onClick={() => setSelectedWorkspaceId(item.id)}
+                  onDoubleClick={() => void switchWorkspace(item.id)}
                   onContextMenu={(event) => {
-                    setSelectedProjectId(item.id);
+                    setSelectedWorkspaceId(item.id);
                     openBrowserMenu(event, item.name, [
-                      { label: "Open project", run: () => void switchProject(item.id) },
-                      { label: "Rename project", run: () => void renameProject(item) },
-                      ...(item.id !== project.id ? [{
-                        label: "Delete local project",
+                      { label: "Open workspace", run: () => void switchWorkspace(item.id) },
+                      { label: "Rename workspace", run: () => void renameWorkspace(item) },
+                      ...(item.id !== workspace.id ? [{
+                        label: "Delete local workspace",
                         danger: true,
-                        run: () => void removeLocalProject(item)
+                        run: () => void removeLocalWorkspace(item)
                       }] : [])
                     ]);
                   }}
@@ -3533,21 +4335,21 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   <Icon name="folder" />
                   <div className="browser-name">
                     <strong>{item.name}</strong>
-                    <small>{item.id === project.id ? "open now" : item.sourceSnapshotAnnotationId ? `restored from Annotation ${item.sourceSnapshotAnnotationId}` : "browser-local project"}</small>
+                    <small>{item.id === workspace.id ? "open now" : item.sourceWorkspaceSnapshotAnnotationId ? `restored from Annotation ${item.sourceWorkspaceSnapshotAnnotationId}` : "browser-local workspace"}</small>
                   </div>
                   <span className="browser-size">{new Date(item.updatedAt).toLocaleDateString()}</span>
                   <button
                     className="browser-more"
                     aria-label={`Actions for ${item.name}`}
                     onClick={(event) => {
-                      setSelectedProjectId(item.id);
+                      setSelectedWorkspaceId(item.id);
                       openBrowserMenu(event, item.name, [
-                        { label: "Open project", run: () => void switchProject(item.id) },
-                        { label: "Rename project", run: () => void renameProject(item) },
-                        ...(item.id !== project.id ? [{
-                          label: "Delete local project",
+                        { label: "Open workspace", run: () => void switchWorkspace(item.id) },
+                        { label: "Rename workspace", run: () => void renameWorkspace(item) },
+                        ...(item.id !== workspace.id ? [{
+                          label: "Delete local workspace",
                           danger: true,
-                          run: () => void removeLocalProject(item)
+                          run: () => void removeLocalWorkspace(item)
                         }] : [])
                       ]);
                     }}
@@ -3557,7 +4359,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             </ul>
             </>
           ) : (<>
-          {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Archive or download old projects.</p>}
+          {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Archive or download old workspaces.</p>}
 
           <details
             open={openFolders.inputs}
@@ -3568,19 +4370,21 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             }}
           >
             <summary
-              onContextMenu={(event) => openBrowserMenu(event, "inputs/", [
+              onClick={() => setInspectorSelection({ kind: "folder", id: "inputs" })}
+              onContextMenu={(event) => openBrowserMenu(event, "Input/", [
                 { label: "Add files", run: () => addFilesInput.current?.click() }
               ])}
             >
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>inputs</strong><small>{inputFiles.length}</small>
+              <strong>Input</strong><small>{inputFiles.length + visibleZarrSources.length}</small>
             </summary>
             <ul className="browser-list">
               {visibleInputs.map((file) => (
                 <li
                   key={file.id}
                   className={`browser-row file-${file.state}`}
+                  onClick={() => setSelectedArtifactFileId(file.id)}
                   onContextMenu={(event) => openBrowserMenu(event, file.name, inputActions(file))}
                 >
                   <Icon name="file" />
@@ -3605,209 +4409,209 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   )}
                 </li>
               ))}
-              {!visibleInputs.length && <li className="browser-empty">No matching input files</li>}
-            </ul>
-          </details>
-
-          <details
-            open={openFolders.outputs}
-            className="browser-folder"
-            onToggle={(event) => {
-              const open = event.currentTarget.open;
-              setOpenFolders((current) => ({ ...current, outputs: open }));
-            }}
-          >
-            <summary
-              onContextMenu={(event) => openBrowserMenu(event, `chats/${activeChat.title}/`, [
-                { label: "Rename chat", run: () => void renameChat(activeChat) },
-                { label: "New chat", run: () => void newConversation() },
-                { label: "Archive chat", run: () => archiveChat(activeChat) }
-              ])}
-            >
-              <Icon name="chevron" className="folder-chevron" />
-              <Icon name="folder" />
-              <strong>chats/{slug(activeChat.title)}/outputs</strong><small>{outputFiles.length}</small>
-            </summary>
-            {outputFiles.length > 0 && (
-              <div className="output-selection-toolbar">
-                <span>{selectedOutputIds.size} selected</span>
-                <button onClick={toggleVisibleOutputSelection}>
-                  {visibleOutputs.length > 0 &&
-                  visibleOutputs.every((file) => selectedOutputIds.has(file.id))
-                    ? "Clear"
-                    : "Select all"}
-                </button>
-                <button
-                  disabled={!selectedOutputIds.size}
-                  onClick={() => void trashOutputs(selectedOutputIds)}
-                >
-                  Delete selected
-                </button>
-              </div>
-            )}
-            <ul className="browser-list">
-              <li className="browser-row virtual">
-                <span className="browser-icon json" aria-hidden="true" />
-                <div className="browser-name"><strong>chat.json</strong><small>autosaved</small></div>
-                <span className="browser-size">—</span>
-              </li>
-              <li className="browser-row virtual">
-                <span className="browser-icon markdown" aria-hidden="true" />
-                <div className="browser-name"><strong>chat.md</strong><small>autosaved</small></div>
-                <span className="browser-size">—</span>
-              </li>
-              {visibleOutputs.map((file) => (
+              {visibleZarrSources.filter((source) =>
+                matchesExplorer(`${source.name} ${source.contextName}`)
+              ).map((source) => (
                 <li
-                  key={file.id}
-                  className={`browser-row output-row ${selectedOutputIds.has(file.id) ? "selected" : ""}`}
-                  onClick={() => {
-                    setSelectedArtifactFileId(file.id);
-                    setArtifactOpen(true);
-                  }}
-                  onDoubleClick={() => downloadFile(file)}
-                  onContextMenu={(event) => openBrowserMenu(event, file.name, outputActions(file))}
+                  key={`zarr-${source.id}`}
+                  className="browser-row virtual zarr-source-row"
+                  onClick={() => setInspectorSelection({ kind: "zarr", id: source.id })}
                 >
-                  <input
-                    className="output-selector"
-                    type="checkbox"
-                    aria-label={`Select output ${file.name}`}
-                    checked={selectedOutputIds.has(file.id)}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={() => toggleOutputSelection(file.id)}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                  />
-                  <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
+                  <span className="browser-icon zarr" aria-hidden="true" />
                   <div className="browser-name">
-                    <strong>{file.name}</strong><small>{file.sha256.slice(0, 10)} · double-click to download</small>
+                    <strong>{source.name}</strong>
+                    <small>{source.contextName} · served by ZarrViewer · not downloaded</small>
                   </div>
-                  <span className="browser-size">{bytesLabel(file.size)}</span>
-                  <button
-                    className="browser-more"
-                    aria-label={`Actions for ${file.name}`}
-                    onClick={(event) => openBrowserMenu(event, file.name, outputActions(file))}
-                  ><Icon name="more" /></button>
+                  <span className="browser-size">OME-Zarr</span>
                 </li>
               ))}
+              {!visibleInputs.length && !visibleZarrSources.some((source) =>
+                matchesExplorer(`${source.name} ${source.contextName}`)
+              ) && <li className="browser-empty">No matching input files</li>}
             </ul>
           </details>
 
           <details
-            open={openFolders.scripts}
+            open={openFolders.chat}
             className="browser-folder"
             onToggle={(event) => {
               const open = event.currentTarget.open;
-              setOpenFolders((current) => ({ ...current, scripts: open }));
+              setOpenFolders((current) => ({ ...current, chat: open }));
+            }}
+          >
+            <summary onClick={() => setInspectorSelection({ kind: "folder", id: "chat" })}>
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
+              <strong>Chat</strong><small>{chats.length}</small>
+            </summary>
+            <ul className="browser-list">
+              {chats.filter((chat) => matchesExplorer(chat.title)).flatMap((chat) => [
+                <li className="browser-row virtual" key={`${chat.id}-json`}
+                  onClick={() => {
+                    setInspectorSelection({ kind: "chat", id: chat.id });
+                    void switchChat(chat.id);
+                  }}
+                  onDoubleClick={() => void switchChat(chat.id)}>
+                  <span className="browser-icon json" aria-hidden="true" />
+                  <div className="browser-name"><strong>{slug(chat.title)}/chat.json</strong><small>autosaved conversation</small></div>
+                  <span className="browser-size">—</span>
+                </li>,
+                <li className="browser-row virtual" key={`${chat.id}-md`}
+                  onClick={() => {
+                    setInspectorSelection({ kind: "chat", id: chat.id });
+                    void switchChat(chat.id);
+                  }}
+                  onDoubleClick={() => void switchChat(chat.id)}>
+                  <span className="browser-icon markdown" aria-hidden="true" />
+                  <div className="browser-name"><strong>{slug(chat.title)}/chat.md</strong><small>readable transcript</small></div>
+                  <span className="browser-size">—</span>
+                </li>
+              ])}
+            </ul>
+            {resultFolder("Chat results", "chat-results", chatOutputFiles)}
+          </details>
+
+          <details
+            open={openFolders.methods}
+            className="browser-folder"
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, methods: open }));
             }}
           >
             <summary
-              onContextMenu={(event) => openBrowserMenu(event, "scripts/", [
-                { label: "Combine selected scripts", run: () => void combineSelectedScripts() },
-                { label: "Copy selected scripts…", run: () => beginScriptTransfer() }
+              onClick={() => setInspectorSelection({ kind: "folder", id: "methods" })}
+              onContextMenu={(event) => openBrowserMenu(event, "methods/", [
+                { label: "Combine selected methods", run: () => void combineSelectedMethods() },
+                { label: "Copy selected methods…", run: () => beginMethodTransfer() }
               ])}
             >
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>scripts</strong><small>{activeScripts.length}</small>
+              <strong>Methods</strong><small>{activeMethods.length}</small>
             </summary>
-            {activeScripts.length > 0 && (
-              <div className="script-selection-toolbar">
-                <span>{selectedScriptIds.size} selected</span>
-                <button disabled={selectedScriptIds.size < 2} onClick={() => void combineSelectedScripts()}>Combine</button>
-                <button disabled={!selectedScriptIds.size} onClick={() => beginScriptTransfer()}>Copy to…</button>
+            {activeMethods.length > 0 && (
+              <div className="method-selection-toolbar">
+                <span>{selectedMethodIds.size} selected</span>
+                <button disabled={selectedMethodIds.size < 2} onClick={() => void combineSelectedMethods()}>Combine</button>
+                <button disabled={!selectedMethodIds.size} onClick={() => void convertSelectedMethodsToNotebook()}>To Notebook</button>
+                <button disabled={!selectedMethodIds.size} onClick={() => beginMethodTransfer()}>Copy to…</button>
               </div>
             )}
             <ul className="browser-list">
-              {activeScripts.filter((script) => matchesExplorer(script.name)).map((script) => (
+              {activeMethods.filter((method) => matchesExplorer(method.name)).map((method) => (
                 <li
-                  key={script.id}
-                  className="browser-row script-row"
-                  onDoubleClick={() => void runScript(script)}
-                  onContextMenu={(event) => openBrowserMenu(event, script.name, scriptActions(script))}
+                  key={method.id}
+                  className="browser-row method-row"
+                  onClick={() => setInspectorSelection({ kind: "method", id: method.id })}
+                  onDoubleClick={() => void runMethod(method)}
+                  onContextMenu={(event) => openBrowserMenu(event, method.name, methodActions(method))}
                 >
                   <input
-                    className="script-selector"
+                    className="method-selector"
                     type="checkbox"
-                    aria-label={`Select ${script.name}`}
-                    checked={selectedScriptIds.has(script.id)}
-                    onChange={() => toggleScriptSelection(script.id)}
+                    aria-label={`Select ${method.name}`}
+                    checked={selectedMethodIds.has(method.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => toggleMethodSelection(method.id)}
                     onDoubleClick={(event) => event.stopPropagation()}
                   />
                   <span className="browser-icon python" aria-hidden="true" />
                   <div className="browser-name">
-                    <strong>{script.name}</strong><small>v{script.currentVersion} · {script.description || "saved Python script"}</small>
+                    <strong>{method.name}</strong><small>v{method.currentVersion} · {method.description || "saved Python method"}</small>
                   </div>
-                  <span className="browser-size">v{script.currentVersion}</span>
+                  <span className="browser-size">v{method.currentVersion}</span>
                   <button
                     className="browser-more"
-                    aria-label={`Actions for ${script.name}`}
-                    onClick={(event) => openBrowserMenu(event, script.name, scriptActions(script))}
+                    aria-label={`Actions for ${method.name}`}
+                    onClick={(event) => openBrowserMenu(event, method.name, methodActions(method))}
                   ><Icon name="more" /></button>
                 </li>
               ))}
-              {!activeScripts.filter((script) => matchesExplorer(script.name)).length && <li className="browser-empty">No matching scripts</li>}
+              {!activeMethods.filter((method) => matchesExplorer(method.name)).length && <li className="browser-empty">No matching methods</li>}
             </ul>
+            {resultFolder("Methods results", "methods-results", methodOutputFiles)}
           </details>
 
           <details
-            open={openFolders.workflows}
+            open={openFolders.pipelines}
             className="browser-folder"
             onToggle={(event) => {
               const open = event.currentTarget.open;
-              setOpenFolders((current) => ({ ...current, workflows: open }));
+              setOpenFolders((current) => ({ ...current, pipelines: open }));
             }}
           >
-            <summary>
+            <summary onClick={() => setInspectorSelection({ kind: "folder", id: "pipelines" })}>
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>workflows</strong><small>{workspace.workflows.length}</small>
+              <strong>Pipelines</strong><small>{analysisWorkspace.pipelines.length}</small>
             </summary>
+            {analysisWorkspace.pipelines.some((pipeline) => !pipeline.deletedAt) && (
+              <div className="method-selection-toolbar">
+                <span>{selectedPipelineIds.size} selected</span>
+                <button disabled={!selectedPipelineIds.size}
+                  onClick={() => void convertSelectedPipelinesToNotebook()}>
+                  To Notebook
+                </button>
+              </div>
+            )}
             <ul className="browser-list">
-              {workspace.workflows.filter((workflow) =>
-                !workflow.deletedAt && matchesExplorer(workflow.name)
-              ).map((workflow) => (
+              {analysisWorkspace.pipelines.filter((pipeline) =>
+                !pipeline.deletedAt && matchesExplorer(pipeline.name)
+              ).map((pipeline) => (
                 <li
-                  key={workflow.id}
-                  className="browser-row"
-                  onDoubleClick={() => void runWorkflow(workflow)}
-                  onContextMenu={(event) => openBrowserMenu(event, workflow.name, [
-                    { label: "Run workflow", run: () => void runWorkflow(workflow) },
-                    { label: "Batch run on opened projects…", run: () => void batchRunWorkflow(workflow) },
+                  key={pipeline.id}
+                  className="browser-row pipeline-row"
+                  onClick={() => setInspectorSelection({ kind: "pipeline", id: pipeline.id })}
+                  onDoubleClick={() => void runPipeline(pipeline)}
+                  onContextMenu={(event) => openBrowserMenu(event, pipeline.name, [
+                    { label: "Run pipeline", run: () => void runPipeline(pipeline) },
+                    { label: "Batch run on opened workspaces…", run: () => void batchRunPipeline(pipeline) },
                     ...(bridge.canUpload ? [{
                       label: "Publish template to OMERO",
-                      run: () => void publishWorkflow(workflow)
+                      run: () => void publishPipeline(pipeline)
                     }] : []),
-                    { label: "Delete workflow", danger: true, run: () => void removeWorkflow(workflow) }
+                    { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
                   ])}
                 >
+                  <input
+                    className="method-selector"
+                    type="checkbox"
+                    aria-label={`Select pipeline ${pipeline.name}`}
+                    checked={selectedPipelineIds.has(pipeline.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => togglePipelineSelection(pipeline.id)}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  />
                   <Icon name="file" />
                   <div className="browser-name">
-                    <strong>{workflow.name}</strong>
-                    <small>v{workflow.version} · {workflow.steps.length} isolated steps</small>
+                    <strong>{pipeline.name}</strong>
+                    <small>v{pipeline.version} · {pipeline.steps.length} isolated steps</small>
                   </div>
-                  <span className="browser-size">{workflow.steps.length}</span>
+                  <span className="browser-size">{pipeline.steps.length}</span>
                   <button
                     className="browser-more"
-                    aria-label={`Actions for ${workflow.name}`}
-                    onClick={(event) => openBrowserMenu(event, workflow.name, [
-                      { label: "Run workflow", run: () => void runWorkflow(workflow) },
-                      { label: "Batch run on opened projects…", run: () => void batchRunWorkflow(workflow) },
+                    aria-label={`Actions for ${pipeline.name}`}
+                    onClick={(event) => openBrowserMenu(event, pipeline.name, [
+                      { label: "Run pipeline", run: () => void runPipeline(pipeline) },
+                      { label: "Batch run on opened workspaces…", run: () => void batchRunPipeline(pipeline) },
                       ...(bridge.canUpload ? [{
                         label: "Publish template to OMERO",
-                        run: () => void publishWorkflow(workflow)
+                        run: () => void publishPipeline(pipeline)
                       }] : []),
-                      { label: "Delete workflow", danger: true, run: () => void removeWorkflow(workflow) }
+                      { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
                     ])}
                   ><Icon name="more" /></button>
                 </li>
               ))}
-              {!workspace.workflows.filter((workflow) =>
-                !workflow.deletedAt && matchesExplorer(workflow.name)
-              ).length && <li className="browser-empty">No matching workflows</li>}
-              {workflowTemplates.map((template) => (
+              {!analysisWorkspace.pipelines.filter((pipeline) =>
+                !pipeline.deletedAt && matchesExplorer(pipeline.name)
+              ).length && <li className="browser-empty">No matching pipelines</li>}
+              {pipelineTemplates.map((template) => (
                 <li
                   key={`template-${template.annotation_id}`}
                   className="browser-row"
-                  onDoubleClick={() => void importWorkflowTemplate(template)}
+                  onDoubleClick={() => void importPipelineTemplate(template)}
                 >
                   <span className="browser-icon archive" aria-hidden="true" />
                   <div className="browser-name">
@@ -3818,97 +4622,85 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   <button
                     className="browser-more"
                     aria-label={`Import ${template.name}`}
-                    onClick={() => void importWorkflowTemplate(template)}
+                    onClick={() => void importPipelineTemplate(template)}
                   ><Icon name="more" /></button>
                 </li>
               ))}
             </ul>
+            {resultFolder("Pipelines results", "pipelines-results", pipelineOutputFiles)}
           </details>
 
-          {(trashedFiles.length > 0 || trashedScripts.length > 0 || trashedWorkflows.length > 0) && (
-            <details
-              open={openFolders.trash}
-              className="browser-folder"
-              onToggle={(event) => {
-                const open = event.currentTarget.open;
-                setOpenFolders((current) => ({ ...current, trash: open }));
-              }}
+          <details
+            open={openFolders.notebooks}
+            className="browser-folder"
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, notebooks: open }));
+            }}
+          >
+            <summary
+              onClick={() => setInspectorSelection({ kind: "folder", id: "notebooks" })}
+              onContextMenu={(event) => openBrowserMenu(event, "Notebooks/", [
+                { label: "Upload notebook", run: () => notebookUploadInput.current?.click() }
+              ])}
             >
-              <summary>
-                <Icon name="chevron" className="folder-chevron" />
-                <Icon name="folder" />
-                <strong>trash</strong><small>{trashedFiles.length + trashedScripts.length + trashedWorkflows.length}</small>
-              </summary>
-              <ul className="browser-list">
-                {trashedFiles.map((file) => (
-                  <li key={file.id} className="browser-row">
-                    <Icon name="file" />
-                    <div className="browser-name"><strong>{file.name}</strong><small>deleted output</small></div>
-                    <span className="browser-size">{bytesLabel(file.size)}</span>
-                    <button onClick={() => void restoreTrashedFile(file)}>Restore</button>
-                  </li>
-                ))}
-                {trashedScripts.map((script) => (
-                  <li key={script.id} className="browser-row">
-                    <span className="browser-icon python" aria-hidden="true" />
-                    <div className="browser-name"><strong>{script.name}</strong><small>deleted script</small></div>
-                    <span className="browser-size">v{script.currentVersion}</span>
-                    <button onClick={() => void restoreTrashedScript(script)}>Restore</button>
-                  </li>
-                ))}
-                {trashedWorkflows.map((workflow) => (
-                  <li key={workflow.id} className="browser-row">
-                    <Icon name="file" />
-                    <div className="browser-name"><strong>{workflow.name}</strong><small>deleted workflow</small></div>
-                    <span className="browser-size">v{workflow.version}</span>
-                    <button onClick={() => void restoreTrashedWorkflow(workflow)}>Restore</button>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-
-          {snapshots.length > 0 && (
-            <details
-              open={openFolders.snapshots}
-              className="browser-folder"
-              onToggle={(event) => {
-                const open = event.currentTarget.open;
-                setOpenFolders((current) => ({ ...current, snapshots: open }));
-              }}
-            >
-              <summary>
-                <Icon name="chevron" className="folder-chevron" />
-                <Icon name="folder" />
-                <strong>Resume from OMERO</strong><small>{snapshots.length}</small>
-              </summary>
-              <ul className="browser-list">
-                {snapshots.map((snapshot) => (
-                  <li
-                    key={snapshot.annotation_id}
-                    className="browser-row"
-                    onDoubleClick={() => void resumeSnapshot(snapshot)}
-                    onContextMenu={(event) => openBrowserMenu(event, snapshot.name, snapshotActions(snapshot))}
-                  >
-                    <span className="browser-icon archive" aria-hidden="true" />
-                    <div className="browser-name"><strong>{snapshot.name}</strong><small>Annotation {snapshot.annotation_id}</small></div>
-                    <span className="browser-size">{bytesLabel(snapshot.size)}</span>
-                    <button
-                      className="browser-more"
-                      aria-label={`Actions for ${snapshot.name}`}
-                      onClick={(event) => openBrowserMenu(event, snapshot.name, snapshotActions(snapshot))}
-                    ><Icon name="more" /></button>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
+              <strong>Notebooks</strong><small>{analysisWorkspace.notebooks.length}</small>
+            </summary>
+            <div className="method-selection-toolbar notebook-folder-toolbar">
+              <span>{analysisWorkspace.notebooks.length} notebook{analysisWorkspace.notebooks.length === 1 ? "" : "s"}</span>
+              <button onClick={() => notebookUploadInput.current?.click()}>Upload</button>
+            </div>
+            <ul className="browser-list">
+              {analysisWorkspace.notebooks.filter((notebook) =>
+                matchesExplorer(notebook.name)
+              ).map((notebook) => (
+                <li key={notebook.id} className="browser-row"
+                  onClick={() => {
+                    setActiveNotebookId(notebook.id);
+                    setInspectorSelection({ kind: "notebook", id: notebook.id });
+                  }}
+                  onDoubleClick={() => openNotebook(notebook)}
+                  onContextMenu={(event) => openBrowserMenu(event, notebook.name, [
+                    { label: "Open", run: () => openNotebook(notebook) },
+                    { label: "Run", run: () => runNotebook(notebook) }
+                  ])}>
+                  <span className="browser-icon json" aria-hidden="true" />
+                  <div className="browser-name">
+                    <strong>{notebook.name}</strong>
+                    <small>{notebook.attachmentIds.length
+                      ? `${notebook.attachmentIds.length} attached version(s)`
+                      : "browser workspace"}</small>
+                  </div>
+                  <span className="browser-size">.ipynb</span>
+                  <button className="browser-more" aria-label={`Actions for ${notebook.name}`}
+                    onClick={(event) => openBrowserMenu(event, notebook.name, [
+                      { label: "Open", run: () => openNotebook(notebook) },
+                      { label: "Run", run: () => runNotebook(notebook) }
+                    ])}>
+                    <Icon name="more" />
+                  </button>
+                </li>
+              ))}
+              {!analysisWorkspace.notebooks.length &&
+                <li className="browser-empty">No notebooks</li>}
+            </ul>
+            {resultFolder("Notebooks results", "notebooks-results", notebookOutputFiles)}
+            <input ref={notebookUploadInput} hidden type="file"
+              accept=".ipynb,application/x-ipynb+json"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void uploadNotebookFile(file);
+                event.target.value = "";
+              }} />
+          </details>
           </>)}
         </aside>
         <div
           className="pane-resizer"
           role="separator"
-          aria-label="Resize project explorer"
+          aria-label="Resize workspace explorer"
           onMouseDown={beginExplorerResize}
         />
 
@@ -3934,13 +4726,40 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             ))}
           </div>
         )}
+        <input ref={importInput} hidden type="file" accept=".oa-workspace.zip,application/zip"
+          onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
 
+        <section className="center-pane">
+        <nav className="analysis-tabs" aria-label="Analysis views">
+          {(["chat", "notebook"] as const).map((tab) => (
+            <button key={tab} className={activeTab === tab ? "active" : ""}
+              aria-current={activeTab === tab ? "page" : undefined}
+              onClick={() => setActiveTab(tab)}>
+              {tab[0].toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </nav>
+        {activeTab === "chat" && (
         <section className="chat">
+          <div className="workspace-toolbar">
+            <label>
+              <span className="sr-only">Current chat</span>
+              <select value={activeChat.id} onChange={(event) => void switchChat(event.target.value)}>
+                {chats.filter((chat) => !chat.archived).map((chat) => (
+                  <option key={chat.id} value={chat.id}>{chat.title}</option>
+                ))}
+              </select>
+            </label>
+            <button onClick={() => void newConversation()}>New chat</button>
+            <button onClick={() => void renameChat(activeChat)}>Rename chat</button>
+            <button onClick={() => archiveChat(activeChat)}>Archive</button>
+            {workspaceActionsMenu()}
+          </div>
           <div className="messages" aria-live="polite" ref={messagesElement}>
             {!activeChat.messages.length && (
               <div className="welcome">
                 <h2>What would you like to learn from these data?</h2>
-                <p>This named chat, its code, outputs, and reusable workflows are saved automatically in the browser project.</p>
+                <p>This named chat, its code, outputs, and reusable pipelines are saved automatically in the browser workspace.</p>
                 {profiles.length > 0 && (
                   <div className="suggested-prompts">
                     <button onClick={() => setPrompt("Summarize the available datasets, tables, columns, and important data-quality issues.")}>
@@ -3958,11 +4777,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             )}
             {activeChat.messages.map((message) => {
               if (message.kind === "viewer-preview" && message.artifactId) {
-                const artifact = workspace.artifacts.find(
+                const artifact = analysisWorkspace.artifacts.find(
                   (item) => item.id === message.artifactId
                 );
                 const file = artifact?.fileId
-                  ? workspace.files.find(
+                  ? analysisWorkspace.files.find(
                     (item) => item.id === artifact.fileId && !item.deletedAt
                   )
                   : undefined;
@@ -3973,7 +4792,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     file={file}
                     onInspect={(selected) => {
                       setSelectedArtifactFileId(selected.id);
-                      setArtifactOpen(true);
                     }}
                     onSaveBundle={(selectedArtifact, selectedFile) =>
                       void saveAnalysisRender(selectedArtifact, selectedFile)
@@ -3982,24 +4800,18 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 ) : null;
               }
               if (message.kind === "execution" && message.executionId) {
-                const execution = workspace.executions.find((item) => item.id === message.executionId);
+                const execution = analysisWorkspace.executions.find((item) => item.id === message.executionId);
                 return execution ? (
                   <ExecutionCard
                     key={message.id}
                     execution={execution}
-                    files={workspace.files}
-                    onSave={() => void saveAsScript(execution)}
+                    files={analysisWorkspace.files}
+                    onSave={() => void saveAsMethod(execution)}
                     onRerun={() => void rerunExecution(execution)}
-                    allowInspectionSave={
-                      execution.purpose === "inspection" &&
-                      ["success", "reused"].includes(execution.status) &&
-                      !workspace.executions.some((item) =>
-                        item.chatId === execution.chatId &&
-                        item.promptId === execution.promptId &&
-                        item.purpose !== "inspection" &&
-                        ["success", "reused"].includes(item.status)
-                      )
-                    }
+                    viewerPreparation={executionPreparesViewer(
+                      analysisWorkspace,
+                      execution
+                    )}
                   />
                 ) : null;
               }
@@ -4023,9 +4835,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   {message.citationIds?.length ? (
                     <div className="message-citations" aria-label="Evidence used for this answer">
                       {message.citationIds.map((executionId, index) => {
-                        const cited = workspace.executions.find((item) => item.id === executionId);
+                        const cited = analysisWorkspace.executions.find((item) => item.id === executionId);
                         const fileId = cited?.outputFileIds.find((candidate) =>
-                          workspace.files.some((file) => file.id === candidate && !file.deletedAt)
+                          analysisWorkspace.files.some((file) => file.id === candidate && !file.deletedAt)
                         );
                         return (
                           <button
@@ -4033,7 +4845,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                             title={`Open local execution ${executionId.slice(0, 8)}`}
                             onClick={() => {
                               if (fileId) setSelectedArtifactFileId(fileId);
-                              setArtifactOpen(true);
                             }}
                           >
                             Evidence {index + 1}
@@ -4069,15 +4880,163 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             onPromptChange={setPrompt}
             onSend={() => void sendPrompt()}
             onStop={stop}
-            onReset={() => void restartRuntime(workspace.files, "Python state reset; inputs restored")}
+            onReset={() => void restartRuntime(analysisWorkspace.files, "Python state reset; inputs restored")}
           />
         </section>
+        )}
+        {activeTab === "notebook" && (
+          <NotebookView
+            notebook={activeNotebook}
+            inputs={inputFiles}
+            runtime={runtime}
+            runRequest={notebookRunRequest}
+            workspaceActions={workspaceActionsMenu()}
+            onChange={updateNotebook}
+            onFiles={saveNotebookFiles}
+          />
+        )}
+        {activeTab === "settings" && (
+          <section className="settings-tab settings-stack" aria-label="Settings">
+            <details className="settings-section" open>
+              <summary>Analysis Settings</summary>
+              <div className="settings-section-body">
+                <label className="settings-check">
+                  <input type="checkbox" checked={workspace.plotCsv}
+                    onChange={togglePlotCsv} />
+                  <span>
+                    <strong>Plot + CSV</strong>
+                    <small>
+                      Ask Chat to save both a visual plot and its underlying tabular data
+                      when an analysis produces a chart. Disable this when you only need
+                      the requested result.
+                    </small>
+                  </span>
+                </label>
+              </div>
+            </details>
+
+            <details className="settings-section">
+              <summary>AI Settings</summary>
+              <div className="settings-section-body settings-form">
+                <p className="settings-warning">
+                  The API key is used only in this browser tab unless you choose to remember it.
+                  Remembered keys are stored unencrypted and never included in Workspace snapshots.
+                </p>
+                <label>API protocol
+                  <select value={settings.protocol}
+                    onChange={(event) => void saveSettings({
+                      ...settings,
+                      protocol: event.target.value as ProviderSettings["protocol"]
+                    })}>
+                    <option value="openai">OpenAI-compatible Chat Completions</option>
+                    <option value="anthropic">Anthropic Messages</option>
+                  </select>
+                </label>
+                <label>API endpoint
+                  <input type="url" name="omero-analysis-api-endpoint"
+                    autoComplete="url" value={settings.endpoint}
+                    placeholder={settings.protocol === "anthropic"
+                      ? "https://your-provider.example"
+                      : "https://your-provider.example/v1"}
+                    onChange={(event) => void saveSettings({ ...settings, endpoint: event.target.value })} />
+                  <small>
+                    Enter your provider base URL or complete API route. No organization endpoint is built in.
+                  </small>
+                </label>
+                {settings.protocol === "openai" && (
+                  <label>Authentication header
+                    <select value={settings.authMode}
+                      onChange={(event) => void saveSettings({
+                        ...settings,
+                        authMode: event.target.value as ProviderSettings["authMode"]
+                      })}>
+                      <option value="bearer">Authorization: Bearer</option>
+                      <option value="api-key">api-key (Azure-compatible)</option>
+                    </select>
+                  </label>
+                )}
+                <label>Model or deployment
+                  <input name="omero-analysis-model" autoComplete="off"
+                    value={settings.model}
+                    onChange={(event) => void saveSettings({ ...settings, model: event.target.value })} />
+                </label>
+                <label>API key
+                  <input type="password" name="omero-analysis-api-key"
+                    autoComplete="new-password" value={settings.apiKey}
+                    onChange={(event) => void saveSettings({ ...settings, apiKey: event.target.value })} />
+                </label>
+                <label className="settings-check inline">
+                  <input type="checkbox" checked={settings.rememberKey}
+                    onChange={(event) => void saveSettings({ ...settings, rememberKey: event.target.checked })} />
+                  Remember this key in this browser profile
+                </label>
+                <label>Model context window (optional)
+                  <input type="number" min="0" value={settings.contextWindow || ""}
+                    onChange={(event) => void saveSettings({
+                      ...settings,
+                      contextWindow: Number(event.target.value) || 0
+                    })} />
+                </label>
+                <button className="secondary-action" onClick={() => void saveSettings({
+                  ...settings,
+                  apiKey: "",
+                  rememberKey: false
+                })}>Forget API key</button>
+              </div>
+            </details>
+
+            <details className="settings-section">
+              <summary>Skills</summary>
+              <div className="settings-section-body">
+                <p>
+                  Catalog metadata is informational. Skill instructions are loaded only
+                  for matching Chat turns and are never loaded by Notebook.
+                </p>
+                <div className="skill-list">
+                  {[...(workflowSkillCatalog?.workflows || []),
+                    ...(workflowSkillCatalog?.applications || [])].flatMap((provider) =>
+                    provider.skills.map((skill) => (
+                      <article className="skill-card" key={`${provider.source.workflow_key}:${skill.name}:${skill.sha256}`}>
+                        <strong>{skill.name}</strong>
+                        <span>Provider: {provider.source.source_key || provider.source.workflow_key}</span>
+                        <span>Source: {skill.package_url}</span>
+                        <span>Version: {skill.version} · SHA-256: {skill.sha256}</span>
+                        <span>Health: {provider.status}</span>
+                        <span>{matchingWorkflowSkills.some((item) => item.skill.sha256 === skill.sha256)
+                          ? "Matches current data"
+                          : "Does not match current data"}</span>
+                        <span>{loadedSkillHashes.has(skill.sha256) ? "Loaded by Chat" : "Not loaded"}</span>
+                      </article>
+                    ))
+                  )}
+                  {zarrSkillCatalog?.skills.map((skill) => (
+                    <article className="skill-card" key={`${zarrSkillCatalog.provider.name}:${skill.name}:${skill.sha256}`}>
+                      <strong>{skill.name}</strong>
+                      <span>Provider: {zarrSkillCatalog.provider.name}</span>
+                      <span>Source: {zarrSkillCatalog.provider.source}</span>
+                      <span>Version: {skill.version} · SHA-256: {skill.sha256}</span>
+                      <span>Health: {zarrSkillCatalog.provider.health}</span>
+                      <span>Explicit ZarrViewer Chat operations only</span>
+                      <span>Not loaded by Notebook</span>
+                    </article>
+                  ))}
+                  {!catalogSkillCount && <p>No external skills discovered. Generic Chat remains available.</p>}
+                </div>
+              </div>
+            </details>
+          </section>
+        )}
+        </section>
+        <div
+          className="pane-resizer artifact-resizer"
+          role="separator"
+          aria-label="Resize Artifact Inspector"
+          onMouseDown={beginArtifactResize}
+        />
         <ArtifactInspector
-          open={artifactOpen}
-          file={selectedArtifactFile}
+          item={selectedInspectorItem}
           profiles={profiles}
           canUpload={bridge.canUpload}
-          onToggle={() => setArtifactOpen((value) => !value)}
           onDownload={downloadFile}
           onAttach={(file) => void attach(file)}
         />
@@ -4109,7 +5068,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
   }
 
   async function rerunExecution(execution: ExecutionRecord) {
-    if (!runtimeReady || busy || execution.purpose === "inspection") return;
+    const current = workspaceRef.current;
+    if (
+      !runtimeReady ||
+      busy ||
+      !current ||
+      execution.purpose === "inspection" ||
+      executionPreparesViewer(current, execution)
+    ) return;
     setBusy(true);
     turnOutputNames.current.clear();
     await runtime.beginTurn();
@@ -4120,17 +5086,17 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         execution.chatId,
         promptId,
         true,
-        execution.purpose === "script" ? "script" : "analysis"
+        execution.purpose === "method" ? "method" : "analysis"
       );
       const current = workspaceRef.current;
-      const saved = current?.scripts.flatMap((script) =>
-        script.versions.map((version) => ({ script, version }))
+      const saved = current?.methods.flatMap((method) =>
+        method.versions.map((version) => ({ method, version }))
       ).find(({ version }) => version.codeHash === execution.codeHash);
       const renderResult = await replaySavedGallery(
         executionResult,
         execution.chatId,
         promptId,
-        saved?.script.name || "python-rerun-analysis.py",
+        saved?.method.name || "python-rerun-analysis.py",
         saved?.version.renderRecipe
       );
       setStatus(

@@ -12,7 +12,7 @@ import type { EvidenceRecord } from "./types";
 function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
   return {
     id: overrides.id || crypto.randomUUID(),
-    projectId: "project",
+    workspaceId: "workspace",
     chatId: "chat",
     promptId: "prompt",
     kind: "tool-result",
