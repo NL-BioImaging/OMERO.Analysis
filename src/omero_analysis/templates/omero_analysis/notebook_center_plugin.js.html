@@ -8,6 +8,7 @@ $(function () {
   var panelPattern = "{% url 'omero_analysis_notebook_panel' 'Image' 1 %}";
   var tokenUrl = "{% url 'omero_analysis_token' %}";
   var uploadPattern = "{% url 'omero_analysis_notebook_upload' 'Image' 1 %}";
+  var attachmentUploadPattern = "{% url 'omero_analysis_upload' 'Image' 1 %}";
   var analysisBase = "{% url 'omero_analysis_index' %}";
   var typeMap = {image: "Image", dataset: "Dataset", plate: "Plate", screen: "Screen"};
 
@@ -21,6 +22,46 @@ $(function () {
   function selectedLibraryIds(root) {
     return Array.from(root.querySelectorAll(".oa-library-item-input:checked"))
       .map(function (input) { return input.value; });
+  }
+  function uploadAttachment(root, file) {
+    var status = root.querySelector(".oa-panel-status");
+    status.textContent = "Uploading and attaching " + file.name + "…";
+    fetch(tokenUrl, {
+      method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
+      body: JSON.stringify({
+        object_type: root.dataset.objectType,
+        object_id: Number(root.dataset.objectId)
+      })
+    })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) throw new Error(
+          (body.error && body.error.message) || "Could not authorize upload"
+        );
+        return body.context_token;
+      }); })
+      .then(function (token) {
+        var form = new FormData();
+        form.append("file", file, file.name);
+        return fetch(
+          objectUrl(attachmentUploadPattern, root.dataset.objectType, root.dataset.objectId),
+          {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrfToken(), "X-OMERO-Analysis-Context": token},
+            body: form
+          }
+        );
+      })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) throw new Error(
+          (body.error && body.error.message) || "Attachment upload failed"
+        );
+        return body.attachment;
+      }); })
+      .then(function () {
+        renderSelection(root.dataset.objectType, root.dataset.objectId);
+      })
+      .catch(function (error) { status.textContent = error.message; });
   }
   function updateLibrarySelection(root) {
     var badge = root.querySelector(".oa-library-selected-count");
@@ -157,6 +198,16 @@ $(function () {
         );
       })
       .catch(function (error) { status.textContent = error.message; });
+  });
+  panel.on("click", ".oa-upload-attachment", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    var input = root && root.querySelector(".oa-attachment-upload-input");
+    if (input) input.click();
+  });
+  panel.on("change", ".oa-attachment-upload-input", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    var file = event.currentTarget.files && event.currentTarget.files[0];
+    if (root && file) uploadAttachment(root, file);
   });
 });
 </script>

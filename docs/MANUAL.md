@@ -33,6 +33,21 @@ Choose a Chat, enter a question, and wait until the status returns to **Ready**.
 The assistant can inspect supported data locally, generate Python, run it in
 the isolated browser runtime, and summarize the result.
 
+Each assistant response has two small controls:
+
+- The **copy icon** immediately before the star copies the complete assistant
+  response, including its Markdown, to the clipboard.
+- The **star** pins or unpins the message. An empty star means the message is
+  not pinned; a filled star means it is pinned. Pinned messages are retained
+  in the context sent to the AI even when an older, long conversation is
+  compacted. Use this for important decisions, definitions, caveats, or
+  results that later questions still need. Pinning does not save a Method,
+  attach anything to OMERO, or prevent the Chat itself from being deleted.
+
+Recent messages are included automatically, so it is not necessary to pin
+every response. Pin only information that should remain available throughout
+a long Chat. Click the filled star again to unpin it.
+
 Saving is available only after the assistant has finished the turn. A saved
 Method contains the final assistant summary as Python comments above the
 reproducible code.
@@ -40,8 +55,13 @@ reproducible code.
 ## Methods and Pipelines
 
 A Method is reusable Python with version history and an inferred input
-contract. Select Methods and use **Combine** to create a Pipeline. Methods or
-Pipelines that do not depend on ZarrViewer can be converted to a Notebook.
+contract. Select at least two Methods and use **To Pipeline** to create an
+ordered Pipeline. Use **To Notebook** to convert selected Methods or Pipelines
+that do not depend on ZarrViewer.
+
+The Method menu provides **Run**, **Rename**, **Download**, and **Delete
+method**. The Pipeline menu provides the corresponding **Run**, **Rename**,
+**Download**, and **Delete pipeline** actions.
 
 Running a Method or Pipeline switches to Chat. Results are placed in the
 corresponding results folder.
@@ -51,6 +71,16 @@ corresponding results folder.
 Notebooks are read-only Python nbformat-4 documents. They never run
 automatically. Use **Open** to inspect a Notebook and **Run** to reset the
 kernel, attach current inputs, and execute all cells in order.
+
+The Notebook menu provides **Open**, **Run**, **Rename**, **Download**, and
+**Delete notebook**. Deleting the browser copy does not delete an existing
+OMERO FileAnnotation.
+
+Use **Reattach input data** after the Workspace inputs change. Analysis
+synchronizes the ready local inputs under `/input`, adds or updates one visible
+first code cell named **OMERO.Analysis input bindings**, and updates
+unambiguous `/input/...` filenames in the remaining code cells. Reattaching
+the same inputs updates that binding cell instead of creating duplicates.
 
 Notebook execution does not load AI providers, Chat skills, JupyterLab,
 widgets, shell commands, or network package downloads.
@@ -68,6 +98,11 @@ synchronized under `Templates`. Other source inputs are excluded.
 Synchronization is manual and one-way. The browser Workspace is the source of
 truth for each explicit synchronization.
 
+Identical result bytes are stored only once in the synchronized Dataset, even
+when the same PNG or CSV belongs to a Chat and a saved Method, Pipeline, or
+Notebook. A managed Key-Value Pair records every originating Workspace item,
+so deduplication does not discard provenance.
+
 ## Reusing AnalysisWorkspaces
 
 Use **Import from AnalysisWorkspaces** to browse synchronized Datasets and copy
@@ -82,6 +117,10 @@ Chat panel can show Methods, Pipelines, and Notebooks.
 **Plot + CSV** asks Chat to save both a visual plot and the corresponding
 tabular data. This preference is included when settings are synchronized.
 
+Use the sun/moon button immediately before **Settings** to switch between the
+default dark interface and the BIOMERO-inspired light interface. The selected
+theme is remembered in the browser and included in **Sync Settings**.
+
 ## AI profiles
 
 An AI profile contains:
@@ -95,10 +134,16 @@ An AI profile contains:
 - Optional context-window size
 
 Use **Validate connection** after editing a profile. The validation request is
-small but may be billed by the provider.
+small but may be billed by the provider. When validation succeeds in an OMERO
+context that supports Settings synchronization, Analysis synchronizes the
+updated profiles and other Settings automatically.
+
+The **Local AI server** panel is collapsed by default. Expand it to detect LM
+Studio or Ollama, enter another local OpenAI-compatible URL, select a detected
+model, or create a local AI profile.
 
 Use **Sync Settings** to store all profiles in the marked
-`+AnalysisSettings` Project and its **AI Settings** Dataset. The settings JSON
+`~AnalysisSettings` Project and its **AI Settings** Dataset. The settings JSON
 is placed in a ZIP archive and encrypted server-side before it is attached to
 OMERO. Encryption is scoped to the current OMERO user and group.
 
@@ -145,7 +190,7 @@ units, missing-value conventions, experimental units, and analysis caveats.
 Do not put API keys or other secrets in skill files.
 
 Uploaded skills are copied into the **Skills** Dataset in
-`+AnalysisSettings` when **Sync Settings** is used.
+`~AnalysisSettings` when **Sync Settings** is used.
 
 ## Settings synchronization
 

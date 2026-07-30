@@ -139,7 +139,7 @@ if not (Version("0.3") <= installed < Version("0.4")):
         docker exec --user root $Container rm -rf $remote
         docker cp "$wheelhouse\." "${Container}:$remote"
         docker exec --user root $Container $ContainerPython -m pip install `
-            --no-index --find-links $remote --upgrade `
+            --no-index --find-links $remote --upgrade --force-reinstall --no-deps `
             "$remote/$($wheel.Name)"
         if ($LASTEXITCODE -ne 0) { throw "Offline plugin installation failed." }
         docker cp (Join-Path $RepoRoot "docker\49-omero-analysis-cleanup.py") "${Container}:$ContainerCleanup"

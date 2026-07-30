@@ -27,7 +27,7 @@ def context_ttl_seconds():
 
 
 def max_download_bytes():
-    return int(_setting("max_download_bytes", 268435456))
+    return int(_setting("max_download_bytes", 2147483648))
 
 
 def max_upload_bytes():

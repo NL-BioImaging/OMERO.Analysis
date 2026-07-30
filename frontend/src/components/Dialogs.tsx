@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { Button, Input } from "./BlueprintControls";
 
 interface DialogState {
   title: string;
@@ -99,7 +100,7 @@ export function useDialogs(): DialogController {
         {state.mode === "text" && (
           <label>
             <span>Name</span>
-            <input
+            <Input
               autoFocus
               value={value}
               maxLength={180}
@@ -124,12 +125,12 @@ export function useDialogs(): DialogController {
           </label>
         )}
         <div className="dialog-actions">
-          <button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
+          <Button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
             Cancel
-          </button>
-          <button className={state.danger ? "danger-button" : ""} type="submit">
+          </Button>
+          <Button className={state.danger ? "danger-button" : ""} type="submit">
             {state.confirmLabel}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

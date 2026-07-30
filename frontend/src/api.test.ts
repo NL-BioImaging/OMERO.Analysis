@@ -267,6 +267,7 @@ describe("AI completion requests", () => {
   });
 
   it("validates a generic OpenAI-compatible endpoint", async () => {
+    let requestBody: Record<string, unknown> = {};
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { role: "assistant", content: "OK" } }]
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
@@ -284,6 +285,78 @@ describe("AI completion requests", () => {
       "https://provider.example/v1/chat/completions",
       expect.objectContaining({ method: "POST" })
     );
+    requestBody = JSON.parse(String(
+      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body
+    ));
+    expect(requestBody).toHaveProperty("max_tokens", 1);
+    expect(requestBody).not.toHaveProperty("max_completion_tokens");
+    vi.unstubAllGlobals();
+  });
+
+  it("supports a keyless local OpenAI-compatible endpoint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { role: "assistant", content: "OK" } }]
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    await validateProviderConnection({
+      protocol: "openai",
+      endpoint: "http://localhost:1234/v1",
+      authMode: "none",
+      model: "local-model",
+      apiKey: "",
+      rememberKey: false,
+      contextWindow: 0
+    }, new AbortController().signal);
+    const headers = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers;
+    expect(headers).not.toHaveProperty("Authorization");
+    expect(headers).not.toHaveProperty("api-key");
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the GPT-5 completion-token parameter", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { role: "assistant", content: "OK" } }]
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    await validateProviderConnection({
+      protocol: "openai",
+      endpoint: "https://provider.example/v1",
+      authMode: "api-key",
+      model: "gpt-5",
+      apiKey: "key",
+      rememberKey: false,
+      contextWindow: 0
+    }, new AbortController().signal);
+    const body = JSON.parse(String(
+      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body
+    ));
+    expect(body).toHaveProperty("max_completion_tokens", 128);
+    expect(body).not.toHaveProperty("max_tokens");
+    vi.unstubAllGlobals();
+  });
+
+  it("retries the alternate token parameter when a compatible provider requests it", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: {
+          message: "Unsupported parameter: max_tokens. Use max_completion_tokens."
+        }
+      }), { status: 400, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { role: "assistant", content: "OK" } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    await expect(validateProviderConnection({
+      protocol: "openai",
+      endpoint: "https://provider.example/v1",
+      authMode: "bearer",
+      model: "custom-model",
+      apiKey: "key",
+      rememberKey: false,
+      contextWindow: 0
+    }, new AbortController().signal)).resolves.toContain("Connection validated");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const retry = JSON.parse(String(
+      (vi.mocked(fetch).mock.calls[1][1] as RequestInit).body
+    ));
+    expect(retry).toHaveProperty("max_completion_tokens", 128);
     vi.unstubAllGlobals();
   });
 

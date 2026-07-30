@@ -212,6 +212,12 @@
 .omero-analysis-center .oa-notebook-upload-row input {
   color: var(--oa-muted); font-size: 11px; min-width: 0;
 }
+.omero-analysis-center .oa-attachment-upload-row {
+  align-items: center; display: flex; gap: 10px; margin: 0 0 12px 32px;
+}
+.omero-analysis-center .oa-attachment-upload-row span {
+  color: var(--oa-muted); font-size: 11px;
+}
 
 @media (max-width: 700px) {
   .omero-analysis-center { padding: 12px; }

@@ -292,14 +292,28 @@ for _path in sorted(_Path("/input").iterdir()):
                 _con.close()
         elif _suffix in {".csv", ".tsv", ".parquet", ".xls", ".xlsx", ".json"}:
             import pandas as _pd
+            _sheet_names = []
+            _active_sheet = None
             if _suffix == ".parquet": _frame = _pd.read_parquet(_path)
-            elif _suffix in {".xls", ".xlsx"}: _frame = _pd.read_excel(_path, engine="calamine")
+            elif _suffix in {".xls", ".xlsx"}:
+                _book = _pd.ExcelFile(_path, engine="calamine")
+                _sheet_names = [str(_name) for _name in _book.sheet_names[:100]]
+                _active_sheet = _sheet_names[0] if _sheet_names else None
+                _frame = _book.parse(sheet_name=_active_sheet)
             elif _suffix == ".json": _frame = _pd.read_json(_path)
             else: _frame = _pd.read_csv(_path, sep="\\t" if _suffix == ".tsv" else ",")
+            _preview = _json.loads(_frame.iloc[:100, :50].to_json(orient="split", date_format="iso"))
             _entry["summary"] = {
                 "rows": int(len(_frame)),
-                "columns": [{"name": str(c), "type": str(_frame[c].dtype), "nulls": int(_frame[c].isna().sum()), "distinct": int(_frame[c].nunique(dropna=True))} for c in list(_frame.columns)[:100]]
+                "columns": [{"name": str(c), "type": str(_frame[c].dtype), "nulls": int(_frame[c].isna().sum()), "distinct": int(_frame[c].nunique(dropna=True))} for c in list(_frame.columns)[:100]],
+                "preview": {
+                    "columns": [str(_column) for _column in _preview.get("columns", [])],
+                    "data": _preview.get("data", [])
+                }
             }
+            if _active_sheet is not None:
+                _entry["summary"]["sheet"] = _active_sheet
+                _entry["summary"]["sheets"] = _sheet_names
         elif _suffix in {".npy", ".npz"}:
             import numpy as _np
             _value = _np.load(_path, allow_pickle=False)

@@ -7,6 +7,8 @@ $(function () {
   panel.addClass("omero-analysis-center");
   var panelPattern = "{% url 'omero_analysis_panel' 'Image' 1 %}";
   var chatUrl = "{% url 'omero_analysis_index' %}";
+  var tokenUrl = "{% url 'omero_analysis_token' %}";
+  var attachmentUploadPattern = "{% url 'omero_analysis_upload' 'Image' 1 %}";
   var typeMap = {
     image: "Image",
     dataset: "Dataset",
@@ -16,6 +18,52 @@ $(function () {
 
   function objectUrl(pattern, type, id) {
     return pattern.replace("/Image/1/", "/" + type + "/" + id + "/");
+  }
+
+  function csrfToken() {
+    var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+
+  function uploadAttachment(root, file) {
+    var status = root.querySelector(".oa-panel-status");
+    status.textContent = "Uploading and attaching " + file.name + "…";
+    return fetch(tokenUrl, {
+      method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
+      body: JSON.stringify({
+        object_type: root.dataset.objectType,
+        object_id: Number(root.dataset.objectId)
+      })
+    })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) {
+          throw new Error((body.error && body.error.message) || "Could not authorize upload");
+        }
+        return body.context_token;
+      }); })
+      .then(function (token) {
+        var form = new FormData();
+        form.append("file", file, file.name);
+        return fetch(
+          objectUrl(attachmentUploadPattern, root.dataset.objectType, root.dataset.objectId),
+          {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrfToken(), "X-OMERO-Analysis-Context": token},
+            body: form
+          }
+        );
+      })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) {
+          throw new Error((body.error && body.error.message) || "Attachment upload failed");
+        }
+        return body.attachment;
+      }); })
+      .then(function () {
+        return renderSelection(root.dataset.objectType, root.dataset.objectId);
+      })
+      .catch(function (error) { status.textContent = error.message; });
   }
 
   function selectedAnnotationIds(root) {
@@ -97,7 +145,7 @@ $(function () {
           " will be downloaded before chat unlocks."
         : libraryCount
         ? libraryCount + " reusable item" + (libraryCount === 1 ? "" : "s") +
-          " will be ready in the Analysis library import window."
+          " will be imported into Analysis automatically."
         : "No OMERO data selected; you can add local files after opening the chat.";
     }
     if (button) {
@@ -190,6 +238,18 @@ $(function () {
       "_blank",
       "noopener"
     );
+  });
+
+  panel.on("click", ".oa-upload-attachment", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    var input = root && root.querySelector(".oa-attachment-upload-input");
+    if (input) input.click();
+  });
+
+  panel.on("change", ".oa-attachment-upload-input", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    var file = event.currentTarget.files && event.currentTarget.files[0];
+    if (root && file) uploadAttachment(root, file);
   });
 });
 </script>

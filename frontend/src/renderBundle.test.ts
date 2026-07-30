@@ -1,7 +1,11 @@
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import type { ArtifactRecord, EvidenceRecord, ExecutionRecord, WorkspaceFile } from "./types";
-import { buildRenderBundle, selectReproducibleExecutions } from "./renderBundle";
+import {
+  buildRenderBundle,
+  selectReproducibleExecutions,
+  zarrRenderRecipeFromCode
+} from "./renderBundle";
 
 const execution = (
   id: string,
@@ -140,6 +144,18 @@ describe("reproducible render bundles", () => {
     ]);
     expect(JSON.parse(strFromU8(files["render-recipe.json"]))).toEqual(artifact.viewer?.renderRecipe);
     expect(strFromU8(files["analysis.py"])).toContain("result =");
+    expect(strFromU8(files["analysis.py"])).toContain(
+      "Rerunning this\n# Method does not contact an AI provider"
+    );
+    expect(strFromU8(files["analysis.py"])).toContain(
+      "OMERO_ANALYSIS_ZARR_RENDER_RECIPE = _oa_json.loads"
+    );
+    expect(strFromU8(files["analysis.py"])).toContain(
+      'result["omero_analysis_render_recipe"]'
+    );
+    expect(zarrRenderRecipeFromCode(bundle.code)).toEqual(
+      artifact.viewer?.renderRecipe
+    );
     expect(JSON.parse(strFromU8(files["evidence-manifest.json"])).source_hashes).toEqual(["input"]);
   });
 
@@ -159,5 +175,12 @@ describe("reproducible render bundles", () => {
     expect(bundle.manifest.assistant_summary).toBe(
       "The selected field contains the fewest cells."
     );
+  });
+
+  it("ignores missing or damaged embedded render recipes", () => {
+    expect(zarrRenderRecipeFromCode("print('ordinary method')")).toBeUndefined();
+    expect(zarrRenderRecipeFromCode(
+      "# OMERO_ANALYSIS_ZARR_RENDER_RECIPE: not-json"
+    )).toBeUndefined();
   });
 });

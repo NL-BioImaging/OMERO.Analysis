@@ -22,7 +22,7 @@ SETTINGS_NAMESPACE = "nl.bioimaging.analysis.settings.v1"
 SETTINGS_FILE_NAMESPACE = "nl.bioimaging.analysis.settings.encrypted.v1"
 SKILL_FILE_NAMESPACE = "nl.bioimaging.analysis.user-skill.v1"
 SETTINGS_SCHEMA = "nl.bioimaging.analysis.settings.bundle.v1"
-PROJECT_NAME = "+AnalysisSettings"
+PROJECT_NAME = "~AnalysisSettings"
 AI_DATASET_NAME = "AI Settings"
 SKILLS_DATASET_NAME = "Skills"
 SETTINGS_FILENAME = "analysis-settings.oa-settings.zip.enc"
@@ -94,6 +94,9 @@ def _project(conn, group_id, create=False):
             marker.get("owner_user_id") == str(_user_id(conn))
             and marker.get("group_id") == str(group_id)
         ):
+            if str(_plain(project.getName())) != PROJECT_NAME:
+                project.setName(PROJECT_NAME)
+                project.save()
             return project
     if not create:
         return None
@@ -187,6 +190,8 @@ def _validated_payload(value):
         or not isinstance(skills, list)
     ):
         raise InvalidObject("Analysis settings bundle is incomplete")
+    if analysis.get("theme", "dark") not in {"dark", "light"}:
+        raise InvalidObject("The Analysis color theme is invalid")
     if len(ai["profiles"]) > 50 or len(skills) > MAX_SKILLS:
         raise FileTooLarge("The settings bundle contains too many profiles or skills")
     for profile in ai["profiles"]:
@@ -197,7 +202,7 @@ def _validated_payload(value):
             or not isinstance(profile.get("name"), str)
             or not isinstance(provider, dict)
             or provider.get("protocol") not in {"openai", "anthropic"}
-            or provider.get("authMode") not in {"bearer", "api-key"}
+            or provider.get("authMode") not in {"none", "bearer", "api-key"}
         ):
             raise InvalidObject("An AI profile is invalid")
     for skill in skills:

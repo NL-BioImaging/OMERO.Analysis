@@ -9,6 +9,7 @@ from omero_analysis.errors import FileTooLarge, PermissionDenied
 from omero_analysis.workspace_sync import (
     INVENTORY_SCHEMA,
     _canonical_json,
+    _item_marker_values,
     plan_sync,
     sync_status,
     validate_inventory,
@@ -86,6 +87,31 @@ def test_template_input_is_a_supported_managed_file_kind():
         payload, "workspace-1", "Screen", 151, obj, conn
     )
     assert validated["items"][0]["kind"] == "template-input"
+
+
+def test_content_marker_tracks_every_local_result_origin():
+    values = _item_marker_values("workspace-1", {
+        "key": f"result-content:result:{'a' * 64}",
+        "kind": "result",
+        "name": "counts.csv",
+        "sha256": "a" * 64,
+        "metadata": {
+            "sourceCount": 2,
+            "sources": [
+                {"fileId": "chat-result", "chatId": "chat-1", "methodId": None},
+                {"fileId": "method-result", "chatId": None, "methodId": "method-1"},
+            ],
+        },
+    }, {"object_type": "Annotation", "object_id": 42})
+
+    assert values["source_count"] == 2
+    assert values["canonical_name"] == "counts.csv"
+    assert values["remote_object_type"] == "Annotation"
+    assert values["remote_object_id"] == 42
+    assert json.loads(values["source_references"]) == [
+        {"chatId": "chat-1", "fileId": "chat-result", "methodId": None},
+        {"chatId": None, "fileId": "method-result", "methodId": "method-1"},
+    ]
 
 
 def test_inventory_is_bound_to_user_group_and_source_object():

@@ -31,6 +31,7 @@ import {
   defaultSettings,
   deleteWorkspaceCascade,
   deleteFile as deleteStoredFile,
+  deleteNotebook as deleteStoredNotebook,
   getValue,
   listContextWorkspaces,
   listUserWorkspaces,
@@ -51,6 +52,7 @@ import {
   settingsKey,
   aiProfilesKey,
   customSkillsKey,
+  uiThemeKey,
   setValue,
   sha256,
   storageEstimate
@@ -104,6 +106,12 @@ import {
 } from "./components/WorkspacePanels";
 import { WorkspaceLibraryTree } from "./components/WorkspaceLibraryTree";
 import { HelpWindow } from "./components/HelpWindow";
+import { ActionIcon, type ActionIconName } from "./components/ActionIcon";
+import {
+  BlueprintThemeProvider,
+  Button,
+  Input
+} from "./components/BlueprintControls";
 import {
   matchWorkflowSkills,
   packageInstructions,
@@ -132,13 +140,20 @@ import {
   sourceSkillKey,
   upsertBoundedEvidence
 } from "./evidence";
-import { buildRenderBundle } from "./renderBundle";
+import { buildRenderBundle, zarrRenderRecipeFromCode } from "./renderBundle";
 import {
   assistantSummaryForPrompt,
   withAssistantSummaryComments
 } from "./methodDocumentation";
-import { savedGalleryRequest } from "./savedMethodRender";
-import { visualSaveTitle } from "./saveSuggestions";
+import {
+  savedGalleryRequest,
+  savedRecipeReplay,
+  type SavedRecipeReplay
+} from "./savedMethodRender";
+import {
+  visualSaveTitle,
+  withoutSupersededOutputRuns
+} from "./saveSuggestions";
 import {
   activityText,
   formatDuration,
@@ -162,6 +177,10 @@ import {
   customSkillMatches,
   githubRawUrl
 } from "./customSkills";
+import {
+  scanLocalAiServers,
+  type LocalAiServer
+} from "./localProviders";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -178,9 +197,7 @@ const browserSafeAiProfiles = (store: AiProfileStore): AiProfileStore => ({
   ...store,
   profiles: store.profiles.map((profile) => ({
     ...profile,
-    settings: profile.settings.rememberKey
-      ? profile.settings
-      : { ...profile.settings, apiKey: "" }
+    settings: { ...profile.settings, apiKey: "", rememberKey: false }
   }))
 });
 const id = () => crypto.randomUUID();
@@ -305,6 +322,21 @@ interface BrowserMenuState {
   actions: BrowserMenuAction[];
 }
 
+function actionIconForLabel(label: string): ActionIconName {
+  if (/delete|remove|trash/i.test(label)) return "delete";
+  if (/download/i.test(label)) return "download";
+  if (/upload|add files/i.test(label)) return "upload";
+  if (/sync|refresh/i.test(label)) return "sync";
+  if (/pipeline/i.test(label)) return "pipeline";
+  if (/notebook/i.test(label)) return "notebook";
+  if (/copy/i.test(label)) return "copy";
+  if (/rename|edit/i.test(label)) return "edit";
+  if (/save|snapshot/i.test(label)) return "save";
+  if (/run|open/i.test(label)) return "run";
+  if (/import|reuse/i.test(label)) return "import";
+  return "add";
+}
+
 interface InspectorSelection {
   kind: InspectorItem["kind"];
   id: string;
@@ -363,6 +395,33 @@ function executionPreparesViewer(
   );
 }
 
+function methodExecutionsForPrompt(
+  workspace: Pick<AnalysisWorkspace, "executions" | "files" | "artifacts">,
+  execution: ExecutionRecord
+): ExecutionRecord[] {
+  const candidates = workspace.executions.filter((item) =>
+    item.chatId === execution.chatId &&
+    item.promptId === execution.promptId &&
+    item.purpose !== "inspection" &&
+    !executionPreparesViewer(workspace, item) &&
+    ["success", "reused"].includes(item.status)
+  );
+  return withoutSupersededOutputRuns(candidates, workspace.files);
+}
+
+function executionWasSuperseded(
+  workspace: Pick<AnalysisWorkspace, "executions" | "files" | "artifacts">,
+  execution: ExecutionRecord
+): boolean {
+  if (
+    execution.purpose === "inspection" ||
+    executionPreparesViewer(workspace, execution) ||
+    !["success", "reused"].includes(execution.status)
+  ) return false;
+  return !methodExecutionsForPrompt(workspace, execution)
+    .some((item) => item.id === execution.id);
+}
+
 export default function App() {
   const bootstrap = window.OMERO_ANALYSIS;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
@@ -401,11 +460,18 @@ export default function App() {
   const [customSkills, setCustomSkills] = useState<CustomSkill[]>([]);
   const [providerValidation, setProviderValidation] = useState("");
   const [validatingProvider, setValidatingProvider] = useState(false);
+  const [localServerUrl, setLocalServerUrl] =
+    useState("http://localhost:1234/v1");
+  const [localAiServers, setLocalAiServers] = useState<LocalAiServer[]>([]);
+  const [localModels, setLocalModels] = useState<Record<string, string>>({});
+  const [localDiscoveryMessage, setLocalDiscoveryMessage] = useState("");
+  const [detectingLocalServers, setDetectingLocalServers] = useState(false);
   const [settingsSync, setSettingsSync] =
     useState<AnalysisSettingsStatus | null>(null);
   const [settingsSyncing, setSettingsSyncing] = useState(false);
   const [settingsSyncMessage, setSettingsSyncMessage] = useState("");
   const [showHelp, setShowHelp] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -466,6 +532,7 @@ export default function App() {
   const [libraryLoading, setLibraryLoading] = useState(false);
   const initialLibraryRequestHandled = useRef(false);
   const remoteSettingsLoaded = useRef(false);
+  const localAutodetectStarted = useRef(false);
   const [openFolders, setOpenFolders] = useState({
     chat: true,
     inputs: true,
@@ -500,6 +567,12 @@ export default function App() {
     setActiveTabState(tab);
   }
 
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    void setValue(uiThemeKey, next);
+  }
+
   const workspace = analysisWorkspace?.workspace || null;
   const chats = analysisWorkspace?.chats || [];
   const activeChat = chats.find((chat) => chat.id === workspace?.activeChatId) || chats[0] || null;
@@ -532,11 +605,16 @@ export default function App() {
   const activeMethods = (analysisWorkspace?.methods || []).filter((method) => !method.deletedAt);
   const trashedMethods = (analysisWorkspace?.methods || []).filter((method) => Boolean(method.deletedAt));
   const trashedPipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => Boolean(pipeline.deletedAt));
+  const providerNeedsKey =
+    settings.protocol === "anthropic" || settings.authMode !== "none";
+  const providerReady = Boolean(
+    settings.endpoint && settings.model && (!providerNeedsKey || settings.apiKey)
+  );
   const canChat =
     Boolean(activeChat) &&
     runtimeReady &&
     blockedFiles.length === 0 &&
-    Boolean(settings.endpoint && settings.apiKey && settings.model) &&
+    providerReady &&
     !busy;
   const composerPlaceholder = busy
     ? "Analysis in progress — wait for the answer or press Stop…"
@@ -546,8 +624,8 @@ export default function App() {
         ? "Downloading selected data — chat will unlock when every file is ready…"
         : !runtimeReady
           ? `${runtimeProgress.message} (${Math.round(runtimeProgress.percent)}%) — please wait…`
-          : !settings.endpoint || !settings.apiKey || !settings.model
-            ? "Configure the AI endpoint, model, and API key before asking a question…"
+          : !providerReady
+            ? `Configure the AI endpoint, model${providerNeedsKey ? ", and API key" : ""} before asking a question…`
             : "Ask a question about the loaded data…";
 
   useEffect(() => {
@@ -562,6 +640,12 @@ export default function App() {
   useEffect(() => {
     setSelectedOutputIds(new Set());
   }, [workspace?.id, activeChat?.id]);
+
+  useEffect(() => {
+    if (activeTab !== "settings" || localAutodetectStarted.current) return;
+    localAutodetectStarted.current = true;
+    void detectLocalAiServers(false);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!browserMenu) return;
@@ -618,19 +702,21 @@ export default function App() {
     url.searchParams.delete("open_library");
     url.searchParams.delete("library_item");
     window.history.replaceState({}, "", url);
-    void openWorkspaceLibrary(requested);
+    void openWorkspaceLibrary(requested, requested.length > 0);
   }, [analysisWorkspace?.workspace.id]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [savedSettings, savedProfiles, savedCustomSkills, baseWorkspace] = await Promise.all([
+      const [savedSettings, savedProfiles, savedCustomSkills, savedTheme, baseWorkspace] = await Promise.all([
         getValue<ProviderSettings>(settingsKey),
         getValue<AiProfileStore>(aiProfilesKey),
         getValue<CustomSkill[]>(customSkillsKey),
+        getValue<"dark" | "light">(uiThemeKey),
         loadOrCreateWorkspace(bootstrap.context)
       ]);
       if (!alive) return;
+      if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
       if (savedProfiles?.profiles?.length) {
         const active = savedProfiles.profiles.find(
           (profile) => profile.id === savedProfiles.activeProfileId
@@ -828,6 +914,10 @@ export default function App() {
       }
       setCustomSkills(payload.skills);
       await setValue(customSkillsKey, payload.skills);
+      if (payload.analysis.theme === "dark" || payload.analysis.theme === "light") {
+        setTheme(payload.analysis.theme);
+        await setValue(uiThemeKey, payload.analysis.theme);
+      }
       const current = workspaceRef.current;
       if (current && current.workspace.plotCsv !== payload.analysis.plotCsv) {
         const updated = {
@@ -842,7 +932,7 @@ export default function App() {
         setWorkspace(updated);
         await saveWorkspaceRecord(updated.workspace);
       }
-      setSettingsSyncMessage("Settings restored from +AnalysisSettings");
+      setSettingsSyncMessage("Settings restored from ~AnalysisSettings");
     }).catch((error) => {
       setSettingsSyncMessage(`Settings could not be restored: ${String(error)}`);
     });
@@ -1049,6 +1139,24 @@ export default function App() {
     updateChat({ ...chat, pinnedMessageIds: Array.from(values), updatedAt: now() });
   }
 
+  async function copyAssistantMessage(content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      const field = document.createElement("textarea");
+      field.value = content;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      const copied = document.execCommand("copy");
+      field.remove();
+      if (!copied) throw new Error("Clipboard access was denied");
+    }
+    setStatus("Copied assistant response to the clipboard");
+  }
+
   function upsertExecution(execution: ExecutionRecord) {
     const current = workspaceRef.current;
     if (!current) return;
@@ -1108,7 +1216,8 @@ export default function App() {
   }
 
   async function saveSettings(next: ProviderSettings) {
-    setSettings(next);
+    const normalized = { ...next, rememberKey: false };
+    setSettings(normalized);
     setProviderValidation("");
     const profiles = aiProfileStore.profiles.length
       ? aiProfileStore.profiles
@@ -1117,12 +1226,12 @@ export default function App() {
     const nextStore = {
       activeProfileId,
       profiles: profiles.map((profile) =>
-        profile.id === activeProfileId ? { ...profile, settings: next } : profile
+        profile.id === activeProfileId ? { ...profile, settings: normalized } : profile
       )
     };
     setAiProfileStore(nextStore);
     await setValue(aiProfilesKey, browserSafeAiProfiles(nextStore));
-    await setValue(settingsKey, next.rememberKey ? next : { ...next, apiKey: "" });
+    await setValue(settingsKey, { ...normalized, apiKey: "" });
   }
 
   async function selectAiProfile(profileId: string) {
@@ -1199,15 +1308,94 @@ export default function App() {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 20_000);
     try {
-      setProviderValidation(
-        await validateProviderConnection(settings, controller.signal)
-      );
+      const validation = await validateProviderConnection(settings, controller.signal);
+      setProviderValidation(validation);
+      if (validation.startsWith("Connection validated") && bridge.canSettingsSync) {
+        await syncAllSettings();
+      }
     } catch (error) {
       setProviderValidation(`Validation failed: ${String(error)}`);
     } finally {
       window.clearTimeout(timer);
       setValidatingProvider(false);
     }
+  }
+
+  async function detectLocalAiServers(includeManual: boolean) {
+    setDetectingLocalServers(true);
+    setLocalDiscoveryMessage("Looking for LM Studio and Ollama…");
+    try {
+      const scan = await scanLocalAiServers(
+        includeManual ? localServerUrl : ""
+      );
+      setLocalAiServers(scan.servers);
+      setLocalModels((current) => {
+        const next = { ...current };
+        scan.servers.forEach((server) => {
+          if (!server.models.includes(next[server.endpoint])) {
+            next[server.endpoint] = server.models[0];
+          }
+        });
+        return next;
+      });
+      if (scan.servers.length) {
+        setLocalDiscoveryMessage(
+          `Detected ${scan.servers.map((server) => server.name).join(" and ")}.`
+        );
+      } else {
+        setLocalDiscoveryMessage(
+          "No local server was reachable. Check that it is running, browser CORS is enabled, and the URL is correct."
+        );
+      }
+    } catch (error) {
+      setLocalDiscoveryMessage(`Local server detection failed: ${String(error)}`);
+    } finally {
+      setDetectingLocalServers(false);
+    }
+  }
+
+  async function connectLocalAiServer(
+    server: LocalAiServer,
+    createProfile: boolean
+  ) {
+    const model = localModels[server.endpoint] || server.models[0];
+    if (!model) {
+      setLocalDiscoveryMessage(`${server.name} did not report a usable chat model.`);
+      return;
+    }
+    const localSettings: ProviderSettings = {
+      ...settings,
+      protocol: "openai",
+      endpoint: server.endpoint,
+      authMode: "none",
+      apiKey: "",
+      model,
+      rememberKey: false
+    };
+    if (!createProfile) {
+      await saveSettings(localSettings);
+      setLocalDiscoveryMessage(
+        `${server.name} is connected to the active AI profile with ${model}.`
+      );
+      return;
+    }
+    const baseName = `${server.name} — ${model}`;
+    const names = new Set(aiProfileStore.profiles.map((profile) => profile.name));
+    let name = baseName;
+    let suffix = 2;
+    while (names.has(name)) name = `${baseName} ${suffix++}`;
+    const profile = { id: id(), name, settings: localSettings };
+    const nextStore = {
+      activeProfileId: profile.id,
+      profiles: [...aiProfileStore.profiles, profile]
+    };
+    setAiProfileStore(nextStore);
+    setSettings(localSettings);
+    setProviderValidation("");
+    await setValue(aiProfilesKey, browserSafeAiProfiles(nextStore));
+    setLocalDiscoveryMessage(
+      `Created and selected ${name}. Use Sync Settings to preserve this profile in OMERO.`
+    );
   }
 
   async function persistCustomSkills(next: CustomSkill[]) {
@@ -1229,7 +1417,7 @@ export default function App() {
       });
       await persistCustomSkills([...customSkills, skill]);
       setSettingsSyncMessage(
-        `Added ${skill.name}. Use Sync Settings to copy it to +AnalysisSettings / Skills.`
+        `Added ${skill.name}. Use Sync Settings to copy it to ~AnalysisSettings / Skills.`
       );
     } catch (error) {
       setSettingsSyncMessage(`Could not add skill: ${String(error)}`);
@@ -1268,9 +1456,9 @@ export default function App() {
     }
   }
 
-  async function syncAllSettings() {
+  async function syncAllSettings(): Promise<boolean> {
     const current = workspaceRef.current;
-    if (!current) return;
+    if (!current) return false;
     setSettingsSyncing(true);
     setSettingsSyncMessage("Synchronizing settings…");
     const profiles = {
@@ -1284,7 +1472,7 @@ export default function App() {
     try {
       const synced = await bridge.syncAnalysisSettings({
         schema: "nl.bioimaging.analysis.settings.bundle.v1",
-        analysis: { plotCsv: current.workspace.plotCsv },
+        analysis: { plotCsv: current.workspace.plotCsv, theme },
         ai: profiles,
         skills: customSkills
       });
@@ -1292,8 +1480,10 @@ export default function App() {
       setSettingsSyncMessage(
         `Settings synchronized: ${profiles.profiles.length} AI profile(s), ${customSkills.length} skill(s)`
       );
+      return true;
     } catch (error) {
       setSettingsSyncMessage(`Settings synchronization failed: ${String(error)}`);
+      return false;
     } finally {
       setSettingsSyncing(false);
     }
@@ -1564,6 +1754,58 @@ export default function App() {
     setNotebookRunRequest({ id: record.id, nonce: Date.now() });
   }
 
+  async function renameNotebook(record: NotebookRecord) {
+    const requested = (await dialogs.askText(
+      "Rename notebook",
+      record.name
+    ))?.trim();
+    if (!requested) return;
+    const current = workspaceRef.current;
+    if (!current) return;
+    const stem = slug(requested.replace(/\.ipynb$/i, ""));
+    let name = `${stem}.ipynb`;
+    let suffix = 2;
+    while (current.notebooks.some((notebook) =>
+      notebook.id !== record.id && notebook.name.toLowerCase() === name.toLowerCase()
+    )) {
+      name = `${stem}-${suffix}.ipynb`;
+      suffix += 1;
+    }
+    await updateNotebook({ ...record, name, updatedAt: now() });
+    setStatus(`Renamed notebook to ${name}`);
+  }
+
+  function downloadNotebook(record: NotebookRecord) {
+    downloadBytes(
+      record.name,
+      serializeNotebook(record.document),
+      "application/x-ipynb+json"
+    );
+  }
+
+  async function removeNotebook(record: NotebookRecord) {
+    if (!await dialogs.confirm(
+      "Delete notebook?",
+      `${record.name} and its browser-stored outputs will be removed from this Workspace. OMERO FileAnnotations are not deleted.`,
+      "Delete notebook",
+      true
+    )) return;
+    const current = workspaceRef.current;
+    if (!current) return;
+    const notebooks = current.notebooks.filter((notebook) => notebook.id !== record.id);
+    const next = { ...current, notebooks };
+    workspaceRef.current = next;
+    setWorkspace(next);
+    if (activeNotebookId === record.id) {
+      setActiveNotebookId(notebooks[0]?.id || null);
+    }
+    if (inspectorSelection?.kind === "notebook" && inspectorSelection.id === record.id) {
+      setInspectorSelection({ kind: "folder", id: "notebooks" });
+    }
+    await deleteStoredNotebook(record.id);
+    setStatus(`Deleted notebook ${record.name}`);
+  }
+
   async function updateNotebook(record: NotebookRecord) {
     const current = workspaceRef.current;
     if (!current) return;
@@ -1653,12 +1895,12 @@ export default function App() {
         continue;
       }
       if (source.size > MAX_FILE_BYTES) {
-        setStatus(`${source.name} exceeds the 256 MiB file limit`);
+        setStatus(`${source.name} exceeds the 2 GiB file limit`);
         continue;
       }
       total += source.size;
       if (total > MAX_WORKSPACE_BYTES) {
-        setStatus("The workspace would exceed 512 MiB");
+        setStatus("The workspace would exceed 4 GiB");
         break;
       }
       const data = await source.arrayBuffer();
@@ -2137,7 +2379,7 @@ export default function App() {
     if (includePreview) {
       const data = await renderZarrPreview(capability, focus);
       if (workspaceBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
-        throw new Error("The rendered preview would exceed the 512 MiB workspace limit");
+        throw new Error("The rendered preview would exceed the 4 GiB workspace limit");
       }
       const filename = `${slug(focus.title)}.png`;
       createdFile = {
@@ -2233,7 +2475,7 @@ export default function App() {
     const { binding, capability } = await resolveZarrTarget(recipe.storeUuid);
     const data = await renderZarrRecipe(capability, recipe);
     if (workspaceBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
-      throw new Error("The rendered gallery would exceed the 512 MiB workspace limit");
+      throw new Error("The rendered gallery would exceed the 4 GiB workspace limit");
     }
     const filename = `${slug(recipe.filename || recipe.title || "zarr-gallery").replace(/-png$/, "")}.png`;
     const viewerMetadata = zarrGalleryProvenance(binding, recipe, evidenceIds);
@@ -2306,7 +2548,118 @@ export default function App() {
     });
   }
 
-  async function replaySavedGallery(
+  async function createSavedZarrRecipeResult(
+    replay: SavedRecipeReplay,
+    chatId: string,
+    promptId: string,
+    origin: ExecutionOrigin = {}
+  ): Promise<string> {
+    const current = workspaceRef.current;
+    if (!current || !zarrViewerStatus?.available) {
+      throw new Error(zarrViewerWarning || "OMERO ZarrViewer is unavailable");
+    }
+    const ledger = currentEvidence(
+      current.evidence,
+      chatId,
+      workspaceInputHashes(current),
+      turnWorkflowSkills.current.map((skill) => skill.sha256)
+    );
+    requireEvidenceIds(replay.evidenceIds, ledger);
+    const { binding, capability } = await resolveZarrTarget(replay.recipe.storeUuid);
+    const data = await renderZarrRecipe(capability, replay.recipe);
+    if (workspaceBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
+      throw new Error("The rendered preview would exceed the 4 GiB workspace limit");
+    }
+    const title = replay.recipe.title ||
+      replay.recipe.panels[0]?.title ||
+      "Saved OME-Zarr render";
+    const filename = `${
+      slug(replay.recipe.filename || title).replace(/-png$/, "")
+    }.png`;
+    const viewerMetadata = {
+      ...zarrGalleryProvenance(
+        binding,
+        replay.recipe,
+        replay.evidenceIds
+      ),
+      renderKind: replay.renderKind
+    };
+    const file: WorkspaceFile = {
+      id: id(),
+      workspaceId: current.workspace.id,
+      chatId,
+      ...origin,
+      name: filename,
+      logicalPath: `${current.workspace.rootPath}/${
+        origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
+      }/Results/zarr/${filename}`,
+      type: "image/png",
+      size: data.byteLength,
+      sha256: await sha256(data),
+      source: "result",
+      state: "ready",
+      data,
+      viewer: viewerMetadata,
+      createdAt: now()
+    };
+    upsertFiles([file]);
+    const artifact: ArtifactRecord = {
+      id: id(),
+      workspaceId: current.workspace.id,
+      chatId,
+      fileId: file.id,
+      kind: "viewer-preview",
+      title,
+      pinned: false,
+      promptId,
+      viewer: viewerMetadata,
+      createdAt: now()
+    };
+    upsertArtifacts([artifact]);
+    appendMessage(chatId, {
+      id: id(),
+      role: "assistant",
+      content: replay.renderKind === "roi"
+        ? `Reproduced ${title} through ZarrViewer without an AI request.`
+        : `Reproduced the ${replay.recipe.panels.length}-panel ${title} gallery through ZarrViewer without an AI request.`,
+      kind: "viewer-preview",
+      artifactId: artifact.id,
+      activity: "worked",
+      createdAt: now()
+    });
+    setSelectedArtifactFileId(file.id);
+    const renderEvidenceId = id();
+    const sourceHashes = workspaceInputHashes(current);
+    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
+    upsertEvidence({
+      id: renderEvidenceId,
+      workspaceId: current.workspace.id,
+      chatId,
+      promptId,
+      kind: "render",
+      status: "success",
+      sourceHashes,
+      skillHashes,
+      sourceSkillKey: sourceSkillKey(sourceHashes, skillHashes),
+      summary: `Replayed saved ${replay.renderKind} recipe from evidence ${replay.evidenceIds.join(", ")}`,
+      payload: boundedEvidencePayload({
+        recipe: replay.recipe,
+        fileId: file.id,
+        sha256: file.sha256
+      }),
+      createdAt: now()
+    });
+    return JSON.stringify({
+      ok: true,
+      artifact_id: artifact.id,
+      file_id: file.id,
+      panel_count: replay.recipe.panels.length,
+      render_evidence_id: renderEvidenceId,
+      cited_evidence_ids: replay.evidenceIds
+    });
+  }
+
+  async function replaySavedRender(
     executionResult: string,
     chatId: string,
     promptId: string,
@@ -2319,8 +2672,12 @@ export default function App() {
       scriptName,
       recipe
     );
-    if (!request) return null;
-    return createZarrGalleryResult(request, chatId, promptId, origin);
+    if (request) {
+      return createZarrGalleryResult(request, chatId, promptId, origin);
+    }
+    const replay = savedRecipeReplay(executionResult, recipe);
+    if (!replay) return null;
+    return createSavedZarrRecipeResult(replay, chatId, promptId, origin);
   }
 
   async function executeSavedMethodVersion(
@@ -2339,12 +2696,12 @@ export default function App() {
       "method",
       origin
     );
-    const renderResult = await replaySavedGallery(
+    const renderResult = await replaySavedRender(
       executionResult,
       chatId,
       promptId,
       method.name,
-      version.renderRecipe,
+      version.renderRecipe || zarrRenderRecipeFromCode(code),
       origin
     );
     return { executionResult, renderResult };
@@ -3138,17 +3495,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     ) return;
     const chat = current.chats.find((item) => item.id === execution.chatId);
     const promptMessage = chat?.messages.find((message) => message.id === execution.promptId);
-    const successful = current.executions
-      .filter((item) =>
-        item.chatId === execution.chatId &&
-        item.promptId === execution.promptId &&
-        ["success", "reused"].includes(item.status)
-      )
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const related = successful.filter((item) =>
-      item.purpose !== "inspection" &&
-      !executionPreparesViewer(current, item)
-    );
+    const related = methodExecutionsForPrompt(current, execution);
     const scriptCode = Array.from(new Set(related.map((item) => item.code))).join(
       "\n\n# Continued analysis / automatic repair\n"
     ) || execution.code;
@@ -3413,7 +3760,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       );
       setStatus(
         renderResult
-          ? `Ran ${method.name} locally and rendered its PNG gallery`
+          ? `Ran ${method.name} locally and rendered its ZarrViewer PNG`
           : `Ran ${method.name} locally`
       );
     } catch (error) {
@@ -3437,6 +3784,37 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       setWorkspace(next);
     }
     void saveMethod(updated);
+  }
+
+  async function renamePipeline(pipeline: PipelineRecord) {
+    const requested = (await dialogs.askText(
+      "Rename pipeline",
+      pipeline.name
+    ))?.trim();
+    if (!requested) return;
+    const current = workspaceRef.current;
+    if (!current) return;
+    const stem = slug(requested);
+    let name = stem;
+    let suffix = 2;
+    while (current.pipelines.some((item) =>
+      item.id !== pipeline.id && !item.deletedAt &&
+      item.name.toLowerCase() === name.toLowerCase()
+    )) {
+      name = `${stem}-${suffix}`;
+      suffix += 1;
+    }
+    const updated = { ...pipeline, name, updatedAt: now() };
+    const next = {
+      ...current,
+      pipelines: current.pipelines.map((item) =>
+        item.id === pipeline.id ? updated : item
+      )
+    };
+    workspaceRef.current = next;
+    setWorkspace(next);
+    await savePipeline(updated);
+    setStatus(`Renamed pipeline to ${name}`);
   }
 
   async function removeMethod(method: MethodRecord) {
@@ -4019,6 +4397,25 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (version) downloadBytes(method.name, new TextEncoder().encode(version.code), "text/x-python");
   }
 
+  function downloadPipeline(pipeline: PipelineRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const methodIds = new Set(pipeline.steps.map((step) => step.methodId));
+    const payload = {
+      format: "nl.bioimaging.analysis.pipeline.v1",
+      exportedAt: now(),
+      pipeline,
+      methods: current.methods.filter((method) =>
+        !method.deletedAt && methodIds.has(method.id)
+      )
+    };
+    downloadBytes(
+      `${slug(pipeline.name)}.oa-pipeline.json`,
+      new TextEncoder().encode(JSON.stringify(payload, null, 2)),
+      "application/json"
+    );
+  }
+
   function downloadReproducibilityReport() {
     const current = workspaceRef.current;
     if (!current) return;
@@ -4225,8 +4622,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     }
   }
 
-  async function openWorkspaceLibrary(preselectedAnnotationIds: number[] = []) {
-    setShowLibrary(true);
+  async function openWorkspaceLibrary(
+    preselectedAnnotationIds: number[] = [],
+    autoImport = false
+  ) {
+    setShowLibrary(!autoImport);
     setLibraryLoading(true);
     setSelectedLibraryItems(new Set());
     try {
@@ -4246,6 +4646,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       setOpenLibraryDatasets(opened.size
         ? opened
         : new Set(datasets.length ? [datasets[0].datasetId] : []));
+      if (autoImport) {
+        if (!selectedKeys.size) {
+          setShowLibrary(true);
+          throw new Error("The selected AnalysisWorkspaces items are no longer available");
+        }
+        await importSelectedLibraryItems(datasets, selectedKeys);
+      }
     } catch (error) {
       setStatus(`AnalysisWorkspaces library failed: ${String(error)}`);
       setLibraryDatasets([]);
@@ -4282,17 +4689,20 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     };
   }
 
-  async function importSelectedLibraryItems() {
+  async function importSelectedLibraryItems(
+    datasets = libraryDatasets,
+    selectedKeys = selectedLibraryItems
+  ) {
     const current = workspaceRef.current;
     if (!current) return;
     setLibraryLoading(true);
     try {
       let next = current;
-      const all = libraryDatasets.flatMap((dataset) =>
+      const all = datasets.flatMap((dataset) =>
         dataset.items.map((item) => ({ dataset, item }))
       );
       const selected = all.filter(({ dataset, item }) =>
-        selectedLibraryItems.has(librarySelectionKey(dataset, item))
+        selectedKeys.has(librarySelectionKey(dataset, item))
       );
       const requested = new Map(
         selected.map((entry) => [
@@ -4552,8 +4962,26 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       { label: "Run", run: () => void runMethod(method) },
       { label: "Rename", run: () => void renameMethod(method) },
       { label: "Download", run: () => downloadMethod(method) },
-      { label: "Copy to another workspace…", run: () => beginMethodTransfer([method.id]) },
       { label: "Delete method", danger: true, run: () => void removeMethod(method) }
+    ];
+  }
+
+  function pipelineActions(pipeline: PipelineRecord): BrowserMenuAction[] {
+    return [
+      { label: "Run", run: () => void runPipeline(pipeline) },
+      { label: "Rename", run: () => void renamePipeline(pipeline) },
+      { label: "Download", run: () => downloadPipeline(pipeline) },
+      { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
+    ];
+  }
+
+  function notebookActions(notebook: NotebookRecord): BrowserMenuAction[] {
+    return [
+      { label: "Open", run: () => openNotebook(notebook) },
+      { label: "Run", run: () => runNotebook(notebook) },
+      { label: "Rename", run: () => void renameNotebook(notebook) },
+      { label: "Download", run: () => downloadNotebook(notebook) },
+      { label: "Delete notebook", danger: true, run: () => void removeNotebook(notebook) }
     ];
   }
 
@@ -4565,7 +4993,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
   }
 
   if (!analysisWorkspace || !workspace || !activeChat) {
-    return <main className="app-shell"><div className="boot-message">{status}</div></main>;
+    return <main className="app-shell" data-theme={theme}><div className="boot-message">{status}</div></main>;
   }
 
   const quotaPercent = storage.quota ? Math.round(storage.usage / storage.quota * 100) : 0;
@@ -4822,19 +5250,19 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     <details className="workspace-actions">
       <summary>Workspace actions</summary>
       <div>
-        <button onClick={() => void renameWorkspace(workspace)}>Rename workspace</button>
-        <button onClick={() => void downloadArchive()}>Download workspace</button>
-        <button onClick={() => importInput.current?.click()}>Import workspace</button>
-        {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}>Save snapshot to OMERO</button>}
+        <button onClick={() => void renameWorkspace(workspace)}><ActionIcon name="edit" />Rename workspace</button>
+        <button onClick={() => void downloadArchive()}><ActionIcon name="download" />Download workspace</button>
+        <button onClick={() => importInput.current?.click()}><ActionIcon name="import" />Import workspace</button>
+        {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}><ActionIcon name="save" />Save snapshot to OMERO</button>}
         {bridge.canSync && <button onClick={() => void synchronizeWorkspace()}>
-          Synchronize with OMERO
+          <ActionIcon name="sync" />Synchronize with OMERO
         </button>}
         <button onClick={() => void openWorkspaceLibrary()}>
-          Import from AnalysisWorkspaces
+          <ActionIcon name="import" />Import from AnalysisWorkspaces
         </button>
         {remoteSync?.linked && bridge.canSync && (
           <button className="danger" onClick={() => void removeWorkspaceSynchronization()}>
-            Remove sync from OMERO
+            <ActionIcon name="delete" />Remove sync from OMERO
           </button>
         )}
       </div>
@@ -4908,7 +5336,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     );
   };
   return (
-    <main className="app-shell">
+    <BlueprintThemeProvider theme={theme}>
+    <main className="app-shell" data-theme={theme}>
       {dialogs.element}
       {showHelp && <HelpWindow onClose={() => setShowHelp(false)} />}
       <header className="workspace-header">
@@ -4917,19 +5346,27 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           <p>{workspace.rootPath}</p>
         </div>
         <div className="header-actions">
-          <button
+          <Button
+            className="theme-toggle"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            onClick={toggleTheme}
+          >
+            <Icon name={theme === "dark" ? "sun" : "moon"} />
+          </Button>
+          <Button
             className={activeTab === "settings" ? "active" : ""}
             onClick={() => setActiveTab("settings")}
           >
-            Settings
-          </button>
-          <button
+            <Icon name="settings" /> Settings
+          </Button>
+          <Button
             aria-pressed={showHelp}
             className={showHelp ? "active" : ""}
             onClick={() => setShowHelp((value) => !value)}
           >
-            Help
-          </button>
+            <Icon name="help" /> Help
+          </Button>
         </div>
       </header>
 
@@ -4978,11 +5415,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   browser Workspace. Their library originals remain unchanged.
                 </p>
               </div>
-              <button aria-label="Close library" onClick={() => setShowLibrary(false)}>×</button>
+              <Button aria-label="Close library" onClick={() => setShowLibrary(false)}>×</Button>
             </header>
             <label className="library-search">
               <span className="sr-only">Filter AnalysisWorkspaces library</span>
-              <input
+              <Input
                 type="search"
                 value={libraryQuery}
                 placeholder="Filter by source, Dataset, or item name…"
@@ -5017,13 +5454,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               )}
             </div>
             <div className="dialog-actions">
-              <button onClick={() => setShowLibrary(false)}>Cancel</button>
-              <button
+              <Button onClick={() => setShowLibrary(false)}>Cancel</Button>
+              <Button
                 disabled={!selectedLibraryItems.size || libraryLoading}
                 onClick={() => void importSelectedLibraryItems()}
               >
                 {libraryLoading ? "Importing…" : `Import ${selectedLibraryItems.size} selected`}
-              </button>
+              </Button>
             </div>
           </section>
         </div>
@@ -5336,7 +5773,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <summary
               onClick={() => setInspectorSelection({ kind: "folder", id: "methods" })}
               onContextMenu={(event) => openBrowserMenu(event, "methods/", [
-                { label: "Combine selected methods", run: () => void combineSelectedMethods() },
+                { label: "To Pipeline", run: () => void combineSelectedMethods() },
                 { label: "Copy selected methods…", run: () => beginMethodTransfer() }
               ])}
             >
@@ -5347,9 +5784,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             {activeMethods.length > 0 && (
               <div className="method-selection-toolbar">
                 <span>{selectedMethodIds.size} selected</span>
-                <button disabled={selectedMethodIds.size < 2} onClick={() => void combineSelectedMethods()}>Combine</button>
-                <button disabled={!selectedMethodIds.size} onClick={() => void convertSelectedMethodsToNotebook()}>To Notebook</button>
-                <button disabled={!selectedMethodIds.size} onClick={() => beginMethodTransfer()}>Copy to…</button>
+                <button disabled={selectedMethodIds.size < 2} onClick={() => void combineSelectedMethods()}><ActionIcon name="pipeline" />To Pipeline</button>
+                <button disabled={!selectedMethodIds.size} onClick={() => void convertSelectedMethodsToNotebook()}><ActionIcon name="notebook" />To Notebook</button>
+                <button disabled={!selectedMethodIds.size} onClick={() => beginMethodTransfer()}><ActionIcon name="copy" />Copy to…</button>
               </div>
             )}
             <ul className="browser-list">
@@ -5405,7 +5842,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 <span>{selectedPipelineIds.size} selected</span>
                 <button disabled={!selectedPipelineIds.size}
                   onClick={() => void convertSelectedPipelinesToNotebook()}>
-                  To Notebook
+                  <ActionIcon name="notebook" />To Notebook
                 </button>
               </div>
             )}
@@ -5418,15 +5855,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   className="browser-row pipeline-row"
                   onClick={() => setInspectorSelection({ kind: "pipeline", id: pipeline.id })}
                   onDoubleClick={() => void runPipeline(pipeline)}
-                  onContextMenu={(event) => openBrowserMenu(event, pipeline.name, [
-                    { label: "Run pipeline", run: () => void runPipeline(pipeline) },
-                    { label: "Batch run on opened workspaces…", run: () => void batchRunPipeline(pipeline) },
-                    ...(bridge.canUpload ? [{
-                      label: "Publish template to OMERO",
-                      run: () => void publishPipeline(pipeline)
-                    }] : []),
-                    { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
-                  ])}
+                  onContextMenu={(event) =>
+                    openBrowserMenu(event, pipeline.name, pipelineActions(pipeline))}
                 >
                   <input
                     className="method-selector"
@@ -5446,15 +5876,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   <button
                     className="browser-more"
                     aria-label={`Actions for ${pipeline.name}`}
-                    onClick={(event) => openBrowserMenu(event, pipeline.name, [
-                      { label: "Run pipeline", run: () => void runPipeline(pipeline) },
-                      { label: "Batch run on opened workspaces…", run: () => void batchRunPipeline(pipeline) },
-                      ...(bridge.canUpload ? [{
-                        label: "Publish template to OMERO",
-                        run: () => void publishPipeline(pipeline)
-                      }] : []),
-                      { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
-                    ])}
+                    onClick={(event) =>
+                      openBrowserMenu(event, pipeline.name, pipelineActions(pipeline))}
                   ><Icon name="more" /></button>
                 </li>
               ))}
@@ -5504,7 +5927,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             </summary>
             <div className="method-selection-toolbar notebook-folder-toolbar">
               <span>{analysisWorkspace.notebooks.length} notebook{analysisWorkspace.notebooks.length === 1 ? "" : "s"}</span>
-              <button onClick={() => notebookUploadInput.current?.click()}>Upload</button>
+              <button onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload</button>
             </div>
             <ul className="browser-list">
               {analysisWorkspace.notebooks.filter((notebook) =>
@@ -5516,10 +5939,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     setInspectorSelection({ kind: "notebook", id: notebook.id });
                   }}
                   onDoubleClick={() => openNotebook(notebook)}
-                  onContextMenu={(event) => openBrowserMenu(event, notebook.name, [
-                    { label: "Open", run: () => openNotebook(notebook) },
-                    { label: "Run", run: () => runNotebook(notebook) }
-                  ])}>
+                  onContextMenu={(event) =>
+                    openBrowserMenu(event, notebook.name, notebookActions(notebook))}>
                   <span className="browser-icon json" aria-hidden="true" />
                   <div className="browser-name">
                     <strong>{notebook.name}</strong>
@@ -5529,10 +5950,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   </div>
                   <span className="browser-size">.ipynb</span>
                   <button className="browser-more" aria-label={`Actions for ${notebook.name}`}
-                    onClick={(event) => openBrowserMenu(event, notebook.name, [
-                      { label: "Open", run: () => openNotebook(notebook) },
-                      { label: "Run", run: () => runNotebook(notebook) }
-                    ])}>
+                    onClick={(event) =>
+                      openBrowserMenu(event, notebook.name, notebookActions(notebook))}>
                     <Icon name="more" />
                   </button>
                 </li>
@@ -5568,7 +5987,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           >
             <div className="context-title">{browserMenu.title}</div>
             {browserMenu.actions.map((action) => (
-              <button
+              <Button
                 key={action.label}
                 role="menuitem"
                 className={action.danger ? "danger" : ""}
@@ -5576,7 +5995,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   setBrowserMenu(null);
                   action.run();
                 }}
-              >{action.label}</button>
+              ><ActionIcon name={actionIconForLabel(action.label)} />{action.label}</Button>
             ))}
           </div>
         )}
@@ -5586,11 +6005,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         <section className="center-pane">
         <nav className="analysis-tabs" aria-label="Analysis views">
           {(["chat", "notebook"] as const).map((tab) => (
-            <button key={tab} className={activeTab === tab ? "active" : ""}
+            <Button key={tab} className={activeTab === tab ? "active" : ""}
               aria-current={activeTab === tab ? "page" : undefined}
               onClick={() => setActiveTab(tab)}>
               {tab[0].toUpperCase() + tab.slice(1)}
-            </button>
+            </Button>
           ))}
         </nav>
         {activeTab === "chat" && (
@@ -5604,8 +6023,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 ))}
               </select>
             </label>
-            <button onClick={() => void newConversation()}>New chat</button>
-            <button onClick={() => void renameChat(activeChat)}>Rename chat</button>
+            <Button onClick={() => void newConversation()}><ActionIcon name="add" />New chat</Button>
+            <Button onClick={() => void renameChat(activeChat)}><ActionIcon name="edit" />Rename chat</Button>
             {workspaceActionsMenu()}
           </div>
           <div className="messages" aria-live="polite" ref={messagesElement}>
@@ -5615,15 +6034,15 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 <p>This named chat, its code, outputs, and reusable pipelines are saved automatically in the browser workspace.</p>
                 {profiles.length > 0 && (
                   <div className="suggested-prompts">
-                    <button onClick={() => setPrompt("Summarize the available datasets, tables, columns, and important data-quality issues.")}>
+                    <Button onClick={() => setPrompt("Summarize the available datasets, tables, columns, and important data-quality issues.")}>
                       Summarize these data
-                    </button>
-                    <button onClick={() => setPrompt("Find the most biologically meaningful differences and visualize them with reproducible plot data.")}>
+                    </Button>
+                    <Button onClick={() => setPrompt("Find the most biologically meaningful differences and visualize them with reproducible plot data.")}>
                       Find meaningful differences
-                    </button>
-                    <button onClick={() => setPrompt("Explain the CI Segmentation schema and suggest three safe analyses for these measurements.")}>
+                    </Button>
+                    <Button onClick={() => setPrompt("Explain the CI Segmentation schema and suggest three safe analyses for these measurements.")}>
                       Explore the measurement schema
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -5667,6 +6086,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                       analysisWorkspace,
                       execution
                     )}
+                    superseded={executionWasSuperseded(
+                      analysisWorkspace,
+                      execution
+                    )}
                   />
                 ) : null;
               }
@@ -5678,9 +6101,22 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 <article key={message.id} className={`message ${message.role} ${message.kind || ""}`}>
                   <span>
                     {message.role}
+                    {message.role === "assistant" && (
+                      <button
+                        className="copy-message"
+                        aria-label="Copy assistant response"
+                        title="Copy assistant response"
+                        onClick={() => void copyAssistantMessage(message.content)}
+                      >
+                        <Icon name="copy" />
+                      </button>
+                    )}
                     <button
                       className="pin-message"
                       aria-label={`${(activeChat.pinnedMessageIds || []).includes(message.id) ? "Unpin" : "Pin"} message`}
+                      title={(activeChat.pinnedMessageIds || []).includes(message.id)
+                        ? "Unpin from retained chat context"
+                        : "Pin in retained chat context"}
                       onClick={() => togglePinnedMessage(activeChat, message.id)}
                     >
                       {(activeChat.pinnedMessageIds || []).includes(message.id) ? "★" : "☆"}
@@ -5753,15 +6189,15 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         {activeTab === "settings" && (
           <section className="settings-tab settings-stack" aria-label="Settings">
             <div className="settings-sync-toolbar">
-              <button
+              <Button
                 disabled={settingsSyncing || !bridge.canSettingsSync}
                 onClick={() => void syncAllSettings()}
               >
-                {settingsSyncing ? "Synchronizing…" : "Sync Settings"}
-              </button>
+                <ActionIcon name="sync" />{settingsSyncing ? "Synchronizing…" : "Sync Settings"}
+              </Button>
               <span role="status">
                 {settingsSyncMessage || (settingsSync?.synced
-                  ? "Settings are synchronized with +AnalysisSettings"
+                  ? "Settings are synchronized with ~AnalysisSettings"
                   : bootstrap.context
                     ? "Settings have not been synchronized"
                     : "Open Analysis from an OMERO object to synchronize settings")}
@@ -5789,10 +6225,87 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               <summary>AI Settings</summary>
               <div className="settings-section-body settings-form">
                 <p className="settings-warning">
-                  Browser-remembered keys are stored in this browser profile.
-                  Sync Settings stores every AI profile in an encrypted attachment
-                  under +AnalysisSettings / AI Settings.
+                  API keys are kept only in memory until Sync Settings stores every
+                  AI profile in an encrypted attachment under
+                  ~AnalysisSettings / AI Settings.
                 </p>
+                <details className="local-ai-discovery">
+                  <summary className="local-ai-heading">
+                    <div>
+                      <strong>Local AI server</strong>
+                      <small>
+                        Analysis checks the standard LM Studio and Ollama addresses
+                        from this browser. You can also enter another
+                        OpenAI-compatible base URL.
+                      </small>
+                    </div>
+                  </summary>
+                  <div className="local-ai-body">
+                    <Button
+                      className="secondary-action"
+                      disabled={detectingLocalServers}
+                      onClick={() => void detectLocalAiServers(true)}
+                    >
+                      {detectingLocalServers ? "Detecting…" : "Detect local servers"}
+                    </Button>
+                    <Input
+                      aria-label="Local AI server URL"
+                      type="url"
+                      value={localServerUrl}
+                      placeholder="http://localhost:1234/v1"
+                      onChange={(event) => setLocalServerUrl(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void detectLocalAiServers(true);
+                        }
+                      }}
+                    />
+                    {localDiscoveryMessage && (
+                      <span className="local-ai-status" role="status">
+                        {localDiscoveryMessage}
+                      </span>
+                    )}
+                    {localAiServers.map((server) => (
+                      <div className="local-ai-server" key={server.endpoint}>
+                        <div>
+                          <strong>{server.name}</strong>
+                          <small>{server.endpoint}</small>
+                        </div>
+                        <label>
+                          <span>Model</span>
+                          <select
+                            value={localModels[server.endpoint] || server.models[0]}
+                            onChange={(event) => setLocalModels((current) => ({
+                              ...current,
+                              [server.endpoint]: event.target.value
+                            }))}
+                          >
+                            {server.models.map((model) => (
+                              <option key={model} value={model}>{model}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <Button
+                          onClick={() => void connectLocalAiServer(server, false)}
+                        >
+                          Use in active profile
+                        </Button>
+                        <Button
+                          onClick={() => void connectLocalAiServer(server, true)}
+                        >
+                          Create profile
+                        </Button>
+                      </div>
+                    ))}
+                    <small className="local-ai-help">
+                      The model list is detected without sending Workspace data.
+                      Full Analysis Chat requires a model with reliable OpenAI tool
+                      calling. If the browser cannot connect, enable CORS in the local
+                      server; an HTTPS OMERO page may also block a plain HTTP endpoint.
+                    </small>
+                  </div>
+                </details>
                 <div className="ai-profile-toolbar">
                   <label>Active profile
                     <select
@@ -5804,16 +6317,16 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                       ))}
                     </select>
                   </label>
-                  <button onClick={() => void createAiProfile()}>New profile</button>
-                  <button
+                  <Button onClick={() => void createAiProfile()}><ActionIcon name="add" />New profile</Button>
+                  <Button
                     disabled={aiProfileStore.profiles.length <= 1}
                     onClick={() => void deleteActiveAiProfile()}
                   >
-                    Delete profile
-                  </button>
+                    <ActionIcon name="delete" />Delete profile
+                  </Button>
                 </div>
                 <label>Profile name
-                  <input
+                  <Input
                     value={aiProfileStore.profiles.find(
                       (profile) => profile.id === aiProfileStore.activeProfileId
                     )?.name || ""}
@@ -5831,7 +6344,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   </select>
                 </label>
                 <label>API endpoint
-                  <input type="url" name="omero-analysis-api-endpoint"
+                  <Input type="url" name="omero-analysis-api-endpoint"
                     autoComplete="url" value={settings.endpoint}
                     placeholder={settings.protocol === "anthropic"
                       ? "https://your-provider.example"
@@ -5848,45 +6361,46 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                         ...settings,
                         authMode: event.target.value as ProviderSettings["authMode"]
                       })}>
+                      <option value="none">No authentication (local server)</option>
                       <option value="bearer">Authorization: Bearer</option>
                       <option value="api-key">api-key (Azure-compatible)</option>
                     </select>
                   </label>
                 )}
                 <label>Model or deployment
-                  <input name="omero-analysis-model" autoComplete="off"
+                  <Input name="omero-analysis-model" autoComplete="off"
+                    list="omero-analysis-detected-models"
                     value={settings.model}
                     onChange={(event) => void saveSettings({ ...settings, model: event.target.value })} />
+                  <datalist id="omero-analysis-detected-models">
+                    {[...new Set(localAiServers.flatMap((server) => server.models))]
+                      .map((model) => <option key={model} value={model} />)}
+                  </datalist>
                 </label>
-                <label>API key
-                  <input type="password" name="omero-analysis-api-key"
-                    autoComplete="new-password" value={settings.apiKey}
-                    onChange={(event) => void saveSettings({ ...settings, apiKey: event.target.value })} />
-                </label>
-                <label className="settings-check inline">
-                  <input type="checkbox" checked={settings.rememberKey}
-                    onChange={(event) => void saveSettings({ ...settings, rememberKey: event.target.checked })} />
-                  Remember this key in this browser profile
-                </label>
+                {(settings.protocol === "anthropic" || settings.authMode !== "none") && (
+                  <label>API key
+                    <Input type="password" name="omero-analysis-api-key"
+                      autoComplete="new-password" value={settings.apiKey}
+                      onChange={(event) => void saveSettings({ ...settings, apiKey: event.target.value })} />
+                    <small>
+                      Stored only in the encrypted synchronized AI profile, not in browser storage.
+                    </small>
+                  </label>
+                )}
                 <label>Model context window (optional)
-                  <input type="number" min="0" value={settings.contextWindow || ""}
+                  <Input type="number" min="0" value={settings.contextWindow || ""}
                     onChange={(event) => void saveSettings({
                       ...settings,
                       contextWindow: Number(event.target.value) || 0
                     })} />
                 </label>
-                <button className="secondary-action" onClick={() => void saveSettings({
-                  ...settings,
-                  apiKey: "",
-                  rememberKey: false
-                })}>Forget API key</button>
                 <div className="provider-validation">
-                  <button
+                  <Button
                     disabled={validatingProvider}
                     onClick={() => void validateActiveProvider()}
                   >
-                    {validatingProvider ? "Validating…" : "Validate connection"}
-                  </button>
+                    <ActionIcon name="sync" />{validatingProvider ? "Validating…" : "Validate connection"}
+                  </Button>
                   {providerValidation && (
                     <span
                       className={providerValidation.startsWith("Connection validated")
@@ -5898,7 +6412,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     </span>
                   )}
                   <small>
-                    Sends a minimal one-token request. Provider billing may apply.
+                    Sends a small bounded validation request. Provider billing may apply.
                   </small>
                 </div>
               </div>
@@ -5911,15 +6425,15 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   Catalog metadata is informational. Skill instructions are loaded only
                   for matching Chat turns and are never loaded by Notebook.
                   {" "}
-                  <button className="inline-help-link" onClick={() => setShowHelp(true)}>
+                  <Button className="inline-help-link" onClick={() => setShowHelp(true)}>
                     What is a skill?
-                  </button>
+                  </Button>
                 </p>
                 <div className="custom-skill-actions">
-                  <button onClick={() => customSkillUploadInput.current?.click()}>
-                    Upload skill
-                  </button>
-                  <button onClick={() => void linkCustomSkill()}>Link skill URL</button>
+                  <Button onClick={() => customSkillUploadInput.current?.click()}>
+                    <ActionIcon name="upload" />Upload skill
+                  </Button>
+                  <Button onClick={() => void linkCustomSkill()}><ActionIcon name="attach" />Link skill URL</Button>
                   <input
                     ref={customSkillUploadInput}
                     hidden
@@ -6036,13 +6550,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         />
       </div>
     </main>
+    </BlueprintThemeProvider>
   );
 
   async function replaceMissingLocal(file: WorkspaceFile, source: File | null) {
     const current = workspaceRef.current;
     if (!source || !current) return;
     if (source.size > MAX_FILE_BYTES) {
-      setStatus(`${source.name} exceeds the 256 MiB file limit`);
+      setStatus(`${source.name} exceeds the 2 GiB file limit`);
       return;
     }
     const data = await source.arrayBuffer();
@@ -6086,7 +6601,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const saved = current?.methods.flatMap((method) =>
         method.versions.map((version) => ({ method, version }))
       ).find(({ version }) => version.codeHash === execution.codeHash);
-      const renderResult = await replaySavedGallery(
+      const renderResult = await replaySavedRender(
         executionResult,
         execution.chatId,
         promptId,
@@ -6095,7 +6610,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       );
       setStatus(
         renderResult
-          ? "Python rerun completed and rendered its PNG gallery"
+          ? "Python rerun completed and rendered its ZarrViewer PNG"
           : "Python rerun completed"
       );
     } catch (error) {
@@ -6117,7 +6632,13 @@ type IconName =
   | "collapse"
   | "expand"
   | "chevron"
-  | "more";
+  | "more"
+  | "copy"
+  | "settings"
+  | "help"
+  | "sun"
+  | "moon"
+  | "action";
 
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
@@ -6131,7 +6652,13 @@ function Icon({ name, className = "" }: { name: IconName; className?: string }) 
     collapse: <><path d="m7 9 5-5 5 5M7 15l5 5 5-5" /></>,
     expand: <><path d="m7 5 5 5 5-5M7 19l5-5 5 5" /></>,
     chevron: <path d="m9 5 7 7-7 7" />,
-    more: <><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" /></>
+    more: <><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" /></>,
+    copy: <><rect x="8" y="7" width="11" height="13" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z" /></>,
+    help: <><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.4 2.4 0 1 1 3.8 2c-1 .7-1.6 1.1-1.6 2.3M12 17h.01" /></>,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" /></>,
+    moon: <path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z" />,
+    action: <><circle cx="12" cy="12" r="9" /><path d="m9 8 5 4-5 4" /></>
   };
   return (
     <svg

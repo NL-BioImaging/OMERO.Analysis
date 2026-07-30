@@ -96,4 +96,21 @@ describe("ExecutionCard", () => {
     expect(screen.getByRole("button", { name: "Save as method" }))
       .toHaveAttribute("title", expect.stringMatching(/assistant has finished/i));
   });
+
+  it("labels a superseded run and hides reusable actions", () => {
+    render(
+      <ExecutionCard
+        execution={execution({ purpose: "analysis" })}
+        files={[]}
+        onSave={vi.fn()}
+        onRerun={vi.fn()}
+        superseded
+      />
+    );
+
+    expect(screen.getByText("Earlier Python attempt (local)")).toBeInTheDocument();
+    expect(screen.getByText(/later run.*replaced these outputs/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save as method" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rerun" })).not.toBeInTheDocument();
+  });
 });

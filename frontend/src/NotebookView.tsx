@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import { PythonRuntime } from "./runtime";
 import { MarkdownPreview, PythonPreview } from "./components/WorkspacePanels";
+import { ActionIcon } from "./components/ActionIcon";
+import { Button } from "./components/BlueprintControls";
 import type {
   NotebookCell,
   NotebookDocument,
@@ -76,6 +78,73 @@ export function parseNotebook(data: ArrayBuffer): NotebookDocument {
 
 export function serializeNotebook(document: NotebookDocument): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(document, null, 2));
+}
+
+const INPUT_BINDINGS_KIND = "input-bindings";
+
+function fileExtension(name: string): string {
+  const match = name.toLowerCase().match(/(\.[^.\\/]+)$/);
+  return match?.[1] || "";
+}
+
+function inputReplacement(
+  referencedName: string,
+  inputs: WorkspaceFile[]
+): string | null {
+  const basename = referencedName.replace(/\\/g, "/").split("/").at(-1) || referencedName;
+  const exact = inputs.find((file) => file.name === basename);
+  if (exact) return exact.name;
+  const extension = fileExtension(basename);
+  const candidates = inputs.filter((file) => fileExtension(file.name) === extension);
+  return candidates.length === 1 ? candidates[0].name : null;
+}
+
+function rebindInputPaths(source: string, inputs: WorkspaceFile[]): string {
+  return source.replace(
+    /(["'])(\/input\/(?:selected_measurements\/)?)([^"']+)\1/g,
+    (value, quote: string, _prefix: string, referencedName: string) => {
+      const replacement = inputReplacement(referencedName, inputs);
+      return replacement ? `${quote}/input/${replacement}${quote}` : value;
+    }
+  );
+}
+
+export function reattachNotebookDocument(
+  document: NotebookDocument,
+  workspaceInputs: WorkspaceFile[]
+): NotebookDocument {
+  const inputs = workspaceInputs.filter(
+    (file) => file.source !== "result" && file.state === "ready" &&
+      !file.deletedAt && Boolean(file.data)
+  );
+  const bindingSource = [
+    "# OMERO.Analysis input bindings — maintained by Reattach input data",
+    "from pathlib import Path as _OAPath",
+    'OA_INPUT_DIR = _OAPath("/input")',
+    "OA_ATTACHED_INPUTS = {",
+    ...inputs.map((file) =>
+      `    ${JSON.stringify(file.name)}: OA_INPUT_DIR / ${JSON.stringify(file.name)},`
+    ),
+    "}",
+    ""
+  ].join("\n");
+  const bindingCell: NotebookCell = {
+    id: "omero-analysis-input-bindings",
+    cell_type: "code",
+    source: bindingSource,
+    metadata: { omero_analysis: { kind: INPUT_BINDINGS_KIND } },
+    execution_count: null,
+    outputs: []
+  };
+  const cells = document.cells
+    .filter((cell) =>
+      (cell.metadata?.omero_analysis as { kind?: string } | undefined)?.kind !==
+        INPUT_BINDINGS_KIND
+    )
+    .map((cell) => cell.cell_type === "code"
+      ? { ...cell, source: rebindInputPaths(sourceText(cell), inputs) }
+      : cell);
+  return { ...document, cells: [bindingCell, ...cells] };
 }
 
 function base64(data: ArrayBuffer): string {
@@ -222,11 +291,14 @@ export default function NotebookView(props: Props) {
   async function attachInputs(record: NotebookRecord): Promise<NotebookRecord> {
     setStatus("Attaching current Workspace input data…");
     await runtime.syncInputs(inputs);
+    const readyInputs = inputs.filter(
+      (file) => file.source !== "result" && file.state === "ready" &&
+        !file.deletedAt && Boolean(file.data)
+    );
     const changed = {
       ...record,
-      selectedDataFileIds: inputs
-        .filter((file) => file.state === "ready" && !file.deletedAt)
-        .map((file) => file.id),
+      document: reattachNotebookDocument(record.document, readyInputs),
+      selectedDataFileIds: readyInputs.map((file) => file.id),
       updatedAt: new Date().toISOString()
     };
     await onChange(changed);
@@ -241,8 +313,8 @@ export default function NotebookView(props: Props) {
     await runtime.reset();
     let working: NotebookRecord | null = await attachInputs(notebook);
     let count = 1;
-    for (let index = 0; index < notebook.document.cells.length; index += 1) {
-      if (notebook.document.cells[index].cell_type !== "code") continue;
+    for (let index = 0; working && index < working.document.cells.length; index += 1) {
+      if (working.document.cells[index].cell_type !== "code") continue;
       setStatus(`Running cell ${index + 1}…`);
       working = await executeCell(index, count++, working);
       if (!working) break;
@@ -292,11 +364,11 @@ export default function NotebookView(props: Props) {
     <section className="notebook-tab" aria-label="Notebook">
       <div className="notebook-toolbar">
         <strong>{notebook?.name || "No notebook selected"}</strong>
-        <button disabled={!notebook || running} onClick={() => void runAll()}>Run</button>
-        <button disabled={!notebook || !running} onClick={() => void stopReset()}>Stop</button>
-        <button disabled={!notebook || running} onClick={() => void clearOutputs()}>Clear output</button>
-        <button disabled={!notebook || running}
-          onClick={() => notebook && void attachInputs(notebook)}>Reattach input data</button>
+        <Button disabled={!notebook || running} onClick={() => void runAll()}><ActionIcon name="run" />Run</Button>
+        <Button disabled={!notebook || !running} onClick={() => void stopReset()}><ActionIcon name="stop" />Stop</Button>
+        <Button disabled={!notebook || running} onClick={() => void clearOutputs()}><ActionIcon name="clear" />Clear output</Button>
+        <Button disabled={!notebook || running}
+          onClick={() => notebook && void attachInputs(notebook)}><ActionIcon name="attach" />Reattach input data</Button>
         {workspaceActions}
       </div>
       <p className="notebook-status" role="status">{status}</p>

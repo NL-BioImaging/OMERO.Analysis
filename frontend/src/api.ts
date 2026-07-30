@@ -766,7 +766,12 @@ export async function validateProviderConnection(
 ): Promise<string> {
   if (!settings.endpoint.trim()) throw new Error("The API endpoint is empty");
   if (!settings.model.trim()) throw new Error("The model or deployment is empty");
-  if (!settings.apiKey.trim()) throw new Error("The API key is empty");
+  if (
+    (settings.protocol === "anthropic" || settings.authMode !== "none") &&
+    !settings.apiKey.trim()
+  ) {
+    throw new Error("The API key is empty");
+  }
   const endpoint = providerEndpoint(settings);
   const isAnthropic = settings.protocol === "anthropic";
   const headers: Record<string, string> = {
@@ -777,12 +782,19 @@ export async function validateProviderConnection(
     headers["anthropic-version"] = "2023-06-01";
   } else if (settings.authMode === "api-key") {
     headers["api-key"] = settings.apiKey;
-  } else {
+  } else if (settings.authMode === "bearer") {
     headers.Authorization = `Bearer ${settings.apiKey}`;
   }
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
+  const openAiBody = (tokenParameter: "max_tokens" | "max_completion_tokens") => ({
+    model: settings.model,
+    [tokenParameter]: tokenParameter === "max_completion_tokens" ? 128 : 1,
+    messages: [{ role: "user", content: "Reply OK" }]
+  });
+  const prefersCompletionTokens = /^(?:gpt-5|o[1-9])(?:[-.]|$)/i.test(
+    settings.model.trim()
+  );
+  const request = (tokenParameter: "max_tokens" | "max_completion_tokens") =>
+    fetch(endpoint, {
       method: "POST",
       signal,
       headers,
@@ -790,12 +802,25 @@ export async function validateProviderConnection(
         model: settings.model,
         max_tokens: 1,
         messages: [{ role: "user", content: "Reply OK" }]
-      } : {
-        model: settings.model,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "Reply OK" }]
-      })
+      } : openAiBody(tokenParameter))
     });
+  let response: Response;
+  try {
+    const preferred = prefersCompletionTokens
+      ? "max_completion_tokens"
+      : "max_tokens";
+    response = await request(preferred);
+    if (!isAnthropic && response.status === 400) {
+      const detail = await response.clone().text().catch(() => "");
+      const unsupported = detail.toLowerCase().includes("unsupported parameter");
+      const namesAlternative =
+        detail.includes("max_completion_tokens") || detail.includes("max_tokens");
+      if (unsupported && namesAlternative) {
+        response = await request(
+          preferred === "max_tokens" ? "max_completion_tokens" : "max_tokens"
+        );
+      }
+    }
   } catch (error) {
     if (signal.aborted) throw new Error("Connection validation timed out");
     throw new Error(
@@ -854,7 +879,9 @@ async function completeOpenAi(
     : {};
   const authorization: Record<string, string> = settings.authMode === "api-key"
     ? { "api-key": settings.apiKey }
-    : { Authorization: `Bearer ${settings.apiKey}` };
+    : settings.authMode === "bearer"
+      ? { Authorization: `Bearer ${settings.apiKey}` }
+      : {};
   const response = await fetch(providerEndpoint(settings), {
     method: "POST",
     signal,

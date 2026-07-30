@@ -17,6 +17,45 @@ export interface RenderBundle {
   execution: ExecutionRecord;
 }
 
+const ZARR_RECIPE_MARKER = "# OMERO_ANALYSIS_ZARR_RENDER_RECIPE: ";
+
+export function withZarrRenderRecipe(
+  code: string,
+  recipe: ZarrRenderRecipe
+): string {
+  const source = code.trimEnd();
+  const encodedRecipe = JSON.stringify(JSON.stringify(recipe));
+  return `${source}
+
+# Reproducible OME-Zarr render
+# OMERO.Analysis resolves this store UUID against the current OMERO context,
+# then calls the authenticated ZarrViewer after Python completes. Rerunning this
+# Method does not contact an AI provider and never embeds deployment-local OMERO IDs.
+import json as _oa_json
+OMERO_ANALYSIS_ZARR_RENDER_RECIPE = _oa_json.loads(${encodedRecipe})
+if isinstance(result, dict):
+    result = dict(result)
+    result["omero_analysis_render_recipe"] = OMERO_ANALYSIS_ZARR_RENDER_RECIPE
+${ZARR_RECIPE_MARKER}${JSON.stringify(recipe)}`;
+}
+
+export function zarrRenderRecipeFromCode(
+  code: string
+): ZarrRenderRecipe | undefined {
+  const line = code.split(/\r?\n/).find((value) =>
+    value.startsWith(ZARR_RECIPE_MARKER)
+  );
+  if (!line) return undefined;
+  try {
+    const recipe = JSON.parse(line.slice(ZARR_RECIPE_MARKER.length));
+    return recipe && typeof recipe === "object" && Array.isArray(recipe.panels)
+      ? recipe as ZarrRenderRecipe
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function selectReproducibleExecutions(
   executions: ExecutionRecord[],
   artifact: ArtifactRecord
@@ -52,7 +91,10 @@ export function buildRenderBundle(
   const sourceCode = Array.from(new Set(selected.map((item) => item.code.trimEnd()))).join(
     "\n\n# Continued verified analysis\n"
   );
-  const code = withAssistantSummaryComments(sourceCode, assistantSummary);
+  const code = withZarrRenderRecipe(
+    withAssistantSummaryComments(sourceCode, assistantSummary),
+    recipe
+  );
   const citedIds = new Set(artifact.viewer?.evidenceIds || []);
   const cited = evidence.filter((item) =>
     item.status === "success" &&

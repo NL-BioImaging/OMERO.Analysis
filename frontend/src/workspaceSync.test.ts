@@ -90,20 +90,53 @@ describe("Workspace synchronization inventory", () => {
   it("is deterministic, excludes ordinary inputs, and includes template-named inputs", async () => {
     const first = await buildWorkspaceSyncPayload(workspace(), context);
     const second = await buildWorkspaceSyncPayload(workspace(), context);
+    const result = first.inventory.items.find((item) =>
+      item.key.startsWith("result-content:png-image:")
+    );
     expect(first.inventory).toEqual(second.inventory);
-    expect(first.inventory.items.map((item) => item.key)).toEqual([
+    expect(first.inventory.items.map((item) => item.key)).toEqual(expect.arrayContaining([
       "chat:chat-1:json",
       "chat:chat-1:markdown",
-      "result:result-1",
       "template-input:template-1"
-    ]);
-    expect(first.inventory.items.find((item) => item.key === "result:result-1")?.kind)
-      .toBe("png-image");
+    ]));
+    expect(result?.kind).toBe("png-image");
+    expect(result?.metadata).toMatchObject({
+      contentAddressed: true,
+      sourceCount: 1,
+      sources: [{ fileId: "result-1", chatId: "chat-1" }]
+    });
     expect(first.bytes.has("input-1")).toBe(false);
     expect(first.inventory.items.find(
       (item) => item.key === "template-input:template-1"
     )?.kind).toBe("template-input");
     expect(first.bytes.has("template-input:template-1")).toBe(true);
+  });
+
+  it("synchronizes identical output bytes once and records every origin", async () => {
+    const value = workspace();
+    value.files.push({
+      ...value.files[2],
+      id: "result-2",
+      chatId: undefined,
+      methodId: "method-1",
+      logicalPath: "/output/method/plot-copy.png"
+    });
+
+    const payload = await buildWorkspaceSyncPayload(value, context);
+    const results = payload.inventory.items.filter((item) =>
+      item.key.startsWith("result-content:")
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].metadata).toMatchObject({
+      sourceCount: 2,
+      sources: [
+        { fileId: "result-1", chatId: "chat-1", methodId: null },
+        { fileId: "result-2", chatId: null, methodId: "method-1" }
+      ]
+    });
+    expect(Array.from(payload.bytes.keys()).filter((key) =>
+      key.startsWith("result-content:")
+    )).toHaveLength(1);
   });
 
   it("canonicalizes object keys and detects a remote digest mismatch", () => {

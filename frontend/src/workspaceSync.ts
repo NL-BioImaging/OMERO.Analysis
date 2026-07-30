@@ -102,28 +102,65 @@ export async function buildWorkspaceSyncPayload(
     ));
   };
 
+  const resultGroups = new Map<string, {
+    kind: SyncItemKind;
+    mimetype: string;
+    sha256: string;
+    data: Uint8Array;
+    files: typeof workspace.files;
+  }>();
   for (const file of workspace.files
     .filter((entry) => entry.source === "result" && !entry.deletedAt)
-    .sort((left, right) => left.id.localeCompare(right.id))) {
+    .sort((left, right) =>
+      left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
+    )) {
     if (!file.data) {
       throw new Error(`Result ${file.name} is unavailable in this browser`);
     }
     const data = new Uint8Array(file.data.slice(0));
+    const kind: SyncItemKind = file.type === "image/png" ? "png-image" : "result";
+    const mimetype = file.type || "application/octet-stream";
+    const digest = await sha256(data.slice().buffer);
+    const groupKey = `${kind}:${mimetype}:${digest}`;
+    const group = resultGroups.get(groupKey);
+    if (group) {
+      group.files.push(file);
+    } else {
+      resultGroups.set(groupKey, {
+        kind,
+        mimetype,
+        sha256: digest,
+        data,
+        files: [file]
+      });
+    }
+  }
+
+  for (const group of Array.from(resultGroups.values())
+    .sort((left, right) => left.sha256.localeCompare(right.sha256))) {
+    const canonicalFile = group.files[0];
+    const sources = group.files.map((file) => ({
+      fileId: file.id,
+      name: file.name,
+      logicalPath: file.logicalPath,
+      chatId: file.chatId || null,
+      methodId: file.methodId || null,
+      pipelineId: file.pipelineId || null,
+      notebookId: file.notebookId || null,
+      executionId: file.executionId || null,
+      viewer: file.viewer || null
+    }));
     await add(
-      `result:${file.id}`,
-      file.type === "image/png" ? "png-image" : "result",
-      file.name,
-      file.type || "application/octet-stream",
-      file.logicalPath,
-      data,
+      `result-content:${group.kind}:${group.sha256}`,
+      group.kind,
+      canonicalFile.name,
+      group.mimetype,
+      `Results/${canonicalFile.name}`,
+      group.data,
       {
-        fileId: file.id,
-        chatId: file.chatId || null,
-        methodId: file.methodId || null,
-        pipelineId: file.pipelineId || null,
-        notebookId: file.notebookId || null,
-        executionId: file.executionId || null,
-        viewer: file.viewer || null
+        contentAddressed: true,
+        sourceCount: sources.length,
+        sources
       }
     );
   }

@@ -641,13 +641,60 @@ def _remote_ref(obj, item):
     }
 
 
-def _item_marker_values(workspace_id, item):
-    return {
+def _item_marker_values(workspace_id, item, remote=None):
+    values = {
         "workspace_id": workspace_id,
         "item_key": item["key"],
         "item_kind": item["kind"],
         "sha256": item["sha256"],
     }
+    metadata = item.get("metadata") or {}
+    sources = metadata.get("sources") if isinstance(metadata, dict) else None
+    if isinstance(sources, list):
+        values.update({
+            "canonical_name": item["name"],
+            "source_count": len(sources),
+            "source_references": json.dumps(
+                sources, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            ),
+        })
+    if isinstance(remote, dict):
+        values.update({
+            "remote_object_type": remote.get("object_type") or "",
+            "remote_object_id": remote.get("object_id") or "",
+        })
+    return values
+
+
+def _sync_content_markers(conn, dataset, workspace_id, items):
+    """Keep searchable key-value provenance for content-addressed results."""
+    current_keys = set()
+    for item in items:
+        if item.get("kind") not in {"png-image", "result"}:
+            continue
+        current_keys.add(item["key"])
+        _set_marker(
+            conn,
+            dataset,
+            _item_marker_values(workspace_id, item, item.get("remote")),
+            "content-item",
+            {"item_key": item["key"]},
+        )
+
+    for annotation in _annotations(dataset):
+        if str(_plain(getattr(annotation, "getNs", lambda: None)())) != SYNC_NAMESPACE:
+            continue
+        values = _map_values(annotation)
+        if values.get("role") != "content-item":
+            continue
+        if values.get("workspace_id") != workspace_id:
+            continue
+        if values.get("item_key") in current_keys:
+            continue
+        try:
+            _delete(conn, "Annotation", annotation.getId())
+        except Exception:
+            pass
 
 
 def _manifest_for(inventory, revision, remote_items):
@@ -772,6 +819,12 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             "project_id": project.getId(),
             "dataset_id": dataset.getId(),
         }, "source-link", {"workspace_id": inventory["workspace"]["id"]})
+        _sync_content_markers(
+            conn,
+            dataset,
+            inventory["workspace"]["id"],
+            new_items,
+        )
     except Exception:
         for object_type, object_id in reversed(staged):
             try:
@@ -812,9 +865,25 @@ def remove_sync(conn, obj, workspace_id):
         return {"removed": 0, "dataset_deleted": False, "preserved_unmanaged": 0}
     manifest_annotation, manifest = _read_manifest(dataset)
     removed = 0
+    content_marker_ids = {
+        int(annotation.getId())
+        for annotation in _annotations(dataset)
+        if (
+            str(_plain(getattr(annotation, "getNs", lambda: None)()))
+            == SYNC_NAMESPACE
+            and _map_values(annotation).get("role") == "content-item"
+            and _map_values(annotation).get("workspace_id") == workspace_id
+        )
+    }
     for item in _remote_items(manifest).values():
         try:
             _delete_ref(conn, item.get("remote") or {})
+            removed += 1
+        except Exception:
+            pass
+    for annotation_id in content_marker_ids:
+        try:
+            _delete(conn, "Annotation", annotation_id)
             removed += 1
         except Exception:
             pass
@@ -846,6 +915,7 @@ def remove_sync(conn, obj, workspace_id):
     remaining_annotations = [
         annotation for annotation in _annotations(dataset)
         if int(annotation.getId()) not in managed_ids
+        and int(annotation.getId()) not in content_marker_ids
         and annotation is not marker_annotation
         and annotation is not manifest_annotation
     ]

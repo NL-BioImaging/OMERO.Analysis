@@ -28,6 +28,8 @@ def test_center_panel_supports_expected_omero_objects():
     assert "supported_attachments" in panel
     assert "workspace_snapshots" in panel
     assert "analysis_library_tree.html" in panel
+    assert "Upload Attachment" in panel
+    assert "oa-attachment-upload-input" in panel
 
 
 def test_combined_shell_includes_notebook_runtime_contract():
@@ -47,6 +49,8 @@ def test_combined_shell_includes_notebook_runtime_contract():
     assert "Select data attachments" in notebook_panel
     assert "Use attached Notebooks" in notebook_panel
     assert "oa-notebook-upload" in notebook_panel
+    assert "Upload Attachment" in notebook_panel
+    assert "oa-attachment-upload-input" in notebook_panel
     assert "context.notebooks" in notebook_panel
     assert "analysis_library_tree.html" in notebook_panel
     assert notebook_panel.index("Select data attachments") < notebook_panel.index(

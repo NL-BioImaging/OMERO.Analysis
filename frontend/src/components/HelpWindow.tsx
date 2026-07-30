@@ -1,6 +1,7 @@
 import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import manualMarkdown from "../../../docs/MANUAL.md?raw";
 import { MarkdownPreview } from "./WorkspacePanels";
+import { Button, Input } from "./BlueprintControls";
 
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
@@ -62,12 +63,12 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
     >
       <header className="help-window-titlebar" onPointerDown={startDrag}>
         <strong>OMERO.Analysis Manual</strong>
-        <button aria-label="Close Help" onClick={onClose}>×</button>
+        <Button aria-label="Close Help" onClick={onClose}>×</Button>
       </header>
       <div className="help-window-search">
         <label>
           <span className="sr-only">Search manual</span>
-          <input
+          <Input
             type="search"
             placeholder="Search the manual…"
             value={query}
@@ -80,7 +81,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
         <nav aria-label="Manual table of contents">
           <strong>Contents</strong>
           {sections.map((section) => (
-            <button
+            <Button
               key={section.id}
               onClick={() => document.getElementById(section.id)?.scrollIntoView({
                 behavior: "smooth",
@@ -88,7 +89,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
               })}
             >
               {section.heading}
-            </button>
+            </Button>
           ))}
         </nav>
         <div className="help-window-content">

@@ -1,6 +1,6 @@
 export const TEMPERATURE = 1;
-export const MAX_FILE_BYTES = 256 * 1024 * 1024;
-export const MAX_WORKSPACE_BYTES = 512 * 1024 * 1024;
+export const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+export const MAX_WORKSPACE_BYTES = 4 * 1024 * 1024 * 1024;
 export const MAX_TOOL_TEXT = 64 * 1024;
 
 export const SYSTEM_PROMPT = `You are the analysis assistant inside OMERO Analysis.

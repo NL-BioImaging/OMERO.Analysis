@@ -49,6 +49,13 @@ channel, label, viewer-version, and resolved-object provenance. It is not
 automatically attached to OMERO and does not require a same-stem CSV even when
 Plot + CSV is enabled. **Save analysis + render** persists the versioned Python
 analysis, exact recipe, PNG, cited evidence manifest, and a downloadable ZIP.
+The exact ZarrViewer recipe is also embedded as executable Python in the saved
+Method. Python exposes the recipe in its structured result; Analysis then
+resolves its portable store UUID against the current OMERO context and sends
+the recipe to ZarrViewer's authenticated render API. This preserves the
+no-network Python sandbox while making single-ROI and gallery reruns independent
+of the AI provider. Deployment-local OMERO object IDs are not stored in the
+Method.
 
 ## Privacy boundary
 

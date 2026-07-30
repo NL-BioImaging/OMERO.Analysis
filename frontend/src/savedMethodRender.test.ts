@@ -1,4 +1,4 @@
-import { savedGalleryRequest } from "./savedMethodRender";
+import { savedGalleryRequest, savedRecipeReplay } from "./savedMethodRender";
 
 const panels = [
   {
@@ -71,5 +71,71 @@ describe("saved method gallery replay", () => {
         render_panels: panels
       }
     }), "gallery.py")).toBeNull();
+  });
+
+  it("replays a saved single ROI with fresh navigation and overlay values", () => {
+    const replay = savedRecipeReplay(JSON.stringify({
+      evidence_id: "fresh-evidence",
+      preview: {
+        result: {
+          store_uuid: "11111111-1111-4111-8111-111111111111",
+          field: "C/3/9",
+          source_channels: [2],
+          timepoint: 1,
+          centroid_z_px: 3,
+          cell_label_path: "C/3/9/labels/cells",
+          cell_label_value: 88,
+          foci_overlays: [{
+            label_path: "C/3/9/labels/foci",
+            values: [901, 902]
+          }]
+        }
+      }
+    }), {
+      storeUuid: "ac680965-c76f-47f3-98f9-95f07ecae356",
+      panels: [{
+        field: "B/1/5",
+        roi: [0, 0, 400, 400],
+        sourceChannels: [1],
+        t: 0,
+        z: 0,
+        title: "Most foci",
+        overlays: [{
+          labelPath: "B/1/5/labels/cells",
+          values: [12],
+          mode: "outline",
+          opacity: 1,
+          outlineWidth: 2,
+          name: "cell"
+        }, {
+          labelPath: "B/1/5/labels/foci",
+          values: [31],
+          mode: "outline",
+          opacity: 1,
+          outlineWidth: 2,
+          name: "foci"
+        }]
+      }]
+    });
+    expect(replay).toMatchObject({
+      evidenceIds: ["fresh-evidence"],
+      renderKind: "roi",
+      recipe: {
+        storeUuid: "11111111-1111-4111-8111-111111111111",
+        panels: [{
+          field: "C/3/9",
+          sourceChannels: [2],
+          t: 1,
+          z: 3,
+          overlays: [{
+            labelPath: "C/3/9/labels/cells",
+            values: [88]
+          }, {
+            labelPath: "C/3/9/labels/foci",
+            values: [901, 902]
+          }]
+        }]
+      }
+    });
   });
 });

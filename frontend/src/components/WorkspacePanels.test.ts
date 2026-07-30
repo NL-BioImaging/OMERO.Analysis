@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import {
   ArtifactInspector,
+  ComposerPanel,
   delimitedShape,
   MarkdownPreview,
   parseDelimited
@@ -64,6 +65,44 @@ describe("artifact delimited previews", () => {
     expect(screen.getByText("Columns").nextElementSibling).toHaveTextContent("2");
   });
 
+  it("renders a bounded XLSX template preview from its local data profile", () => {
+    const file: WorkspaceFile = {
+      id: "xlsx", workspaceId: "workspace", name: "screen-template.xlsx",
+      logicalPath: "Workspace/Input/screen-template.xlsx",
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      size: 200, sha256: "hash", source: "local", state: "ready",
+      data: new ArrayBuffer(200),
+      createdAt: "2026-07-30T10:00:00Z"
+    };
+    render(createElement(ArtifactInspector, {
+      item: { kind: "file", title: file.name, file },
+      profiles: [{
+        path: "/input/screen-template.xlsx", format: "xlsx", size: 200,
+        summary: {
+          rows: 2,
+          sheet: "Plate layout",
+          sheets: ["Plate layout", "Notes"],
+          columns: [
+            { name: "Well", type: "object" },
+            { name: "Condition", type: "object" }
+          ],
+          preview: {
+            columns: ["Well", "Condition"],
+            data: [["A1", "Control"], ["A2", "Treatment"]]
+          }
+        }
+      }],
+      canUpload: false,
+      onDownload: () => undefined,
+      onAttach: () => undefined
+    }));
+
+    expect(screen.getByText("Plate layout")).toBeInTheDocument();
+    expect(screen.getByText(/2 sheets in workbook/)).toBeInTheDocument();
+    expect(screen.getByText("A1")).toBeInTheDocument();
+    expect(screen.getByText("Treatment")).toBeInTheDocument();
+  });
+
   it("shows DuckDB tables and columns instead of an opaque binary preview", () => {
     const file: WorkspaceFile = {
       id: "db", workspaceId: "workspace", name: "measurements.duckdb",
@@ -119,5 +158,37 @@ describe("artifact delimited previews", () => {
     expect(container).toHaveTextContent("value = 1");
     expect(container.querySelector("img[alt='Notebook PNG output']")).not.toBeNull();
     expect(screen.queryByText(/aGVsbG8=/)).toBeNull();
+  });
+});
+
+describe("ComposerPanel provider readiness", () => {
+  it("does not require an API key for a keyless local profile", () => {
+    render(createElement(ComposerPanel, {
+      runtimeReady: true,
+      runtimeProgress: { percent: 100, message: "Ready" },
+      status: "Ready",
+      usage: null,
+      settings: {
+        protocol: "openai",
+        endpoint: "http://localhost:1234/v1",
+        authMode: "none",
+        apiKey: "",
+        model: "local-model",
+        contextWindow: 0,
+        rememberKey: false
+      },
+      blocked: false,
+      canChat: true,
+      composerPlaceholder: "Ask",
+      prompt: "",
+      busy: false,
+      onPromptChange: () => undefined,
+      onSend: () => undefined,
+      onStop: () => undefined,
+      onReset: () => undefined
+    }));
+
+    expect(screen.queryByText(/Enter an AI endpoint/)).not.toBeInTheDocument();
+    expect(screen.getByText("Ready — you can ask a question")).toBeInTheDocument();
   });
 });

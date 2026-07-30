@@ -540,7 +540,7 @@ export interface DataProfile {
 export interface ProviderSettings {
   protocol: "openai" | "anthropic";
   endpoint: string;
-  authMode: "bearer" | "api-key";
+  authMode: "none" | "bearer" | "api-key";
   apiKey: string;
   model: string;
   contextWindow: number;
@@ -574,9 +574,10 @@ export interface CustomSkill {
 
 export interface AnalysisSettingsBundle {
   schema: "nl.bioimaging.analysis.settings.bundle.v1";
-  analysis: {
-    plotCsv: boolean;
-  };
+    analysis: {
+      plotCsv: boolean;
+      theme?: "dark" | "light";
+    };
   ai: AiProfileStore;
   skills: CustomSkill[];
 }

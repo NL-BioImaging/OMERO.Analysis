@@ -30,6 +30,15 @@
       Choose one or more directly attached databases, workbooks, or tables.
       They are made available to the Notebook under <code>/input</code>.
     </p>
+    {% if context.can_annotate %}
+      <div class="oa-attachment-upload-row">
+        <button class="oa-button oa-upload-attachment" type="button">
+          Upload Attachment
+        </button>
+        <input class="oa-attachment-upload-input" type="file" hidden>
+        <span>Attach a supported data or result file to this OMERO object.</span>
+      </div>
+    {% endif %}
     <ul class="oa-attachments">
       {% for attachment in context.supported_attachments %}
         <li class="oa-data-card">

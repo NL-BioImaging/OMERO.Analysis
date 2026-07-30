@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { executionActivityText } from "../presentation";
 import type { ExecutionRecord, WorkspaceFile } from "../types";
+import { ActionIcon } from "./ActionIcon";
+import { Button, Input } from "./BlueprintControls";
 
 export function ExecutionCard({
   execution,
@@ -8,6 +10,7 @@ export function ExecutionCard({
   onSave,
   onRerun,
   viewerPreparation = false,
+  superseded = false,
   saveDisabled = false
 }: {
   execution: ExecutionRecord;
@@ -15,6 +18,7 @@ export function ExecutionCard({
   onSave: () => void;
   onRerun: () => void;
   viewerPreparation?: boolean;
+  superseded?: boolean;
   saveDisabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -29,25 +33,26 @@ export function ExecutionCard({
   const showReusableActions =
     !isInspection &&
     !viewerPreparation &&
+    !superseded &&
     ["success", "reused"].includes(execution.status);
   const timing = executionActivityText(purpose, execution.durationMs);
   const controls = (position: "top" | "bottom") => (
     <div className={`execution-actions ${position}`}>
-      <button
+      <Button
         className="detail-toggle"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-      >{expanded ? "Collapse" : "Show details"}</button>
+      ><ActionIcon name={expanded ? "clear" : "run"} />{expanded ? "Collapse" : "Show details"}</Button>
       {showReusableActions && (
-        <button
+        <Button
           disabled={saveDisabled}
           title={saveDisabled ? "Wait until the assistant has finished its summary" : undefined}
           onClick={onSave}
         >
-          Save as method
-        </button>
+          <ActionIcon name="save" />Save as method
+        </Button>
       )}
-      {showReusableActions && <button onClick={onRerun}>Rerun</button>}
+      {showReusableActions && <Button onClick={onRerun}><ActionIcon name="reset" />Rerun</Button>}
       <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
     </div>
   );
@@ -65,6 +70,8 @@ export function ExecutionCard({
                 ? "AI data inspection (local)"
                 : viewerPreparation
                   ? "Zarr render preparation (local)"
+                  : superseded
+                    ? "Earlier Python attempt (local)"
                 : "Python code (local)"}
           </span>
           {controls("top")}
@@ -78,6 +85,11 @@ export function ExecutionCard({
         {viewerPreparation && (
           <p className="inspection-note">
             This intermediate code prepared and validated the ZarrViewer render. Save the complete analysis and render from the image card below.
+          </p>
+        )}
+        {superseded && (
+          <p className="inspection-note">
+            A later run for this request replaced these outputs. Save or rerun the final Python block instead.
           </p>
         )}
         <div className="execution-content" hidden={!expanded}>
@@ -123,7 +135,7 @@ export function Preview({ value }: { value: unknown }) {
       <div className="table-wrap">
         <label className="table-filter">
           <span>Filter preview</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} />
         </label>
         <table>
           <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
@@ -146,9 +158,9 @@ export function Artifact({ file }: { file: WorkspaceFile }) {
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
   return url ? (
     <figure className={zoomed ? "artifact-zoomed" : ""}>
-      <button className="plot-zoom" onClick={() => setZoomed((value) => !value)}>
+      <Button className="plot-zoom" onClick={() => setZoomed((value) => !value)}>
         {zoomed ? "Close full view" : "Open full view"}
-      </button>
+      </Button>
       <img src={url} alt={file.name} onDoubleClick={() => setZoomed(true)} />
       <figcaption>{file.name}</figcaption>
     </figure>

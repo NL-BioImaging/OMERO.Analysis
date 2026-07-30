@@ -9,6 +9,8 @@ import type {
   WorkspaceFile
 } from "../types";
 import { Artifact } from "./ExecutionCard";
+import { ActionIcon } from "./ActionIcon";
+import { Button, TextArea } from "./BlueprintControls";
 
 function bytesLabel(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -97,11 +99,78 @@ export function delimitedShape(text: string, delimiter: string): {
   return { rows, columns };
 }
 
-function FilePreview({ file }: { file: WorkspaceFile }) {
+function ProfileTablePreview({ profile }: { profile: DataProfile }) {
+  const preview = profile.summary.preview;
+  if (!preview || typeof preview !== "object") return null;
+  const columns = Array.isArray((preview as { columns?: unknown }).columns)
+    ? (preview as { columns: unknown[] }).columns.map(String).slice(0, 50)
+    : [];
+  const data = Array.isArray((preview as { data?: unknown }).data)
+    ? (preview as { data: unknown[] }).data.slice(0, 100)
+    : [];
+  if (!columns.length) return null;
+  const sheet = typeof profile.summary.sheet === "string"
+    ? profile.summary.sheet
+    : "";
+  const sheets = Array.isArray(profile.summary.sheets)
+    ? profile.summary.sheets.map(String)
+    : [];
+  return (
+    <div className="table-wrap artifact-table">
+      {sheet && (
+        <p className="artifact-help">
+          Workbook sheet: <strong>{sheet}</strong>
+          {sheets.length > 1 ? ` · ${sheets.length} sheets in workbook` : ""}
+        </p>
+      )}
+      <table>
+        <thead><tr>{columns.map((column, index) => (
+          <th key={index}>{column}</th>
+        ))}</tr></thead>
+        <tbody>{data.map((rowValue, rowIndex) => {
+          const row = Array.isArray(rowValue) ? rowValue : [];
+          return (
+            <tr key={rowIndex}>
+              {columns.map((_, cellIndex) => (
+                <td key={cellIndex}>{String(row[cellIndex] ?? "")}</td>
+              ))}
+            </tr>
+          );
+        })}</tbody>
+      </table>
+      {typeof profile.summary.rows === "number" &&
+        profile.summary.rows > data.length && (
+          <p className="artifact-help">
+            Preview limited to {data.length.toLocaleString()} of{" "}
+            {profile.summary.rows.toLocaleString()} rows.
+          </p>
+        )}
+    </div>
+  );
+}
+
+function FilePreview({
+  file,
+  profile
+}: {
+  file: WorkspaceFile;
+  profile?: DataProfile;
+}) {
   if (file.type === "image/png" || file.type === "image/svg+xml") {
     return <Artifact file={file} />;
   }
   if (!file.data) return <p className="artifact-help">This file is not available locally.</p>;
+  if (/\.(xlsx?|xls)$/i.test(file.name)) {
+    const preview = profile ? <ProfileTablePreview profile={profile} /> : null;
+    if (preview) return preview;
+    return (
+      <p className="artifact-help">
+        {profile?.error
+          ? `Workbook preview could not be generated: ${profile.error}`
+          : "Workbook preview is being prepared by the local Python runtime…"}
+      </p>
+    );
+  }
   if (file.type.startsWith("text/") || /\.(csv|tsv|json|md|txt)$/i.test(file.name)) {
     const text = new TextDecoder().decode(file.data);
     if (/\.(csv|tsv)$/i.test(file.name)) {
@@ -464,6 +533,11 @@ export function ComposerPanel({
   onStop: () => void;
   onReset: () => void;
 }) {
+  const needsApiKey =
+    settings.protocol === "anthropic" || settings.authMode !== "none";
+  const providerMissing = Boolean(
+    !settings.endpoint || !settings.model || (needsApiKey && !settings.apiKey)
+  );
   return (
     <>
       {!runtimeReady && (
@@ -479,13 +553,17 @@ export function ComposerPanel({
         <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
       </div>
       {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
-      {!settings.endpoint || !settings.apiKey || !settings.model ? <div className="blocker">Enter an AI endpoint, model, and API key in Settings.</div> : null}
+      {providerMissing ? (
+        <div className="blocker">
+          {`Enter an AI endpoint and model${needsApiKey ? ", and API key" : ""} in Settings.`}
+        </div>
+      ) : null}
       <div className="composer">
         <div className={`composer-state ${canChat ? "ready" : "waiting"}`}>
           <span aria-hidden="true">{canChat ? "●" : "◷"}</span>
           {canChat ? "Ready — you can ask a question" : composerPlaceholder}
         </div>
-        <textarea
+        <TextArea
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
           onKeyDown={(event) => {
@@ -498,9 +576,9 @@ export function ComposerPanel({
           placeholder={composerPlaceholder}
         />
         {busy
-          ? <button className="stop" onClick={onStop}>Stop</button>
-          : <button disabled={!canChat || !prompt.trim()} onClick={onSend}>Send</button>}
-        <button disabled={busy || !runtimeReady} onClick={onReset}>Reset Python</button>
+          ? <Button className="stop" onClick={onStop}><ActionIcon name="stop" />Stop</Button>
+          : <Button disabled={!canChat || !prompt.trim()} onClick={onSend}><ActionIcon name="run" />Send</Button>}
+        <Button disabled={busy || !runtimeReady} onClick={onReset}><ActionIcon name="reset" />Reset Python</Button>
       </div>
     </>
   );
@@ -586,7 +664,7 @@ export function ArtifactInspector({
             </>
           ) : file ? (
             <>
-              <FilePreview file={file} />
+              <FilePreview file={file} profile={fileProfile} />
               {fileProfile && ["duckdb", "sqlite", "sqlite3"].includes(fileProfile.format) && (
                 <DatabaseSchemaPreview profile={fileProfile} />
               )}
@@ -610,8 +688,8 @@ export function ArtifactInspector({
                     Open in ZarrViewer
                   </a>
                 )}
-                <button onClick={() => onDownload(file)}>Download</button>
-                {canUpload && <button onClick={() => onAttach(file)}>Attach to OMERO</button>}
+                <Button onClick={() => onDownload(file)}><ActionIcon name="download" />Download</Button>
+                {canUpload && <Button onClick={() => onAttach(file)}><ActionIcon name="attach" />Attach to OMERO</Button>}
               </div>
             </>
           ) : (
