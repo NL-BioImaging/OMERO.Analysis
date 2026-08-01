@@ -17,6 +17,8 @@ describe("Python sandbox", () => {
   it("reports meaningful boot stages without weakening the sandbox", () => {
     expect(worker).toContain("Loading the browser Python engine");
     expect(worker).toContain("Loading data-analysis packages");
+    expect(worker).toContain('["micropip","numpy","pandas"');
+    expect(worker).toContain('required.push("scipy")');
     expect(worker).toContain("Loading seaborn plotting support");
     expect(worker).toContain('message.type === "begin"');
     expect(worker).toContain('removeTree("/output")');

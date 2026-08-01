@@ -1,21 +1,24 @@
 import hashlib
 import json
+import sys
+from types import ModuleType
 from types import SimpleNamespace
 
 import pytest
 from django.test import RequestFactory
 
-from omero_analysis.errors import FileTooLarge, PermissionDenied
+from omero_analysis.errors import FileTooLarge, InvalidObject, PermissionDenied
 from omero_analysis.workspace_sync import (
     INVENTORY_SCHEMA,
     _canonical_json,
     _item_marker_values,
+    _reconcile_result_attachments,
     plan_sync,
     sync_status,
     validate_inventory,
 )
 
-from .conftest import FakeConnection, FakeObject
+from .conftest import FakeAnnotation, FakeConnection, FakeObject
 
 
 def inventory(obj, conn, items=None):
@@ -89,6 +92,47 @@ def test_template_input_is_a_supported_managed_file_kind():
     assert validated["items"][0]["kind"] == "template-input"
 
 
+def test_plot_csv_must_reference_a_synchronized_png_image():
+    obj = FakeObject(object_id=151, name="2DWellTestZarr")
+    conn = FakeConnection(obj)
+    payload = inventory(obj, conn, [{
+        "key": "result:csv",
+        "kind": "result",
+        "name": "plot.csv",
+        "mimetype": "text/csv",
+        "size": 12,
+        "sha256": "a" * 64,
+        "logicalPath": "Results/plot.csv",
+        "metadata": {"plotImageKeys": ["result:missing-image"]},
+    }])
+
+    with pytest.raises(InvalidObject, match="unknown synchronized PNG"):
+        validate_inventory(payload, "workspace-1", "Screen", 151, obj, conn)
+
+
+def test_plot_csv_is_linked_to_image_instead_of_dataset():
+    annotation = FakeAnnotation(42, "plot.csv")
+    dataset = FakeObject(object_id=20, annotations=[annotation])
+    image = FakeObject(object_id=30)
+    item = {
+        "key": "result:csv",
+        "kind": "result",
+        "name": "plot.csv",
+        "metadata": {"plotImageKeys": ["result:image"]},
+    }
+
+    _reconcile_result_attachments(
+        FakeConnection(),
+        dataset,
+        [item],
+        {"result:csv": annotation, "result:image": image},
+        {},
+    )
+
+    assert annotation not in dataset.annotations
+    assert annotation in image.linked
+
+
 def test_content_marker_tracks_every_local_result_origin():
     values = _item_marker_values("workspace-1", {
         "key": f"result-content:result:{'a' * 64}",
@@ -97,6 +141,7 @@ def test_content_marker_tracks_every_local_result_origin():
         "sha256": "a" * 64,
         "metadata": {
             "sourceCount": 2,
+            "plotImageKeys": ["result-content:png-image:image-hash"],
             "sources": [
                 {"fileId": "chat-result", "chatId": "chat-1", "methodId": None},
                 {"fileId": "method-result", "chatId": None, "methodId": "method-1"},
@@ -108,6 +153,9 @@ def test_content_marker_tracks_every_local_result_origin():
     assert values["canonical_name"] == "counts.csv"
     assert values["remote_object_type"] == "Annotation"
     assert values["remote_object_id"] == 42
+    assert json.loads(values["plot_image_keys"]) == [
+        "result-content:png-image:image-hash"
+    ]
     assert json.loads(values["source_references"]) == [
         {"chatId": "chat-1", "fileId": "chat-result", "methodId": None},
         {"chatId": None, "fileId": "method-result", "methodId": "method-1"},
@@ -162,8 +210,29 @@ def test_changed_payload_limit_is_enforced(settings):
         plan_sync(request(), conn, obj, validated)
 
 
-def test_sync_uses_concrete_omero_container_and_link_models():
-    pytest.importorskip("omero.gateway")
+def test_sync_uses_concrete_omero_container_and_link_models(monkeypatch):
+    class Model:
+        def __init__(self, object_id=None, _loaded=True):
+            self.id = object_id
+
+    class Wrapper:
+        def __init__(self, _conn, model):
+            self._obj = model
+
+    gateway = ModuleType("omero.gateway")
+    gateway.DatasetWrapper = Wrapper
+    gateway.ProjectWrapper = Wrapper
+    model = ModuleType("omero.model")
+    model.DatasetI = type("DatasetI", (Model,), {})
+    model.ProjectI = type("ProjectI", (Model,), {})
+    model.ProjectDatasetLinkI = type("ProjectDatasetLinkI", (Model,), {})
+    package = ModuleType("omero")
+    package.gateway = gateway
+    package.model = model
+    monkeypatch.setitem(sys.modules, "omero", package)
+    monkeypatch.setitem(sys.modules, "omero.gateway", gateway)
+    monkeypatch.setitem(sys.modules, "omero.model", model)
+
     from omero.gateway import DatasetWrapper, ProjectWrapper
     from omero.model import DatasetI, ProjectDatasetLinkI, ProjectI
 

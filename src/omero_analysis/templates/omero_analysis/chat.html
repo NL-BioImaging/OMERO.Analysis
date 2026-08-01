@@ -1,4 +1,4 @@
-{% load static %}
+{% load analysis_assets %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <title>OMERO Analysis</title>
-  <link rel="stylesheet" href="{% static 'omero_analysis/app.css' %}?v=0.10.0-settings-help2">
+  <link rel="stylesheet" href="{% analysis_static 'omero_analysis/app.css' %}">
 </head>
 <body>
   <div id="root"
@@ -38,6 +38,6 @@
     <div class="boot-message">Starting OMERO Analysis…</div>
   </div>
   {{ context|json_script:"omero-analysis-context" }}
-  <script type="module" src="{% static 'omero_analysis/app.js' %}?v=0.10.0-settings-help2"></script>
+  <script type="module" src="{% analysis_static 'omero_analysis/app.js' %}"></script>
 </body>
 </html>

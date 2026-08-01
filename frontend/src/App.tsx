@@ -34,7 +34,6 @@ import {
   deleteNotebook as deleteStoredNotebook,
   getValue,
   listContextWorkspaces,
-  listUserWorkspaces,
   loadOrCreateWorkspace,
   loadWorkspace,
   newChat,
@@ -48,7 +47,7 @@ import {
   saveAudit,
   saveArtifact,
   saveEvidenceLedger,
-  saveWorkspace,
+  replaceWorkspace,
   settingsKey,
   aiProfilesKey,
   customSkillsKey,
@@ -61,6 +60,8 @@ import type {
   Attachment,
   DataProfile,
   ChatMessage,
+  AiActivity,
+  AiActivityEntry,
   ChatRecord,
   ExecutionRecord,
   ExecutionPurpose,
@@ -98,9 +99,11 @@ import type {
 } from "./types";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
+import { AiActivityCard } from "./components/AiActivityCard";
 import {
   ArtifactInspector,
   ComposerPanel,
+  MarkdownPreview,
   ViewerPreviewCard,
   type InspectorItem
 } from "./components/WorkspacePanels";
@@ -154,6 +157,7 @@ import {
   visualSaveTitle,
   withoutSupersededOutputRuns
 } from "./saveSuggestions";
+import { evidenceLinks } from "./evidencePresentation";
 import {
   executionPreparesViewer,
   executionsForPrompt,
@@ -186,6 +190,9 @@ import {
   scanLocalAiServers,
   type LocalAiServer
 } from "./localProviders";
+import { capacityWarning } from "./storageCapacity";
+import { chatTranscriptMarkdown } from "./chatTranscript";
+import { useSessionKeepalive } from "./useSessionKeepalive";
 
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
@@ -288,11 +295,53 @@ function estimateTokens(value: unknown): number {
 
 function compactSummary(messages: ChatMessage[]): string {
   return messages
-    .filter((message) => message.kind !== "execution")
+    .filter((message) => message.kind !== "execution" && message.kind !== "ai-activity")
     .slice(0, -12)
     .map((message) => `${message.role}: ${message.content.replace(/\s+/g, " ").slice(0, 240)}`)
     .join("\n")
     .slice(-12_000);
+}
+
+function toolActivityLabel(name: string): string {
+  const labels: Record<string, string> = {
+    discover_skills: "Checking available analysis guidance",
+    load_skill: "Loading analysis guidance",
+    list_workspace_files: "Checking workspace files",
+    run_python: "Running local Python analysis",
+    reset_python: "Resetting local Python",
+    list_saved_methods: "Checking saved Methods",
+    read_saved_method: "Reading a saved Method",
+    run_saved_method: "Running a saved Method",
+    list_saved_pipelines: "Checking saved Pipelines",
+    run_saved_pipeline: "Running a saved Pipeline",
+    open_zarr_view: "Preparing an OME-Zarr view",
+    render_zarr_roi: "Rendering an OME-Zarr region",
+    render_zarr_gallery: "Rendering an OME-Zarr gallery",
+    request_user_choice: "Asking for your decision"
+  };
+  return labels[name] || `Using ${name.replaceAll("_", " ")}`;
+}
+
+function toolActivityResult(result: string): { failed: boolean; detail: string } {
+  try {
+    const value = JSON.parse(result) as Record<string, unknown>;
+    if (value.ok === false || value.error) {
+      return {
+        failed: true,
+        detail: String(value.error || "The operation needs correction").slice(0, 600)
+      };
+    }
+    const files = Array.isArray(value.generated_files)
+      ? `${value.generated_files.length} output file${value.generated_files.length === 1 ? "" : "s"} prepared`
+      : "Completed successfully";
+    return { failed: false, detail: files };
+  } catch {
+    const failed = /^(?:error|tool error)|\"ok\"\s*:\s*false/i.test(result.trim());
+    return {
+      failed,
+      detail: failed ? result.replace(/\s+/g, " ").slice(0, 600) : "Completed successfully"
+    };
+  }
 }
 
 function bytesLabel(value: number): string {
@@ -402,7 +451,6 @@ export default function App() {
   const [analysisWorkspace, setWorkspace] = useState<AnalysisWorkspace | null>(null);
   const workspaceRef = useRef<AnalysisWorkspace | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
-  const [userWorkspaces, setUserWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [snapshots, setSnapshots] = useState<Attachment[]>([]);
   const [hierarchy, setHierarchy] = useState<OmeroHierarchy | null>(null);
   const [pipelineTemplates, setPipelineTemplates] = useState<Attachment[]>([]);
@@ -446,7 +494,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<DataProfile[]>([]);
   const [inspectorSelection, setInspectorSelection] =
     useState<InspectorSelection | null>(null);
-  const [explorerWidth, setExplorerWidth] = useState(320);
+  const [explorerWidth, setExplorerWidth] = useState(480);
   const [artifactWidth, setArtifactWidth] = useState(360);
   const [notebookRunRequest, setNotebookRunRequest] =
     useState<{ id: string; nonce: number } | null>(null);
@@ -458,38 +506,13 @@ export default function App() {
   const [selectedMethodIds, setSelectedMethodIds] = useState<Set<string>>(new Set());
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<Set<string>>(new Set());
   const [selectedOutputIds, setSelectedOutputIds] = useState<Set<string>>(new Set());
-  const [showMethodTransfer, setShowMethodTransfer] = useState(false);
-  const [methodTransferTarget, setMethodTransferTarget] = useState("");
   const [remoteSync, setRemoteSync] = useState<SyncStatus | null>(null);
   const [localSyncDigest, setLocalSyncDigest] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [showLibrary, setShowLibrary] = useState(false);
 
-  useEffect(() => {
-    const interval = Math.max(0, bootstrap.keepaliveInterval || 0);
-    if (!bootstrap.keepaliveUrl || interval <= 0) return;
-
-    const keepalive = () => {
-      void fetch(bootstrap.keepaliveUrl, {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store"
-      }).catch(() => undefined);
-    };
-    keepalive();
-    const timer = window.setInterval(keepalive, interval);
-    const renewWhenVisible = () => {
-      if (document.visibilityState === "visible") keepalive();
-    };
-    document.addEventListener("visibilitychange", renewWhenVisible);
-    window.addEventListener("focus", keepalive);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", renewWhenVisible);
-      window.removeEventListener("focus", keepalive);
-    };
-  }, [bootstrap.keepaliveInterval, bootstrap.keepaliveUrl]);
+  useSessionKeepalive(bootstrap.keepaliveUrl, bootstrap.keepaliveInterval);
   const [libraryDatasets, setLibraryDatasets] = useState<LibraryDataset[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [selectedLibraryItems, setSelectedLibraryItems] = useState<Set<string>>(new Set());
@@ -515,6 +538,11 @@ export default function App() {
   });
   const [storage, setStorage] = useState({ usage: 0, quota: 0 });
   const abort = useRef<AbortController | null>(null);
+  const questionResolvers = useRef(new Map<string, {
+    chatId: string;
+    activityMessageId: string;
+    resolve: (result: string) => void;
+  }>());
   const messagesElement = useRef<HTMLDivElement | null>(null);
   const importInput = useRef<HTMLInputElement | null>(null);
   const addFilesInput = useRef<HTMLInputElement | null>(null);
@@ -606,7 +634,7 @@ export default function App() {
       element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeChat?.messages, analysisWorkspace?.executions, analysisWorkspace?.files]);
+  }, [activeChat?.messages, analysisWorkspace?.executions, analysisWorkspace?.files, streamingText]);
 
   useEffect(() => {
     setSelectedOutputIds(new Set());
@@ -780,8 +808,7 @@ export default function App() {
             sourceWorkspaceSnapshotAnnotationId: requestedSnapshot.annotation_id,
             updatedAt: now()
           };
-          await saveWorkspace(imported);
-          initial = imported;
+          initial = await replaceWorkspace(imported);
         }
       }
       for (const attached of bootstrap.context?.notebooks || []) {
@@ -790,20 +817,22 @@ export default function App() {
         )) continue;
         try {
           const timestamp = now();
+          const notebook: NotebookRecord = {
+            id: id(),
+            workspaceId: initial.workspace.id,
+            name: attached.name,
+            document: parseNotebook(await bridge.downloadNotebook(attached)),
+            sourceAnnotationId: attached.annotation_id,
+            attachmentIds: [attached.annotation_id],
+            selectedDataFileIds: [],
+            createdAt: timestamp,
+            updatedAt: timestamp
+          };
           initial = {
             ...initial,
-            notebooks: [...initial.notebooks, {
-              id: id(),
-              workspaceId: initial.workspace.id,
-              name: attached.name,
-              document: parseNotebook(await bridge.downloadNotebook(attached)),
-              sourceAnnotationId: attached.annotation_id,
-              attachmentIds: [attached.annotation_id],
-              selectedDataFileIds: [],
-              createdAt: timestamp,
-              updatedAt: timestamp
-            }]
+            notebooks: [...initial.notebooks, notebook]
           };
+          await saveNotebook(notebook);
         } catch (error) {
           console.warn(`Skipped invalid attached notebook ${attached.name}`, error);
         }
@@ -830,27 +859,23 @@ export default function App() {
             updatedAt: timestamp
           };
           initial = { ...initial, notebooks: [...initial.notebooks, notebook] };
-          await saveWorkspace(initial);
+          await saveNotebook(notebook);
         }
         setActiveNotebookId(notebook.id);
       } else if (initial.notebooks.length) {
         setActiveNotebookId(initial.notebooks[0].id);
       }
-      await saveWorkspace(initial);
-      let prepared = await prepareInputs(initial);
+      const prepared = await prepareInputs(initial);
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
       setWorkspaces(await listContextWorkspaces(bootstrap.context));
-      setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
       setSnapshots(await bridge.listSnapshots());
       setPipelineTemplates(await bridge.listPipelineTemplates());
-      await startRuntime(prepared.files);
-      setProfiles(await runtime.profileInputs());
       if (alive) {
         setRuntimeReady(true);
-        setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
-        setStatus("Ready — analysis runs locally in this browser");
+        setRuntimeProgress({ percent: 100, message: "Browser Python starts when an analysis needs it" });
+        setStatus("Ready — browser Python will start when needed");
         setStorage(await storageEstimate());
       }
     })().catch((error) => {
@@ -901,7 +926,7 @@ export default function App() {
         };
         workspaceRef.current = updated;
         setWorkspace(updated);
-        await saveWorkspaceRecord(updated.workspace);
+        await commitWorkspaceRecord(updated.workspace);
       }
       setSettingsSyncMessage("Settings restored from ~AnalysisSettings");
     }).catch((error) => {
@@ -989,6 +1014,18 @@ export default function App() {
     const candidates = next.files.filter(
       (file) => file.source === "omero" && file.annotationId && (!file.data || file.state !== "ready")
     );
+    const additionalBytes = candidates.reduce((total, file) => total + file.size, 0);
+    const capacityError = capacityWarning(
+      workspaceBytes(next) - additionalBytes,
+      additionalBytes,
+      await storageEstimate(),
+      MAX_WORKSPACE_BYTES
+    );
+    if (capacityError) {
+      throw new Error(
+        `${capacityError}. The 2 GiB server limit is a transport limit; browser storage must also be available.`
+      );
+    }
     for (let index = 0; index < candidates.length; index += 1) {
       const file = candidates[index];
       setRuntimeProgress({
@@ -1034,7 +1071,6 @@ export default function App() {
         await saveFile(failed);
       }
     }
-    await saveWorkspace(next);
     return next;
   }
 
@@ -1055,6 +1091,32 @@ export default function App() {
       await runtime.start(inputs, reportRuntime);
       runtimeStarted.current = true;
     }
+    setRuntimeReady(true);
+    setRuntimeProgress({ percent: 100, message: "Browser Python is ready" });
+  }
+
+  async function ensureRuntime(files = workspaceRef.current?.files || []) {
+    if (!runtimeStarted.current) await startRuntime(files);
+    return runtime;
+  }
+
+  async function ensureProfiles(files = workspaceRef.current?.files || []): Promise<DataProfile[]> {
+    if (profiles.length) return profiles;
+    await ensureRuntime(files);
+    const discovered = await runtime.profileInputs();
+    setProfiles(discovered);
+    return discovered;
+  }
+
+  async function syncRuntimeIfStarted(files: WorkspaceFile[], finalStatus: string) {
+    setProfiles([]);
+    if (runtimeStarted.current) {
+      await restartRuntime(files, finalStatus);
+      return;
+    }
+    setRuntimeReady(true);
+    setRuntimeProgress({ percent: 100, message: "Browser Python starts when an analysis needs it" });
+    setStatus(finalStatus);
   }
 
   async function restartRuntime(files: WorkspaceFile[], finalStatus: string) {
@@ -1065,6 +1127,17 @@ export default function App() {
     setStatus(finalStatus);
   }
 
+  async function commitWorkspaceRecord(next: WorkspaceRecord): Promise<WorkspaceRecord> {
+    const persisted = await saveWorkspaceRecord(next);
+    const latest = workspaceRef.current;
+    if (!latest || latest.workspace.id !== persisted.id) return persisted;
+    if ((latest.workspace.revision || 0) >= (persisted.revision || 0)) return persisted;
+    const updated = { ...latest, workspace: persisted };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    return persisted;
+  }
+
   function updateWorkspaceRecord(next: WorkspaceRecord) {
     const current = workspaceRef.current;
     if (current) {
@@ -1072,7 +1145,7 @@ export default function App() {
       workspaceRef.current = updated;
       setWorkspace(updated);
     }
-    void saveWorkspaceRecord(next);
+    void commitWorkspaceRecord(next);
   }
 
   function updateChat(next: ChatRecord) {
@@ -1113,6 +1186,94 @@ export default function App() {
     void saveChat(updatedChat);
   }
 
+  function updateMessage(
+    chatId: string,
+    messageId: string,
+    updater: (message: ChatMessage) => ChatMessage
+  ) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const chat = current.chats.find((item) => item.id === chatId);
+    if (!chat) return;
+    const updatedChat = {
+      ...chat,
+      messages: chat.messages.map((message) =>
+        message.id === messageId ? updater(message) : message
+      ),
+      updatedAt: now()
+    };
+    const updated = {
+      ...current,
+      chats: current.chats.map((item) => item.id === chatId ? updatedChat : item)
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    void saveChat(updatedChat);
+  }
+
+  function updateAiActivity(
+    chatId: string,
+    messageId: string,
+    updater: (activity: AiActivity) => AiActivity
+  ) {
+    updateMessage(chatId, messageId, (message) => message.aiActivity
+      ? { ...message, aiActivity: updater(message.aiActivity) }
+      : message
+    );
+  }
+
+  function addAiActivityEntry(
+    chatId: string,
+    messageId: string,
+    entry: AiActivityEntry
+  ) {
+    updateAiActivity(chatId, messageId, (activity) => ({
+      ...activity,
+      entries: [...activity.entries, entry]
+    }));
+  }
+
+  function finishAiActivityEntry(
+    chatId: string,
+    messageId: string,
+    entryId: string,
+    status: AiActivityEntry["status"],
+    detail?: string
+  ) {
+    updateAiActivity(chatId, messageId, (activity) => ({
+      ...activity,
+      entries: activity.entries.map((entry) => entry.id === entryId
+        ? { ...entry, status, detail: detail || entry.detail, completedAt: now() }
+        : entry
+      )
+    }));
+  }
+
+  function answerAiQuestion(message: ChatMessage, answer: string) {
+    const question = message.aiActivity?.question;
+    if (!question || question.answer) return;
+    const pending = questionResolvers.current.get(question.id);
+    if (!pending) return;
+    questionResolvers.current.delete(question.id);
+    updateAiActivity(pending.chatId, pending.activityMessageId, (activity) => ({
+      ...activity,
+      state: "running",
+      question: activity.question
+        ? { ...activity.question, answer, answeredAt: now() }
+        : activity.question,
+      entries: activity.entries.map((entry) => entry.id === question.id
+        ? {
+          ...entry,
+          status: "completed",
+          detail: `${question.prompt} — Answer: ${answer}`,
+          completedAt: now()
+        }
+        : entry
+      )
+    }));
+    pending.resolve(JSON.stringify({ ok: true, selected: answer }));
+  }
+
   function togglePinnedMessage(chat: ChatRecord, messageId: string) {
     const values = new Set(chat.pinnedMessageIds || []);
     if (values.has(messageId)) values.delete(messageId);
@@ -1120,7 +1281,7 @@ export default function App() {
     updateChat({ ...chat, pinnedMessageIds: Array.from(values), updatedAt: now() });
   }
 
-  async function copyAssistantMessage(content: string) {
+  async function copyMessage(content: string) {
     try {
       await navigator.clipboard.writeText(content);
     } catch {
@@ -1730,8 +1891,9 @@ export default function App() {
     setActiveTab("notebook");
   }
 
-  function runNotebook(record: NotebookRecord) {
+  async function runNotebook(record: NotebookRecord) {
     openNotebook(record);
+    await ensureRuntime(workspaceRef.current?.files || []);
     setNotebookRunRequest({ id: record.id, nonce: Date.now() });
   }
 
@@ -1868,9 +2030,21 @@ export default function App() {
 
   async function addLocalFiles(list: FileList | null) {
     if (!list || !analysisWorkspace) return;
+    const requested = Array.from(list);
+    const requestedBytes = requested.reduce((sum, file) => sum + file.size, 0);
+    const capacityError = capacityWarning(
+      workspaceBytes(analysisWorkspace),
+      requestedBytes,
+      await storageEstimate(),
+      MAX_WORKSPACE_BYTES
+    );
+    if (capacityError) {
+      setStatus(capacityError);
+      return;
+    }
     const additions: WorkspaceFile[] = [];
     let total = workspaceBytes(analysisWorkspace);
-    for (const source of Array.from(list)) {
+    for (const source of requested) {
       if (!supported.test(source.name)) {
         setStatus(`${source.name} is not a supported tabular data file`);
         continue;
@@ -1908,7 +2082,7 @@ export default function App() {
     }
     const nextFiles = [...analysisWorkspace.files, ...additions];
     upsertFiles(additions);
-    await restartRuntime(nextFiles, "Local inputs added; browser Python is ready");
+    await syncRuntimeIfStarted(nextFiles, "Local inputs added; browser Python will use them when needed");
     setStorage(await storageEstimate());
   }
 
@@ -1933,7 +2107,7 @@ export default function App() {
     workspaceRef.current = updated;
     setWorkspace(updated);
     await deleteStoredFile(fileId);
-    await restartRuntime(nextFiles, "Input removed; browser Python was reset");
+    await syncRuntimeIfStarted(nextFiles, "Input removed from the Workspace");
     setStorage(await storageEstimate());
   }
 
@@ -1963,7 +2137,7 @@ export default function App() {
       };
       const nextFiles = analysisWorkspace.files.map((item) => item.id === file.id ? ready : item);
       upsertFiles([ready]);
-      await restartRuntime(nextFiles, "OMERO input restored; workspace ready");
+      await syncRuntimeIfStarted(nextFiles, "OMERO input restored; Workspace ready");
     } catch (error) {
       upsertFiles([{ ...file, state: "failed", error: String(error) }]);
     }
@@ -1976,18 +2150,17 @@ export default function App() {
     const updated = { ...analysisWorkspace, workspace: nextWorkspace, chats: [...analysisWorkspace.chats, chat] };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    await Promise.all([saveChat(chat), saveWorkspaceRecord(nextWorkspace)]);
+    await Promise.all([saveChat(chat), commitWorkspaceRecord(nextWorkspace)]);
     setActiveTab("chat");
     setUsage(null);
     usageRef.current = null;
     turnOutputNames.current.clear();
-    await runtime.beginTurn();
+    if (runtimeStarted.current) await runtime.beginTurn();
   }
 
   function switchChat(chatId: string) {
     if (!analysisWorkspace) return;
     const chat = analysisWorkspace.chats.find((item) => item.id === chatId);
-    if (chat?.archived) updateChat({ ...chat, archived: false, updatedAt: now() });
     const next = { ...analysisWorkspace.workspace, activeChatId: chatId, updatedAt: now() };
     updateWorkspaceRecord(next);
     setActiveTab("chat");
@@ -2056,7 +2229,6 @@ export default function App() {
     if (!workspace) return;
     setBrowserMenu(null);
     setWorkspaces(await listContextWorkspaces(bootstrap.context));
-    setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
     await switchWorkspace(workspace.id);
   }
 
@@ -2073,7 +2245,6 @@ export default function App() {
     )) return;
     await deleteWorkspaceCascade(target.id);
     setWorkspaces(await listContextWorkspaces(bootstrap.context));
-    setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
     setStatus(`Deleted browser-local workspace ${target.name}`);
   }
 
@@ -2114,13 +2285,14 @@ export default function App() {
       setStatus(`The workspace folder ${renamed.workspace.rootPath} already exists`);
       return;
     }
-    await saveWorkspace(renamed);
+    const persistedWorkspace = await commitWorkspaceRecord(renamed.workspace);
+    await Promise.all(renamed.files.map(saveFile));
+    renamed.workspace = persistedWorkspace;
     if (current?.workspace.id === target.id) {
       workspaceRef.current = renamed;
       setWorkspace(renamed);
     }
     setWorkspaces(await listContextWorkspaces(bootstrap.context));
-    setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
     setStatus(`Renamed workspace to ${name}`);
   }
 
@@ -2189,7 +2361,7 @@ export default function App() {
     setWorkspace(updated);
     await Promise.all(changed.map(saveFile));
     if (file.source === "local") {
-      await restartRuntime(renamed, `Renamed input to ${cleanName}; browser Python is ready`);
+      await syncRuntimeIfStarted(renamed, `Renamed input to ${cleanName}`);
     } else {
       setStatus(
         changed.length > 1
@@ -2209,7 +2381,7 @@ export default function App() {
     setBrowserAtParent(false);
     setSelectedMethodIds(new Set());
     setSelectedPipelineIds(new Set());
-    await restartRuntime(prepared.files, "Workspace loaded");
+    await syncRuntimeIfStarted(prepared.files, "Workspace loaded");
   }
 
   async function resolveZarrTarget(
@@ -2981,7 +3153,12 @@ export default function App() {
     }).slice(0, MAX_TOOL_TEXT);
   }
 
-  async function executeTool(call: ToolCall, chatId: string, promptId: string): Promise<string> {
+  async function executeTool(
+    call: ToolCall,
+    chatId: string,
+    promptId: string,
+    activityMessageId: string
+  ): Promise<string> {
     let args: Record<string, any> = {};
     try {
       args = JSON.parse(call.function.arguments || "{}");
@@ -2990,6 +3167,44 @@ export default function App() {
     }
     const current = workspaceRef.current;
     if (!current) return toolErrorText("Workspace is not ready");
+    if (call.function.name === "request_user_choice") {
+      const question = typeof args.question === "string" ? args.question.trim() : "";
+      const choices = Array.isArray(args.choices)
+        ? Array.from(new Set(args.choices
+          .filter((choice: unknown): choice is string => typeof choice === "string")
+          .map((choice: string) => choice.trim())
+          .filter(Boolean)))
+        : [];
+      if (!question || choices.length < 2 || choices.length > 4) {
+        return toolErrorText("request_user_choice requires a question and two to four distinct choices");
+      }
+      const questionId = id();
+      return new Promise<string>((resolve) => {
+        questionResolvers.current.set(questionId, {
+          chatId,
+          activityMessageId,
+          resolve
+        });
+        updateAiActivity(chatId, activityMessageId, (activity) => ({
+          ...activity,
+          state: "waiting",
+          question: {
+            id: questionId,
+            prompt: question,
+            choices,
+            allowOther: args.allow_other !== false
+          },
+          entries: [...activity.entries, {
+            id: questionId,
+            kind: "message",
+            label: "Waiting for your answer",
+            detail: question,
+            status: "active",
+            createdAt: now()
+          }]
+        }));
+      });
+    }
     if (call.function.name === "discover_skills") {
       const catalog = workflowSkillCatalogRef.current;
       if (!catalog) {
@@ -3018,28 +3233,7 @@ export default function App() {
             status: match.entry.status
           }
         }));
-      const applicationSkills = (catalog.applications || []).flatMap((entry) =>
-        entry.skills.map((skill) => ({
-          workflow_key: workflowSkillSourceKey(entry),
-          name: skill.name,
-          description: skill.description,
-          purpose: skill.purpose,
-          version: skill.version,
-          score: 0,
-          reasons: [
-            "Optional application operation; load only when the user explicitly asks to show, open, or render compatible data."
-          ],
-          references_are_progressive: true,
-          source: {
-            repository_url: entry.source.repository_url,
-            configured_ref: entry.source.configured_ref,
-            resolved_commit: entry.source.resolved_commit,
-            sha256: skill.sha256,
-            status: entry.status
-          }
-        }))
-      );
-      return JSON.stringify([...matchedWorkflowSkills, ...applicationSkills])
+      return JSON.stringify(matchedWorkflowSkills)
         .slice(0, MAX_TOOL_TEXT);
     }
     if (call.function.name === "load_skill") {
@@ -3227,9 +3421,65 @@ export default function App() {
     setAnalysisPhase("planning");
     const turnStartedAt = performance.now();
     let usedTools = false;
+    let turnCompleted = false;
+    const promptId = id();
+    const activityMessageId = id();
+    const preparationEntryId = id();
+    const user: ChatMessage = {
+      id: promptId,
+      role: "user",
+      content: text,
+      workflowSkills: [],
+      createdAt: now()
+    };
+    appendMessage(chat.id, user);
+    appendMessage(chat.id, {
+      id: activityMessageId,
+      role: "assistant",
+      content: "",
+      kind: "ai-activity",
+      aiActivity: {
+        promptId,
+        state: "preparing",
+        entries: [{
+          id: preparationEntryId,
+          kind: "status",
+          label: "Preparing the analysis context",
+          status: "active",
+          createdAt: now()
+        }],
+        startedAt: now()
+      },
+      createdAt: now()
+    });
+    if (chat.messages.filter((message) => message.role === "user").length === 0) {
+      const latest = workspaceRef.current?.chats.find((item) => item.id === chat.id);
+      if (latest) updateChat({ ...latest, title: titleFromPrompt(text), updatedAt: now() });
+    }
     abort.current = new AbortController();
     turnOutputNames.current.clear();
-    await runtime.beginTurn();
+    let activeProfiles: DataProfile[] = profiles;
+    try {
+      activeProfiles = await ensureProfiles(current.files);
+      await runtime.beginTurn();
+    } catch (error) {
+      finishAiActivityEntry(
+        chat.id,
+        activityMessageId,
+        preparationEntryId,
+        "failed",
+        String(error)
+      );
+      updateAiActivity(chat.id, activityMessageId, (activity) => ({
+        ...activity,
+        state: "failed",
+        completedAt: now()
+      }));
+      setBusy(false);
+      setAnalysisPhase("ready");
+      abort.current = null;
+      return;
+    }
     turnWorkflowSkills.current = [];
     const activeSkillPackages: WorkflowSkillPackage[] = [];
     let activeSkillWarning = "";
@@ -3238,7 +3488,7 @@ export default function App() {
     const compatibleSkills = matchWorkflowSkills(
       workflowSkillCatalogRef.current,
       current.files,
-      profiles
+      activeProfiles
     );
     if (compatibleSkills.length) {
       const strongest = compatibleSkills[0];
@@ -3299,29 +3549,26 @@ export default function App() {
     const sourceHashes = workspaceInputHashes(current);
     const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256).sort();
     const ledger = currentEvidence(current.evidence, chat.id, sourceHashes, skillHashes);
-    const promptId = id();
-    const user: ChatMessage = {
-      id: promptId,
-      role: "user",
-      content: text,
-      workflowSkills: turnWorkflowSkills.current,
-      createdAt: now()
-    };
-    appendMessage(chat.id, user);
-
-    let currentChat = {
-      ...chat,
-      messages: [...chat.messages, user],
-      updatedAt: now()
-    };
-    if (chat.messages.filter((message) => message.role === "user").length === 0) {
-      currentChat = { ...currentChat, title: titleFromPrompt(text) };
-      updateChat(currentChat);
-    }
+    updateMessage(chat.id, promptId, (message) => ({
+      ...message,
+      workflowSkills: turnWorkflowSkills.current
+    }));
+    finishAiActivityEntry(
+      chat.id,
+      activityMessageId,
+      preparationEntryId,
+      "completed",
+      turnWorkflowSkills.current.length
+        ? `${turnWorkflowSkills.current.length} matching skill${turnWorkflowSkills.current.length === 1 ? "" : "s"} available`
+        : "Workspace data and generic analysis guidance are ready"
+    );
+    let currentChat = workspaceRef.current?.chats.find((item) => item.id === chat.id) || chat;
     const threshold = settings.contextWindow > 0
       ? Math.floor(settings.contextWindow * 0.6)
       : 24_000;
-    const ordinary = currentChat.messages.filter((message) => message.kind !== "execution");
+    const ordinary = currentChat.messages.filter((message) =>
+      message.kind !== "execution" && message.kind !== "ai-activity"
+    );
     if (estimateTokens(ordinary) > threshold) {
       currentChat = { ...currentChat, summary: compactSummary(ordinary), updatedAt: now() };
       updateChat(currentChat);
@@ -3388,6 +3635,20 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           });
           setAnalysisPhase("checking");
         }
+        const responseEntryId = id();
+        addAiActivityEntry(chat.id, activityMessageId, {
+          id: responseEntryId,
+          kind: "status",
+          label: policy.finalSynthesis
+            ? "Preparing the final answer"
+            : turn === 0 ? "AI is responding" : "AI is reviewing the result",
+          status: "active",
+          createdAt: now()
+        });
+        updateAiActivity(chat.id, activityMessageId, (activity) => ({
+          ...activity,
+          state: policy.finalSynthesis ? "checking" : "responding"
+        }));
         const estimatedPrompt = estimateTokens(conversation);
         const responseStartedAt = performance.now();
         const response = await completeChat(
@@ -3417,6 +3678,26 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         };
         updateChatUsage(chat.id, nextUsage);
         conversation.push({ role: "assistant", content: answer.content, tool_calls: answer.tool_calls });
+        finishAiActivityEntry(
+          chat.id,
+          activityMessageId,
+          responseEntryId,
+          "completed",
+          answer.tool_calls?.length
+            ? `${answer.tool_calls.length} next action${answer.tool_calls.length === 1 ? "" : "s"} selected`
+            : "Response completed"
+        );
+        if (answer.content) {
+          addAiActivityEntry(chat.id, activityMessageId, {
+            id: id(),
+            kind: "message",
+            label: answer.tool_calls?.length ? "AI progress update" : "Final response",
+            detail: answer.content.slice(0, 12_000),
+            status: "completed",
+            createdAt: now(),
+            completedAt: now()
+          });
+        }
         // Tool-round prose is planning/repair context for the model, not a
         // separate user-facing answer. Keep it in this turn's conversation,
         // then persist only the final synthesis after tool use has finished.
@@ -3438,20 +3719,64 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           });
         }
         setStreamingText("");
-        if (!answer.tool_calls?.length) break;
+        if (!answer.tool_calls?.length) {
+          turnCompleted = true;
+          updateAiActivity(chat.id, activityMessageId, (activity) => ({
+            ...activity,
+            state: "completed",
+            completedAt: now()
+          }));
+          break;
+        }
         if (policy.finalSynthesis) {
           throw new Error("The AI provider attempted another tool call during final synthesis");
         }
         usedTools = true;
         setAnalysisPhase(turn ? "repairing" : "running");
         for (const call of answer.tool_calls) {
-          const result = await executeTool(call, chat.id, promptId);
+          const toolEntryId = id();
+          addAiActivityEntry(chat.id, activityMessageId, {
+            id: toolEntryId,
+            kind: "tool",
+            label: toolActivityLabel(call.function.name),
+            status: "active",
+            createdAt: now()
+          });
+          if (call.function.name !== "request_user_choice") {
+            updateAiActivity(chat.id, activityMessageId, (activity) => ({
+              ...activity,
+              state: call.function.name.includes("zarr") ? "checking" : "running"
+            }));
+          }
+          const result = await executeTool(call, chat.id, promptId, activityMessageId);
+          const outcome = toolActivityResult(result);
+          finishAiActivityEntry(
+            chat.id,
+            activityMessageId,
+            toolEntryId,
+            outcome.failed ? "failed" : "completed",
+            outcome.detail
+          );
           conversation.push({ role: "tool", tool_call_id: call.id, content: result });
         }
         setAnalysisPhase("checking");
       }
     } catch (error) {
       if (!abort.current?.signal.aborted) {
+        addAiActivityEntry(chat.id, activityMessageId, {
+          id: id(),
+          kind: "status",
+          label: "Analysis stopped with an error",
+          detail: String(error),
+          status: "failed",
+          createdAt: now(),
+          completedAt: now()
+        });
+        updateAiActivity(chat.id, activityMessageId, (activity) => ({
+          ...activity,
+          state: "failed",
+          completedAt: now()
+        }));
         appendMessage(chat.id, {
           id: id(),
           role: "assistant",
@@ -3463,7 +3788,19 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         });
       }
     } finally {
-      if (!abort.current?.signal.aborted) setStatus("Ready — analysis runs locally in this browser");
+      const wasAborted = Boolean(abort.current?.signal.aborted);
+      if (wasAborted && !turnCompleted) {
+        updateAiActivity(chat.id, activityMessageId, (activity) => ({
+          ...activity,
+          state: "stopped",
+          completedAt: now(),
+          entries: activity.entries.map((entry) => entry.status === "active"
+            ? { ...entry, status: "failed", detail: entry.detail || "Stopped by the user", completedAt: now() }
+            : entry
+          )
+        }));
+      }
+      if (!wasAborted) setStatus("Ready — analysis runs locally in this browser");
       abort.current = null;
       setStreamingText("");
       setAnalysisPhase("ready");
@@ -3474,6 +3811,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   function stop() {
     abort.current?.abort();
+    for (const [questionId, pending] of questionResolvers.current) {
+      questionResolvers.current.delete(questionId);
+      pending.resolve(toolErrorText("The user stopped the analysis before answering"));
+    }
     runtime.stop();
     setBusy(false);
     void restartRuntime(workspaceRef.current?.files || [], "Ready — analysis runs locally in this browser");
@@ -3733,7 +4074,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     }
     setBusy(true);
     turnOutputNames.current.clear();
-    await runtime.beginTurn();
     const promptId = id();
     appendMessage(current.workspace.activeChatId, {
       id: promptId,
@@ -3745,6 +4085,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       createdAt: now()
     });
     try {
+      await ensureRuntime(current.files);
+      await runtime.beginTurn();
       const { renderResult } = await executeSavedMethodVersion(
         method,
         version,
@@ -4004,6 +4346,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       createdAt: now()
     });
     try {
+      await ensureRuntime(current.files);
       let availableInputs = current.files.filter(
         (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
       );
@@ -4113,25 +4456,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     setStatus(`Restored pipeline ${pipeline.name}`);
   }
 
-  async function publishPipeline(pipeline: PipelineRecord) {
-    const current = workspaceRef.current;
-    if (!current || !bridge.canUpload) return;
-    const methodIds = new Set(pipeline.steps.map((step) => step.methodId));
-    const payload = {
-      format: "nl.bioimaging.analysis.pipeline.v1",
-      exportedAt: now(),
-      pipeline,
-      methods: current.methods.filter((method) => !method.deletedAt && methodIds.has(method.id))
-    };
-    const name = `${slug(pipeline.name)}.oa-pipeline.json`;
-    const result = await bridge.uploadPipelineTemplate(
-      name,
-      new TextEncoder().encode(JSON.stringify(payload, null, 2))
-    );
-    setPipelineTemplates((values) => [...values, result]);
-    setStatus(`Published pipeline template as FileAnnotation ${result.annotation_id}`);
-  }
-
   async function importPipelineTemplate(template: Attachment) {
     const current = workspaceRef.current;
     if (!current) return;
@@ -4184,195 +4508,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     }
   }
 
-  async function batchRunPipeline(pipeline: PipelineRecord) {
-    const source = workspaceRef.current;
-    if (!source || busy) return;
-    const targets = userWorkspaces.filter((item) => item.id !== source.workspace.id);
-    if (!targets.length) {
-      setStatus("Open the destination OMERO objects in Analysis once before batch execution");
-      return;
-    }
-    if (!await dialogs.confirm(
-      "Batch-run pipeline?",
-      `${pipeline.name} will run locally on the compatible browser workspaces for: ${targets.map((item) => `${item.objectType} ${item.objectId} (${item.name})`).join(", ")}. Incompatible workspaces will be skipped.`,
-      "Run compatible workspaces"
-    )) return;
-    setBusy(true);
-    const completed: string[] = [];
-    const skipped: string[] = [];
-    try {
-      for (const targetRecord of targets) {
-        const target = await loadWorkspace(targetRecord.id);
-        if (!target) continue;
-        const preparedSteps: Array<{
-          method: MethodRecord;
-          version: MethodVersion;
-          code: string;
-        }> = [];
-        try {
-          for (const step of pipeline.steps) {
-            const method = source.methods.find((item) => item.id === step.methodId && !item.deletedAt);
-            const version = method?.versions.find((item) => item.version === step.methodVersion);
-            if (!method || !version) throw new Error(`Missing ${step.name}`);
-            preparedSteps.push({
-              method,
-              version,
-              code: bindMethodInputs(version.code, target.files).code
-            });
-          }
-        } catch {
-          skipped.push(targetRecord.name);
-          continue;
-        }
-        const targetStartedAt = performance.now();
-        try {
-          const chat = newChat(target.workspace.id, `${pipeline.name} batch run`);
-          target.workspace = { ...target.workspace, activeChatId: chat.id, updatedAt: now() };
-          target.chats = [...target.chats, chat];
-          workspaceRef.current = target;
-          setWorkspace(target);
-          await runtime.syncInputs(target.files.filter(
-            (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
-          ));
-          const promptId = id();
-          appendMessage(chat.id, {
-            id: promptId,
-            role: "user",
-            content: `Batch run pipeline ${pipeline.name} on ${targetRecord.objectType} ${targetRecord.objectId}`,
-            createdAt: now()
-          });
-          for (const step of preparedSteps) {
-            await runtime.beginTurn();
-            turnOutputNames.current.clear();
-            await executeSavedMethodVersion(
-              step.method,
-              step.version,
-              step.code,
-              chat.id,
-              promptId
-            );
-          }
-          await saveWorkspace(workspaceRef.current!);
-          completed.push(targetRecord.name);
-        } catch (error) {
-          const failed = workspaceRef.current;
-          if (failed?.workspace.id === target.workspace.id) {
-            const failedChat = failed.chats.find((chat) => chat.id === failed.workspace.activeChatId);
-            if (failedChat) {
-              appendMessage(failedChat.id, {
-                id: id(),
-                role: "assistant",
-                kind: "error",
-                content: `Batch pipeline failed for this object: ${String(error)}`,
-                activity: "worked",
-                durationMs: performance.now() - targetStartedAt,
-                createdAt: now()
-              });
-              await saveWorkspace(workspaceRef.current!);
-            }
-          }
-          skipped.push(targetRecord.name);
-        }
-      }
-    } finally {
-      workspaceRef.current = source;
-      setWorkspace(source);
-      await runtime.syncInputs(source.files.filter(
-        (file) => file.source !== "result" && file.state === "ready" && !file.deletedAt
-      ));
-      setBusy(false);
-    }
-    setStatus(
-      `Batch pipeline completed for ${completed.length} workspace(s)` +
-      (skipped.length ? `; incompatible: ${skipped.join(", ")}` : "")
-    );
-  }
-
-  function beginMethodTransfer(methodIds?: string[]) {
-    const ids = methodIds || Array.from(selectedMethodIds);
-    if (!ids.length) {
-      setStatus("Select one or more methods to copy");
-      return;
-    }
-    setSelectedMethodIds(new Set(ids));
-    const firstTarget = userWorkspaces.find((item) => item.id !== workspace?.id);
-    if (!firstTarget) {
-      setStatus("Open another OMERO Dataset, Screen, Plate, or Image once before copying methods to it");
-      return;
-    }
-    setMethodTransferTarget(firstTarget.id);
-    setShowMethodTransfer(true);
-  }
-
-  async function copySelectedMethods() {
-    const current = workspaceRef.current;
-    if (!current || !methodTransferTarget) return;
-    const target = await loadWorkspace(methodTransferTarget);
-    if (!target) {
-      setStatus("The destination workspace is no longer available");
-      return;
-    }
-    const selected = current.methods.filter((method) => !method.deletedAt && selectedMethodIds.has(method.id));
-    if (!selected.length) return;
-    const compatibility = new Map<string, Record<string, string>>();
-    for (const source of selected) {
-      const version = source.versions.find((item) => item.version === source.currentVersion);
-      if (!version) continue;
-      try {
-        const bound = bindMethodInputs(version.code, target.files);
-        compatibility.set(
-          source.id,
-          Object.fromEntries(bound.bindings.map((binding) => [binding.from, binding.to]))
-        );
-      } catch (error) {
-        setStatus(`Copy blocked by compatibility preflight for ${source.name}: ${String(error)}`);
-        return;
-      }
-    }
-    const targetNames = new Set(target.methods.filter((method) => !method.deletedAt).map((method) => method.name.toLowerCase()));
-    const copied: MethodRecord[] = [];
-    for (const source of selected) {
-      const stem = source.name.replace(/\.py$/i, "");
-      let name = source.name;
-      let suffix = 2;
-      while (targetNames.has(name.toLowerCase())) {
-        name = `${stem}-copy-${suffix}.py`;
-        suffix += 1;
-      }
-      targetNames.add(name.toLowerCase());
-      const timestamp = now();
-      copied.push({
-        ...source,
-        id: id(),
-        workspaceId: target.workspace.id,
-        name,
-        description: `${source.description}${source.description ? " · " : ""}Copied from ${current.workspace.name}`,
-        workspaceBindings: {
-          ...(source.workspaceBindings || {}),
-          [target.workspace.id]: compatibility.get(source.id) || {}
-        },
-        versions: source.versions.map((version) => ({
-          ...version,
-          executionId: ""
-        })),
-        createdAt: timestamp,
-        updatedAt: timestamp
-      });
-    }
-    await Promise.all(copied.map(saveMethod));
-    if (target.workspace.id === current.workspace.id) {
-      const updated = { ...current, methods: [...current.methods, ...copied] };
-      workspaceRef.current = updated;
-      setWorkspace(updated);
-    }
-    setShowMethodTransfer(false);
-    const destination = userWorkspaces.find((item) => item.id === target.workspace.id);
-    setStatus(
-      `Copied ${copied.length} method${copied.length === 1 ? "" : "s"} to ${destination?.name || "the destination workspace"}. ` +
-      "When run there, the methods use that workspace's current inputs."
-    );
-  }
-
   function downloadBytes(name: string, data: ArrayBuffer | Uint8Array, type: string) {
     const blobData: BlobPart = data instanceof Uint8Array ? data as BlobPart : data;
     const url = URL.createObjectURL(new Blob([blobData], { type }));
@@ -4420,7 +4555,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     const lines = [
       `# ${chat.title}`,
       "",
-      `OMERO object: ${current.workspace.objectType || "Local"} ${current.workspace.objectId || ""}`,
+      ...(current.workspace.objectType && current.workspace.objectId
+        ? [`OMERO object: ${current.workspace.objectType} ${current.workspace.objectId}`]
+        : []),
       `Workspace: ${current.workspace.name}`,
       `Generated: ${now()}`,
       `Runtime: ${RUNTIME_VERSION}`,
@@ -4430,7 +4567,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         .map((file) => `- ${file.name} — ${file.sha256} — ${file.size} bytes`),
       "",
       "## Conversation",
-      ...chat.messages.filter((message) => message.kind !== "execution")
+      ...chat.messages.filter((message) =>
+        message.kind !== "execution" && message.kind !== "ai-activity"
+      )
         .flatMap((message) => [
           `### ${message.role}`,
           ...(activityText(message.activity, message.durationMs)
@@ -4566,7 +4705,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const next = { ...current, workspace: nextRecord };
       workspaceRef.current = next;
       setWorkspace(next);
-      await saveWorkspaceRecord(nextRecord);
+      await commitWorkspaceRecord(nextRecord);
       setRemoteSync(synced);
       setLocalSyncDigest(payload.inventory.digest);
       setStatus(`Synchronized with ${synced.projectName} / ${synced.datasetName}`);
@@ -4604,7 +4743,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const next = { ...current, workspace: nextRecord };
       workspaceRef.current = next;
       setWorkspace(next);
-      await saveWorkspaceRecord(nextRecord);
+      await commitWorkspaceRecord(nextRecord);
       setRemoteSync(await bridge.syncStatus(current.workspace.id));
       setStatus(result.datasetDeleted
         ? `Removed ${result.removed} managed OMERO objects and the managed Dataset`
@@ -4835,7 +4974,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           next = { ...next, pipelines: [...next.pipelines, imported] };
         }
       }
-      await saveWorkspace(next);
+      await Promise.all([
+        ...next.methods.filter((item) => !current.methods.some((old) => old.id === item.id)).map(saveMethod),
+        ...next.pipelines.filter((item) => !current.pipelines.some((old) => old.id === item.id)).map(savePipeline),
+        ...next.notebooks.filter((item) => !current.notebooks.some((old) => old.id === item.id)).map(saveNotebook)
+      ]);
       workspaceRef.current = next;
       setWorkspace(next);
       setShowLibrary(false);
@@ -4865,13 +5008,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       ) {
         throw new Error("Workspace snapshot belongs to a different OMERO object");
       }
-      await saveWorkspace(imported);
-      const prepared = await prepareInputs(imported);
+      const restored = await replaceWorkspace(imported);
+      const prepared = await prepareInputs(restored);
       setWorkspace(prepared);
       workspaceRef.current = prepared;
       setWorkspaces(await listContextWorkspaces(bootstrap.context));
-      setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
-      await restartRuntime(prepared.files, "Imported workspace restored");
+      await syncRuntimeIfStarted(prepared.files, "Imported workspace restored");
     } catch (error) {
       setStatus(`Workspace import failed: ${String(error)}`);
     } finally {
@@ -4893,13 +5035,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       ) {
         throw new Error("Workspace snapshot belongs to a different OMERO object");
       }
-      await saveWorkspace(imported);
-      const prepared = await prepareInputs(imported);
+      const restored = await replaceWorkspace(imported);
+      const prepared = await prepareInputs(restored);
       setWorkspace(prepared);
       workspaceRef.current = prepared;
       setWorkspaces(await listContextWorkspaces(bootstrap.context));
-      setUserWorkspaces(await listUserWorkspaces(bootstrap.context));
-      await restartRuntime(prepared.files, "OMERO workspace snapshot restored");
+      await syncRuntimeIfStarted(prepared.files, "OMERO workspace snapshot restored");
     } catch (error) {
       setStatus(`Snapshot restore failed: ${String(error)}`);
     }
@@ -4997,10 +5138,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     analysisWorkspace.files,
     profiles
   );
-  const catalogSkillCount = [
-    ...(workflowSkillCatalog?.workflows || []),
-    ...(workflowSkillCatalog?.applications || [])
-  ].reduce((total, entry) => total + entry.skills.length, 0) +
+  const catalogSkillCount = (workflowSkillCatalog?.workflows || [])
+    .reduce((total, entry) => total + entry.skills.length, 0) +
     (zarrSkillCatalog?.skills.length || 0);
   const activeNotebook = analysisWorkspace.notebooks.find(
     (item) => item.id === activeNotebookId
@@ -5010,10 +5149,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (!selection || selection.kind === "workspace") {
       return {
         kind: "workspace",
-        title: workspace.name,
-        description: "Browser-local Analysis Workspace for the current OMERO context.",
+        title: bootstrap.context ? workspace.name : "Local workspace",
+        description: bootstrap.context
+          ? "Browser-local Analysis Workspace for the current OMERO context."
+          : "Browser-local Analysis Workspace without an OMERO object context.",
         metadata: {
-          "OMERO object": `${workspace.objectType} ${workspace.objectId}`,
+          ...(bootstrap.context
+            ? { "OMERO object": `${workspace.objectType} ${workspace.objectId}` }
+            : {}),
           Chats: chats.length,
           Inputs: inputFiles.length,
           Results: outputFiles.length,
@@ -5035,26 +5178,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       if (chat) return {
         kind: "chat",
         title: chat.title,
-        description: chat.archived ? "Archived Chat conversation." : "Active Chat conversation.",
+        description: "Active Chat conversation.",
         metadata: {
           Messages: chat.messages.length,
           "Pinned messages": chat.pinnedMessageIds?.length || 0,
           Updated: new Date(chat.updatedAt).toLocaleString()
         },
-        content: [
-          `# ${chat.title}`,
-          ...(chat.summary
-            ? ["", "## Conversation summary", "", chat.summary]
-            : []),
-          ...chat.messages
-            .filter((message) => message.kind !== "execution")
-            .flatMap((message) => [
-              "",
-              `## ${message.role === "user" ? "User" : "Assistant"}`,
-              "",
-              message.content
-            ])
-        ].join("\n"),
+        content: chatTranscriptMarkdown(chat),
         language: "markdown"
       };
     }
@@ -5311,7 +5441,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               />
               <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
               <div className="browser-name">
-                <strong>{file.name}</strong>
+                <strong title={file.name}>{file.name}</strong>
                 <small>double-click to download</small>
               </div>
               <span className="browser-size">{bytesLabel(file.size)}</span>
@@ -5364,35 +5494,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           </Button>
         </div>
       </header>
-
-      {activeTab === "chat" && showMethodTransfer && (
-        <div className="dialog-backdrop" role="presentation">
-          <section className="method-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="method-transfer-title">
-            <h2 id="method-transfer-title">Copy methods to another workspace</h2>
-            <p>
-              The copied methods keep their code and versions. When run in the
-              destination, they automatically use that workspace’s current input files.
-            </p>
-            <label>Destination workspace
-              <select value={methodTransferTarget} onChange={(event) => setMethodTransferTarget(event.target.value)}>
-                {userWorkspaces.filter((item) => item.id !== workspace.id).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.objectType} {item.objectId} — {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <small>
-              A destination appears after you have opened that OMERO object in
-              Analysis at least once.
-            </small>
-            <div className="dialog-actions">
-              <button onClick={() => setShowMethodTransfer(false)}>Cancel</button>
-              <button disabled={!methodTransferTarget} onClick={() => void copySelectedMethods()}>Copy selected methods</button>
-            </div>
-          </section>
-        </div>
-      )}
 
       {showLibrary && (
         <div className="dialog-backdrop" role="presentation">
@@ -5620,7 +5721,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 >
                   <Icon name="folder" />
                   <div className="browser-name">
-                    <strong>{item.name}</strong>
+                    <strong title={item.name}>{item.name}</strong>
                     <small>{item.id === workspace.id ? "open now" : item.sourceWorkspaceSnapshotAnnotationId ? `restored from Annotation ${item.sourceWorkspaceSnapshotAnnotationId}` : "browser-local workspace"}</small>
                   </div>
                   <span className="browser-size">{new Date(item.updatedAt).toLocaleDateString()}</span>
@@ -5675,7 +5776,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 >
                   <Icon name="file" />
                   <div className="browser-name">
-                    <strong>{file.name}</strong>
+                    <strong title={file.name}>{file.name}</strong>
                     <small>{file.source} · {file.state} · {file.sha256.slice(0, 10) || "unhashed"}</small>
                     {file.error && <span className="browser-error">{file.error}</span>}
                   </div>
@@ -5705,7 +5806,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 >
                   <span className="browser-icon zarr" aria-hidden="true" />
                   <div className="browser-name">
-                    <strong>{source.name}</strong>
+                    <strong title={source.name}>{source.name}</strong>
                     <small>{source.contextName} · served by ZarrViewer · not downloaded</small>
                   </div>
                   <span className="browser-size">OME-Zarr</span>
@@ -5739,7 +5840,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   }}
                   onDoubleClick={() => void switchChat(chat.id)}>
                   <span className="browser-icon json" aria-hidden="true" />
-                  <div className="browser-name"><strong>{slug(chat.title)}/chat.json</strong><small>autosaved conversation</small></div>
+                  <div className="browser-name"><strong title={`${slug(chat.title)}/chat.json`}>{slug(chat.title)}/chat.json</strong><small>autosaved conversation</small></div>
                   <span className="browser-size">—</span>
                 </li>,
                 <li className="browser-row virtual" key={`${chat.id}-md`}
@@ -5749,7 +5850,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   }}
                   onDoubleClick={() => void switchChat(chat.id)}>
                   <span className="browser-icon markdown" aria-hidden="true" />
-                  <div className="browser-name"><strong>{slug(chat.title)}/chat.md</strong><small>readable transcript</small></div>
+                  <div className="browser-name"><strong title={`${slug(chat.title)}/chat.md`}>{slug(chat.title)}/chat.md</strong><small>readable transcript</small></div>
                   <span className="browser-size">—</span>
                 </li>
               ])}
@@ -5768,8 +5869,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <summary
               onClick={() => setInspectorSelection({ kind: "folder", id: "methods" })}
               onContextMenu={(event) => openBrowserMenu(event, "methods/", [
-                { label: "To Pipeline", run: () => void combineSelectedMethods() },
-                { label: "Copy selected methods…", run: () => beginMethodTransfer() }
+                { label: "To Pipeline", run: () => void combineSelectedMethods() }
               ])}
             >
               <Icon name="chevron" className="folder-chevron" />
@@ -5781,7 +5881,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 <span>{selectedMethodIds.size} selected</span>
                 <button disabled={selectedMethodIds.size < 2} onClick={() => void combineSelectedMethods()}><ActionIcon name="pipeline" />To Pipeline</button>
                 <button disabled={!selectedMethodIds.size} onClick={() => void convertSelectedMethodsToNotebook()}><ActionIcon name="notebook" />To Notebook</button>
-                <button disabled={!selectedMethodIds.size} onClick={() => beginMethodTransfer()}><ActionIcon name="copy" />Copy to…</button>
               </div>
             )}
             <ul className="browser-list">
@@ -5804,7 +5903,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   />
                   <span className="browser-icon python" aria-hidden="true" />
                   <div className="browser-name">
-                    <strong>{method.name}</strong><small>v{method.currentVersion} · {method.description || "saved Python method"}</small>
+                    <strong title={method.name}>{method.name}</strong><small>v{method.currentVersion} · {method.description || "saved Python method"}</small>
                   </div>
                   <span className="browser-size">v{method.currentVersion}</span>
                   <button
@@ -5864,7 +5963,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   />
                   <Icon name="file" />
                   <div className="browser-name">
-                    <strong>{pipeline.name}</strong>
+                    <strong title={pipeline.name}>{pipeline.name}</strong>
                     <small>v{pipeline.version} · {pipeline.steps.length} isolated steps</small>
                   </div>
                   <span className="browser-size">{pipeline.steps.length}</span>
@@ -5887,7 +5986,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 >
                   <span className="browser-icon archive" aria-hidden="true" />
                   <div className="browser-name">
-                    <strong>{template.name}</strong>
+                    <strong title={template.name}>{template.name}</strong>
                     <small>OMERO template · double-click to import</small>
                   </div>
                   <span className="browser-size">{bytesLabel(template.size)}</span>
@@ -5938,7 +6037,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     openBrowserMenu(event, notebook.name, notebookActions(notebook))}>
                   <span className="browser-icon json" aria-hidden="true" />
                   <div className="browser-name">
-                    <strong>{notebook.name}</strong>
+                    <strong title={notebook.name}>{notebook.name}</strong>
                     <small>{notebook.attachmentIds.length
                       ? `${notebook.attachmentIds.length} attached version(s)`
                       : "browser workspace"}</small>
@@ -6003,6 +6102,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <Button key={tab} className={activeTab === tab ? "active" : ""}
               aria-current={activeTab === tab ? "page" : undefined}
               onClick={() => setActiveTab(tab)}>
+              <ActionIcon name={tab === "chat" ? "chat" : "notebook"} />
               {tab[0].toUpperCase() + tab.slice(1)}
             </Button>
           ))}
@@ -6013,7 +6113,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <label className="chat-selector">
               <span className="sr-only">Current chat</span>
               <select value={activeChat.id} onChange={(event) => void switchChat(event.target.value)}>
-                {chats.filter((chat) => !chat.archived).map((chat) => (
+                {chats.map((chat) => (
                   <option key={chat.id} value={chat.id}>{chat.title}</option>
                 ))}
               </select>
@@ -6043,6 +6143,23 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               </div>
             )}
             {activeChat.messages.map((message) => {
+              if (message.kind === "ai-activity") {
+                const questionId = message.aiActivity?.question?.id;
+                const active = !["completed", "failed", "stopped"].includes(
+                  message.aiActivity?.state || "completed"
+                );
+                return (
+                  <AiActivityCard
+                    key={message.id}
+                    message={message}
+                    liveText={active ? streamingText : ""}
+                    questionActive={Boolean(
+                      questionId && questionResolvers.current.has(questionId)
+                    )}
+                    onAnswer={answerAiQuestion}
+                  />
+                );
+              }
               if (message.kind === "viewer-preview" && message.artifactId) {
                 const artifact = analysisWorkspace.artifacts.find(
                   (item) => item.id === message.artifactId
@@ -6089,16 +6206,23 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 message.activity,
                 message.durationMs
               );
+              const citations = message.citationIds?.length
+                ? evidenceLinks(analysisWorkspace, message.citationIds)
+                : [];
               return (
                 <article key={message.id} className={`message ${message.role} ${message.kind || ""}`}>
                   <span>
                     {message.role}
-                    {message.role === "assistant" && (
+                    {(message.role === "assistant" || message.role === "user") && (
                       <button
                         className="copy-message"
-                        aria-label="Copy assistant response"
-                        title="Copy assistant response"
-                        onClick={() => void copyAssistantMessage(message.content)}
+                        aria-label={message.role === "assistant"
+                          ? "Copy assistant response"
+                          : "Copy user message"}
+                        title={message.role === "assistant"
+                          ? "Copy assistant response"
+                          : "Copy user message"}
+                        onClick={() => void copyMessage(message.content)}
                       >
                         <Icon name="copy" />
                       </button>
@@ -6114,26 +6238,21 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                       {(activeChat.pinnedMessageIds || []).includes(message.id) ? "★" : "☆"}
                     </button>
                   </span>
-                  <p>{message.content}</p>
-                  {message.citationIds?.length ? (
+                  {message.role === "assistant"
+                    ? <div className="message-markdown"><MarkdownPreview markdown={message.content} /></div>
+                    : <p>{message.content}</p>}
+                  {citations.length ? (
                     <div className="message-citations" aria-label="Evidence used for this answer">
-                      {message.citationIds.map((executionId, index) => {
-                        const cited = analysisWorkspace.executions.find((item) => item.id === executionId);
-                        const fileId = cited?.outputFileIds.find((candidate) =>
-                          analysisWorkspace.files.some((file) => file.id === candidate && !file.deletedAt)
-                        );
-                        return (
-                          <button
-                            key={executionId}
-                            title={`Open local execution ${executionId.slice(0, 8)}`}
-                            onClick={() => {
-                              if (fileId) setSelectedArtifactFileId(fileId);
-                            }}
-                          >
-                            Evidence {index + 1}
-                          </button>
-                        );
-                      })}
+                      <span>Supporting results:</span>
+                      {citations.map((citation) => (
+                        <button
+                          key={citation.key}
+                          title={citation.title}
+                          onClick={() => setSelectedArtifactFileId(citation.fileId)}
+                        >
+                          {citation.label}
+                        </button>
+                      ))}
                     </div>
                   ) : null}
                   {messageTiming && (
@@ -6142,12 +6261,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 </article>
               );
             })}
-            {streamingText && (
-              <article className="message assistant streaming">
-                <span>assistant · {analysisPhase}</span>
-                <p>{streamingText}<i className="stream-caret" /></p>
-              </article>
-            )}
           </div>
           <ComposerPanel
             runtimeReady={runtimeReady}
@@ -6174,6 +6287,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             runtime={runtime}
             runRequest={notebookRunRequest}
             workspaceActions={workspaceActionsMenu()}
+            onBeforeRun={() => ensureRuntime(analysisWorkspace.files).then(() => undefined)}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
           />
@@ -6410,7 +6524,16 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               </div>
             </details>
 
-            <details className="settings-section">
+            <details
+              className="settings-section"
+              onToggle={(event) => {
+                if (event.currentTarget.open && !profiles.length) {
+                  void ensureProfiles(analysisWorkspace.files).catch((error) =>
+                    setWorkflowSkillWarning(`Input profiling unavailable: ${String(error)}`)
+                  );
+                }
+              }}
+            >
               <summary>Skills</summary>
               <div className="settings-section-body">
                 <p>
@@ -6438,8 +6561,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   />
                 </div>
                 <div className="skill-list">
-                  {[...(workflowSkillCatalog?.workflows || []),
-                    ...(workflowSkillCatalog?.applications || [])].flatMap((provider) =>
+                  {(workflowSkillCatalog?.workflows || []).flatMap((provider) =>
                     provider.skills.map((skill) => (
                       <details className="skill-card" key={`${provider.source.workflow_key}:${skill.name}:${skill.sha256}`}>
                         <summary>
@@ -6565,7 +6687,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     };
     const nextFiles = current.files.map((item) => item.id === file.id ? ready : item);
     upsertFiles([ready]);
-    await restartRuntime(nextFiles, "Missing local input restored");
+    await syncRuntimeIfStarted(nextFiles, "Missing local input restored");
   }
 
   async function rerunExecution(execution: ExecutionRecord) {
@@ -6579,8 +6701,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     ) return;
     setBusy(true);
     turnOutputNames.current.clear();
-    await runtime.beginTurn();
     try {
+      await ensureRuntime(current.files);
+      await runtime.beginTurn();
       const promptId = id();
       const executionResult = await executeCode(
         execution.code,
@@ -6589,8 +6712,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         true,
         execution.purpose === "method" ? "method" : "analysis"
       );
-      const current = workspaceRef.current;
-      const saved = current?.methods.flatMap((method) =>
+      const latest = workspaceRef.current;
+      const saved = latest?.methods.flatMap((method) =>
         method.versions.map((version) => ({ method, version }))
       ).find(({ version }) => version.codeHash === execution.codeHash);
       const renderResult = await replaySavedRender(

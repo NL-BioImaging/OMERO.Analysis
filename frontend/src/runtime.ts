@@ -13,7 +13,7 @@ const PACKAGES = [
   "matplotlib",
   "duckdb"
 ];
-export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.6";
+export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.8";
 
 export function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));

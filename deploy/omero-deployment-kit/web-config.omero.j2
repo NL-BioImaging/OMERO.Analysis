@@ -5,6 +5,6 @@ config append -- omero.web.ui.center_plugins '["Analysis Notebook", "omero_analy
 config append -- omero.web.ui.top_links '["Analysis", "omero_analysis_index", {"title": "Open browser-local Analysis", "target": "new"}]'
 config set -- omero.web.analysis.context_ttl_seconds 10800
 config set -- omero.web.analysis.max_upload_bytes 268435456
-config set -- omero.web.analysis.max_download_bytes 268435456
+config set -- omero.web.analysis.max_download_bytes 2147483648
 config set -- omero.web.analysis.max_notebook_bytes 33554432
 config set -- omero.web.analysis.allowed_result_extensions '.csv,.tsv,.json,.xlsx,.xls,.parquet,.npy,.npz,.duckdb,.sqlite,.sqlite3,.png,.svg,.pdf,.txt,.md'

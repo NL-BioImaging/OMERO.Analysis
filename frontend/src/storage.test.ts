@@ -1,12 +1,13 @@
 import {
   loadOrCreateWorkspace,
   loadWorkspace,
-  listUserWorkspaces,
   newChat,
   deleteWorkspaceCascade,
   saveChat,
   saveEvidenceLedger,
+  replaceWorkspace,
   saveWorkspaceRecord,
+  saveFile,
   setValue
 } from "./storage";
 import type { OmeroContext } from "./types";
@@ -45,26 +46,6 @@ describe("normalized workspace storage", () => {
     expect(created.chats[0].messages).toEqual([]);
   });
 
-  it("lists destination workspaces for the same OMERO user and group", async () => {
-    const first = await loadOrCreateWorkspace({ ...context, object_id: 50 });
-    const second = await loadOrCreateWorkspace({
-      ...context,
-      object_type: "Screen",
-      object_id: 51,
-      name: "Other screen"
-    });
-    await loadOrCreateWorkspace({
-      ...context,
-      object_id: 52,
-      group_id: 99,
-      name: "Other group"
-    });
-    const workspaces = await listUserWorkspaces({ ...context, object_id: 50 });
-    expect(workspaces.map((workspace) => workspace.id)).toContain(first.workspace.id);
-    expect(workspaces.map((workspace) => workspace.id)).toContain(second.workspace.id);
-    expect(workspaces.some((workspace) => workspace.groupId === 99)).toBe(false);
-  });
-
   it("serializes rapid writes and deletes an entire workspace transactionally", async () => {
     const workspace = await loadOrCreateWorkspace({ ...context, object_id: 60 });
     await Promise.all([
@@ -74,6 +55,51 @@ describe("normalized workspace storage", () => {
     expect((await loadWorkspace(workspace.workspace.id))?.workspace.name).toBe("latest");
     await deleteWorkspaceCascade(workspace.workspace.id);
     expect(await loadWorkspace(workspace.workspace.id)).toBeUndefined();
+  });
+
+  it("returns authoritative monotonic Workspace revisions", async () => {
+    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 62 });
+    const first = await saveWorkspaceRecord({ ...workspace.workspace, name: "first" });
+    const staleWriter = await saveWorkspaceRecord({
+      ...workspace.workspace,
+      revision: 0,
+      name: "second"
+    });
+    expect(staleWriter.revision).toBe((first.revision || 0) + 1);
+    expect((await loadWorkspace(workspace.workspace.id))?.workspace.revision)
+      .toBe(staleWriter.revision);
+  });
+
+  it("updates Workspace metadata without rewriting an existing large file blob", async () => {
+    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 64 });
+    await saveFile({
+      id: "large-file",
+      workspaceId: workspace.workspace.id,
+      name: "large.duckdb",
+      logicalPath: "/input/large.duckdb",
+      type: "application/octet-stream",
+      size: 790 * 1024 * 1024,
+      sha256: "large-hash",
+      source: "omero",
+      state: "ready",
+      data: new Uint8Array([1, 2, 3, 4]).buffer,
+      createdAt: "2026-08-01T00:00:00Z"
+    });
+    const put = vi.spyOn(IDBObjectStore.prototype, "put");
+    await saveWorkspaceRecord({ ...workspace.workspace, name: "metadata only" });
+    expect(put).toHaveBeenCalledTimes(1);
+    expect((put.mock.calls[0][0] as { id: string }).id).toBe(workspace.workspace.id);
+    put.mockRestore();
+  });
+
+  it("uses full replacement only for restore semantics", async () => {
+    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 63 });
+    const extra = newChat(workspace.workspace.id, "Remove on restore");
+    await saveChat(extra);
+    const replaced = await replaceWorkspace({ ...workspace, chats: workspace.chats });
+    expect(replaced.workspace.revision).toBeGreaterThan(workspace.workspace.revision || 0);
+    expect((await loadWorkspace(workspace.workspace.id))?.chats.map((chat) => chat.title))
+      .not.toContain("Remove on restore");
   });
 
   it("persists a bounded replacement evidence ledger per chat", async () => {

@@ -108,9 +108,9 @@ async function putEntity<T extends { id: string }>(store: EntityStore, value: T)
   await transactionDone(tx);
 }
 
-let writeQueue: Promise<void> = Promise.resolve();
+let writeQueue: Promise<unknown> = Promise.resolve();
 
-function serializedWrite(operation: () => Promise<void>): Promise<void> {
+function serializedWrite<T>(operation: () => Promise<T>): Promise<T> {
   const next = writeQueue.then(operation, operation);
   writeQueue = next.catch(() => undefined);
   return next;
@@ -129,8 +129,20 @@ async function entitiesForWorkspace<T>(store: Exclude<EntityStore, "workspaces">
   return requestValue(tx.objectStore(store).index("workspaceId").getAll(workspaceId)) as Promise<T[]>;
 }
 
-export const saveWorkspaceRecord = (value: WorkspaceRecord) =>
-  serializedWrite(() => putEntity("workspaces", value));
+export const saveWorkspaceRecord = (value: WorkspaceRecord): Promise<WorkspaceRecord> =>
+  serializedWrite(async () => {
+    const db = await database();
+    const tx = db.transaction("workspaces", "readwrite");
+    const store = tx.objectStore("workspaces");
+    const persisted = await requestValue(store.get(value.id)) as WorkspaceRecord | undefined;
+    const updated = {
+      ...value,
+      revision: Math.max(persisted?.revision || 0, value.revision || 0) + 1
+    };
+    store.put(updated);
+    await transactionDone(tx);
+    return updated;
+  });
 export const saveChat = (value: ChatRecord) =>
   serializedWrite(() => putEntity("chats", value));
 export const saveFile = (value: WorkspaceFile) =>
@@ -217,7 +229,6 @@ export function newChat(workspaceId: string, title = "New analysis"): ChatRecord
     workspaceId,
     title,
     summary: "",
-    archived: false,
     messages: [],
     createdAt: now,
     updatedAt: now
@@ -230,25 +241,49 @@ async function findWorkspace(key: string): Promise<WorkspaceRecord | undefined> 
   return requestValue(tx.objectStore("workspaces").index("contextKey").get(key)) as Promise<WorkspaceRecord | undefined>;
 }
 
-export async function saveWorkspace(workspace: AnalysisWorkspace): Promise<void> {
-  await serializedWrite(async () => {
+/**
+ * Replace a complete Workspace, for archive restore/import only.
+ *
+ * Ordinary edits must use the entity-level save functions above. Keeping this
+ * operation explicit prevents a small metadata change from cloning every
+ * potentially multi-gigabyte file blob in IndexedDB.
+ */
+export async function replaceWorkspace(workspace: AnalysisWorkspace): Promise<AnalysisWorkspace> {
+  return serializedWrite(async () => {
     const db = await database();
     const tx = db.transaction([...STORES], "readwrite");
+    const existing = await requestValue(
+      tx.objectStore("workspaces").get(workspace.workspace.id)
+    ) as WorkspaceRecord | undefined;
     const workspaceRecord = {
       ...workspace.workspace,
-      revision: (workspace.workspace.revision || 0) + 1
+      revision: Math.max(existing?.revision || 0, workspace.workspace.revision || 0) + 1
     };
     tx.objectStore("workspaces").put(workspaceRecord);
-    workspace.chats.forEach((value) => tx.objectStore("chats").put(value));
-    workspace.files.forEach((value) => tx.objectStore("files").put(value));
-    workspace.executions.forEach((value) => tx.objectStore("executions").put(value));
-    workspace.methods.forEach((value) => tx.objectStore("methods").put(value));
-    workspace.pipelines.forEach((value) => tx.objectStore("pipelines").put(value));
-    workspace.notebooks.forEach((value) => tx.objectStore("notebooks").put(value));
-    workspace.artifacts.forEach((value) => tx.objectStore("artifacts").put(value));
-    workspace.audits.forEach((value) => tx.objectStore("audits").put(value));
-    workspace.evidence.forEach((value) => tx.objectStore("evidence").put(value));
+    const valuesByStore = {
+      chats: workspace.chats,
+      files: workspace.files,
+      executions: workspace.executions,
+      methods: workspace.methods,
+      pipelines: workspace.pipelines,
+      notebooks: workspace.notebooks,
+      artifacts: workspace.artifacts,
+      audits: workspace.audits,
+      evidence: workspace.evidence
+    };
+    for (const [storeName, values] of Object.entries(valuesByStore) as Array<
+      [Exclude<EntityStore, "workspaces">, Array<{ id: string }>]
+    >) {
+      const store = tx.objectStore(storeName);
+      const existingKeys = await requestValue(store.index("workspaceId").getAllKeys(workspaceRecord.id));
+      const retained = new Set(values.map((value) => value.id));
+      existingKeys.forEach((key) => {
+        if (!retained.has(String(key))) store.delete(key);
+      });
+      values.forEach((value) => store.put(value));
+    }
     await transactionDone(tx);
+    return { ...workspace, workspace: workspaceRecord };
   });
 }
 
@@ -284,8 +319,7 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
       audits: [],
       evidence: []
     };
-    await saveWorkspace(workspace);
-    return workspace;
+    return replaceWorkspace(workspace);
   }
   const [chats, files, executions, methods, pipelines, notebooks, artifacts, audits, evidence] = await Promise.all([
     entitiesForWorkspace<ChatRecord>("chats", workspaceRecord.id),
@@ -301,7 +335,7 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
   if (!chats.length) {
     const chat = newChat(workspaceRecord.id);
     workspaceRecord = { ...workspaceRecord, activeChatId: chat.id, updatedAt: new Date().toISOString() };
-    await saveWorkspace({
+    const replaced = await replaceWorkspace({
       workspace: workspaceRecord,
       chats: [chat],
       files,
@@ -313,6 +347,7 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
       audits,
       evidence
     });
+    workspaceRecord = replaced.workspace;
     chats.push(chat);
   }
   return { workspace: workspaceRecord, chats, files, executions, methods, pipelines, notebooks, artifacts, audits, evidence };
@@ -328,24 +363,6 @@ export async function listContextWorkspaces(context: OmeroContext | null): Promi
       workspace.contextKey === key || workspace.contextKey.startsWith(`${key}:import:`)
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-export async function listUserWorkspaces(context: OmeroContext | null): Promise<WorkspaceRecord[]> {
-  if (!context) return listContextWorkspaces(null);
-  const db = await database();
-  const tx = db.transaction("workspaces", "readonly");
-  const values = await requestValue(tx.objectStore("workspaces").getAll()) as WorkspaceRecord[];
-  return values
-    .filter((workspace) =>
-      workspace.userId === context.user_id &&
-      workspace.groupId === context.group_id
-    )
-    .sort((a, b) => {
-      const object = `${a.objectType || ""}:${a.objectId || 0}`.localeCompare(
-        `${b.objectType || ""}:${b.objectId || 0}`
-      );
-      return object || b.updatedAt.localeCompare(a.updatedAt);
-    });
 }
 
 export async function loadWorkspace(workspaceId: string): Promise<AnalysisWorkspace | undefined> {

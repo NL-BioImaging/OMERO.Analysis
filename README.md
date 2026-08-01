@@ -16,16 +16,20 @@ The Workspace explorer is organized as:
 Workspace
 ├── Input
 ├── Chat
-├── Results
+│   └── Chat results
 ├── Methods
+│   └── Methods results
 ├── Pipelines
+│   └── Pipelines results
 └── Notebooks
+    └── Notebooks results
 ```
 
 Methods are reusable `.py` analyses. Pipelines are ordered, isolated Method
-steps. Notebooks remain read-only: users can run cells or all cells, reset the
-kernel, inspect safe outputs, and attach an executed copy, but cannot create or
-edit notebooks.
+steps. Notebooks remain read-only: **Run** resets the kernel, attaches current
+inputs, and executes every cell in order. Users can stop execution, clear
+outputs, reattach inputs, and inspect safe outputs, but cannot create or edit
+notebooks.
 
 ## Privacy and execution
 
@@ -66,7 +70,9 @@ is never adopted.
 Synchronization is explicit, one-way, and last-writer-wins. PNG results become
 real grayscale or RGB OMERO Images. Other results, Chats, complete Method
 history, Pipelines, and validated Python notebooks are stored as typed
-FileAnnotations. Source inputs and Workspace snapshot ZIPs are excluded.
+FileAnnotations. Source inputs and Workspace snapshot ZIPs are excluded,
+except that ready inputs containing `template` anywhere in their filename are
+synchronized under Templates for reuse.
 Unchanged objects are reused by stable key and SHA-256; managed remote
 deletions follow local deletions. Unmanaged Dataset content is never changed.
 
@@ -82,6 +88,10 @@ Default synchronization limits can be overridden with OMERO.web settings:
 - `omero.web.analysis.max_upload_bytes`: 256 MiB per item
 - `omero.web.analysis.max_sync_changed_bytes`: 512 MiB per synchronization
 - `omero.web.analysis.max_png_pixels`: 100 megapixels
+
+The default attachment download transport limit is 2 GiB. Analysis also checks
+the browser Workspace ceiling and available storage before downloading; the
+server limit does not guarantee that a browser can safely hold the file.
 
 ## Clean-break formats
 
@@ -103,22 +113,38 @@ browser databases are not read or deleted automatically.
 ## Development
 
 ```bash
-python -m pip install --no-deps -e .
-python -m pip install "Django>=3.2,<6" pytest pytest-django build
+python scripts/bootstrap_dev.py
 python -m pytest
 
 cd frontend
 npm ci
 npm test
 npm run build
+npm run smoke:browser
 ```
+
+The bootstrap removes obsolete editable `omero-analysis-chat` and
+`omero-jupyterlite` installations before installing this package and its test
+dependencies. Use `--skip-frontend` for a backend-only environment.
 
 Build the wheel:
 
 ```bash
-python -m build --wheel
+python scripts/build_frontend.py --skip-install
+python -m build --wheel --no-isolation
 python scripts/verify_wheel.py dist/omero_analysis-*.whl
 ```
+
+Run the authenticated deployment smoke against an installed OMERO.web:
+
+```bash
+python scripts/smoke_omero_deployment.py https://omero.example \
+  --cookie "sessionid=..."
+```
+
+The same smoke can be run manually in CI with the `OMERO_SMOKE_URL` repository
+variable and `OMERO_SMOKE_COOKIE` secret. It verifies the real container rather
+than a mocked Django process.
 
 Build the local OMERO.web image, preserving other baked-in plugins while
 updating Analysis, BIOMERO.ZarrViewer, and the optional measurement provider:

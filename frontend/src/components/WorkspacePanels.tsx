@@ -547,7 +547,7 @@ export function ComposerPanel({
         <div className="runtime-progress" role="status" aria-live="polite">
           <div><strong>{runtimeProgress.message}</strong><span>{Math.round(runtimeProgress.percent)}%</span></div>
           <progress max="100" value={runtimeProgress.percent} />
-          <small>Please wait. The question box unlocks automatically when browser Python is ready.</small>
+          <small>Your request is queued. Analysis continues automatically when the required Python packages are ready.</small>
         </div>
       )}
       <div className="status" role="status">{status}</div>

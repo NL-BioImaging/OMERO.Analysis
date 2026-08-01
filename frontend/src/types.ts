@@ -104,7 +104,6 @@ export interface WorkflowSkillCatalog {
   consumer: string;
   config_hash: string;
   workflows: WorkflowSkillEntry[];
-  applications?: WorkflowSkillEntry[];
   diagnostics: Array<{
     level: "info" | "warning" | "error";
     code: string;
@@ -199,7 +198,6 @@ export interface ChatRecord {
   workspaceId: string;
   title: string;
   summary: string;
-  archived: boolean;
   pinnedMessageIds?: string[];
   contextUsage?: TokenUsage;
   deletedAt?: string;
@@ -236,7 +234,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  kind?: "text" | "error" | "execution" | "viewer-preview";
+  kind?: "text" | "error" | "execution" | "viewer-preview" | "ai-activity";
   executionId?: string;
   artifactId?: string;
   citationIds?: string[];
@@ -252,7 +250,46 @@ export interface ChatMessage {
   }>;
   activity?: "thought" | "worked";
   durationMs?: number;
+  aiActivity?: AiActivity;
   createdAt: string;
+}
+
+export type AiActivityState =
+  | "preparing"
+  | "responding"
+  | "running"
+  | "checking"
+  | "waiting"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface AiActivityEntry {
+  id: string;
+  kind: "status" | "tool" | "message";
+  label: string;
+  detail?: string;
+  status: "active" | "completed" | "failed";
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface AiActivityQuestion {
+  id: string;
+  prompt: string;
+  choices: string[];
+  allowOther: boolean;
+  answer?: string;
+  answeredAt?: string;
+}
+
+export interface AiActivity {
+  promptId: string;
+  state: AiActivityState;
+  entries: AiActivityEntry[];
+  question?: AiActivityQuestion;
+  startedAt: string;
+  completedAt?: string;
 }
 
 export type ExecutionPurpose = "inspection" | "analysis" | "method" | "notebook";

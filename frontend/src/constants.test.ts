@@ -15,6 +15,7 @@ describe("generic AI provider", () => {
       "discover_skills",
       "load_skill",
       "list_workspace_files",
+      "request_user_choice",
       "run_python",
       "reset_python",
       "list_saved_methods",
@@ -23,6 +24,15 @@ describe("generic AI provider", () => {
       "list_saved_pipelines",
       "run_saved_pipeline"
     ]);
+  });
+
+  it("supports blocking user choices without exposing private reasoning", () => {
+    const choiceTool = TOOLS.find(
+      (tool) => tool.function.name === "request_user_choice"
+    );
+    expect(choiceTool).toBeDefined();
+    expect(SYSTEM_PROMPT).toContain("genuinely blocking choice");
+    expect(SYSTEM_PROMPT).toContain("never hidden private");
   });
 
   it("instructs the model to repair tool errors with the available local stack", () => {

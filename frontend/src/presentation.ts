@@ -59,11 +59,10 @@ export function workflowSkillTooltip(
   if (!catalog) {
     return "The skill-provider catalog is still loading or is not configured.";
   }
-  const values = [...catalog.workflows, ...(catalog.applications || [])].flatMap((entry) =>
+  const values = catalog.workflows.flatMap((entry) =>
     entry.skills.map((skill) => ({
       key: `${entry.source.source_key || entry.source.workflow_key}/${skill.name}`,
-      label: `${entry.source.source_key || entry.source.workflow_key}: ${skill.name} v${skill.version}` +
-        `${entry.source.source_kind === "application" ? " (application)" : ""}`,
+      label: `${entry.source.source_key || entry.source.workflow_key}: ${skill.name} v${skill.version}`,
       ref: entry.source.configured_ref,
       commit: entry.source.resolved_commit.slice(0, 12),
       status: entry.status

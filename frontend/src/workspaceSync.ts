@@ -8,6 +8,7 @@ import type {
   SyncItemKind,
   SyncPayload
 } from "./types";
+import { chatTranscriptMarkdown } from "./chatTranscript";
 
 const encoder = new TextEncoder();
 
@@ -27,21 +28,6 @@ export function canonicalJson(value: unknown): string {
   return `${JSON.stringify(canonical(value), null, 2)}\n`;
 }
 
-function chatMarkdown(chat: ChatRecord): string {
-  const lines = [`# ${chat.title}`, "", `Updated: ${chat.updatedAt}`, ""];
-  if (chat.summary) lines.push("## Conversation summary", "", chat.summary, "");
-  for (const message of chat.messages) {
-    if (message.kind === "execution") continue;
-    lines.push(
-      `## ${message.role === "user" ? "User" : "Assistant"}`,
-      "",
-      message.content,
-      ""
-    );
-  }
-  return `${lines.join("\n")}\n`;
-}
-
 function safeName(value: string): string {
   return value
     .replace(/[\\/\u0000-\u001f\u007f]+/g, "-")
@@ -57,6 +43,26 @@ function slug(value: string): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase() || "analysis";
+}
+
+function resultStem(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\.[^/.]+$/, "").toLowerCase();
+}
+
+function sameResultOrigin(
+  left: AnalysisWorkspace["files"][number],
+  right: AnalysisWorkspace["files"][number]
+): boolean {
+  const fields = ["executionId", "chatId", "methodId", "pipelineId", "notebookId"] as const;
+  return fields.some((field) => Boolean(left[field]) && left[field] === right[field]);
+}
+
+function isPlotPair(
+  csv: AnalysisWorkspace["files"][number],
+  image: AnalysisWorkspace["files"][number]
+): boolean {
+  if (resultStem(csv.logicalPath) === resultStem(image.logicalPath)) return true;
+  return resultStem(csv.name) === resultStem(image.name) && sameResultOrigin(csv, image);
 }
 
 async function itemFromBytes(
@@ -136,8 +142,13 @@ export async function buildWorkspaceSyncPayload(
     }
   }
 
-  for (const group of Array.from(resultGroups.values())
-    .sort((left, right) => left.sha256.localeCompare(right.sha256))) {
+  const sortedResultGroups = Array.from(resultGroups.values())
+    .sort((left, right) => left.sha256.localeCompare(right.sha256));
+  const resultKey = (group: typeof sortedResultGroups[number]) =>
+    `result-content:${group.kind}:${group.sha256}`;
+  const pngGroups = sortedResultGroups.filter((group) => group.kind === "png-image");
+
+  for (const group of sortedResultGroups) {
     const canonicalFile = group.files[0];
     const sources = group.files.map((file) => ({
       fileId: file.id,
@@ -150,8 +161,15 @@ export async function buildWorkspaceSyncPayload(
       executionId: file.executionId || null,
       viewer: file.viewer || null
     }));
+    const plotImageKeys = group.kind === "result" && group.files.some((file) =>
+      file.type === "text/csv" || /\.csv$/i.test(file.name)
+    )
+      ? pngGroups.filter((pngGroup) => group.files.some((csv) =>
+          pngGroup.files.some((image) => isPlotPair(csv, image))
+        )).map(resultKey).sort()
+      : [];
     await add(
-      `result-content:${group.kind}:${group.sha256}`,
+      resultKey(group),
       group.kind,
       canonicalFile.name,
       group.mimetype,
@@ -160,7 +178,8 @@ export async function buildWorkspaceSyncPayload(
       {
         contentAddressed: true,
         sourceCount: sources.length,
-        sources
+        sources,
+        ...(plotImageKeys.length ? { plotImageKeys } : {})
       }
     );
   }
@@ -214,7 +233,7 @@ export async function buildWorkspaceSyncPayload(
       `${slug(chat.title)}--chat.md`,
       "text/markdown",
       `${base}/chat.md`,
-      encoder.encode(chatMarkdown(chat)),
+      encoder.encode(chatTranscriptMarkdown(chat)),
       { chatId: chat.id, title: chat.title }
     );
   }

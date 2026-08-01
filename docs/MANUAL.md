@@ -33,6 +33,18 @@ Choose a Chat, enter a question, and wait until the status returns to **Ready**.
 The assistant can inspect supported data locally, generate Python, run it in
 the isolated browser runtime, and summarize the result.
 
+Every user message is followed by a collapsed **AI activity** card before the
+**Analysis (local)** result. Expand it to see the live response, concise
+progress and validation steps, tool purposes, and the completed user-facing AI
+transcript for that turn. Private model chain-of-thought is neither displayed
+nor stored.
+
+When the assistant cannot continue without a real choice, the activity card
+opens automatically and presents two to four answer buttons. Selecting an
+answer resumes the same AI turn. **Stop** cancels a waiting question as well as
+the running analysis. A question restored after reloading the page is shown as
+inactive; answer it as a new Chat message.
+
 Each assistant response has two small controls:
 
 - The **copy icon** immediately before the star copies the complete assistant
@@ -51,6 +63,12 @@ a long Chat. Click the filled star again to unpin it.
 Saving is available only after the assistant has finished the turn. A saved
 Method contains the final assistant summary as Python comments above the
 reproducible code.
+
+When an answer is supported by generated files, **Supporting results** buttons
+name the actual image or data file they open in the Artifact Inspector.
+Repeated executions that produced identical bytes are shown only once; an
+image and its corresponding CSV remain separate because they are different
+forms of evidence.
 
 ## Methods and Pipelines
 
@@ -215,13 +233,20 @@ the same group restores the latest synchronized settings when available.
 
 ## Troubleshooting
 
-If Chat is unavailable, check that the runtime is Ready and that the active AI
-profile has an endpoint, model, and key. Use **Validate connection** for
-specific endpoint, authentication, model, CORS, or response-format errors.
+Browser Python starts lazily when Chat, a Method, a Pipeline, a Notebook, or a
+database inspection first needs it. Merely opening Analysis, Settings, or a
+Notebook does not copy inputs into Python.
+
+If Chat is unavailable, check that the Workspace inputs are ready and that the
+active AI profile has an endpoint, model, and any required key. Use **Validate
+connection** for specific endpoint, authentication, model, CORS, or
+response-format errors.
 
 If synchronization fails, confirm that the selected OMERO group permits
 Project/Dataset creation and FileAnnotation creation, then retry after the
-session keepalive has renewed the connection.
+session keepalive has renewed the connection. Unexpected server failures show
+a short request ID; include it when checking server logs or reporting the
+problem.
 
 If a custom URL skill cannot be loaded, use a direct HTTPS Markdown URL or
 upload the file. GitHub `blob` URLs are converted to their raw-content form.

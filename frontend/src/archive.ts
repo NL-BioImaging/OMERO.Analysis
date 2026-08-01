@@ -14,6 +14,7 @@ import type {
   WorkspaceRecord
 } from "./types";
 import { sha256 } from "./storage";
+import { chatTranscriptMarkdown } from "./chatTranscript";
 
 export const WORKSPACE_FORMAT = "nl.bioimaging.analysis.workspace.v1";
 export const WORKSPACE_FORMAT_VERSION = 1;
@@ -50,16 +51,6 @@ function safeSegment(value: string): string {
 
 function utf8(value: string): Uint8Array {
   return new Uint8Array(strToU8(value));
-}
-
-function chatMarkdown(chat: ChatRecord): string {
-  const lines = [`# ${chat.title}`, "", `Updated: ${chat.updatedAt}`, ""];
-  if (chat.summary) lines.push("## Conversation summary", "", chat.summary, "");
-  for (const message of chat.messages) {
-    if (message.kind === "execution") continue;
-    lines.push(`## ${message.role === "user" ? "User" : "Assistant"}`, "", message.content, "");
-  }
-  return lines.join("\n");
 }
 
 function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): ArchiveResult {
@@ -106,7 +97,7 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
   for (const chat of workspace.chats) {
     const path = `Chat/${safeSegment(chat.id)}`;
     entries[`${path}/chat.json`] = utf8(JSON.stringify(chat, null, 2));
-    entries[`${path}/chat.md`] = utf8(chatMarkdown(chat));
+    entries[`${path}/chat.md`] = utf8(chatTranscriptMarkdown(chat));
   }
   for (const method of workspace.methods) {
     const path = `Methods/${safeSegment(method.id)}`;

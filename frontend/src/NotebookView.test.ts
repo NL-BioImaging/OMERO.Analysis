@@ -71,6 +71,7 @@ describe("run-only notebook validation", () => {
       runtime: { runNotebookCell } as unknown as PythonRuntime,
       runRequest: null,
       workspaceActions: null,
+      onBeforeRun: async () => undefined,
       onChange: async () => undefined,
       onFiles: async () => undefined
     }));

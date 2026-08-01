@@ -2,13 +2,9 @@ import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
-import { strFromU8, unzipSync } from "fflate";
 import { chromium } from "playwright-core";
 
-const root = resolve(
-  import.meta.dirname,
-  "../../src/omero_analysis/static/omero_analysis"
-);
+const root = resolve(import.meta.dirname, "../../src/omero_analysis/static/omero_analysis");
 const sandboxTemplate = readFileSync(
   resolve(import.meta.dirname, "../../src/omero_analysis/templates/omero_analysis/runtime_sandbox.html"),
   "utf8"
@@ -22,409 +18,250 @@ const chrome = [
   "/usr/bin/chromium-browser"
 ].find((candidate) => candidate && existsSync(candidate));
 if (!chrome) throw new Error("Chrome/Chromium was not found; set CHROME_PATH");
-const types = {
-  ".js": "text/javascript",
-  ".mjs": "text/javascript",
-  ".wasm": "application/wasm",
-  ".json": "application/json",
-  ".zip": "application/zip",
-  ".whl": "application/zip",
-  ".css": "text/css"
+
+const contentTypes = {
+  ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript",
+  ".json": "application/json", ".wasm": "application/wasm",
+  ".whl": "application/zip", ".zip": "application/zip"
 };
+const json = (response, value) => {
+  response.setHeader("Content-Type", "application/json");
+  response.end(JSON.stringify(value));
+};
+
 const server = createServer(async (request, response) => {
-  if (request.url === "/favicon.ico") {
+  const pathname = new URL(request.url || "/", "http://smoke.invalid").pathname;
+  if (pathname === "/favicon.ico") {
     response.statusCode = 204;
     response.end();
     return;
   }
-  if (request.url === "/") {
+  if (pathname === "/workflow-skills/") {
+    json(response, {
+      schema: "nl.bioimaging.omero-workflow-skills.v1",
+      generated_at: "", consumer: "omero-analysis", config_hash: "",
+      workflows: [], applications: [], diagnostics: []
+    });
+    return;
+  }
+  if (pathname === "/zarr-status/") {
+    json(response, {
+      schema_version: 1, available: false, installed: false, enabled: false,
+      version: null, minimum_version: "0.4.0", reason: "not-installed"
+    });
+    return;
+  }
+  if (pathname === "/") {
     response.setHeader("Content-Type", "text/html");
     response.setHeader(
       "Content-Security-Policy",
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
-      "connect-src 'self' https:; " +
-      "worker-src blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+      "connect-src 'self' https: http://localhost:*; worker-src blob:; frame-src 'self' blob:; " +
+      "object-src 'none'; base-uri 'self'; form-action 'self'"
     );
     response.end(`<!doctype html><meta charset="utf-8"><title>Analysis smoke</title>
       <link rel="stylesheet" href="/app.css">
       <div id="root"
-        data-token-url="/unused"
-        data-context-template="/unused"
-        data-attachments-template="/unused"
-        data-hierarchy-template="/unused"
-        data-download-template="/unused"
-        data-upload-template="/unused"
-        data-snapshots-template="/unused"
-        data-snapshot-upload-template="/unused"
-        data-snapshot-download-template="/unused"
-        data-workflow-templates-template="/unused"
-        data-workflow-download-template="/unused"
+        data-workflow-skills-url="/workflow-skills/"
+        data-zarr-viewer-status-url="/zarr-status/"
         data-runtime-base="/runtime/ASSET"></div>
       <script id="omero-analysis-context" type="application/json">null</script>
       <script type="module" src="/app.js"></script>`);
     return;
   }
-  if (request.url === "/runtime-sandbox/") {
+  if (pathname === "/runtime-sandbox/") {
     const origin = `http://${request.headers.host}`;
     response.setHeader("Content-Type", "text/html");
     response.setHeader(
       "Content-Security-Policy",
-      "default-src 'none'; " +
-      `script-src 'unsafe-inline' 'wasm-unsafe-eval' blob: ${origin}; ` +
-      `connect-src ${origin}; img-src data: blob:; style-src 'unsafe-inline'; ` +
+      "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob: " + origin + "; " +
+      "connect-src " + origin + "; img-src data: blob:; style-src 'unsafe-inline'; " +
       "worker-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
     );
     response.end(sandboxTemplate);
     return;
   }
-  const relative = request.url === "/app.js" || request.url === "/app.css"
-    ? request.url.slice(1)
-    : request.url?.startsWith("/runtime/")
-      ? `pyodide/${request.url.slice("/runtime/".length)}`
-      : "";
+
+  const relative = pathname.startsWith("/runtime/")
+    ? `pyodide/${pathname.slice("/runtime/".length)}`
+    : decodeURIComponent(pathname.slice(1));
   const file = resolve(root, relative || "__missing__");
   if (!file.startsWith(root + sep) || !(await stat(file).catch(() => null))?.isFile()) {
     response.statusCode = 404;
     response.end();
     return;
   }
-  response.setHeader("Content-Type", types[extname(file)] || "application/octet-stream");
+  response.setHeader("Content-Type", contentTypes[extname(file)] || "application/octet-stream");
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   createReadStream(file).pipe(response);
 });
 
-await new Promise((resolveReady) => server.listen(0, "127.0.0.1", resolveReady));
+await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
 const { port } = server.address();
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
 const page = await browser.newPage();
 const errors = [];
 let completions = 0;
-await page.route(
-  "https://provider.example/**",
-  async (route) => {
-    const request = route.request();
-    const cors = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "api-key,content-type",
-      "Access-Control-Allow-Methods": "POST,OPTIONS"
-    };
-    if (request.method() === "OPTIONS") {
-      await route.fulfill({ status: 204, headers: cors });
-      return;
-    }
-    const payload = request.postDataJSON();
-    if (payload.temperature !== 1 || payload.model !== "gpt-5-smoke") {
-      throw new Error(`Unexpected provider payload: ${JSON.stringify(payload)}`);
-    }
-    if (request.headers()["api-key"] !== "smoke-key") {
-      throw new Error("Configured api-key header was not preserved");
-    }
-    completions += 1;
-    if (request.postData().includes("group,value\\na,1\\nb,2")) {
-      throw new Error("A complete source file was included in the AI provider request");
-    }
-    let message;
-    if (completions === 1) {
-      message = {
-          role: "assistant",
-          content: null,
-          tool_calls: [{
-            id: "call-failing",
-            type: "function",
-            function: {
-              name: "run_python",
-              arguments: JSON.stringify({
-                code: "import package_that_is_not_available"
-              })
-            }
-          }]
-        };
-    } else if (completions === 2) {
-      const toolMessage = payload.messages.at(-1);
-      if (
-        toolMessage?.role !== "tool" ||
-        !toolMessage.content.includes("ModuleNotFoundError") ||
-        !toolMessage.content.includes("available_packages")
-      ) {
-        throw new Error(`Python failure was not returned for repair: ${JSON.stringify(toolMessage)}`);
-      }
-      message = {
-        role: "assistant",
-        content: null,
-        tool_calls: [{
-          id: "call-corrected",
-          type: "function",
-          function: {
-            name: "run_python",
-            arguments: JSON.stringify({
-                code: [
-                  "import pandas as pd",
-                  "import seaborn as sns",
-                  "import matplotlib.pyplot as plt",
-                  "sns.set_theme()",
-                  "result = pd.read_csv('/input/smoke.csv')",
-                  "sns.barplot(data=result, x='group', y='value')",
-                  "plt.savefig('/output/smoke.png')",
-                  "plt.close()",
-                  "result.groupby('group', as_index=False)['value'].sum().to_csv('/output/summary.csv', index=False)"
-                ].join("\n")
-              })
-            }
-          }]
-      };
-    } else if (completions === 3) {
-      const toolMessage = payload.messages.at(-1);
-      if (
-        toolMessage?.role !== "tool" ||
-        !toolMessage.content.includes("smoke.csv") ||
-        !toolMessage.content.includes("Plot data CSV required")
-      ) {
-        throw new Error(`Missing plot CSV was not returned for repair: ${JSON.stringify(toolMessage)}`);
-      }
-      message = {
-        role: "assistant",
-        content: null,
-        tool_calls: [{
-          id: "call-plot-csv",
-          type: "function",
-          function: {
-            name: "run_python",
-            arguments: JSON.stringify({
-              code: "result.to_csv('/output/smoke.csv', index=False)"
-            })
-          }
-        }]
-      };
-    } else if (completions === 4) {
-      message = { role: "assistant", content: "Rows analyzed locally.", tool_calls: [] };
-    } else if (completions === 5) {
-      message = {
-        role: "assistant",
-        content: null,
-        tool_calls: [{
-          id: "call-duplicate",
-          type: "function",
-          function: {
-            name: "run_python",
-            arguments: JSON.stringify({
-              code: [
-                "import pandas as pd",
-                "import seaborn as sns",
-                "import matplotlib.pyplot as plt",
-                "sns.set_theme()",
-                "result = pd.read_csv('/input/smoke.csv')",
-                "sns.barplot(data=result, x='group', y='value')",
-                "plt.savefig('/output/smoke.png')",
-                "plt.close()",
-                "result.groupby('group', as_index=False)['value'].sum().to_csv('/output/summary.csv', index=False)"
-              ].join("\n")
-            })
-          }
-        }]
-      };
-    } else {
-      const toolMessage = payload.messages.at(-1);
-      if (toolMessage?.role !== "tool" || !toolMessage.content.includes('"reused":true')) {
-        throw new Error(`Duplicate execution was not reused: ${JSON.stringify(toolMessage)}`);
-      }
-      message = { role: "assistant", content: "Reused the prior calculation.", tool_calls: [] };
-    }
-    await route.fulfill({
-      status: 200,
-      headers: { ...cors, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        choices: [{ message }],
-        usage: { prompt_tokens: 200, completion_tokens: 50, total_tokens: 250 }
-      })
-    });
+
+await page.route("http://localhost:1234/**", (route) => route.fulfill({
+  status: 200,
+  headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+  body: JSON.stringify({ data: [] })
+}));
+await page.route("http://localhost:11434/**", (route) => route.fulfill({
+  status: 200,
+  headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+  body: JSON.stringify({ models: [] })
+}));
+
+await page.route("https://provider.example/**", async (route) => {
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization,content-type",
+    "Access-Control-Allow-Methods": "POST,OPTIONS"
+  };
+  if (route.request().method() === "OPTIONS") {
+    await route.fulfill({ status: 204, headers: cors });
+    return;
   }
-);
+  const payload = route.request().postDataJSON();
+  if (payload.model !== "smoke-model") throw new Error("Configured model was not sent");
+  if (route.request().headers().authorization !== "Bearer smoke-key") {
+    throw new Error("Configured bearer credential was not sent");
+  }
+  if (route.request().postData().includes("group,value\\na,1\\nb,2")) {
+    throw new Error("A complete source file was included in the provider request");
+  }
+  completions += 1;
+  const message = completions === 1 ? {
+    role: "assistant", content: null, tool_calls: [{
+      id: "analysis", type: "function", function: {
+        name: "run_python",
+        arguments: JSON.stringify({ purpose: "analysis", code: [
+          "import pandas as pd",
+          "import matplotlib.pyplot as plt",
+          "data = pd.read_csv('/input/smoke.csv')",
+          "data.to_csv('/output/smoke.csv', index=False)",
+          "data.plot.bar(x='group', y='value', legend=False)",
+          "plt.tight_layout()",
+          "plt.savefig('/output/smoke.png')",
+          "plt.close()"
+        ].join("\n") })
+      }
+    }]
+  } : {
+    role: "assistant",
+    content: "## Result\n\nRows analyzed **locally** and plotted reproducibly.",
+    tool_calls: []
+  };
+  await route.fulfill({
+    status: 200,
+    headers: { ...cors, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      choices: [{ message }],
+      usage: { prompt_tokens: 200, completion_tokens: 50, total_tokens: 250 }
+    })
+  });
+});
+
 page.on("console", (message) => {
-  console.log(`browser ${message.type()}: ${message.text()}`);
   if (message.type() === "error") errors.push(message.text());
 });
-page.on("requestfailed", (request) => console.log("request failed:", request.url(), request.failure()));
 page.on("pageerror", (error) => errors.push(String(error)));
+
+const answerDialog = async (answer) => {
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  await dialog.getByRole("textbox").fill(answer);
+  await dialog.getByRole("button", { name: "Save" }).click();
+};
+
 try {
   await page.goto(`http://127.0.0.1:${port}/`);
-  await page.locator(".runtime-progress progress").waitFor({ timeout: 5_000 });
-  if (!(await page.getByPlaceholder(/please wait/i).isDisabled())) {
-    throw new Error("Composer was enabled while browser Python was loading");
+  await page.getByText("Ready — browser Python will start when needed").waitFor({ timeout: 15_000 });
+  if (await page.locator('iframe[title="OMERO Analysis Python runtime"]').count()) {
+    throw new Error("Opening Analysis eagerly created the Python runtime");
   }
-  await page.getByText("Ready — analysis runs locally in this browser").waitFor({
-    timeout: 45_000
-  });
+  const rootFolders = await page.locator(".workspace-tree > details > summary strong").allTextContents();
+  if (JSON.stringify(rootFolders) !== JSON.stringify(["Input", "Chat", "Methods", "Pipelines", "Notebooks"])) {
+    throw new Error(`Unexpected Workspace folder order: ${rootFolders.join(", ")}`);
+  }
+  const notebookTab = page.getByRole("button", { name: "Notebook" });
+  await notebookTab.focus();
+  await page.keyboard.press("Enter");
+  if (await notebookTab.getAttribute("aria-current") !== "page") {
+    throw new Error("Notebook tab was not keyboard accessible");
+  }
+  const chatTab = page.getByRole("button", { name: "Chat" });
+  await chatTab.focus();
+  await page.keyboard.press("Enter");
+  const themeToggle = page.getByRole("button", { name: "Switch to light theme" });
+  await themeToggle.click();
+  if (await page.locator(".app-shell").getAttribute("data-theme") !== "light") {
+    throw new Error("Light theme did not activate");
+  }
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+
   await page.locator('.file-browser-toolbar input[type="file"]').setInputFiles({
-    name: "smoke.csv",
-    mimeType: "text/csv",
-    buffer: Buffer.from("group,value\na,1\nb,2\n")
+    name: "smoke.csv", mimeType: "text/csv", buffer: Buffer.from("group,value\na,1\nb,2\n")
   });
-  await page.getByText("Local inputs added; browser Python is ready").waitFor({
-    timeout: 45_000
-  });
-  await page.getByText("smoke.csv").waitFor();
-  await page.getByRole("button", { name: "AI settings" }).click();
-  await page.getByLabel("Deployment/model").fill("gpt-5-smoke");
+  await page.getByText("smoke.csv", { exact: true }).waitFor();
+  const explorerBox = await page.locator(".workspace-tree").boundingBox();
+  if (!explorerBox || explorerBox.width < 475) {
+    throw new Error(`Workspace explorer did not use its wider default: ${explorerBox?.width}`);
+  }
+  if (await page.locator('.workspace-tree .browser-name strong[title="smoke.csv"]').count() !== 1) {
+    throw new Error("Explorer items do not expose their full name as a tooltip");
+  }
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByText("AI Settings", { exact: true }).click();
+  await page.getByLabel("API endpoint").fill("https://provider.example/v1");
+  await page.getByLabel("Model or deployment").fill("smoke-model");
   await page.getByLabel("API key").fill("smoke-key");
-  await page.getByLabel("Model context window (optional)").fill("1000");
-  await page.getByRole("button", { name: "AI settings" }).click();
-  await page.getByPlaceholder("Ask a question about the loaded data…").fill(
-    "Show me the uploaded rows and save a summary."
-  );
-  await page.getByRole("button", { name: "Send" }).click();
-  await page.getByText("Rows analyzed locally.").waitFor({ timeout: 120_000 });
-  await page.getByText("summary.csv", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Chat" }).click();
+  await page.getByPlaceholder("Ask a question about the loaded data…").fill("Plot the uploaded values.");
+  await page.getByRole("button", { name: /Send/ }).click();
+
+  await page.getByRole("heading", { name: "Result" }).waitFor({ timeout: 120_000 });
+  await page.locator(".message.assistant .message-markdown")
+    .getByText("Rows analyzed locally and plotted reproducibly.", { exact: true })
+    .waitFor();
+  if (await page.getByRole("button", { name: "Copy user message" }).count() !== 1) {
+    throw new Error("User messages do not expose the copy control");
+  }
   await page.getByRole("img", { name: "smoke.png" }).waitFor();
-  await page.getByText(/ModuleNotFoundError/).waitFor({ state: "attached" });
-  await page.getByText(/25% of 1,000/).waitFor();
-  await page.getByText(/session: 1,000/).waitFor();
-  await page.getByText("Ready — you can ask a question").waitFor();
-  const disclosures = page.locator("section.execution-details");
-  if (await disclosures.count() < 3) {
-    throw new Error("Expected collapsed Python execution disclosures");
+  await page.getByText("Data: smoke.csv", { exact: true }).waitFor();
+  await page.getByText("Data: smoke.csv", { exact: true }).click();
+  await page.locator(".artifact-inspector").getByText("smoke.csv", { exact: true }).waitFor();
+  if (await page.locator(".ai-activity-card").count() !== 1) {
+    throw new Error("The Chat turn did not consolidate AI activity into one card");
   }
-  for (let index = 0; index < await disclosures.count(); index += 1) {
-    if (await disclosures.nth(index).getAttribute("data-expanded") !== "false") {
-      throw new Error("An execution disclosure was expanded by default");
-    }
+  if (await page.locator(".message.execution").count() !== 1) {
+    throw new Error("The Chat turn did not present one primary execution card");
   }
-  const scrollState = await page.locator(".messages").evaluate((element) => ({
-    bottom: Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop),
-    overflow: getComputedStyle(element).overflowY,
-    bodyOverflow: getComputedStyle(document.body).overflow
-  }));
-  if (scrollState.bottom > 4 || scrollState.overflow !== "auto" || scrollState.bodyOverflow !== "hidden") {
-    throw new Error(`Chat scrolling is not contained: ${JSON.stringify(scrollState)}`);
-  }
-  await disclosures.last().getByRole("button", { name: "Show details" }).click();
-  if (
-    await disclosures.last().getByRole("button", { name: "Collapse" }).count() !== 2 ||
-    await disclosures.last().getByRole("button", { name: "Rerun" }).count() !== 2
-  ) {
-    throw new Error("Execution controls were not duplicated above and below the code");
-  }
-  await page.locator(".messages").getByRole("columnheader", { name: "group" }).waitFor();
-  await page.locator(".artifact-inspector").getByRole("columnheader", { name: "group" }).waitFor();
-  if (await page.locator(".artifact-inspector img").count()) {
-    throw new Error("The artifact inspector attempted to render CSV data as an image");
-  }
-  const outputCount = await page.locator(".project-tree details").nth(1).locator("li").count();
-  await page.getByPlaceholder("Ask a question about the loaded data…").fill(
-    "Repeat exactly the same analysis."
-  );
-  await page.getByRole("button", { name: "Send" }).click();
-  await page.getByText("Reused the prior calculation.").waitFor({ timeout: 60_000 });
-  await page.getByText(/Reused prior execution/).waitFor();
-  const outputCountAfterReuse = await page.locator(".project-tree details").nth(1).locator("li").count();
-  if (outputCountAfterReuse !== outputCount) {
-    throw new Error(`Reused run duplicated outputs: ${outputCount} -> ${outputCountAfterReuse}`);
-  }
-  if (completions !== 6) throw new Error(`Expected six AI rounds; got ${completions}`);
-  const answerDialog = async (answer) => {
-    const dialog = page.getByRole("dialog");
-    await dialog.waitFor();
-    await dialog.getByRole("textbox").fill(answer);
-    await dialog.getByRole("button", { name: "Save" }).click();
-  };
-  await page.getByRole("button", { name: "Save as script" }).last().click();
+
+  await page.getByRole("button", { name: "Save as method" }).click();
   await answerDialog("smoke-analysis.py");
   await answerDialog("Reusable smoke analysis");
   await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
-  await page.locator(".message.execution.success").last()
-    .getByRole("button", { name: "Save as script" }).first().click();
-  await answerDialog("smoke-analysis-2.py");
-  await answerDialog("Second reusable smoke analysis");
-  await page.getByText("smoke-analysis-2.py", { exact: true }).waitFor();
+  if (await page.getByText("Copy to…", { exact: true }).count()) {
+    throw new Error("Removed Method transfer UI is still visible");
+  }
   await page.getByLabel("Select smoke-analysis.py").check();
-  await page.getByLabel("Select smoke-analysis-2.py").check();
-  await page.getByRole("button", { name: "Combine" }).click();
-  await answerDialog("combined-smoke");
-  await answerDialog("Combined smoke analysis");
-  await page.getByText("combined-smoke", { exact: true }).waitFor();
-  await page.getByText("combined-smoke", { exact: true }).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Run workflow" }).waitFor();
-  await page.keyboard.press("Escape");
-  await page.locator(".browser-row", { hasText: "summary.csv" }).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete output" }).waitFor();
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Up to OMERO object projects" }).click();
-  const selectedProject = page.locator(".project-row.selected");
-  await selectedProject.waitFor();
-  if ((await selectedProject.count()) !== 1) {
-    throw new Error("Project explorer must have exactly one selected project");
-  }
-  await selectedProject.dblclick();
-
-  await page.evaluate(() => {
-    window.__oaDownloadPromise = null;
-    const createObjectUrl = URL.createObjectURL.bind(URL);
-    URL.createObjectURL = function captureDownload(blob) {
-      window.__oaDownloadPromise = blob.arrayBuffer()
-        .then((buffer) => Array.from(new Uint8Array(buffer)));
-      return createObjectUrl(blob);
-    };
-    HTMLAnchorElement.prototype.click = function captureDownloadClick() {};
-  });
-  await page.getByText("Project actions", { exact: true }).click();
-  if (await page.getByRole("button", { name: "BIOMERO handoff" }).count()) {
-    throw new Error("The removed BIOMERO handoff is still visible");
-  }
-  const skillBadge = page.locator(".skill-badge");
-  const skillTooltip = await skillBadge.getAttribute("title");
-  if (!skillTooltip?.toLowerCase().includes("workflow")) {
-    throw new Error("The workflow-skill badge has no explanatory tooltip");
-  }
-  await page.getByRole("button", { name: "Rename project" }).click();
-  await answerDialog("Renamed smoke project");
-  await page.getByText("Renamed smoke project", { exact: true }).first().waitFor();
-  await page.getByRole("button", { name: "Download project ZIP" }).click();
-  await page.waitForFunction(() => Boolean(window.__oaDownloadPromise));
-  const archiveBytes = await page.evaluate(() => window.__oaDownloadPromise);
-  const archiveEntries = unzipSync(new Uint8Array(archiveBytes));
-  const projectManifest = JSON.parse(strFromU8(archiveEntries["project.json"]));
-  if (JSON.stringify(projectManifest).toLowerCase().includes("smoke-key")) {
-    throw new Error("Workspace snapshot leaked the AI provider API key");
-  }
-  if (!Object.keys(archiveEntries).some((name) => name.includes("inputs/local/"))) {
-    throw new Error("Project snapshot omitted its eligible local input");
-  }
-  const chatSelect = page.getByLabel("Chat");
-  const originalChatId = await chatSelect.inputValue();
-  await page.getByRole("button", { name: "New chat" }).click();
-  if (await chatSelect.locator("option").count() < 2) {
-    throw new Error("Named chat creation did not persist a second chat");
-  }
-  await chatSelect.selectOption(originalChatId);
-  await page.getByText("Rows analyzed locally.").waitFor();
-  await page.getByRole("button", { name: "Rename chat" }).click();
-  await answerDialog("Renamed smoke chat");
-  await chatSelect.getByRole("option", { name: "Renamed smoke chat" }).waitFor({ state: "attached" });
-  const outputSelectors = page.locator(".output-selector");
-  const outputsBeforeBulkDelete = await outputSelectors.count();
-  if (outputsBeforeBulkDelete < 2) {
-    throw new Error("Bulk output deletion requires at least two generated outputs");
-  }
-  await outputSelectors.nth(0).check();
-  await outputSelectors.nth(1).check();
-  await page.getByRole("button", { name: "Delete selected" }).click();
-  const deleteDialog = page.getByRole("dialog");
-  await deleteDialog.getByText("Move 2 outputs to trash?").waitFor();
-  await deleteDialog.getByRole("button", { name: "Move to trash" }).click();
-  await page.waitForFunction(
-    (expected) => document.querySelectorAll(".output-selector").length === expected,
-    outputsBeforeBulkDelete - 2
-  );
+  await page.getByRole("button", { name: "To Notebook" }).click();
+  await answerDialog("smoke-notebook.ipynb");
+  await page.locator(".workspace-tree .browser-name")
+    .getByText("smoke-notebook.ipynb", { exact: true })
+    .waitFor();
+  if (completions !== 2) throw new Error(`Expected two provider rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
-  console.log(
-    "Browser smoke passed: opaque iframe/worker, CSP, file transfer, configurable AI contract, " +
-    "local Python and plot-CSV repair, seaborn, token usage, table preview, and generated result"
-  );
+  console.log("Browser smoke passed: lazy runtime, safe provider boundary, Markdown, consolidated execution, Method, and Notebook conversion");
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));
   console.error("Browser errors:", errors.join("\n"));
   throw error;
 } finally {
   await browser.close();
-  await new Promise((resolveClose) => server.close(resolveClose));
+  await new Promise((closed) => server.close(closed));
 }

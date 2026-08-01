@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from functools import wraps
 from pathlib import Path
 from urllib.parse import quote
@@ -79,11 +80,20 @@ def api_errors(function):
                 status=exc.status,
             )
         except Exception:
-            logger.exception("Unhandled OMERO Analysis error")
-            return JsonResponse(
-                {"error": {"code": "internal_error", "message": "The operation failed"}},
+            request_id = uuid.uuid4().hex[:12]
+            logger.exception("Unhandled OMERO Analysis error request_id=%s", request_id)
+            response = JsonResponse(
+                {
+                    "error": {
+                        "code": "internal_error",
+                        "message": "The operation failed",
+                        "request_id": request_id,
+                    }
+                },
                 status=500,
             )
+            response["X-OMERO-Analysis-Request-ID"] = request_id
+            return response
 
     return wrapped
 
@@ -296,10 +306,7 @@ def _workflow_skill_package_url(workflow_key, skill_name):
 
 def _current_workflow_skill_urls(payload):
     """Replace transport-specific package URLs restored from the shared cache."""
-    for entry in [
-        *(payload.get("workflows") or []),
-        *(payload.get("applications") or []),
-    ]:
+    for entry in payload.get("workflows") or []:
         source = entry.get("source", {})
         for skill in entry.get("skills", []):
             workflow_key = (
@@ -314,6 +321,9 @@ def _current_workflow_skill_urls(payload):
                     workflow_key,
                     skill_name,
                 )
+    # Retain an empty field temporarily for older clients, but never expose
+    # [APPLICATIONS] discovery. Application-owned skills use named providers.
+    payload["applications"] = []
     return payload
 
 

@@ -43,7 +43,7 @@ async function workspace(): Promise<AnalysisWorkspace> {
       activeChatId: "chat", plotCsv: true, createdAt, updatedAt: createdAt
     },
     chats: [{
-      id: "chat", workspaceId: "workspace", title: "Analysis", summary: "", archived: false,
+      id: "chat", workspaceId: "workspace", title: "Analysis", summary: "",
       messages: [{ id: "prompt", role: "user", content: "Analyze", createdAt }],
       createdAt, updatedAt: createdAt
     }],

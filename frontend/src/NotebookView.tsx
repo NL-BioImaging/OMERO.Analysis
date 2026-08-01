@@ -227,6 +227,7 @@ interface Props {
   runtime: PythonRuntime;
   runRequest: { id: string; nonce: number } | null;
   workspaceActions: ReactNode;
+  onBeforeRun: () => Promise<void>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
 }
@@ -234,7 +235,7 @@ interface Props {
 export default function NotebookView(props: Props) {
   const {
     notebook, inputs, runtime, runRequest, workspaceActions,
-    onChange, onFiles
+    onBeforeRun, onChange, onFiles
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
@@ -288,8 +289,12 @@ export default function NotebookView(props: Props) {
     }
   }
 
-  async function attachInputs(record: NotebookRecord): Promise<NotebookRecord> {
+  async function attachInputs(
+    record: NotebookRecord,
+    startRuntime = true
+  ): Promise<NotebookRecord> {
     setStatus("Attaching current Workspace input data…");
+    if (startRuntime) await onBeforeRun();
     await runtime.syncInputs(inputs);
     const readyInputs = inputs.filter(
       (file) => file.source !== "result" && file.state === "ready" &&
@@ -309,18 +314,24 @@ export default function NotebookView(props: Props) {
   async function runAll() {
     if (!notebook || running) return;
     setRunning(true);
-    setStatus("Preparing the notebook and current input data…");
-    await runtime.reset();
-    let working: NotebookRecord | null = await attachInputs(notebook);
-    let count = 1;
-    for (let index = 0; working && index < working.document.cells.length; index += 1) {
-      if (working.document.cells[index].cell_type !== "code") continue;
-      setStatus(`Running cell ${index + 1}…`);
-      working = await executeCell(index, count++, working);
-      if (!working) break;
+    try {
+      setStatus("Preparing the notebook and current input data…");
+      await onBeforeRun();
+      await runtime.reset();
+      let working: NotebookRecord | null = await attachInputs(notebook, false);
+      let count = 1;
+      for (let index = 0; working && index < working.document.cells.length; index += 1) {
+        if (working.document.cells[index].cell_type !== "code") continue;
+        setStatus(`Running cell ${index + 1}…`);
+        working = await executeCell(index, count++, working);
+        if (!working) break;
+      }
+      setStatus((value) => value.startsWith("Stopped") ? value : "Notebook run completed.");
+    } catch (error) {
+      setStatus(`Notebook could not start: ${String(error)}`);
+    } finally {
+      setRunning(false);
     }
-    setRunning(false);
-    setStatus((value) => value.startsWith("Stopped") ? value : "Notebook run completed.");
   }
 
   async function stopReset() {

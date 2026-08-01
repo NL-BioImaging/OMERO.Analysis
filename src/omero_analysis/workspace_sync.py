@@ -19,6 +19,20 @@ from .errors import (
     PermissionDenied,
     UnsupportedMedia,
 )
+from .managed_omero import (
+    annotations as _annotations,
+    create_dataset,
+    create_project,
+    delete_object as _delete,
+    link_dataset,
+    map_values as _map_values,
+    marker,
+    owned_projects as _owned_projects,
+    plain as _plain,
+    project_datasets as _project_datasets,
+    set_marker,
+    user_id as _user_id,
+)
 from .services import can_annotate, object_group_id, safe_filename, validate_notebook
 from .settings import (
     context_ttl_seconds,
@@ -55,19 +69,6 @@ LIBRARY_KINDS = {"method", "pipeline", "notebook"}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _plain(value):
-    if value is None:
-        return None
-    return getattr(value, "val", value)
-
-
-def _user_id(conn):
-    try:
-        return int(conn.getUserId())
-    except (AttributeError, TypeError, ValueError):
-        return 0
-
-
 def _canonical_json(value):
     return (json.dumps(
         value,
@@ -89,55 +90,12 @@ def _workspace_id(value):
     return value
 
 
-def _map_values(annotation):
-    if not hasattr(annotation, "getValue"):
-        return {}
-    try:
-        return {str(_plain(key)): str(_plain(value)) for key, value in annotation.getValue()}
-    except (TypeError, ValueError):
-        return {}
-
-
-def _annotations(obj):
-    try:
-        return list(obj.listAnnotations())
-    except (AttributeError, TypeError):
-        return []
-
-
 def _marker(obj, role=None, match=None):
-    for annotation in _annotations(obj):
-        if str(_plain(getattr(annotation, "getNs", lambda: None)())) != SYNC_NAMESPACE:
-            continue
-        values = _map_values(annotation)
-        if (
-            (not role or values.get("role") == role)
-            and all(values.get(key) == str(value) for key, value in (match or {}).items())
-        ):
-            return annotation, values
-    return None, {}
+    return marker(obj, SYNC_NAMESPACE, role, match)
 
 
 def _set_marker(conn, obj, values, role, match=None):
-    annotation, current = _marker(obj, role, match)
-    payload = {**current, **{key: str(value) for key, value in values.items()}, "role": role}
-    pairs = sorted(payload.items())
-    if annotation is None:
-        from omero.gateway import MapAnnotationWrapper
-
-        annotation = MapAnnotationWrapper(conn)
-        annotation.setNs(SYNC_NAMESPACE)
-        annotation.setValue(pairs)
-        annotation.save()
-        obj.linkAnnotation(annotation)
-    else:
-        annotation.setValue(pairs)
-        annotation.save()
-    return annotation
-
-
-def _delete(conn, object_type, object_id):
-    conn.deleteObjects(object_type, [int(object_id)], wait=True)
+    return set_marker(conn, obj, SYNC_NAMESPACE, values, role, match)
 
 
 def _file_bytes(annotation, limit=max_upload_bytes):
@@ -168,13 +126,6 @@ def _owner_id(obj):
         return None
 
 
-def _owned_projects(conn):
-    try:
-        return list(conn.getObjects("Project", opts={"owner": _user_id(conn)}))
-    except (AttributeError, TypeError):
-        return []
-
-
 def _managed_project(conn, group_id, create=False):
     for project in _owned_projects(conn):
         _, marker = _marker(project, "project")
@@ -185,31 +136,18 @@ def _managed_project(conn, group_id, create=False):
             return project
     if not create:
         return None
-    from omero.gateway import ProjectWrapper
-    from omero.model import ProjectI
-
-    # Container wrappers do not instantiate an OMERO model object themselves
-    # (unlike Annotation wrappers), so they must wrap a new model explicitly.
-    project = ProjectWrapper(conn, ProjectI())
-    project.setName(PROJECT_NAME)
-    project.setDescription(
+    project = create_project(
+        conn,
+        PROJECT_NAME,
         "Private, managed OMERO Analysis workspace library. "
         "Content is updated only by explicit synchronization."
     )
-    project.save()
     _set_marker(conn, project, {
         "owner_user_id": _user_id(conn),
         "group_id": group_id,
         "schema": MANIFEST_SCHEMA,
     }, "project")
     return project
-
-
-def _project_datasets(project):
-    try:
-        return list(project.listChildren())
-    except (AttributeError, TypeError):
-        return []
 
 
 def _managed_dataset(project, workspace_id):
@@ -239,9 +177,6 @@ def _dataset_name(inventory, project=None):
 
 
 def _create_dataset(conn, project, inventory):
-    from omero.gateway import DatasetWrapper
-    from omero.model import DatasetI, ProjectDatasetLinkI
-
     desired_name = _dataset_name(inventory, project)
     # Clean up an unlinked Dataset from an interrupted pre-marker creation.
     # The exact application description makes this narrower than name-based
@@ -259,10 +194,7 @@ def _create_dataset(conn, project, inventory):
     except (AttributeError, TypeError):
         pass
 
-    dataset = DatasetWrapper(conn, DatasetI())
-    dataset.setName(desired_name)
-    dataset.setDescription(MANAGED_DATASET_DESCRIPTION)
-    dataset.save()
+    dataset = create_dataset(conn, desired_name, MANAGED_DATASET_DESCRIPTION)
     try:
         _set_marker(conn, dataset, {
             "workspace_id": inventory["workspace"]["id"],
@@ -271,10 +203,7 @@ def _create_dataset(conn, project, inventory):
             "source_object_id": inventory["workspace"]["sourceObjectId"],
             "source_object_name": inventory["workspace"]["sourceObjectName"],
         }, "dataset")
-        link = ProjectDatasetLinkI()
-        link.setParent(project._obj.__class__(project._obj.id, False))
-        link.setChild(dataset._obj.__class__(dataset._obj.id, False))
-        conn.getUpdateService().saveObject(link, conn.SERVICE_OPTS)
+        link_dataset(conn, project, dataset)
     except Exception:
         try:
             _delete(conn, "Dataset", dataset.getId())
@@ -357,6 +286,24 @@ def validate_inventory(payload, workspace_id, source_type, source_id, obj, conn)
             raise InvalidObject("Synchronization item SHA-256 is invalid")
         if not isinstance(item.get("metadata"), dict):
             raise InvalidObject("Synchronization item metadata is invalid")
+    items_by_key = {item["key"]: item for item in items}
+    for item in items:
+        plot_image_keys = item["metadata"].get("plotImageKeys")
+        if plot_image_keys is None:
+            continue
+        if (
+            item["kind"] != "result"
+            or not str(item.get("name") or "").lower().endswith(".csv")
+            or not isinstance(plot_image_keys, list)
+            or not plot_image_keys
+            or any(not isinstance(key, str) for key in plot_image_keys)
+            or len(set(plot_image_keys)) != len(plot_image_keys)
+        ):
+            raise InvalidObject("Plot CSV image references are invalid")
+        for image_key in plot_image_keys:
+            target = items_by_key.get(image_key)
+            if target is None or target.get("kind") != "png-image":
+                raise InvalidObject("Plot CSV references an unknown synchronized PNG image")
     unsigned = {
         "schema": payload["schema"],
         "workspace": workspace,
@@ -577,6 +524,62 @@ def _upload_bytes(conn, dataset, item, data):
     return annotation
 
 
+def _remote_object(conn, remote):
+    object_type = remote.get("object_type")
+    object_id = remote.get("object_id")
+    if not object_id:
+        return None
+    if object_type == "Image":
+        return conn.getObject("Image", int(object_id))
+    if object_type == "Annotation":
+        return conn.getObject("FileAnnotation", int(object_id))
+    return None
+
+
+def _linked_annotation_ids(parent):
+    return {
+        int(annotation.getId())
+        for annotation in _annotations(parent)
+        if getattr(annotation, "getId", None) is not None
+    }
+
+
+def _link_annotation(parent, annotation):
+    if int(annotation.getId()) not in _linked_annotation_ids(parent):
+        parent.linkAnnotation(annotation)
+
+
+def _unlink_annotation(parent, annotation):
+    if int(annotation.getId()) in _linked_annotation_ids(parent):
+        parent.unlinkAnnotation(annotation)
+
+
+def _reconcile_result_attachments(
+    conn, dataset, inventory_items, remote_objects, old_items
+):
+    """Attach plot CSVs to their PNG Images and other results to the Dataset."""
+    for item in inventory_items:
+        if item.get("kind") != "result":
+            continue
+        annotation = remote_objects[item["key"]]
+        desired_keys = list((item.get("metadata") or {}).get("plotImageKeys") or [])
+        prior = old_items.get(item["key"]) or {}
+        prior_keys = list((prior.get("metadata") or {}).get("plotImageKeys") or [])
+
+        for image_key in set(prior_keys) - set(desired_keys):
+            old_image_item = old_items.get(image_key) or {}
+            old_image = _remote_object(conn, old_image_item.get("remote") or {})
+            if old_image is not None:
+                _unlink_annotation(old_image, annotation)
+
+        if desired_keys:
+            _unlink_annotation(dataset, annotation)
+            for image_key in desired_keys:
+                _link_annotation(remote_objects[image_key], annotation)
+        else:
+            _link_annotation(dataset, annotation)
+
+
 def _import_png(conn, dataset, item, data):
     try:
         import numpy
@@ -658,6 +661,11 @@ def _item_marker_values(workspace_id, item, remote=None):
                 sources, ensure_ascii=False, separators=(",", ":"), sort_keys=True
             ),
         })
+    plot_image_keys = metadata.get("plotImageKeys") if isinstance(metadata, dict) else None
+    if isinstance(plot_image_keys, list) and plot_image_keys:
+        values["plot_image_keys"] = json.dumps(
+            plot_image_keys, ensure_ascii=False, separators=(",", ":")
+        )
     if isinstance(remote, dict):
         values.update({
             "remote_object_type": remote.get("object_type") or "",
@@ -783,12 +791,23 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         raise conflict
 
     staged = []
-    new_items = []
+    new_items_by_key = {}
+    remote_objects = {}
     try:
-        for item in inventory["items"]:
+        # Images must exist before their related plot CSV annotations can be linked.
+        ordered_items = sorted(
+            inventory["items"], key=lambda item: item["kind"] != "png-image"
+        )
+        for item in ordered_items:
             prior = old_items.get(item["key"])
             if item["key"] not in payload and prior is not None:
-                new_items.append({**item, "remote": prior["remote"]})
+                remote_obj = _remote_object(conn, prior.get("remote") or {})
+                if remote_obj is None:
+                    raise InvalidObject(
+                        "A managed synchronized item is missing; create a fresh plan"
+                    )
+                remote_objects[item["key"]] = remote_obj
+                new_items_by_key[item["key"]] = {**item, "remote": prior["remote"]}
                 continue
             if item["kind"] == "png-image":
                 remote_obj = _import_png(conn, dataset, item, payload[item["key"]])
@@ -809,7 +828,12 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     "item",
                 )
             remote = _remote_ref(remote_obj, item)
-            new_items.append({**item, "remote": remote})
+            remote_objects[item["key"]] = remote_obj
+            new_items_by_key[item["key"]] = {**item, "remote": remote}
+        _reconcile_result_attachments(
+            conn, dataset, inventory["items"], remote_objects, old_items
+        )
+        new_items = [new_items_by_key[item["key"]] for item in inventory["items"]]
         revision = int((old_manifest or {}).get("revision") or 0) + 1
         manifest = _manifest_for(inventory, revision, new_items)
         manifest_annotation = _write_manifest(conn, dataset, manifest)

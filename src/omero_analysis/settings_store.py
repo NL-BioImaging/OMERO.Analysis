@@ -16,7 +16,24 @@ from django.conf import settings
 
 from .errors import FileTooLarge, InvalidObject, UnsupportedMedia
 from .services import safe_filename
-from .workspace_sync import _delete, _plain, _project_datasets, _user_id
+from .managed_omero import (
+    annotations as _annotations,
+    create_dataset,
+    create_project,
+    delete_object,
+    link_dataset,
+    marker,
+    owned_projects as _owned_projects,
+    plain,
+    project_datasets,
+    set_marker,
+    user_id,
+)
+
+_delete = delete_object
+_plain = plain
+_project_datasets = project_datasets
+_user_id = user_id
 
 SETTINGS_NAMESPACE = "nl.bioimaging.analysis.settings.v1"
 SETTINGS_FILE_NAMESPACE = "nl.bioimaging.analysis.settings.encrypted.v1"
@@ -31,60 +48,12 @@ MAX_SKILLS = 100
 MAX_SKILL_BYTES = 1024 * 1024
 
 
-def _annotations(obj):
-    try:
-        return list(obj.listAnnotations())
-    except (AttributeError, TypeError):
-        return []
-
-
-def _map_values(annotation):
-    try:
-        return {
-            str(_plain(key)): str(_plain(value))
-            for key, value in annotation.getValue()
-        }
-    except (AttributeError, TypeError, ValueError):
-        return {}
-
-
 def _marker(obj, role):
-    for annotation in _annotations(obj):
-        if str(_plain(annotation.getNs())) != SETTINGS_NAMESPACE:
-            continue
-        values = _map_values(annotation)
-        if values.get("role") == role:
-            return annotation, values
-    return None, {}
+    return marker(obj, SETTINGS_NAMESPACE, role)
 
 
 def _set_marker(conn, obj, role, values):
-    from omero.gateway import MapAnnotationWrapper
-
-    annotation, current = _marker(obj, role)
-    payload = {
-        **current,
-        **{key: str(value) for key, value in values.items()},
-        "role": role,
-    }
-    pairs = sorted(payload.items())
-    if annotation is None:
-        annotation = MapAnnotationWrapper(conn)
-        annotation.setNs(SETTINGS_NAMESPACE)
-        annotation.setValue(pairs)
-        annotation.save()
-        obj.linkAnnotation(annotation)
-    else:
-        annotation.setValue(pairs)
-        annotation.save()
-    return annotation
-
-
-def _owned_projects(conn):
-    try:
-        return list(conn.getObjects("Project", opts={"owner": _user_id(conn)}))
-    except (AttributeError, TypeError):
-        return []
+    return set_marker(conn, obj, SETTINGS_NAMESPACE, values, role)
 
 
 def _project(conn, group_id, create=False):
@@ -100,15 +69,11 @@ def _project(conn, group_id, create=False):
             return project
     if not create:
         return None
-    from omero.gateway import ProjectWrapper
-    from omero.model import ProjectI
-
-    project = ProjectWrapper(conn, ProjectI())
-    project.setName(PROJECT_NAME)
-    project.setDescription(
+    project = create_project(
+        conn,
+        PROJECT_NAME,
         "Private OMERO Analysis settings. AI credentials are encrypted at rest."
     )
-    project.save()
     _set_marker(conn, project, "project", {
         "owner_user_id": _user_id(conn),
         "group_id": group_id,
@@ -128,24 +93,17 @@ def _dataset(project, role):
 
 
 def _create_dataset(conn, project, role, name):
-    from omero.gateway import DatasetWrapper
-    from omero.model import DatasetI, ProjectDatasetLinkI
-
-    dataset = DatasetWrapper(conn, DatasetI())
-    dataset.setName(name)
-    dataset.setDescription(
+    dataset = create_dataset(
+        conn,
+        name,
         "Managed by OMERO Analysis. Unmarked content is never modified."
     )
-    dataset.save()
     try:
         _set_marker(conn, dataset, role, {
             "owner_user_id": _user_id(conn),
             "schema": SETTINGS_SCHEMA,
         })
-        link = ProjectDatasetLinkI()
-        link.setParent(project._obj.__class__(project._obj.id, False))
-        link.setChild(dataset._obj.__class__(dataset._obj.id, False))
-        conn.getUpdateService().saveObject(link, conn.SERVICE_OPTS)
+        link_dataset(conn, project, dataset)
     except Exception:
         _delete(conn, "Dataset", dataset.getId())
         raise

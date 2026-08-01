@@ -62,7 +62,14 @@ render_zarr_gallery for ranked sets so one montage is created, never one artifac
 open_zarr_view when only a focused viewer link is requested. A rendered preview is persisted only
 in the browser-local workspace and is never attached to OMERO automatically. When the target and
 render specification are known, render immediately; never ask “render now?” or “go?”. Do not
-attempt to read OME-Zarr pixels with Python or network calls.`;
+attempt to read OME-Zarr pixels with Python or network calls.
+
+Ask the user a structured question only when a genuinely blocking choice cannot be inferred from
+their request or the current workspace. Use request_user_choice with two to four concise,
+mutually distinct choices. Continue automatically after the answer. Do not use this tool merely
+to ask permission to proceed with a safe analysis step. The activity panel may show concise
+progress, tool-purpose, validation, and user-facing rationale summaries, but never hidden private
+chain-of-thought or internal reasoning tokens.`;
 
 export const TOOLS = [
   {
@@ -98,6 +105,32 @@ export const TOOLS = [
       name: "list_workspace_files",
       description: "List browser-local input and generated files with paths and sizes.",
       parameters: { type: "object", properties: {}, additionalProperties: false }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "request_user_choice",
+      description:
+        "Pause and ask the user one genuinely blocking question with two to four concise choices.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          choices: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 2,
+            maxItems: 4
+          },
+          allow_other: {
+            type: "boolean",
+            description: "Allow the user to type an answer outside the listed choices."
+          }
+        },
+        required: ["question", "choices"],
+        additionalProperties: false
+      }
     }
   },
   {

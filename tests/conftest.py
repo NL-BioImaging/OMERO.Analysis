@@ -87,7 +87,9 @@ class FakeObject:
         return self.name
 
     def listAnnotations(self):
-        return list(self.annotations)
+        return list(self.annotations) + [
+            annotation for annotation in self.linked if annotation not in self.annotations
+        ]
 
     def canAnnotate(self):
         return self.can_annotate_value
@@ -97,7 +99,14 @@ class FakeObject:
         return SimpleNamespace(getGroup=lambda: group)
 
     def linkAnnotation(self, annotation):
-        self.linked.append(annotation)
+        if annotation not in self.linked:
+            self.linked.append(annotation)
+
+    def unlinkAnnotation(self, annotation):
+        if annotation in self.annotations:
+            self.annotations.remove(annotation)
+        if annotation in self.linked:
+            self.linked.remove(annotation)
 
 
 class FakeConnection:
@@ -124,4 +133,3 @@ class FakeConnection:
 
     def deleteObjects(self, object_type, ids, wait=True):
         self.deleted.append((object_type, ids, wait))
-

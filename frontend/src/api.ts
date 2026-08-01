@@ -18,11 +18,7 @@ import type {
   ZarrViewerIntegrationStatus
 } from "./types";
 import { zarrViewerStatusFrom } from "./zarrViewer";
-
-function csrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : "";
-}
+import { csrfToken, OmeroContextTransport } from "./omeroTransport";
 
 function route(template: string, objectType: string, objectId: number): string {
   return template.replace("TYPE", objectType).replace("/1/", `/${objectId}/`);
@@ -47,45 +43,26 @@ export class OmeroApiError extends Error {
 }
 
 export class OmeroBridge {
-  private contextToken = "";
-  private operations = new Set<string>();
+  private readonly transport: OmeroContextTransport;
 
-  constructor(private readonly bootstrap: Bootstrap) {}
+  constructor(private readonly bootstrap: Bootstrap) {
+    this.transport = new OmeroContextTransport(bootstrap);
+  }
 
   get canUpload(): boolean {
-    return this.operations.has("upload");
+    return this.transport.has("upload");
   }
 
   get canSync(): boolean {
-    return this.operations.has("sync_plan") && this.operations.has("sync_apply");
+    return this.transport.has("sync_plan") && this.transport.has("sync_apply");
   }
 
   get canSettingsSync(): boolean {
-    return this.operations.has("settings_sync");
+    return this.transport.has("settings_sync");
   }
 
   async connect(): Promise<void> {
-    const context = this.bootstrap.context;
-    if (!context) return;
-    const response = await fetch(this.bootstrap.tokenUrl, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": csrfToken()
-      },
-      body: JSON.stringify({
-        object_type: context.object_type,
-        object_id: context.object_id
-      })
-    });
-    const body = await readJson(response);
-    if (typeof body.context_token !== "string" || !Array.isArray(body.operations) ||
-        body.operations.some((value: unknown) => typeof value !== "string")) {
-      throw new Error("OMERO returned an invalid context capability");
-    }
-    this.contextToken = body.context_token;
-    this.operations = new Set(body.operations);
+    await this.transport.connect();
   }
 
   private async authorizedFetch(
@@ -93,19 +70,7 @@ export class OmeroBridge {
     init: RequestInit = {},
     retry = true
   ): Promise<Response> {
-    const response = await fetch(input, {
-      ...init,
-      credentials: "same-origin",
-      headers: {
-        ...(init.headers || {}),
-        "X-OMERO-Analysis-Context": this.contextToken
-      }
-    });
-    if (retry && (response.status === 401 || response.status === 403)) {
-      await this.connect();
-      return this.authorizedFetch(input, init, false);
-    }
-    return response;
+    return this.transport.fetch(input, init, retry);
   }
 
   async download(attachment: Attachment): Promise<ArrayBuffer> {
@@ -527,7 +492,7 @@ export class OmeroBridge {
     skillName: string
   ): Promise<WorkflowSkillPackage> {
     const catalog = await this.listWorkflowSkills();
-    const skill = [...catalog.workflows, ...(catalog.applications || [])]
+    const skill = catalog.workflows
       .flatMap((entry) => entry.skills)
       .find((item) =>
         (item.source_key || item.workflow_key) === workflowKey && item.name === skillName
@@ -544,7 +509,9 @@ export class OmeroBridge {
 async function errorText(response: Response): Promise<string> {
   try {
     const body = await response.json();
-    return body.error?.message || `${response.status} ${response.statusText}`;
+    const message = body.error?.message || `${response.status} ${response.statusText}`;
+    const requestId = body.error?.request_id || response.headers.get("X-OMERO-Analysis-Request-ID");
+    return requestId ? `${message} (request ${requestId})` : message;
   } catch {
     return `${response.status} ${response.statusText}`;
   }
@@ -638,13 +605,11 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
     body.schema !== "nl.bioimaging.omero-workflow-skills.v1" ||
     body.consumer !== "omero-analysis" ||
     !Array.isArray(body.workflows) ||
-    !(body.applications == null || Array.isArray(body.applications)) ||
     !Array.isArray(body.diagnostics)
   ) {
     throw new Error("OMERO returned an invalid workflow skill catalog");
   }
-  body.applications = body.applications || [];
-  for (const rawEntry of [...body.workflows, ...body.applications]) {
+  for (const rawEntry of body.workflows) {
     const entry = record(rawEntry, "workflow skill entry");
     const source = record(entry.source, "workflow skill source");
     if (
@@ -685,22 +650,18 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
 function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
   const body = record(value, "workflow skill package");
   const source = record(body.source, "workflow skill source");
-  const collection = source.source_kind === "application" ? "applications" : "workflows";
+  if (source.source_kind === "application") {
+    throw new Error("Application skills are served by their owning application provider");
+  }
   workflowSkillCatalogFrom({
     schema: "nl.bioimaging.omero-workflow-skills.v1",
     consumer: "omero-analysis",
-    workflows: collection === "workflows" ? [{
+    workflows: [{
       source: body.source,
       status: "ready",
       checked_at: "",
       skills: [body.skill]
-    }] : [],
-    applications: collection === "applications" ? [{
-      source: body.source,
-      status: "ready",
-      checked_at: "",
-      skills: [body.skill]
-    }] : [],
+    }],
     diagnostics: []
   });
   if (!Array.isArray(body.files)) {

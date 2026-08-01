@@ -42,6 +42,9 @@ def test_combined_shell_includes_notebook_runtime_contract():
     assert "JupyterLab" not in source
     assert "data-notebook-download-template" in source
     assert "data-notebook-upload-template" in source
+    assert "{% load analysis_assets %}" in source
+    assert "{% analysis_static 'omero_analysis/app.js' %}" in source
+    assert "?v=0.10.0" not in source
 
     notebook_panel = (
         ROOT / "src/omero_analysis/templates/omero_analysis/notebook_panel.html"

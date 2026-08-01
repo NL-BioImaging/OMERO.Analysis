@@ -1,6 +1,7 @@
 import {
   Add,
   Clean,
+  Chat,
   Download,
   Duplicate,
   Edit,
@@ -13,6 +14,7 @@ import {
   Refresh,
   Reset,
   Stop,
+  Tick,
   Trash,
   Upload,
   type SVGIconProps
@@ -22,6 +24,7 @@ import type { ComponentType } from "react";
 export type ActionIconName =
   | "add"
   | "attach"
+  | "chat"
   | "clear"
   | "copy"
   | "delete"
@@ -34,6 +37,7 @@ export type ActionIconName =
   | "run"
   | "save"
   | "stop"
+  | "success"
   | "sync"
   | "upload";
 
@@ -41,6 +45,7 @@ export function ActionIcon({ name }: { name: ActionIconName }) {
   const icons: Record<ActionIconName, ComponentType<SVGIconProps>> = {
     add: Add,
     attach: Paperclip,
+    chat: Chat,
     clear: Clean,
     copy: Duplicate,
     delete: Trash,
@@ -53,6 +58,7 @@ export function ActionIcon({ name }: { name: ActionIconName }) {
     run: Play,
     save: FloppyDisk,
     stop: Stop,
+    success: Tick,
     sync: Refresh,
     upload: Upload,
   };

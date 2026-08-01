@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -9,6 +10,7 @@ STATIC = PurePosixPath("omero_analysis/static/omero_analysis")
 REQUIRED = {
     str(STATIC / "app.js"),
     str(STATIC / "app.css"),
+    str(STATIC / "asset-manifest.json"),
     str(STATIC / "panel.css"),
     str(STATIC / "pyodide/pyodide.mjs"),
     str(STATIC / "pyodide/pyodide.asm.mjs"),
@@ -57,6 +59,27 @@ def main():
         entry = archive.read(str(STATIC / "app.js")).decode("utf-8")
         if "Frontend bundle not built" in entry:
             raise RuntimeError("Wheel contains the placeholder frontend")
+        match = re.fullmatch(r'import "\./(main-[A-Za-z0-9_-]+\.js)";\s*', entry)
+        if not match:
+            raise RuntimeError("Wheel frontend entry does not reference one hashed main bundle")
+        expected_main = str(STATIC / match.group(1))
+        main_bundles = sorted(
+            name for name in names
+            if name.startswith(str(STATIC / "main-")) and name.endswith(".js")
+        )
+        if main_bundles != [expected_main]:
+            raise RuntimeError(
+                "Wheel contains stale frontend main bundles; run "
+                "scripts/build_frontend.py before building the wheel: "
+                f"{main_bundles}"
+            )
+        build_manifest = json.loads(
+            archive.read(str(STATIC / "asset-manifest.json")).decode("utf-8")
+        )
+        if build_manifest.get("version") != 1 or not re.fullmatch(
+            r"[0-9a-f]{16}", str(build_manifest.get("build", ""))
+        ):
+            raise RuntimeError("Wheel contains an invalid frontend asset manifest")
         runtime = json.loads(
             archive.read(str(STATIC / "pyodide/RUNTIME.json")).decode("utf-8")
         )

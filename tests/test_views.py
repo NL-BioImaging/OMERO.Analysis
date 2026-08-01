@@ -22,6 +22,20 @@ def token_for(conn, obj, operations):
     return token
 
 
+def test_unexpected_api_error_has_safe_request_id():
+    @views.api_errors
+    def failing(_request):
+        raise RuntimeError("sensitive detail")
+
+    response = failing(RequestFactory().get("/api/failing/"))
+    body = json.loads(response.content)
+    assert response.status_code == 500
+    assert body["error"]["message"] == "The operation failed"
+    assert len(body["error"]["request_id"]) == 12
+    assert response["X-OMERO-Analysis-Request-ID"] == body["error"]["request_id"]
+    assert b"sensitive detail" not in response.content
+
+
 def test_context_token_reports_permissions():
     obj = FakeObject(can_annotate=False)
     conn = FakeConnection(obj)

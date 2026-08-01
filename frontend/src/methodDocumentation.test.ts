@@ -10,7 +10,6 @@ const chat: ChatRecord = {
   workspaceId: "workspace",
   title: "Analysis",
   summary: "",
-  archived: false,
   pinnedMessageIds: [],
   messages: [{
     id: "prompt",

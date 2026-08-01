@@ -32,7 +32,6 @@ function workspace(): AnalysisWorkspace {
       workspaceId: "workspace-1",
       title: "Cells",
       summary: "",
-      archived: false,
       messages: [],
       pinnedMessageIds: [],
       createdAt: "2026-07-29T00:00:00Z",
@@ -137,6 +136,25 @@ describe("Workspace synchronization inventory", () => {
     expect(Array.from(payload.bytes.keys()).filter((key) =>
       key.startsWith("result-content:")
     )).toHaveLength(1);
+  });
+
+  it("links plot CSV inventory items to their synchronized PNG image", async () => {
+    const value = workspace();
+    value.files.push({
+      ...value.files[2],
+      id: "result-csv",
+      name: "plot.csv",
+      logicalPath: "/output/plot.csv",
+      type: "text/csv",
+      data: new TextEncoder().encode("group,value\na,1\n").buffer
+    });
+
+    const payload = await buildWorkspaceSyncPayload(value, context);
+    const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
+    const csv = payload.inventory.items.find((item) =>
+      item.kind === "result" && item.name === "plot.csv"
+    )!;
+    expect(csv.metadata.plotImageKeys).toEqual([image.key]);
   });
 
   it("canonicalizes object keys and detects a remote digest mismatch", () => {
