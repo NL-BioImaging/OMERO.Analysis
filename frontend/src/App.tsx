@@ -155,6 +155,11 @@ import {
   withoutSupersededOutputRuns
 } from "./saveSuggestions";
 import {
+  executionPreparesViewer,
+  executionsForPrompt,
+  primaryExecutionForPrompt
+} from "./executionPresentation";
+import {
   activityText,
   formatDuration,
   workspaceRowClassName,
@@ -368,33 +373,6 @@ export function methodUsesZarrViewer(method: MethodRecord, code: string): boolea
   );
 }
 
-function executionPreparesViewer(
-  workspace: Pick<AnalysisWorkspace, "artifacts">,
-  execution: ExecutionRecord
-): boolean {
-  if (execution.purpose === "inspection") return false;
-  if (workspace.artifacts.some((artifact) =>
-    artifact.chatId === execution.chatId &&
-    artifact.promptId === execution.promptId &&
-    Boolean(artifact.viewer)
-  )) return true;
-  const payload = execution.modelPayload
-    ? JSON.stringify(execution.modelPayload)
-    : "";
-  return (
-    /\brender_panels\b/i.test(execution.code) ||
-    /"render_panels"\s*:/i.test(payload) ||
-    (
-      /\bstore_uuid\b/i.test(execution.code) &&
-      /\b(?:field|roi|source_channels|overlays)\b/i.test(execution.code)
-    ) ||
-    (
-      /"store_uuid"\s*:/i.test(payload) &&
-      /"(?:field|roi|source_channels|overlays)"\s*:/i.test(payload)
-    )
-  );
-}
-
 function methodExecutionsForPrompt(
   workspace: Pick<AnalysisWorkspace, "executions" | "files" | "artifacts">,
   execution: ExecutionRecord
@@ -407,19 +385,6 @@ function methodExecutionsForPrompt(
     ["success", "reused"].includes(item.status)
   );
   return withoutSupersededOutputRuns(candidates, workspace.files);
-}
-
-function executionWasSuperseded(
-  workspace: Pick<AnalysisWorkspace, "executions" | "files" | "artifacts">,
-  execution: ExecutionRecord
-): boolean {
-  if (
-    execution.purpose === "inspection" ||
-    executionPreparesViewer(workspace, execution) ||
-    !["success", "reused"].includes(execution.status)
-  ) return false;
-  return !methodExecutionsForPrompt(workspace, execution)
-    .some((item) => item.id === execution.id);
 }
 
 export default function App() {
@@ -543,9 +508,10 @@ export default function App() {
     snapshots: false
   });
   const [usage, setUsage] = useState<TokenUsage | null>(null);
+  const usageRef = useRef<TokenUsage | null>(null);
   const [runtimeProgress, setRuntimeProgress] = useState<RuntimeProgress>({
     percent: 0,
-    message: "Preparing the browser analysisWorkspace…"
+    message: "Preparing the browser analysis workspace…"
   });
   const [storage, setStorage] = useState({ usage: 0, quota: 0 });
   const abort = useRef<AbortController | null>(null);
@@ -576,6 +542,11 @@ export default function App() {
   const workspace = analysisWorkspace?.workspace || null;
   const chats = analysisWorkspace?.chats || [];
   const activeChat = chats.find((chat) => chat.id === workspace?.activeChatId) || chats[0] || null;
+  useEffect(() => {
+    const next = activeChat?.contextUsage || null;
+    usageRef.current = next;
+    setUsage(next);
+  }, [activeChat?.id]);
   const inputFiles = (analysisWorkspace?.files || []).filter(
     (file) => file.source !== "result" && !file.deletedAt
   );
@@ -1115,6 +1086,16 @@ export default function App() {
       setWorkspace(updated);
     }
     void saveChat(next);
+  }
+
+  function updateChatUsage(chatId: string, nextUsage: TokenUsage) {
+    usageRef.current = nextUsage;
+    setUsage(nextUsage);
+    const current = workspaceRef.current;
+    const chat = current?.chats.find((item) => item.id === chatId);
+    if (chat) {
+      updateChat({ ...chat, contextUsage: nextUsage, updatedAt: now() });
+    }
   }
 
   function appendMessage(chatId: string, message: ChatMessage) {
@@ -1998,6 +1979,7 @@ export default function App() {
     await Promise.all([saveChat(chat), saveWorkspaceRecord(nextWorkspace)]);
     setActiveTab("chat");
     setUsage(null);
+    usageRef.current = null;
     turnOutputNames.current.clear();
     await runtime.beginTurn();
   }
@@ -2010,6 +1992,7 @@ export default function App() {
     updateWorkspaceRecord(next);
     setActiveTab("chat");
     setUsage(null);
+    usageRef.current = null;
   }
 
   async function renameChat(chat: ChatRecord) {
@@ -3377,6 +3360,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     ].filter((message, index, values) =>
       values.findIndex((candidate) => candidate.id === message.id) === index
     );
+    const retainedMessageIds = new Set(history.map((message) => message.id));
+    const compactedMessages = currentChat.summary
+      ? ordinary.filter((message) => !retainedMessageIds.has(message.id)).length
+      : 0;
     const conversation: AiMessage[] = [
       { role: "system", content: dynamicPrompt },
       ...(currentChat.summary ? [{ role: "system" as const, content: `Earlier conversation summary:\n${currentChat.summary}` }] : []),
@@ -3417,15 +3404,23 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         const completionTokens =
           response.usage?.completion_tokens ?? estimateTokens(answer.content || answer.tool_calls || "");
         const totalTokens = response.usage?.total_tokens ?? promptTokens + completionTokens;
-        setUsage((value) => ({
+        const nextUsage: TokenUsage = {
           promptTokens,
           completionTokens,
           totalTokens,
-          sessionTokens: (value?.sessionTokens || 0) + totalTokens,
-          estimated: !response.usage
-        }));
+          sessionTokens: (usageRef.current?.sessionTokens || 0) + totalTokens,
+          estimated: !response.usage,
+          contextWindow: settings.contextWindow || 0,
+          compactionThreshold: threshold,
+          compactedMessages,
+          compacted: Boolean(currentChat.summary)
+        };
+        updateChatUsage(chat.id, nextUsage);
         conversation.push({ role: "assistant", content: answer.content, tool_calls: answer.tool_calls });
-        if (answer.content) {
+        // Tool-round prose is planning/repair context for the model, not a
+        // separate user-facing answer. Keep it in this turn's conversation,
+        // then persist only the final synthesis after tool use has finished.
+        if (answer.content && !answer.tool_calls?.length) {
           const citationIds = (workspaceRef.current?.executions || [])
             .filter((execution) => execution.promptId === promptId)
             .map((execution) => execution.id);
@@ -6074,22 +6069,19 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               }
               if (message.kind === "execution" && message.executionId) {
                 const execution = analysisWorkspace.executions.find((item) => item.id === message.executionId);
+                const primary = execution
+                  ? primaryExecutionForPrompt(analysisWorkspace, execution)
+                  : null;
+                if (!execution || !primary || primary.id !== execution.id) return null;
                 return execution ? (
                   <ExecutionCard
                     key={message.id}
                     execution={execution}
+                    relatedExecutions={executionsForPrompt(analysisWorkspace, execution)}
                     files={analysisWorkspace.files}
                     onSave={() => void saveAsMethod(execution)}
                     onRerun={() => void rerunExecution(execution)}
                     saveDisabled={busy}
-                    viewerPreparation={executionPreparesViewer(
-                      analysisWorkspace,
-                      execution
-                    )}
-                    superseded={executionWasSuperseded(
-                      analysisWorkspace,
-                      execution
-                    )}
                   />
                 ) : null;
               }

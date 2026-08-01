@@ -18,14 +18,17 @@ function bytesLabel(value: number): string {
   return `${(value / 1024 ** 2).toFixed(1)} MiB`;
 }
 
-function usageSummary(usage: TokenUsage | null, contextWindow: number): string {
+export function usageSummary(usage: TokenUsage | null, contextWindow: number): string {
   if (!usage) return "Context usage appears after the first AI response.";
-  const requestTokens = usage.promptTokens + usage.completionTokens;
   const source = usage.estimated ? "estimated" : "API reported";
-  const limit = contextWindow > 0
-    ? ` · ${Math.min(100, Math.round(requestTokens / contextWindow * 100))}% of ${contextWindow.toLocaleString()}`
-    : " · model limit not configured";
-  return `Latest request: ${usage.promptTokens.toLocaleString()} input + ${usage.completionTokens.toLocaleString()} output tokens (${source})${limit} · session: ${usage.sessionTokens.toLocaleString()}`;
+  const configuredWindow = usage.contextWindow || contextWindow;
+  const context = configuredWindow > 0
+    ? `Context: ${usage.promptTokens.toLocaleString()} / ${configuredWindow.toLocaleString()} tokens (${Math.min(100, usage.promptTokens / configuredWindow * 100).toFixed(1)}%)`
+    : `Context: ${usage.promptTokens.toLocaleString()} tokens · model limit not configured`;
+  const compaction = usage.compacted
+    ? `Compacted ${usage.compactedMessages.toLocaleString()} earlier message${usage.compactedMessages === 1 ? "" : "s"} into a summary; pinned messages and the latest six exchanges are retained.`
+    : `Not compacted · local compaction trigger: ${usage.compactionThreshold.toLocaleString()} estimated conversation tokens.`;
+  return `${context} (${source}) · response: ${usage.completionTokens.toLocaleString()} tokens · session: ${usage.sessionTokens.toLocaleString()} tokens · ${compaction}`;
 }
 
 export function parseDelimited(text: string, delimiter: string): string[][] {

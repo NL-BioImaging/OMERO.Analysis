@@ -11,10 +11,23 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; overflow: hidden; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
+body {
+  background: #0b1117; color: #e5eef5; margin: 0;
+  min-width: 320px; min-height: 100vh;
+}
+/* Blueprint defines light foregrounds on bare semantic elements. Restore
+   inheritance here so the Analysis theme owns typography in both modes;
+   component-specific muted/accent rules below still take precedence. */
+h1, h2, h3, h4, h5, h6, p, strong, em, small, label, legend,
+summary, dt, dd, li, th, td, figcaption { color: inherit; }
 .app-shell {
   display: grid; grid-template-rows: 72px minmax(0, 1fr);
   height: 100vh; overflow: hidden;
+}
+.app-shell[data-theme="dark"] { background: #0b1117; color: #e5eef5; color-scheme: dark; }
+.boot-message {
+  align-items: center; background: #0b1117; color: #dceaf2; display: flex;
+  font-size: .9rem; font-weight: 600; justify-content: center; letter-spacing: .01em;
 }
 button, input, textarea { font: inherit; }
 button {
@@ -669,6 +682,10 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
   font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
 }
 .execution-content { border-top: 1px solid #223a4a; margin-top: .55rem; padding-top: .65rem; }
+.execution-content h4,
+.supporting-execution h5 {
+  color: #dceaf2; font-size: .72rem; margin: 0 0 .45rem;
+}
 .execution-content > pre + pre { margin-top: .55rem; }
 .execution-error { color: #ffaaa3; }
 .model-payload { border-top: 1px solid #223a4a; margin-top: .6rem; padding-top: .55rem; }
@@ -680,6 +697,18 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
 .execution-actions small { color: #728d9d; margin-left: auto; }
 .execution-actions.top small { display: none; }
 .execution-actions .detail-toggle { color: #9ccbe4; }
+.supporting-executions {
+  border-top: 1px solid #223a4a; margin-top: .7rem; padding-top: .65rem;
+}
+.supporting-executions > summary {
+  color: #9ccbe4; cursor: pointer; font-size: .72rem; font-weight: 650;
+}
+.supporting-executions > p {
+  color: #9bb4c3; font-size: .7rem; line-height: 1.45; margin: .45rem 0;
+}
+.supporting-execution {
+  border-left: 2px solid #2b4a5c; margin-top: .65rem; padding-left: .65rem;
+}
 .activity-timing {
   color: #83a8bb; font-size: .68rem; margin: .2rem 0 0 !important;
 }

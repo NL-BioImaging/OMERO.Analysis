@@ -1,7 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { ExecutionCard } from "./ExecutionCard";
-import type { ExecutionRecord } from "../types";
+import type { ExecutionRecord, WorkspaceFile } from "../types";
+
+Object.defineProperty(URL, "createObjectURL", {
+  configurable: true,
+  value: vi.fn(() => "blob:test")
+});
+Object.defineProperty(URL, "revokeObjectURL", {
+  configurable: true,
+  value: vi.fn()
+});
 
 function execution(overrides: Partial<ExecutionRecord> = {}): ExecutionRecord {
   return {
@@ -26,24 +35,7 @@ function execution(overrides: Partial<ExecutionRecord> = {}): ExecutionRecord {
 }
 
 describe("ExecutionCard", () => {
-  it("marks assistant-only inspection and hides reusable code actions", () => {
-    render(
-      <ExecutionCard
-        execution={execution({ purpose: "inspection", durationMs: 1_250 })}
-        files={[]}
-        onSave={vi.fn()}
-        onRerun={vi.fn()}
-      />
-    );
-
-    expect(screen.getByText("AI data inspection (local)")).toBeInTheDocument();
-    expect(screen.getByText(/for AI data inspection/)).toBeInTheDocument();
-    expect(screen.getByText(/not a reusable analysis method/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save as method" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Rerun" })).not.toBeInTheDocument();
-  });
-
-  it("keeps analysis actions at the top and bottom", () => {
+  it("shows one reusable Analysis card with one set of actions", () => {
     render(
       <ExecutionCard
         execution={execution({ purpose: "analysis", durationMs: 2_000 })}
@@ -53,32 +45,37 @@ describe("ExecutionCard", () => {
       />
     );
 
+    expect(screen.getByText("Analysis (local)")).toBeInTheDocument();
     expect(screen.getByText("Worked for 2.0 sec")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Save as method" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Rerun" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
-    expect(screen.getAllByRole("button", { name: "Save as method" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Rerun" })).toHaveLength(2);
+    expect(screen.getByText("Reusable Python")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Save as method" })).toHaveLength(1);
   });
 
-  it("shows render preparation as an intermediate step without reusable actions", () => {
+  it("keeps inspection and repair attempts inside supporting diagnostics", () => {
+    const primary = execution({ id: "final", purpose: "analysis" });
+    const inspection = execution({
+      id: "probe",
+      purpose: "inspection",
+      code: "result = inspect_schema()",
+      createdAt: "2026-07-27T11:59:00Z"
+    });
     render(
       <ExecutionCard
-        execution={execution({
-          purpose: "analysis",
-          code: 'result = {"store_uuid": "store", "render_panels": []}'
-        })}
+        execution={primary}
+        relatedExecutions={[inspection, primary]}
         files={[]}
         onSave={vi.fn()}
         onRerun={vi.fn()}
-        viewerPreparation
       />
     );
 
-    expect(screen.getByText("Zarr render preparation (local)")).toBeInTheDocument();
-    expect(screen.getByText(/Save the complete analysis and render/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save as method" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Rerun" })).not.toBeInTheDocument();
+    expect(screen.getByText(/1 supporting local step hidden/)).toBeInTheDocument();
+    expect(screen.queryByText("AI data inspection (local)")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
+    expect(screen.getByText("Supporting diagnostics (1)")).toBeInTheDocument();
   });
 
   it("waits for the assistant summary before allowing a Method save", () => {
@@ -97,20 +94,31 @@ describe("ExecutionCard", () => {
       .toHaveAttribute("title", expect.stringMatching(/assistant has finished/i));
   });
 
-  it("labels a superseded run and hides reusable actions", () => {
+  it("renders the output owned by the selected reusable execution", () => {
+    const file: WorkspaceFile = {
+      id: "plot",
+      workspaceId: "workspace",
+      chatId: "chat",
+      executionId: "execution",
+      name: "result.png",
+      logicalPath: "/output/result.png",
+      type: "image/png",
+      size: 3,
+      sha256: "abc",
+      source: "result",
+      state: "ready",
+      data: new Uint8Array([1, 2, 3]).buffer,
+      createdAt: "2026-07-27T12:00:00Z"
+    };
     render(
       <ExecutionCard
-        execution={execution({ purpose: "analysis" })}
-        files={[]}
+        execution={execution({ outputFileIds: [file.id] })}
+        files={[file]}
         onSave={vi.fn()}
         onRerun={vi.fn()}
-        superseded
       />
     );
 
-    expect(screen.getByText("Earlier Python attempt (local)")).toBeInTheDocument();
-    expect(screen.getByText(/later run.*replaced these outputs/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save as method" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Rerun" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "result.png" })).toBeInTheDocument();
   });
 });

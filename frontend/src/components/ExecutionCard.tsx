@@ -6,38 +6,33 @@ import { Button, Input } from "./BlueprintControls";
 
 export function ExecutionCard({
   execution,
+  relatedExecutions = [execution],
   files,
   onSave,
   onRerun,
-  viewerPreparation = false,
-  superseded = false,
   saveDisabled = false
 }: {
   execution: ExecutionRecord;
+  relatedExecutions?: ExecutionRecord[];
   files: WorkspaceFile[];
   onSave: () => void;
   onRerun: () => void;
-  viewerPreparation?: boolean;
-  superseded?: boolean;
   saveDisabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const outputs = execution.outputFileIds
     .map((fileId) => files.find((file) => file.id === fileId && !file.deletedAt))
     .filter(Boolean) as WorkspaceFile[];
-  const plots = execution.status === "reused"
-    ? []
-    : outputs.filter((file) => file.type === "image/png" || file.type === "image/svg+xml");
+  const plots = outputs.filter((file) =>
+    file.type === "image/png" || file.type === "image/svg+xml"
+  );
   const purpose = execution.purpose || "analysis";
-  const isInspection = purpose === "inspection";
   const showReusableActions =
-    !isInspection &&
-    !viewerPreparation &&
-    !superseded &&
     ["success", "reused"].includes(execution.status);
   const timing = executionActivityText(purpose, execution.durationMs);
-  const controls = (position: "top" | "bottom") => (
-    <div className={`execution-actions ${position}`}>
+  const hiddenSteps = relatedExecutions.filter((item) => item.id !== execution.id);
+  const controls = (
+    <div className="execution-actions top">
       <Button
         className="detail-toggle"
         aria-expanded={expanded}
@@ -58,41 +53,29 @@ export function ExecutionCard({
   );
   return (
     <article
-      className={`message execution ${execution.status} ${isInspection ? "inspection" : ""}`}
+      className={`message execution ${execution.status}`}
       data-purpose={purpose}
     >
       <section className="execution-details" data-expanded={expanded ? "true" : "false"}>
         <div className="execution-heading">
           <span>
-            {execution.status === "reused"
-              ? "Reused Python run"
-              : isInspection
-                ? "AI data inspection (local)"
-                : viewerPreparation
-                  ? "Zarr render preparation (local)"
-                  : superseded
-                    ? "Earlier Python attempt (local)"
-                : "Python code (local)"}
+            {execution.status === "failed"
+              ? "Analysis failed (local)"
+              : execution.status === "reused"
+                ? "Analysis reused (local)"
+                : "Analysis (local)"}
           </span>
-          {controls("top")}
+          {controls}
         </div>
-        {timing && <p className="activity-timing">{timing}</p>}
-        {isInspection && (
-          <p className="inspection-note">
-            This code was generated only to inspect bounded data for the assistant. It is not a reusable analysis method.
-          </p>
-        )}
-        {viewerPreparation && (
-          <p className="inspection-note">
-            This intermediate code prepared and validated the ZarrViewer render. Save the complete analysis and render from the image card below.
-          </p>
-        )}
-        {superseded && (
-          <p className="inspection-note">
-            A later run for this request replaced these outputs. Save or rerun the final Python block instead.
+        {(timing || hiddenSteps.length > 0) && (
+          <p className="activity-timing">
+            {[timing, hiddenSteps.length
+              ? `${hiddenSteps.length} supporting local step${hiddenSteps.length === 1 ? "" : "s"} hidden`
+              : ""].filter(Boolean).join(" · ")}
           </p>
         )}
         <div className="execution-content" hidden={!expanded}>
+          <h4>Reusable Python</h4>
           <pre><code>{execution.code}</code></pre>
           {execution.stdout && <pre>{execution.stdout}</pre>}
           {execution.stderr && <pre className="execution-error">{execution.stderr}</pre>}
@@ -104,7 +87,26 @@ export function ExecutionCard({
             </details>
           )}
           {execution.preview != null && <Preview value={execution.preview} />}
-          {controls("bottom")}
+          {hiddenSteps.length > 0 && (
+            <details className="supporting-executions">
+              <summary>
+                Supporting diagnostics ({hiddenSteps.length})
+              </summary>
+              <p>
+                Schema inspection, repair attempts, and preparation stay here for troubleshooting. They are not separate reusable Methods.
+              </p>
+              {hiddenSteps.map((item, index) => (
+                <section className="supporting-execution" key={item.id}>
+                  <h5>
+                    Step {index + 1} · {item.purpose === "inspection" ? "data inspection" : item.status}
+                  </h5>
+                  <pre><code>{item.code}</code></pre>
+                  {item.stdout && <pre>{item.stdout}</pre>}
+                  {item.stderr && <pre className="execution-error">{item.stderr}</pre>}
+                </section>
+              ))}
+            </details>
+          )}
         </div>
       </section>
       {execution.status === "reused" && (

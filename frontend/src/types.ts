@@ -201,6 +201,7 @@ export interface ChatRecord {
   summary: string;
   archived: boolean;
   pinnedMessageIds?: string[];
+  contextUsage?: TokenUsage;
   deletedAt?: string;
   messages: ChatMessage[];
   createdAt: string;
@@ -614,6 +615,10 @@ export interface TokenUsage {
   totalTokens: number;
   sessionTokens: number;
   estimated: boolean;
+  contextWindow: number;
+  compactionThreshold: number;
+  compactedMessages: number;
+  compacted: boolean;
 }
 
 export interface AnalysisWorkspace {

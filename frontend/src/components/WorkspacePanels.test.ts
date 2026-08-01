@@ -5,7 +5,8 @@ import {
   ComposerPanel,
   delimitedShape,
   MarkdownPreview,
-  parseDelimited
+  parseDelimited,
+  usageSummary
 } from "./WorkspacePanels";
 import type { NotebookRecord, WorkspaceFile } from "../types";
 
@@ -190,5 +191,32 @@ describe("ComposerPanel provider readiness", () => {
 
     expect(screen.queryByText(/Enter an AI endpoint/)).not.toBeInTheDocument();
     expect(screen.getByText("Ready — you can ask a question")).toBeInTheDocument();
+  });
+});
+
+describe("AI context usage", () => {
+  it("shows real token counts, percentage, and compaction state", () => {
+    expect(usageSummary({
+      promptTokens: 32_000,
+      completionTokens: 800,
+      totalTokens: 32_800,
+      sessionTokens: 91_000,
+      estimated: false,
+      contextWindow: 128_000,
+      compactionThreshold: 76_800,
+      compactedMessages: 14,
+      compacted: true
+    }, 0)).toContain("32,000 / 128,000 tokens (25.0%)");
+    expect(usageSummary({
+      promptTokens: 32_000,
+      completionTokens: 800,
+      totalTokens: 32_800,
+      sessionTokens: 91_000,
+      estimated: false,
+      contextWindow: 128_000,
+      compactionThreshold: 76_800,
+      compactedMessages: 14,
+      compacted: true
+    }, 0)).toContain("Compacted 14 earlier messages");
   });
 });
