@@ -13,7 +13,7 @@ const PACKAGES = [
   "matplotlib",
   "duckdb"
 ];
-export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.8";
+export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.9";
 
 export function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
@@ -41,10 +41,12 @@ async function boot() {
   pyodide = await module.loadPyodide({indexURL: runtimeBase + "/"});
   progress(48, "Loading data-analysis packages…");
   await pyodide.loadPackage(${packages});
-  progress(78, "Loading seaborn plotting support…");
+  progress(78, "Loading vendored Python support…");
   const micropip = pyodide.pyimport("micropip");
   try {
     await micropip.install(runtimeBase + "/seaborn-0.13.2-py3-none-any.whl", {deps: false});
+    await micropip.install(runtimeBase + "/pypdf-6.14.2-py3-none-any.whl", {deps: false});
+    loadedPackages.add("pypdf");
   } finally {
     micropip.destroy();
   }
@@ -262,6 +264,96 @@ for _oa_name in list(globals()):
       pyodide.FS.writeFile("/.omero/context.json", encoded);
       pyodide.FS.writeFile("/input/.omero/context.json", encoded);
       send(message.id, "context", true);
+    } else if (message.type === "extract_attachment") {
+      const bytes = new Uint8Array(message.value.data);
+      if (bytes.length > 25 * 1024 * 1024) throw new Error("Attachment exceeds 25 MiB");
+      const safe = String(message.value.name || "attachment").replace(/[^A-Za-z0-9._ -]/g, "_");
+      const path = "/tmp/oa-attachment-" + message.id.replace(/[^A-Za-z0-9-]/g, "") + "-" + safe;
+      pyodide.FS.writeFile(path, bytes);
+      pyodide.globals.set("_oa_attachment_path", path);
+      pyodide.globals.set("_oa_attachment_kind", String(message.value.kind || ""));
+      try {
+        const raw = await pyodide.runPythonAsync(\`
+import json as _oa_json, pathlib as _oa_pathlib, zipfile as _oa_zipfile
+_oa_path = _oa_pathlib.Path(_oa_attachment_path)
+_oa_kind = _oa_attachment_kind
+_oa_warnings = []
+_oa_text = ""
+if _oa_kind == "docx":
+    try:
+        with _oa_zipfile.ZipFile(_oa_path) as _oa_docx:
+            _oa_infos = _oa_docx.infolist()
+            if len(_oa_infos) > 2048:
+                raise ValueError("DOCX contains too many archive entries")
+            _oa_total = sum(_oa_info.file_size for _oa_info in _oa_infos)
+            if _oa_total > 100 * 1024 * 1024:
+                raise ValueError("DOCX expands beyond the 100 MiB safety limit")
+            if any(_oa_info.file_size > max(1024 * 1024, _oa_info.compress_size * 200) for _oa_info in _oa_infos):
+                raise ValueError("DOCX contains an unsafe compressed entry")
+            _oa_names = set(_oa_docx.namelist())
+            if "[Content_Types].xml" not in _oa_names or "word/document.xml" not in _oa_names:
+                raise ValueError("DOCX is missing required Office document parts")
+            if any(_oa_name.startswith("word/media/") for _oa_name in _oa_names):
+                _oa_warnings.append("Embedded images were ignored; OCR is not supported.")
+            import xml.etree.ElementTree as _oa_et
+            _oa_parts = ["word/document.xml"] + sorted(
+                _oa_name for _oa_name in _oa_names
+                if _oa_name.startswith(("word/header", "word/footer")) and _oa_name.endswith(".xml")
+            ) + [
+                _oa_name for _oa_name in ("word/footnotes.xml", "word/endnotes.xml")
+                if _oa_name in _oa_names
+            ]
+            _oa_sections = []
+            for _oa_part in _oa_parts:
+                _oa_root = _oa_et.fromstring(_oa_docx.read(_oa_part))
+                _oa_paragraphs = []
+                for _oa_p in _oa_root.iter():
+                    if _oa_p.tag.endswith("}p"):
+                        _oa_line = "".join(
+                            (_oa_node.text or "")
+                            for _oa_node in _oa_p.iter()
+                            if _oa_node.tag.endswith(("}t", "}tab", "}br"))
+                        ).strip()
+                        if _oa_line:
+                            _oa_paragraphs.append(_oa_line)
+                if _oa_paragraphs:
+                    _oa_sections.append("\\n".join(_oa_paragraphs))
+            _oa_text = "\\n\\n".join(_oa_sections).strip()
+    except _oa_zipfile.BadZipFile as _oa_error:
+        raise ValueError("DOCX is not a valid ZIP archive") from _oa_error
+elif _oa_kind == "pdf":
+    from pypdf import PdfReader as _oa_PdfReader
+    try:
+        _oa_reader = _oa_PdfReader(str(_oa_path), strict=True)
+        if _oa_reader.is_encrypted:
+            raise ValueError("Encrypted PDFs are not supported")
+        _oa_pages = []
+        _oa_empty = []
+        for _oa_number, _oa_page in enumerate(_oa_reader.pages, 1):
+            _oa_page_text = (_oa_page.extract_text() or "").strip()
+            if _oa_page_text:
+                _oa_pages.append("[Page " + str(_oa_number) + "]\\n" + _oa_page_text)
+            else:
+                _oa_empty.append(_oa_number)
+        _oa_text = "\\n\\n".join(_oa_pages).strip()
+        if _oa_empty and _oa_text:
+            _oa_warnings.append("No extractable text on PDF page(s): " + ", ".join(map(str, _oa_empty)) + ". OCR is not supported.")
+    except ValueError:
+        raise
+    except Exception as _oa_error:
+        raise ValueError("PDF is malformed or unsupported: " + str(_oa_error)[:300]) from _oa_error
+else:
+    raise ValueError("Unsupported document extractor")
+if not _oa_text:
+    raise ValueError("No extractable text was found. OCR is not supported.")
+_oa_json.dumps({"text": _oa_text, "warnings": _oa_warnings}, ensure_ascii=False)
+\`);
+        send(message.id, "extract_attachment", JSON.parse(raw));
+      } finally {
+        pyodide.globals.delete("_oa_attachment_path");
+        pyodide.globals.delete("_oa_attachment_kind");
+        try { pyodide.FS.unlink(path); } catch {}
+      }
     } else if (message.type === "profile") {
       const profileNames = pyodide.FS.readdir("/input").join(" ");
       await ensurePackages(
@@ -488,6 +580,17 @@ except Exception:
     if (!this.readyPromise) await this.start(this.inputs);
     await this.readyPromise;
     return this.request("profile", true, 120_000);
+  }
+
+  async extractAttachment(
+    name: string,
+    kind: "docx" | "pdf",
+    source: ArrayBuffer
+  ): Promise<{ text: string; warnings: string[] }> {
+    if (!this.readyPromise) await this.start(this.inputs);
+    await this.readyPromise;
+    const data = source.slice(0);
+    return this.request("extract_attachment", { name, kind, data }, 120_000, [data]);
   }
 
   async beginTurn(): Promise<void> {

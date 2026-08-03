@@ -49,7 +49,9 @@ export function matchWorkflowSkills(
 ): MatchedWorkflowSkill[] {
   if (!catalog) return [];
   const names = files
-    .filter((file) => !file.deletedAt && file.state === "ready")
+    .filter((file) =>
+      file.role !== "chat-attachment" && !file.deletedAt && file.state === "ready"
+    )
     .map((file) => file.name);
   const terms = profileTerms(profiles);
   const matches: MatchedWorkflowSkill[] = [];

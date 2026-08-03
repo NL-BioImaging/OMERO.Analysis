@@ -3,7 +3,7 @@
   <div class="oa-section-heading">
     <div>
       <span class="oa-step">{{ context.analysis_library_step|default:"+" }}</span>
-      <h3>Reuse from AnalysisWorkspaces</h3>
+      <h3>Synced +AnalysisWorkspaces library</h3>
     </div>
     <span class="oa-library-selected-count">0 selected</span>
     </div>
@@ -15,6 +15,7 @@
         Browse synchronized Datasets and select reusable Methods, Pipelines, or
         Notebooks.
       {% endif %}
+      This list always comes from your synchronized +AnalysisWorkspaces Project.
       Analysis opens the library import window with your selection.
     </p>
   <label class="oa-library-search">
@@ -22,15 +23,16 @@
     <input type="search" placeholder="Filter Datasets or reusable items…">
   </label>
   <div class="oa-library-tree" role="tree" aria-label="AnalysisWorkspaces library">
-    <div class="oa-tree-root" role="treeitem" aria-expanded="true">
-      <span class="oa-tree-chevron">&#8964;</span>
-      <img class="oa-tree-folder"
-           src="{% static 'webclient/image/folder16.png' %}"
-           alt="">
-      <strong>+AnalysisWorkspaces</strong>
-      <small>{{ context.analysis_library_datasets|length }} Dataset{{ context.analysis_library_datasets|length|pluralize }}</small>
-    </div>
-    <div class="oa-tree-children">
+    <details class="oa-tree-root-node" open>
+      <summary class="oa-tree-root" role="treeitem">
+        <span class="oa-tree-chevron">&#8250;</span>
+        <img class="oa-tree-folder"
+             src="{% static 'webclient/image/folder16.png' %}"
+             alt="">
+        <strong>+AnalysisWorkspaces</strong>
+        <small>{{ context.analysis_library_datasets|length }} Dataset{{ context.analysis_library_datasets|length|pluralize }}</small>
+      </summary>
+      <div class="oa-tree-children">
       {% for dataset in context.analysis_library_datasets %}
         <details class="oa-tree-dataset"
                  data-search-text="{{ dataset.datasetName }} {{ dataset.sourceObjectType }} {{ dataset.sourceObjectName }}">
@@ -93,6 +95,7 @@
         </div>
       {% endfor %}
       <div class="oa-library-no-match" hidden>No matching reusable items.</div>
-    </div>
+      </div>
+    </details>
   </div>
 </section>

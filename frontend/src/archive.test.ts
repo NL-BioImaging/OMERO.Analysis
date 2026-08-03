@@ -126,6 +126,25 @@ describe("workspace archive", () => {
     expect(manifest.files.find((file: any) => file.id === "local-file").state).toBe("missing");
   });
 
+  it("stores Chat attachments under the Chat attachment path", async () => {
+    const source = await workspace();
+    const data = new TextEncoder().encode("attachment").buffer;
+    source.files.push({
+      id: "attachment", workspaceId: "workspace", chatId: "chat",
+      name: "notes.txt", logicalPath: "Chat/chat/Attachments/notes.txt",
+      type: "text/plain", size: data.byteLength, sha256: await sha256(data),
+      source: "local", role: "chat-attachment", attachment: { origin: "upload" },
+      state: "ready", data, createdAt: source.workspace.createdAt
+    });
+    const archive = exportWorkspace(source, 1024 * 1024);
+    const paths = Object.keys(unzipSync(archive.data));
+    expect(paths).toContain("Chat/chat/Attachments/attachment--notes.txt");
+    const restored = await importWorkspace(archive.data.buffer as ArrayBuffer);
+    const attachment = restored.files.find((file) => file.role === "chat-attachment");
+    expect(attachment?.data).toBeInstanceOf(ArrayBuffer);
+    expect(attachment?.chatId).toBe(restored.chats[0].id);
+  });
+
   it("rejects legacy Analysis Chat workspace snapshots", async () => {
     const source = await workspace();
     const entries = unzipSync(exportWorkspace(source, 1024 * 1024).data);

@@ -27,4 +27,12 @@ describe("BIOMERO-inspired light theme", () => {
       );
     }
   });
+
+  it("overrides dark-theme explorer and Markdown text colors", () => {
+    expect(lightTheme).toContain('.app-shell[data-theme="light"] .browser-folder > summary');
+    expect(lightTheme).toContain('.app-shell[data-theme="light"] .artifact-markdown-preview');
+    expect(lightTheme).toContain('.app-shell[data-theme="light"] .artifact-markdown-preview code');
+    expect(lightTheme).toContain("color: var(--biomero-text)");
+    expect(lightTheme).toContain("color: var(--muted)");
+  });
 });

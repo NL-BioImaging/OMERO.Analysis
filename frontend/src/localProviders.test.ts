@@ -1,5 +1,6 @@
 import {
   normalizeOpenAiBaseUrl,
+  modelCapabilities,
   scanLocalAiServers
 } from "./localProviders";
 
@@ -44,7 +45,12 @@ describe("local AI provider discovery", () => {
       kind: "lm-studio",
       name: "LM Studio",
       endpoint: "http://localhost:1234/v1",
-      models: ["google/gemma-4-12b"]
+      models: ["google/gemma-4-12b"],
+      capabilities: {
+        "google/gemma-4-12b": {
+          vision: "unknown", tools: "unknown", source: "lm-studio"
+        }
+      }
     }]);
     expect(result.failures).toHaveLength(1);
   });
@@ -67,7 +73,26 @@ describe("local AI provider discovery", () => {
       kind: "openai-compatible",
       name: "Local OpenAI-compatible server",
       endpoint: "http://127.0.0.1:8080/openai",
-      models: ["local-chat-model"]
+      models: ["local-chat-model"],
+      capabilities: {
+        "local-chat-model": {
+          vision: "unknown", tools: "unknown", source: "unknown"
+        }
+      }
     });
+  });
+
+  it("uses curated GPT-5 capabilities and discovered model metadata", () => {
+    expect(modelCapabilities("https://api.openai.com/v1", "gpt-5", []))
+      .toEqual({ vision: "supported", tools: "supported", source: "registry" });
+    expect(modelCapabilities("http://localhost:1234/v1", "vision-model", [{
+      kind: "lm-studio",
+      name: "LM Studio",
+      endpoint: "http://localhost:1234/v1",
+      models: ["vision-model"],
+      capabilities: {
+        "vision-model": { vision: "supported", tools: "unsupported", source: "lm-studio" }
+      }
+    }])).toEqual({ vision: "supported", tools: "unsupported", source: "lm-studio" });
   });
 });

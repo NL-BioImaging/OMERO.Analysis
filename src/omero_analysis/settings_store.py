@@ -150,6 +150,12 @@ def _validated_payload(value):
         raise InvalidObject("Analysis settings bundle is incomplete")
     if analysis.get("theme", "dark") not in {"dark", "light"}:
         raise InvalidObject("The Analysis color theme is invalid")
+    if not isinstance(analysis.get("syncChatAttachments", False), bool):
+        raise InvalidObject("The Chat attachment synchronization preference is invalid")
+    if not isinstance(analysis.get("syncAnalysisWorkspace", True), bool):
+        raise InvalidObject("The AnalysisWorkspace synchronization preference is invalid")
+    if not isinstance(analysis.get("syncAnalysisSettings", True), bool):
+        raise InvalidObject("The AnalysisSettings synchronization preference is invalid")
     if len(ai["profiles"]) > 50 or len(skills) > MAX_SKILLS:
         raise FileTooLarge("The settings bundle contains too many profiles or skills")
     for profile in ai["profiles"]:

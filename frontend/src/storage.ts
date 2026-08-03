@@ -228,6 +228,7 @@ export function newChat(workspaceId: string, title = "New analysis"): ChatRecord
     id: crypto.randomUUID(),
     workspaceId,
     title,
+    titleEdited: title !== "New analysis",
     summary: "",
     messages: [],
     createdAt: now,

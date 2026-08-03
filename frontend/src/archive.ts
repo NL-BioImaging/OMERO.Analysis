@@ -63,16 +63,20 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
     if (omitted) {
       omittedLocalInputs.push(file.name);
       metadata.state = "missing";
-      metadata.error = "Local input was omitted because the Workspace snapshot exceeded its size limit.";
+      metadata.error = file.role === "chat-attachment"
+        ? "Chat attachment was omitted because the Workspace snapshot exceeded its size limit. Reselect or remove it before sending this Chat."
+        : "Local input was omitted because the Workspace snapshot exceeded its size limit.";
       return metadata;
     }
     if (file.source === "omero" || !file.data) return metadata;
     const owner = file.notebookId
       ? `Notebook/${safeSegment(file.notebookId)}`
       : `Chat/${safeSegment(file.chatId || "unassigned")}`;
-    const archivePath = file.source === "local"
-      ? `Input/${safeSegment(file.id)}--${safeSegment(file.name)}`
-      : `Results/${owner}/${safeSegment(file.id)}--${safeSegment(file.name)}`;
+    const archivePath = file.role === "chat-attachment"
+      ? `Chat/${safeSegment(file.chatId || "unassigned")}/Attachments/${safeSegment(file.id)}--${safeSegment(file.name)}`
+      : file.source === "local"
+        ? `Input/${safeSegment(file.id)}--${safeSegment(file.name)}`
+        : `Results/${owner}/${safeSegment(file.id)}--${safeSegment(file.name)}`;
     metadata.archivePath = archivePath;
     entries[archivePath] = new Uint8Array(file.data);
     return metadata;

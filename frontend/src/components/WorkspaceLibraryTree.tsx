@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { LibraryDataset, LibraryItem } from "../types";
 
 const KIND_ORDER: LibraryItem["kind"][] = ["method", "pipeline", "notebook"];
@@ -45,6 +46,10 @@ export function WorkspaceLibraryTree({
   onToggleDataset: (datasetId: number, open: boolean) => void;
   onToggleItem: (key: string) => void;
 }) {
+  const [rootOpen, setRootOpen] = useState(true);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(
+    datasets.flatMap((dataset) => KIND_ORDER.map((kind) => `${dataset.datasetId}:${kind}`))
+  ));
   const normalizedQuery = query.trim().toLowerCase();
   const visibleDatasets = datasets.map((dataset) => ({
     dataset,
@@ -55,17 +60,27 @@ export function WorkspaceLibraryTree({
 
   return (
     <div className="analysis-library-tree" role="tree" aria-label="AnalysisWorkspaces library">
-      <div className="library-tree-root" role="treeitem" aria-expanded="true">
-        <span className="library-tree-chevron">⌄</span>
-        <img
-          className="library-tree-folder"
-          src="/static/webclient/image/folder16.png"
-          alt=""
-        />
-        <strong>+AnalysisWorkspaces</strong>
-        <small>{visibleDatasets.length} Dataset{visibleDatasets.length === 1 ? "" : "s"}</small>
-      </div>
-      <div className="library-tree-children">
+      <details className="library-tree-root-node" open={Boolean(normalizedQuery) || rootOpen}>
+        <summary
+          className="library-tree-root"
+          role="treeitem"
+          aria-expanded={Boolean(normalizedQuery) || rootOpen}
+          onClick={(event) => {
+            if (normalizedQuery) return;
+            event.preventDefault();
+            setRootOpen((open) => !open);
+          }}
+        >
+          <span className="library-tree-chevron">›</span>
+          <img
+            className="library-tree-folder"
+            src="/static/webclient/image/folder16.png"
+            alt=""
+          />
+          <strong>+AnalysisWorkspaces</strong>
+          <small>{visibleDatasets.length} Dataset{visibleDatasets.length === 1 ? "" : "s"}</small>
+        </summary>
+        <div className="library-tree-children">
         {visibleDatasets.map(({ dataset, items }) => {
           const datasetOpen = Boolean(normalizedQuery) || openDatasets.has(dataset.datasetId);
           return (
@@ -73,13 +88,12 @@ export function WorkspaceLibraryTree({
               key={dataset.datasetId}
               className="library-tree-dataset"
               open={datasetOpen}
-              onToggle={(event) => {
-                if (!normalizedQuery) {
-                  onToggleDataset(dataset.datasetId, event.currentTarget.open);
-                }
-              }}
             >
-              <summary>
+              <summary onClick={(event) => {
+                if (normalizedQuery) return;
+                event.preventDefault();
+                onToggleDataset(dataset.datasetId, !datasetOpen);
+              }}>
                 <span className="library-tree-chevron">›</span>
                 <img
                   className="library-tree-folder"
@@ -98,9 +112,19 @@ export function WorkspaceLibraryTree({
                 {KIND_ORDER.map((kind) => {
                   const kindItems = items.filter((item) => item.kind === kind);
                   if (!kindItems.length) return null;
+                  const groupKey = `${dataset.datasetId}:${kind}`;
+                  const groupOpen = Boolean(normalizedQuery) || openGroups.has(groupKey);
                   return (
-                    <details className="library-tree-group" open key={kind}>
-                      <summary>
+                    <details className="library-tree-group" open={groupOpen} key={kind}>
+                      <summary onClick={(event) => {
+                        if (normalizedQuery) return;
+                        event.preventDefault();
+                        setOpenGroups((current) => {
+                          const next = new Set(current);
+                          if (groupOpen) next.delete(groupKey); else next.add(groupKey);
+                          return next;
+                        });
+                      }}>
                         <span className="library-tree-chevron">›</span>
                         <img
                           className="library-tree-folder"
@@ -165,7 +189,8 @@ export function WorkspaceLibraryTree({
               : "No synchronized Workspaces are available in this OMERO group."}
           </p>
         )}
-      </div>
+        </div>
+      </details>
     </div>
   );
 }

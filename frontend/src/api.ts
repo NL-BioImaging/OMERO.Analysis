@@ -683,9 +683,33 @@ function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
 
 export interface AiMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | AiContentPart[] | null;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
+}
+
+export type AiContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; mediaType: "image/png" | "image/jpeg" | "image/webp"; base64: string };
+
+function messageText(content: AiMessage["content"]): string {
+  if (typeof content === "string") return content;
+  if (!content) return "";
+  return content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+}
+
+export function openAiMessages(messages: AiMessage[]): unknown[] {
+  return messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map((part) => part.type === "text"
+        ? part
+        : {
+            type: "image_url",
+            image_url: { url: `data:${part.mediaType};base64,${part.base64}` }
+          })
+      : message.content
+  }));
 }
 
 export interface ToolCall {
@@ -719,6 +743,27 @@ export async function completeChat(
   return settings.protocol === "anthropic"
     ? completeAnthropic(settings, messages, signal, onDelta, tools)
     : completeOpenAi(settings, messages, signal, onDelta, tools);
+}
+
+const visionProbeCache = new Map<string, Promise<boolean>>();
+const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+export function probeVisionSupport(
+  settings: ProviderSettings,
+  signal: AbortSignal
+): Promise<boolean> {
+  const key = [settings.protocol, settings.endpoint.trim(), settings.model.trim()].join("|");
+  const existing = visionProbeCache.get(key);
+  if (existing) return existing;
+  const pending = completeChat(settings, [{
+    role: "user",
+    content: [
+      { type: "text", text: "Capability check only: reply with OK if you can inspect this harmless one-pixel image." },
+      { type: "image", mediaType: "image/png", base64: ONE_PIXEL_PNG }
+    ]
+  }], signal, undefined, []).then(() => true, () => false);
+  visionProbeCache.set(key, pending);
+  return pending;
 }
 
 export async function validateProviderConnection(
@@ -853,7 +898,7 @@ async function completeOpenAi(
     body: JSON.stringify({
       model: settings.model,
       temperature: TEMPERATURE,
-      messages,
+      messages: openAiMessages(messages),
       ...toolConfiguration,
       stream: Boolean(onDelta),
       stream_options: onDelta ? { include_usage: true } : undefined
@@ -915,13 +960,14 @@ async function completeOpenAi(
 
 type AnthropicBlock =
   | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
-function anthropicMessages(messages: AiMessage[]) {
+export function anthropicMessages(messages: AiMessage[]) {
   const system = messages
     .filter((message) => message.role === "system")
-    .map((message) => message.content || "")
+    .map((message) => messageText(message.content))
     .filter(Boolean)
     .join("\n\n");
   const converted: Array<{ role: "user" | "assistant"; content: string | AnthropicBlock[] }> = [];
@@ -931,7 +977,8 @@ function anthropicMessages(messages: AiMessage[]) {
     if (message.role === "assistant") {
       role = "assistant";
       const blocks: AnthropicBlock[] = [];
-      if (message.content) blocks.push({ type: "text", text: message.content });
+      const text = messageText(message.content);
+      if (text) blocks.push({ type: "text", text });
       for (const call of message.tool_calls || []) {
         let input: unknown = {};
         try {
@@ -952,11 +999,18 @@ function anthropicMessages(messages: AiMessage[]) {
       content = [{
         type: "tool_result",
         tool_use_id: message.tool_call_id || "",
-        content: message.content || ""
+        content: messageText(message.content)
       }];
     } else {
       role = "user";
-      content = message.content || "";
+      content = Array.isArray(message.content)
+        ? message.content.map((part): AnthropicBlock => part.type === "text"
+          ? { type: "text", text: part.text }
+          : {
+              type: "image",
+              source: { type: "base64", media_type: part.mediaType, data: part.base64 }
+            })
+        : message.content || "";
     }
     const previous = converted.at(-1);
     if (previous?.role === role) {

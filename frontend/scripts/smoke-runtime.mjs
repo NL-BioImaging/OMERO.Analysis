@@ -29,6 +29,17 @@ try {
 } catch (error) {
   throw new Error(`Could not install vendored seaborn wheel: ${error?.message || error}`);
 }
+try {
+  pyodide.unpackArchive(
+    Uint8Array.from(
+      await readFile(resolve(runtime, "pypdf-6.14.2-py3-none-any.whl"))
+    ),
+    "zip",
+    { extractDir: pyodide.sitePackages }
+  );
+} catch (error) {
+  throw new Error(`Could not install vendored pypdf wheel: ${error?.message || error}`);
+}
 const result = await pyodide.runPythonAsync(`
 import json, sqlite3, zipfile
 from pathlib import Path
@@ -40,6 +51,7 @@ import numpy as np
 import pandas as pd
 import scipy
 import seaborn as sns
+import pypdf
 
 root = Path("/tmp/oa-smoke")
 root.mkdir(parents=True, exist_ok=True)
@@ -97,11 +109,12 @@ plt.savefig(root / "plot.png")
 assert (root / "plot.png").stat().st_size > 100
 sns.set_theme()
 assert scipy.__version__
+assert pypdf.__version__ == "6.14.2"
 json.dumps({"rows": len(frame), "sum": float(frame["value"].sum())})
 `);
 const parsed = JSON.parse(result);
 if (parsed.rows !== 3 || parsed.sum !== 7) throw new Error(`Unexpected result: ${result}`);
 console.log(
   `Runtime smoke passed on Pyodide ${manifest.pyodide}: CSV, JSON, SQLite, ` +
-  "DuckDB, Excel, Parquet, NPY, NPZ, pandas, Matplotlib, SciPy, and seaborn"
+  "DuckDB, Excel, Parquet, NPY, NPZ, pandas, Matplotlib, SciPy, seaborn, and pypdf"
 );

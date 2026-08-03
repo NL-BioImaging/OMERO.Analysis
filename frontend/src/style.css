@@ -242,6 +242,11 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
   padding: .35rem .45rem;
 }
 
+.library-tree-root-node > summary::-webkit-details-marker { display: none; }
+.library-tree-root-node[open] > .library-tree-root .library-tree-chevron,
+.library-tree-dataset[open] > summary .library-tree-chevron,
+.library-tree-group[open] > summary .library-tree-chevron { transform: rotate(90deg); }
+
 .library-tree-root {
   background: #15232e;
   border: 1px solid #2f4656;
@@ -423,6 +428,14 @@ aside { border-right: 1px solid #263947; overflow: auto; background: #0f1820; }
 }
 .browser-subfolder > summary small { color: #78909e; font-size: .64rem; }
 .browser-subfolder .browser-row { padding-left: .65rem; }
+.chat-subfolder { margin-left: 1rem; }
+.chat-subfolder > summary {
+  grid-template-columns: 16px 19px minmax(0, 1fr) auto 27px;
+}
+.chat-subfolder > .browser-list,
+.chat-subfolder > .attachment-subfolder,
+.chat-subfolder > .result-subfolder { margin-left: 1rem; }
+.attachment-subfolder { border-left: 1px solid #1d303c; }
 .browser-subfolder .method-selection-toolbar,
 .browser-subfolder .output-selection-toolbar { padding-left: .55rem; }
 .browser-list { list-style: none; margin: 0; padding: 0; }
@@ -827,6 +840,30 @@ th { position: sticky; top: 0; background: #183040; }
   border-top: 1px solid #1d303c;
 }
 .blocker { padding: .5rem 1rem; background: #503715; color: #ffdb9d; font-size: .82rem; }
+.chat-attachments {
+  background: #0d171e; border-top: 1px solid #1d303c; display: grid; gap: .45rem;
+  padding: .5rem .8rem;
+}
+.attachment-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; }
+.attachment-actions > small { color: #8fa8b8; font-size: .7rem; margin-left: auto; }
+.button-like, .attachment-reselect {
+  align-items: center; background: #172a38; border: 1px solid #365266; border-radius: 6px;
+  color: #e8f4fb; cursor: pointer; display: inline-flex; font-size: .76rem; gap: .35rem;
+  min-height: var(--control-height); padding: .35rem .65rem;
+}
+.button-like.disabled { cursor: not-allowed; opacity: .55; pointer-events: none; }
+.attachment-chips { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; margin: 0; padding: 0; }
+.attachment-chip {
+  align-items: center; background: #142630; border: 1px solid #365266; border-radius: 8px;
+  display: flex; gap: .3rem; max-width: min(420px, 100%); padding: .3rem;
+}
+.attachment-chip.loading { border-color: #b37b35; }
+.attachment-chip.failed, .attachment-chip.missing { border-color: #b84a4a; }
+.attachment-chip > span { display: grid; min-width: 0; padding: 0 .25rem; }
+.attachment-chip strong { font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip small { color: #8fa8b8; font-size: .66rem; }
+.attachment-chip em { color: #ffce82; font-size: .64rem; font-style: normal; }
+.attachment-chip button, .attachment-reselect { height: 28px; min-height: 28px; min-width: 28px; padding: .25rem; }
 .composer { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; padding: .65rem .8rem .8rem; border-top: 1px solid #263947; background: #101a22; }
 .composer-state {
   align-items: center; display: flex; font-size: .72rem; gap: .4rem;
@@ -1090,6 +1127,32 @@ th { position: sticky; top: 0; background: #183040; }
   padding: .35rem; position: absolute; right: 0; top: calc(100% + .3rem); z-index: 20;
 }
 .workspace-actions > div button { background: transparent; border: 0; text-align: left; }
+.workspace-actions .menu-heading {
+  border-bottom: 1px solid #2a414f;
+  color: #829aa8;
+  font-size: .64rem;
+  letter-spacing: .06em;
+  padding: .45rem .65rem .3rem;
+  text-transform: uppercase;
+}
+
+.workspace-menu > div button,
+.workspace-actions > div button,
+.browser-context-menu button,
+.help-window-layout > nav button {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+.workspace-menu > div button .bp5-button-text,
+.workspace-actions > div button .bp5-button-text,
+.browser-context-menu button .bp5-button-text,
+.help-window-layout > nav button .bp5-button-text {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
 .settings-panel,
 .skills-panel,
 .skill-settings-row,
@@ -1517,6 +1580,74 @@ th { position: sticky; top: 0; background: #183040; }
 .app-shell[data-theme="light"] .analysis-library-tree {
   color: var(--biomero-text);
 }
+.app-shell[data-theme="light"] .browser-folder > summary,
+.app-shell[data-theme="light"] .browser-subfolder > summary,
+.app-shell[data-theme="light"] .browser-row.virtual,
+.app-shell[data-theme="light"] .workspace-toolbar label,
+.app-shell[data-theme="light"] .csv-toggle,
+.app-shell[data-theme="light"] .artifact-body,
+.app-shell[data-theme="light"] .artifact-metadata dd,
+.app-shell[data-theme="light"] .execution-content,
+.app-shell[data-theme="light"] .execution-summary,
+.app-shell[data-theme="light"] .supporting-executions,
+.app-shell[data-theme="light"] .notebook-cell,
+.app-shell[data-theme="light"] .notebook-source,
+.app-shell[data-theme="light"] .notebook-stream,
+.app-shell[data-theme="light"] .notebook-json,
+.app-shell[data-theme="light"] .notebook-inspector-output,
+.app-shell[data-theme="light"] .artifact-markdown-preview,
+.app-shell[data-theme="light"] .artifact-markdown-preview h1,
+.app-shell[data-theme="light"] .artifact-markdown-preview h2,
+.app-shell[data-theme="light"] .artifact-markdown-preview h3,
+.app-shell[data-theme="light"] .artifact-markdown-preview h4,
+.app-shell[data-theme="light"] .artifact-markdown-preview h5,
+.app-shell[data-theme="light"] .artifact-markdown-preview h6 {
+  color: var(--biomero-text);
+}
+.app-shell[data-theme="light"] .artifact-markdown-preview h2 {
+  border-color: var(--line);
+}
+.app-shell[data-theme="light"] .artifact-markdown-preview blockquote,
+.app-shell[data-theme="light"] .supporting-executions p,
+.app-shell[data-theme="light"] .inspection-summary,
+.app-shell[data-theme="light"] .execution-actions small,
+.app-shell[data-theme="light"] .model-payload p,
+.app-shell[data-theme="light"] .artifact-metadata dt,
+.app-shell[data-theme="light"] .active-workspace-label span,
+.app-shell[data-theme="light"] .file-browser-heading small,
+.app-shell[data-theme="light"] .browser-empty,
+.app-shell[data-theme="light"] .hierarchy-section button small,
+.app-shell[data-theme="light"] .hierarchy-section p,
+.app-shell[data-theme="light"] .output-selection-toolbar span,
+.app-shell[data-theme="light"] .library-tree-root > small,
+.app-shell[data-theme="light"] .library-tree-dataset > summary > small,
+.app-shell[data-theme="light"] .library-tree-dataset > summary span small,
+.app-shell[data-theme="light"] .library-tree-group > summary > small,
+.app-shell[data-theme="light"] .library-item-copy small,
+.app-shell[data-theme="light"] .library-tree-empty,
+.app-shell[data-theme="light"] .viewer-preview-card > small {
+  color: var(--muted);
+}
+.app-shell[data-theme="light"] .artifact-markdown-preview code {
+  background: #e8eef5;
+  color: #174a7c;
+}
+.app-shell[data-theme="light"] .artifact-markdown-preview .markdown-code code {
+  background: transparent;
+  color: var(--biomero-text);
+}
+.app-shell[data-theme="light"] .syntax-keyword { color: #0b57a3; }
+.app-shell[data-theme="light"] .syntax-string { color: #39710d; }
+.app-shell[data-theme="light"] .syntax-comment { color: #536b5c; }
+.app-shell[data-theme="light"] .syntax-number { color: #7a3ea1; }
+.app-shell[data-theme="light"] .browser-icon,
+.app-shell[data-theme="light"] .library-tree-chevron { color: #516675; }
+.app-shell[data-theme="light"] .browser-icon.json::before { color: #6f3f91; }
+.app-shell[data-theme="light"] .browser-icon.markdown::before { color: #17658b; }
+.app-shell[data-theme="light"] .browser-icon.python::before { color: #7b5d00; }
+.app-shell[data-theme="light"] .browser-icon.archive::before { color: #8a4c14; }
+.app-shell[data-theme="light"] .browser-icon.zarr::before { color: #237344; }
+.app-shell[data-theme="light"] .browser-icon.image::before { color: #237344; }
 .app-shell[data-theme="light"] .browser-name small,
 .app-shell[data-theme="light"] .browser-size,
 .app-shell[data-theme="light"] .browser-folder > summary small,
@@ -1560,6 +1691,25 @@ th { position: sticky; top: 0; background: #183040; }
 .app-shell[data-theme="light"] .warning,
 .app-shell[data-theme="light"] .settings-warning {
   color: var(--biomero-orange);
+}
+.app-shell[data-theme="light"] .chat-attachments {
+  background: var(--biomero-card);
+  border-color: var(--line);
+}
+.app-shell[data-theme="light"] .attachment-chip {
+  background: var(--biomero-control);
+  border-color: var(--line);
+  color: var(--biomero-text);
+}
+.app-shell[data-theme="light"] .attachment-chip small,
+.app-shell[data-theme="light"] .attachment-actions > small {
+  color: var(--muted);
+}
+.app-shell[data-theme="light"] .button-like,
+.app-shell[data-theme="light"] .attachment-reselect {
+  background: var(--biomero-control);
+  border-color: #11141833;
+  color: var(--biomero-text);
 }
 .app-shell[data-theme="light"] .message.error,
 .app-shell[data-theme="light"] .validation-error,

@@ -158,13 +158,15 @@
 .omero-analysis-center .oa-tree-group > summary:hover,
 .omero-analysis-center .oa-library-item label:hover { background: #edf4f6; }
 .omero-analysis-center .oa-tree-dataset > summary::-webkit-details-marker,
-.omero-analysis-center .oa-tree-group > summary::-webkit-details-marker { display: none; }
+.omero-analysis-center .oa-tree-group > summary::-webkit-details-marker,
+.omero-analysis-center .oa-tree-root-node > summary::-webkit-details-marker { display: none; }
 .omero-analysis-center .oa-tree-chevron {
   color: #6b7f89; display: inline-block; font-size: 16px; text-align: center;
   transition: transform .12s ease;
 }
 .omero-analysis-center .oa-tree-dataset[open] > summary .oa-tree-chevron,
-.omero-analysis-center .oa-tree-group[open] > summary .oa-tree-chevron {
+.omero-analysis-center .oa-tree-group[open] > summary .oa-tree-chevron,
+.omero-analysis-center .oa-tree-root-node[open] > summary .oa-tree-chevron {
   transform: rotate(90deg);
 }
 .omero-analysis-center .oa-tree-folder {

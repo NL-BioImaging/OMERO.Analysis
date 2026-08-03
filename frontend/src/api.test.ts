@@ -1,5 +1,7 @@
 import {
   completeChat,
+  anthropicMessages,
+  openAiMessages,
   OmeroBridge,
   providerEndpoint,
   validateProviderConnection
@@ -90,6 +92,39 @@ describe("OMERO capability renewal", () => {
     const bridge = new OmeroBridge(bootstrap);
     await expect(bridge.connect()).rejects.toThrow("invalid context capability");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("multimodal provider serialization", () => {
+  const messages = [{
+    role: "user" as const,
+    content: [
+      { type: "text" as const, text: "user-supplied image" },
+      { type: "image" as const, mediaType: "image/png" as const, base64: "aW1hZ2U=" }
+    ]
+  }];
+
+  it("maps normalized images to OpenAI image_url parts", () => {
+    expect(openAiMessages(messages)).toEqual([{
+      role: "user",
+      content: [
+        { type: "text", text: "user-supplied image" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
+      ]
+    }]);
+  });
+
+  it("maps normalized images to Anthropic base64 source blocks", () => {
+    expect(anthropicMessages(messages).messages[0]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "user-supplied image" },
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
+        }
+      ]
+    });
   });
 });
 

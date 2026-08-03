@@ -65,6 +65,8 @@ def test_combined_shell_includes_notebook_runtime_contract():
         / "src/omero_analysis/templates/omero_analysis/analysis_library_tree.html"
     ).read_text(encoding="utf-8")
     assert "+AnalysisWorkspaces" in library_tree
+    assert '<details class="oa-tree-root-node" open>' in library_tree
+    assert '<summary class="oa-tree-root"' in library_tree
     assert "oa-tree-dataset" in library_tree
     assert "oa-library-item-input" in library_tree
     assert "webclient/image/folder16.png" in library_tree

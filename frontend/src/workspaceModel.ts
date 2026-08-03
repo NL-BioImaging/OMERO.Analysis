@@ -1,4 +1,21 @@
-import type { AnalysisWorkspace } from "./types";
+import type { AnalysisWorkspace, ChatRecord, WorkspaceFile } from "./types";
+
+export function groupChatResults(
+  files: WorkspaceFile[],
+  chats: ChatRecord[]
+): { byChat: Map<string, WorkspaceFile[]>; unassigned: WorkspaceFile[] } {
+  const chatIds = new Set(chats.map((chat) => chat.id));
+  const byChat = new Map(chats.map((chat) => [chat.id, [] as WorkspaceFile[]]));
+  const unassigned: WorkspaceFile[] = [];
+  for (const file of files) {
+    if (file.chatId && chatIds.has(file.chatId)) {
+      byChat.get(file.chatId)!.push(file);
+    } else {
+      unassigned.push(file);
+    }
+  }
+  return { byChat, unassigned };
+}
 
 function workspaceSlug(value: string): string {
   return value

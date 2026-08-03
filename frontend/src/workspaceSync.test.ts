@@ -164,4 +164,112 @@ describe("Workspace synchronization inventory", () => {
     expect(syncHasChanges("local", "remote")).toBe(true);
     expect(syncHasChanges("same", "same")).toBe(false);
   });
+
+  it("keeps Chat attachments out by default and emits originals when enabled", async () => {
+    const value = workspace();
+    value.files.push({
+      id: "attachment-1",
+      workspaceId: value.workspace.id,
+      chatId: "chat-1",
+      name: "notes.txt",
+      logicalPath: "/Chat/chat-1/Attachments/notes.txt",
+      type: "text/plain",
+      size: 5,
+      sha256: "",
+      source: "local",
+      role: "chat-attachment",
+      attachment: { origin: "url", sourceUrl: "https://secret.example/notes.txt" },
+      state: "ready",
+      data: new TextEncoder().encode("notes").buffer,
+      createdAt: "2026-07-29T00:00:00Z"
+    });
+    const excluded = await buildWorkspaceSyncPayload(value, context);
+    expect(excluded.inventory.items.some((item) => item.kind === "chat-attachment")).toBe(false);
+    const included = await buildWorkspaceSyncPayload(value, context, {
+      includeChatAttachments: true
+    });
+    const item = included.inventory.items.find((entry) => entry.kind === "chat-attachment");
+    expect(item).toMatchObject({
+      key: "chat-attachment:attachment-1",
+      logicalPath: "Chat/cells/Attachments/notes.txt",
+      metadata: { fileId: "attachment-1", chatId: "chat-1", origin: "url" }
+    });
+    expect(JSON.stringify(item)).not.toContain("secret.example");
+    expect(new TextDecoder().decode(included.bytes.get(item!.key))).toBe("notes");
+  });
+
+  it("keeps managed item identities stable when a Chat folder is renamed", async () => {
+    const value = workspace();
+    value.files.push({
+      id: "attachment-1",
+      workspaceId: value.workspace.id,
+      chatId: "chat-1",
+      name: "notes.txt",
+      logicalPath: "/Chat/chat-1/Attachments/notes.txt",
+      type: "text/plain",
+      size: 5,
+      sha256: "",
+      source: "local",
+      role: "chat-attachment",
+      attachment: { origin: "upload" },
+      state: "ready",
+      data: new TextEncoder().encode("notes").buffer,
+      createdAt: "2026-07-29T00:00:00Z"
+    });
+    const before = await buildWorkspaceSyncPayload(value, context, {
+      includeChatAttachments: true
+    });
+
+    value.chats[0] = {
+      ...value.chats[0],
+      title: "Renamed cells",
+      titleEdited: true,
+      updatedAt: "2026-07-30T00:00:00Z"
+    };
+    const after = await buildWorkspaceSyncPayload(value, context, {
+      includeChatAttachments: true
+    });
+
+    const trackedKeys = [
+      "chat:chat-1:json",
+      "chat:chat-1:markdown",
+      "chat-attachment:attachment-1"
+    ];
+    expect(after.inventory.items.filter((item) => trackedKeys.includes(item.key))
+      .map((item) => item.key)).toEqual(expect.arrayContaining(trackedKeys));
+    expect(after.inventory.items.find((item) =>
+      item.key === "chat:chat-1:json"
+    )?.logicalPath).toBe("Chat/renamed-cells/chat.json");
+    expect(after.inventory.items.find((item) =>
+      item.key === "chat-attachment:attachment-1"
+    )?.logicalPath).toBe("Chat/renamed-cells/Attachments/notes.txt");
+    expect(before.inventory.items.find((item) =>
+      item.key === "chat-attachment:attachment-1"
+    )?.sha256).toBe(after.inventory.items.find((item) =>
+      item.key === "chat-attachment:attachment-1"
+    )?.sha256);
+  });
+
+  it("adds a single managed restore snapshot when Workspace sync is enabled", async () => {
+    const data = new Uint8Array([80, 75, 3, 4]);
+    const payload = await buildWorkspaceSyncPayload(workspace(), context, {
+      workspaceSnapshot: {
+        name: "screen-analysis.oa-workspace.zip",
+        data,
+        omittedLocalInputs: ["large.duckdb"]
+      }
+    });
+    const snapshot = payload.inventory.items.find(
+      (item) => item.kind === "workspace-snapshot"
+    );
+    expect(snapshot).toMatchObject({
+      key: "workspace-snapshot:workspace-1",
+      mimetype: "application/zip",
+      metadata: {
+        workspaceId: "workspace-1",
+        omittedLocalInputs: ["large.duckdb"]
+      }
+    });
+    expect(payload.bytes.get(snapshot!.key)).toEqual(data);
+  });
 });

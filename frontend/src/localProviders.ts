@@ -5,6 +5,14 @@ export interface LocalAiServer {
   name: string;
   endpoint: string;
   models: string[];
+  capabilities: Record<string, ModelCapabilities>;
+}
+
+export type CapabilityState = "supported" | "unsupported" | "unknown";
+export interface ModelCapabilities {
+  vision: CapabilityState;
+  tools: CapabilityState;
+  source: "lm-studio" | "ollama" | "registry" | "probe" | "unknown";
 }
 
 export interface LocalAiScan {
@@ -106,7 +114,11 @@ async function probeCandidate(
     if (!models.length) {
       throw new Error("the server returned no models");
     }
-    return { ...candidate, models };
+    return {
+      ...candidate,
+      models,
+      capabilities: await nativeCapabilities(candidate, models, controller.signal)
+    };
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error("timed out");
@@ -115,6 +127,95 @@ async function probeCandidate(
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function state(value: unknown): CapabilityState {
+  return value === true ? "supported" : value === false ? "unsupported" : "unknown";
+}
+
+async function nativeCapabilities(
+  candidate: LocalAiCandidate,
+  models: string[],
+  signal: AbortSignal
+): Promise<Record<string, ModelCapabilities>> {
+  const unknown = () => Object.fromEntries(models.map((model) => [model, {
+    vision: "unknown" as const,
+    tools: "unknown" as const,
+    source: "unknown" as const
+  }]));
+  try {
+    const endpoint = new URL(candidate.endpoint);
+    if (candidate.kind === "lm-studio") {
+      const response = await fetch(new URL("/api/v1/models", endpoint.origin), {
+        credentials: "omit", cache: "no-store", signal
+      });
+      if (!response.ok) return unknown();
+      const body = await response.json() as Record<string, unknown>;
+      const entries = Array.isArray(body.models) ? body.models
+        : Array.isArray(body.data) ? body.data : [];
+      const result: Record<string, ModelCapabilities> = unknown();
+      for (const raw of entries) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as Record<string, any>;
+        const model = String(item.key || item.id || item.model || "");
+        if (!model || !result[model]) continue;
+        const capabilities = item.capabilities || {};
+        result[model] = {
+          vision: state(capabilities.vision ?? item.vision),
+          tools: state(capabilities.trained_for_tool_use ?? capabilities.tool_use ?? item.trained_for_tool_use),
+          source: "lm-studio"
+        };
+      }
+      return result;
+    }
+    if (candidate.kind === "ollama") {
+      const pairs = await Promise.all(models.map(async (model) => {
+        try {
+          const response = await fetch(new URL("/api/show", endpoint.origin), {
+            method: "POST",
+            credentials: "omit",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model }),
+            signal
+          });
+          const body = response.ok ? await response.json() as Record<string, unknown> : {};
+          const values = Array.isArray(body.capabilities) ? body.capabilities.map(String) : [];
+          return [model, {
+            vision: values.length ? (values.includes("vision") ? "supported" : "unsupported") : "unknown",
+            tools: values.length ? (values.includes("tools") ? "supported" : "unsupported") : "unknown",
+            source: "ollama"
+          } satisfies ModelCapabilities] as const;
+        } catch {
+          return [model, unknown()[model]] as const;
+        }
+      }));
+      return Object.fromEntries(pairs);
+    }
+  } catch {
+    return unknown();
+  }
+  return unknown();
+}
+
+export function modelCapabilities(
+  endpoint: string,
+  model: string,
+  servers: readonly LocalAiServer[]
+): ModelCapabilities {
+  if (/^gpt-5(?:[-.]|$)/i.test(model.trim())) {
+    return { vision: "supported", tools: "supported", source: "registry" };
+  }
+  let normalized = "";
+  try {
+    normalized = normalizeOpenAiBaseUrl(endpoint).toLowerCase();
+  } catch {
+    return { vision: "unknown", tools: "unknown", source: "unknown" };
+  }
+  const server = servers.find((item) => item.endpoint.toLowerCase() === normalized);
+  return server?.capabilities[model] || {
+    vision: "unknown", tools: "unknown", source: "unknown"
+  };
 }
 
 export async function scanLocalAiServers(

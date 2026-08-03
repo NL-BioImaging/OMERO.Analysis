@@ -99,4 +99,31 @@ describe("WorkspaceLibraryTree", () => {
     expect(screen.queryByText("count-cells.oa-method.json")).not.toBeInTheDocument();
     expect(screen.getByText("count-cells.ipynb")).toBeInTheDocument();
   });
+
+  it("collapses the root and reusable-item groups", () => {
+    render(
+      <WorkspaceLibraryTree
+        datasets={datasets}
+        query=""
+        selected={new Set()}
+        openDatasets={new Set([2])}
+        availableFormats={new Set(["duckdb"])}
+        zarrViewerAvailable={false}
+        onToggleDataset={vi.fn()}
+        onToggleItem={vi.fn()}
+      />
+    );
+    const rootSummary = screen.getByText("+AnalysisWorkspaces").closest("summary");
+    const root = rootSummary?.closest("details");
+    expect(root).toHaveAttribute("open");
+    fireEvent.click(rootSummary!);
+    expect(root).not.toHaveAttribute("open");
+
+    fireEvent.click(rootSummary!);
+    const methodsSummary = screen.getByText("Methods").closest("summary");
+    const methods = methodsSummary?.closest("details");
+    expect(methods).toHaveAttribute("open");
+    fireEvent.click(methodsSummary!);
+    expect(methods).not.toHaveAttribute("open");
+  });
 });

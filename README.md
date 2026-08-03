@@ -16,6 +16,7 @@ The Workspace explorer is organized as:
 Workspace
 ├── Input
 ├── Chat
+│   ├── <chat>/Attachments
 │   └── Chat results
 ├── Methods
 │   └── Methods results
@@ -37,6 +38,13 @@ Data and notebook code execute in an opaque, no-network Pyodide sandbox.
 Notebook execution never calls the AI provider or loads Agent Skill packages.
 Raw notebook HTML and JavaScript are never rendered. Magics, shell commands,
 widgets, non-Python kernels, and arbitrary package downloads are rejected.
+
+Each Chat can keep up to ten browser-local TXT, searchable PDF, DOCX, PNG,
+JPEG, or WebP attachments (25 MiB each). PDF and DOCX text is extracted in the
+offline Python sandbox; images are decoded, stripped of metadata, and resized
+in the browser when needed. The configured provider receives only extracted
+text or derived image pixels, never original PDF or DOCX bytes. OCR, webpages,
+authenticated file URLs, and silent context truncation are not supported.
 
 Chat may load matching measurement-analysis skills from the optional
 `biomero-workflow-skills` distribution. Explicit ZarrViewer requests use the
@@ -70,13 +78,19 @@ is never adopted.
 Synchronization is explicit, one-way, and last-writer-wins. PNG results become
 real grayscale or RGB OMERO Images. Other results, Chats, complete Method
 history, Pipelines, and validated Python notebooks are stored as typed
-FileAnnotations. Source inputs and Workspace snapshot ZIPs are excluded,
-except that ready inputs containing `template` anywhere in their filename are
-synchronized under Templates for reuse.
+FileAnnotations. Source inputs are excluded, except that ready inputs containing
+`template` anywhere in their filename are synchronized under Templates for reuse.
+With the default-on **Sync AnalysisWorkspace** preference, the Dataset also
+contains one managed restore snapshot that is replaced by later syncs. A browser
+with no local Workspace automatically restores the newest matching snapshot.
+Chat attachment originals are excluded by default. The global Analysis
+Settings option **Sync chat attachments to OMERO AnalysisWorkspaces** includes
+them as Dataset FileAnnotations during explicit synchronization; disabling it
+again removes only those managed attachment annotations on the next sync.
 Unchanged objects are reused by stable key and SHA-256; managed remote
 deletions follow local deletions. Unmanaged Dataset content is never changed.
 
-Workspace actions can synchronize, browse/import reusable Methods, Pipelines,
+The **Workspace & OMERO** menu can synchronize, browse/reuse Methods, Pipelines,
 and Notebooks, or remove the managed mirror. Imports are independent local
 copies carrying library provenance. Pipeline imports also copy their exact
 Method-version dependencies. Imported notebooks select ready local inputs and

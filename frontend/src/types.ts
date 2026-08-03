@@ -197,6 +197,8 @@ export interface ChatRecord {
   id: string;
   workspaceId: string;
   title: string;
+  /** True after the user explicitly names this chat; prevents first-prompt auto-titling. */
+  titleEdited?: boolean;
   summary: string;
   pinnedMessageIds?: string[];
   contextUsage?: TokenUsage;
@@ -220,6 +222,13 @@ export interface WorkspaceFile {
   size: number;
   sha256: string;
   source: FileSource;
+  role?: "chat-attachment";
+  attachment?: {
+    origin: "upload" | "url";
+    sourceUrl?: string;
+    warnings?: string[];
+    extractorVersion?: string;
+  };
   state: FileState;
   data?: ArrayBuffer;
   error?: string;
@@ -615,6 +624,9 @@ export interface AnalysisSettingsBundle {
     analysis: {
       plotCsv: boolean;
       theme?: "dark" | "light";
+      syncChatAttachments?: boolean;
+      syncAnalysisWorkspace?: boolean;
+      syncAnalysisSettings?: boolean;
     };
   ai: AiProfileStore;
   skills: CustomSkill[];
@@ -727,6 +739,8 @@ export type SyncItemKind =
   | "template-input"
   | "chat-json"
   | "chat-markdown"
+  | "chat-attachment"
+  | "workspace-snapshot"
   | "method"
   | "method-python"
   | "pipeline"
@@ -821,6 +835,13 @@ export interface LibraryDataset {
   sourceObjectName: string;
   revision: number;
   updatedAt: string;
+  snapshot?: {
+    name: string;
+    sha256: string;
+    size: number;
+    annotationId: number;
+    mimetype: string;
+  };
   items: LibraryItem[];
 }
 

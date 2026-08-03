@@ -70,6 +70,8 @@ $(function () {
   }
   function filterLibrary(root, query) {
     var normalized = String(query || "").trim().toLowerCase();
+    var treeRoot = root.querySelector(".oa-tree-root-node");
+    if (normalized && treeRoot) treeRoot.open = true;
     var anyDataset = false;
     root.querySelectorAll(".oa-tree-dataset").forEach(function (dataset) {
       var datasetText = String(dataset.dataset.searchText || "").toLowerCase();

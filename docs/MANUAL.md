@@ -18,7 +18,7 @@ Use **Analysis Chat** for questions and AI-assisted analysis. Use
 ## Workspace structure
 
 - **Input** contains OMERO attachments and browser-local files used by analyses.
-- **Chat** contains each conversation and its Chat results.
+- **Chat** contains each conversation, its `Attachments` folder, and its Chat results.
 - **Methods** contains reusable Python analyses and Method results.
 - **Pipelines** contains ordered Method executions and Pipeline results.
 - **Notebooks** contains attached, uploaded, or converted notebooks and Notebook
@@ -32,6 +32,20 @@ and right panes are resizable.
 Choose a Chat, enter a question, and wait until the status returns to **Ready**.
 The assistant can inspect supported data locally, generate Python, run it in
 the isolated browser runtime, and summarize the result.
+
+Use **Attach files** or **File URL** beside the composer to add up to ten
+Chat-wide attachments of at most 25 MiB each. Supported formats are UTF-8 TXT,
+searchable PDF, DOCX, PNG, JPEG, and WebP. Direct URLs must be public HTTPS
+file URLs that the browser can fetch without credentials; webpages are not
+supported. PDF and DOCX extraction runs in browser Python, and OCR is not
+performed. A missing, unreadable, oversized, or image-only document blocks
+sending until it is reselected or removed.
+
+Attachment text must fit the displayed model-context budget and is never
+silently truncated. Images require a vision-capable model; Analysis uses local
+server metadata when available and performs one harmless cached image probe
+when support is unknown. Changing to a non-vision model keeps the originals
+but blocks sending while image attachments remain active.
 
 Every user message is followed by a collapsed **AI activity** card before the
 **Analysis (local)** result. Expand it to see the live response, concise
@@ -105,16 +119,24 @@ widgets, shell commands, or network package downloads.
 
 ## Workspace synchronization
 
-**Synchronize with OMERO** mirrors non-deleted Workspace content into the
+**Sync AnalysisWorkspace now** mirrors non-deleted Workspace content into the
 marked `+AnalysisWorkspaces` Project for the current user and group. PNG
 results become OMERO Images. Other results, Chats, Methods, Pipelines, and
 Notebooks become typed attachments.
 
 Ready input files with `template` anywhere in the filename are also
 synchronized under `Templates`. Other source inputs are excluded.
+Chat attachment originals are excluded unless **Sync chat attachments to
+OMERO AnalysisWorkspaces** is enabled. When enabled, explicit synchronization
+stores originals as managed FileAnnotations on the AnalysisWorkspaces Dataset.
+Disabling the option removes those managed annotations on the next explicit
+synchronization; extracted text and source URLs are never synchronized.
 
 Synchronization is manual and one-way. The browser Workspace is the source of
-truth for each explicit synchronization.
+truth for each explicit synchronization. **Sync AnalysisWorkspace** is on by
+default and adds one managed restore snapshot to the synchronized Dataset. A
+new or cleared browser automatically restores the newest matching snapshot;
+turning the preference off removes that managed snapshot on the next sync.
 
 Identical result bytes are stored only once in the synchronized Dataset, even
 when the same PNG or CSV belongs to a Chat and a saved Method, Pipeline, or
@@ -123,7 +145,7 @@ so deduplication does not discard provenance.
 
 ## Reusing AnalysisWorkspaces
 
-Use **Import from AnalysisWorkspaces** to browse synchronized Datasets and copy
+Use **Reuse from +AnalysisWorkspaces** to browse synchronized Datasets and copy
 Methods, Pipelines, or Notebooks into the current browser Workspace. Imports
 are independent copies and do not modify the library original.
 
@@ -134,6 +156,14 @@ Chat panel can show Methods, Pipelines, and Notebooks.
 
 **Plot + CSV** asks Chat to save both a visual plot and the corresponding
 tabular data. This preference is included when settings are synchronized.
+
+**Sync chat attachments to OMERO AnalysisWorkspaces** is off by default. Its
+browser value applies to the current user and group across Workspaces, and it
+is included by **Sync Settings**.
+
+**Sync AnalysisSettings** is on by default. It restores the latest encrypted
+`~AnalysisSettings` bundle on a new or cleared browser; settings are still
+uploaded only when **Sync Settings** is explicitly selected.
 
 Use the sun/moon button immediately before **Settings** to switch between the
 default dark interface and the BIOMERO-inspired light interface. The selected
@@ -224,8 +254,10 @@ the same group restores the latest synchronized settings when available.
 ## Privacy and security
 
 - Data analysis and Notebook execution run in the browser.
-- AI requests contain prompts, generated code, bounded previews and summaries,
-  and errors—not source files.
+- Ordinary Workspace input files remain browser-local. AI requests contain
+  prompts, generated code, bounded previews and summaries, errors, and—for
+  selected Chat attachments only—extracted text or metadata-stripped image
+  pixels. Original PDF and DOCX bytes are never sent to the provider.
 - API keys synchronized to OMERO are encrypted at rest.
 - Custom skills are instructions and can influence Chat behavior. Add skills
   only from sources you trust.

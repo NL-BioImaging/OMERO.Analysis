@@ -83,7 +83,9 @@ export function customSkillMatches(
   if (!skill.enabled) return false;
   if (!skill.extensions.length) return true;
   const available = new Set(files
-    .filter((file) => file.source !== "result" && !file.deletedAt)
+    .filter((file) =>
+      file.source !== "result" && file.role !== "chat-attachment" && !file.deletedAt
+    )
     .map((file) => file.name.split(".").at(-1)?.toLowerCase())
     .filter(Boolean));
   return skill.extensions.some((extension) => available.has(extension));

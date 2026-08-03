@@ -1,9 +1,25 @@
 import type { AnalysisWorkspace } from "./types";
 import {
+  groupChatResults,
   normalizeWorkspaceName,
   renameAnalysisWorkspace,
   trashWorkspaceOutputs
 } from "./workspaceModel";
+
+describe("Chat result folders", () => {
+  it("groups results by owning Chat and preserves legacy unassigned results", () => {
+    const chats = [{
+      id: "chat-a", workspaceId: "workspace", title: "A", summary: "", messages: [],
+      createdAt: "2026-07-26T00:00:00Z", updatedAt: "2026-07-26T00:00:00Z"
+    }];
+    const owned = { ...workspace.files[0], id: "owned", chatId: "chat-a" };
+    const legacy = { ...workspace.files[0], id: "legacy", chatId: undefined };
+    const orphaned = { ...workspace.files[0], id: "orphaned", chatId: "removed-chat" };
+    const grouped = groupChatResults([owned, legacy, orphaned], chats);
+    expect(grouped.byChat.get("chat-a")?.map((file) => file.id)).toEqual(["owned"]);
+    expect(grouped.unassigned.map((file) => file.id)).toEqual(["legacy", "orphaned"]);
+  });
+});
 
 const workspace = {
   workspace: {

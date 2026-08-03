@@ -519,7 +519,13 @@ export function ComposerPanel({
   onPromptChange,
   onSend,
   onStop,
-  onReset
+  onReset,
+  attachments = [],
+  onAddAttachments,
+  onAddAttachmentUrl,
+  onDownloadAttachment,
+  onRemoveAttachment,
+  onReselectAttachment
 }: {
   runtimeReady: boolean;
   runtimeProgress: RuntimeProgress;
@@ -535,6 +541,12 @@ export function ComposerPanel({
   onSend: () => void;
   onStop: () => void;
   onReset: () => void;
+  attachments?: WorkspaceFile[];
+  onAddAttachments?: (files: File[]) => void;
+  onAddAttachmentUrl?: () => void;
+  onDownloadAttachment?: (file: WorkspaceFile) => void;
+  onRemoveAttachment?: (file: WorkspaceFile) => void;
+  onReselectAttachment?: (file: WorkspaceFile, source: File) => void;
 }) {
   const needsApiKey =
     settings.protocol === "anthropic" || settings.authMode !== "none";
@@ -552,7 +564,7 @@ export function ComposerPanel({
       )}
       <div className="status" role="status">{status}</div>
       <div className="usage-status">
-        <span>The configured AI provider receives prompts, generated code, bounded schemas/previews/statistics, summaries, and errors — never source files.</span>
+        <span>Ordinary workspace inputs remain browser-local. For selected Chat attachments, extracted text or metadata-stripped image pixels are sent to the configured AI provider; original PDF and DOCX bytes are never sent.</span>
         <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
       </div>
       {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
@@ -561,6 +573,59 @@ export function ComposerPanel({
           {`Enter an AI endpoint and model${needsApiKey ? ", and API key" : ""} in Settings.`}
         </div>
       ) : null}
+      <div className="chat-attachments" aria-label="Chat attachments">
+        <div className="attachment-actions">
+          <label className={`button-like ${busy ? "disabled" : ""}`}>
+            <ActionIcon name="attach" />Attach files
+            <input
+              hidden
+              type="file"
+              multiple
+              disabled={busy}
+              accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"
+              onChange={(event) => {
+                onAddAttachments?.(Array.from(event.target.files || []));
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <Button disabled={busy} onClick={onAddAttachmentUrl}>
+            <ActionIcon name="attach" />File URL
+          </Button>
+          <small>{attachments.length}/10 active · 25 MiB each · no OCR</small>
+        </div>
+        {attachments.length ? (
+          <ul className="attachment-chips">
+            {attachments.map((file) => (
+              <li key={file.id} className={`attachment-chip ${file.state}`}>
+                <span>
+                  <strong title={file.name}>{file.name}</strong>
+                  <small>{bytesLabel(file.size)} · {file.state}</small>
+                  {file.attachment?.warnings?.map((warning) => (
+                    <em key={warning}>{warning}</em>
+                  ))}
+                  {file.error && <em>{file.error}</em>}
+                </span>
+                <Button disabled={!file.data} aria-label={`Download ${file.name}`}
+                  onClick={() => onDownloadAttachment?.(file)}><ActionIcon name="download" /></Button>
+                {(file.state === "missing" || file.state === "failed") && (
+                  <label className="attachment-reselect" title={`Reselect ${file.name}`}>
+                    <ActionIcon name="upload" />
+                    <input hidden type="file" accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp"
+                      onChange={(event) => {
+                        const source = event.target.files?.[0];
+                        if (source) onReselectAttachment?.(file, source);
+                        event.target.value = "";
+                      }} />
+                  </label>
+                )}
+                <Button disabled={busy} aria-label={`Remove ${file.name}`}
+                  onClick={() => onRemoveAttachment?.(file)}><ActionIcon name="delete" /></Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
       <div className="composer">
         <div className={`composer-state ${canChat ? "ready" : "waiting"}`}>
           <span aria-hidden="true">{canChat ? "●" : "◷"}</span>

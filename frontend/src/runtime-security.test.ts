@@ -19,7 +19,8 @@ describe("Python sandbox", () => {
     expect(worker).toContain("Loading data-analysis packages");
     expect(worker).toContain('["micropip","numpy","pandas"');
     expect(worker).toContain('required.push("scipy")');
-    expect(worker).toContain("Loading seaborn plotting support");
+    expect(worker).toContain("Loading vendored Python support");
+    expect(worker).toContain("pypdf-6.14.2-py3-none-any.whl");
     expect(worker).toContain('message.type === "begin"');
     expect(worker).toContain('removeTree("/output")');
     expect(worker).toContain("outputState()");

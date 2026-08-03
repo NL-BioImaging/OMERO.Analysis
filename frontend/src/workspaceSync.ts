@@ -88,7 +88,15 @@ async function itemFromBytes(
 
 export async function buildWorkspaceSyncPayload(
   workspace: AnalysisWorkspace,
-  context: OmeroContext
+  context: OmeroContext,
+  options: {
+    includeChatAttachments?: boolean;
+    workspaceSnapshot?: {
+      name: string;
+      data: Uint8Array;
+      omittedLocalInputs: string[];
+    };
+  } = {}
 ): Promise<SyncPayload> {
   const items: SyncInventoryItem[] = [];
   const bytes = new Map<string, Uint8Array>();
@@ -107,6 +115,21 @@ export async function buildWorkspaceSyncPayload(
       key, kind, name, mimetype, logicalPath, data, metadata
     ));
   };
+
+  if (options.workspaceSnapshot) {
+    await add(
+      `workspace-snapshot:${workspace.workspace.id}`,
+      "workspace-snapshot",
+      options.workspaceSnapshot.name,
+      "application/zip",
+      `Workspace/${options.workspaceSnapshot.name}`,
+      options.workspaceSnapshot.data,
+      {
+        workspaceId: workspace.workspace.id,
+        omittedLocalInputs: options.workspaceSnapshot.omittedLocalInputs
+      }
+    );
+  }
 
   const resultGroups = new Map<string, {
     kind: SyncItemKind;
@@ -187,6 +210,7 @@ export async function buildWorkspaceSyncPayload(
   for (const file of workspace.files
     .filter((entry) =>
       entry.source !== "result" &&
+      entry.role !== "chat-attachment" &&
       !entry.deletedAt &&
       entry.state === "ready" &&
       /template/i.test(entry.name)
@@ -209,6 +233,31 @@ export async function buildWorkspaceSyncPayload(
         originalLogicalPath: file.logicalPath
       }
     );
+  }
+
+  if (options.includeChatAttachments) {
+    for (const file of workspace.files
+      .filter((entry) => entry.role === "chat-attachment" && !entry.deletedAt)
+      .sort((left, right) => left.id.localeCompare(right.id))) {
+      if (file.state !== "ready" || !file.data) {
+        throw new Error(`Chat attachment ${file.name} is unavailable in this browser`);
+      }
+      const chat = workspace.chats.find((entry) => entry.id === file.chatId && !entry.deletedAt);
+      if (!chat) throw new Error(`Chat attachment ${file.name} refers to an unavailable Chat`);
+      await add(
+        `chat-attachment:${file.id}`,
+        "chat-attachment",
+        file.name,
+        file.type,
+        `Chat/${slug(chat.title)}/Attachments/${safeName(file.name)}`,
+        new Uint8Array(file.data.slice(0)),
+        {
+          fileId: file.id,
+          chatId: chat.id,
+          origin: file.attachment?.origin || "upload"
+        }
+      );
+    }
   }
 
   for (const chat of workspace.chats
