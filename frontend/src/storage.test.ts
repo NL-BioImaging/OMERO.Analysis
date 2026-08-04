@@ -71,7 +71,7 @@ describe("normalized workspace storage", () => {
     await replaceWorkspace({
       ...workspace,
       chats: [removed, kept],
-      files: [removed, kept].map((chat) => ({
+      files: [...[removed, kept].map((chat) => ({
         ...record(`file-${chat.id}`, chat.id),
         name: `${chat.id}.csv`,
         logicalPath: `/output/${chat.id}.csv`,
@@ -80,8 +80,13 @@ describe("normalized workspace storage", () => {
         sha256: chat.id,
         source: "result" as const,
         state: "ready" as const
-      })),
-      executions: [removed, kept].map((chat) => ({
+      })), {
+        id: "run-file", workspaceId: workspace.workspace.id, runId: "run",
+        name: "run.csv", logicalPath: "/Runs/run.csv", type: "text/csv",
+        size: 1, sha256: "run", source: "result" as const, state: "ready" as const,
+        createdAt: "2026-08-03T00:00:00Z"
+      }],
+      executions: [...[removed, kept].map((chat) => ({
         ...record(`execution-${chat.id}`, chat.id),
         promptId: `prompt-${chat.id}`,
         code: "result = 1",
@@ -95,7 +100,20 @@ describe("normalized workspace storage", () => {
         inputHashes: [],
         runtimeVersion: "test",
         model: "test"
-      })),
+      })), {
+        id: "run-execution", workspaceId: workspace.workspace.id, runId: "run",
+        code: "result = 2", codeHash: "run", cacheKey: "run", status: "success" as const,
+        stdout: "", stderr: "", outputFileIds: ["run-file"], missingPlotCsv: [],
+        inputHashes: [], runtimeVersion: "test", model: "test",
+        createdAt: "2026-08-03T00:00:00Z"
+      }],
+      runs: [{
+        id: "run", workspaceId: workspace.workspace.id, kind: "method" as const,
+        artifactId: "method", artifactName: "method.py", artifactVersion: 1,
+        status: "success" as const, executionIds: ["run-execution"],
+        resolvedBindings: {}, steps: [], createdAt: "2026-08-03T00:00:00Z",
+        completedAt: "2026-08-03T00:01:00Z"
+      }],
       artifacts: [removed, kept].map((chat) => ({
         ...record(`artifact-${chat.id}`, chat.id),
         kind: "file" as const,
@@ -130,7 +148,10 @@ describe("normalized workspace storage", () => {
       loaded?.artifacts,
       loaded?.audits,
       loaded?.evidence
-    ]) expect(values?.map((value) => value.chatId)).toEqual([kept.id]);
+    ]) expect(values?.filter((value) => value.chatId).map((value) => value.chatId)).toEqual([kept.id]);
+    expect(loaded?.runs.map((run) => run.id)).toEqual(["run"]);
+    expect(loaded?.files.some((file) => file.runId === "run")).toBe(true);
+    expect(loaded?.executions.some((execution) => execution.runId === "run")).toBe(true);
   });
 
   it("returns authoritative monotonic Workspace revisions", async () => {

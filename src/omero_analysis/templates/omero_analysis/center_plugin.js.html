@@ -3,10 +3,10 @@
 <script>
 $(function () {
   "use strict";
-  var panel = $("#omero_analysis_chat_panel");
+  var panel = $("#omero_analysis_panel");
   panel.addClass("omero-analysis-center");
   var panelPattern = "{% url 'omero_analysis_panel' 'Image' 1 %}";
-  var chatUrl = "{% url 'omero_analysis_index' %}";
+  var analysisBase = "{% url 'omero_analysis_index' %}";
   var tokenUrl = "{% url 'omero_analysis_token' %}";
   var attachmentUploadPattern = "{% url 'omero_analysis_upload' 'Image' 1 %}";
   var typeMap = {
@@ -111,8 +111,8 @@ $(function () {
   }
 
   function analysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds) {
-    var url = chatUrl + "?type=" + encodeURIComponent(type) +
-      "&id=" + encodeURIComponent(id) + "&tab=chat";
+    var url = analysisBase + "?type=" + encodeURIComponent(type) +
+      "&id=" + encodeURIComponent(id);
     if (workspaceAnnotationId) {
       url += "&workspace_annotation=" + encodeURIComponent(workspaceAnnotationId);
     } else {
@@ -136,7 +136,7 @@ $(function () {
     var countBadge = root.querySelector(".oa-selected-count");
     var libraryBadge = root.querySelector(".oa-library-selected-count");
     var status = root.querySelector(".oa-panel-status");
-    var button = root.querySelector(".oa-open-chat");
+    var button = root.querySelector(".oa-open-analysis");
     if (countBadge) countBadge.textContent = count + " selected";
     if (libraryBadge) libraryBadge.textContent = libraryCount + " selected";
     if (status) {
@@ -144,11 +144,11 @@ $(function () {
         ? "The saved workspace will be restored locally and its OMERO inputs synchronized."
         : count
         ? count + " attachment" + (count === 1 ? "" : "s") +
-          " will be downloaded before chat unlocks."
+          " will be downloaded into the Analysis Workspace."
         : libraryCount
         ? libraryCount + " reusable item" + (libraryCount === 1 ? "" : "s") +
           " will be imported into Analysis automatically."
-        : "No OMERO data selected; you can add local files after opening the chat.";
+        : "No OMERO data selected; you can add local files after opening Analysis.";
     }
     if (button) {
       button.innerHTML = workspaceId
@@ -226,7 +226,7 @@ $(function () {
     if (root) filterLibrary(root, event.currentTarget.value);
   });
 
-  panel.on("click", ".oa-open-chat", function (event) {
+  panel.on("click", ".oa-open-analysis", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (!root) return;
     window.open(

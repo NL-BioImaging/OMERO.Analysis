@@ -33,7 +33,7 @@ const source = {
 };
 
 const catalog: WorkflowSkillCatalog = {
-  schema: "nl.bioimaging.omero-workflow-skills.v1",
+  schema: "nl.bioimaging.biomero-workflow-skills.v1",
   generated_at: "",
   consumer: "omero-analysis",
   config_hash: "config",

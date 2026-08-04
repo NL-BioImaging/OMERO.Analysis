@@ -10,7 +10,9 @@ export function ExecutionCard({
   files,
   onSave,
   onRerun,
-  saveDisabled = false
+  saveDisabled = false,
+  showSaveAction = true,
+  showRerunAction = true
 }: {
   execution: ExecutionRecord;
   relatedExecutions?: ExecutionRecord[];
@@ -18,6 +20,8 @@ export function ExecutionCard({
   onSave: () => void;
   onRerun: () => void;
   saveDisabled?: boolean;
+  showSaveAction?: boolean;
+  showRerunAction?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const outputs = execution.outputFileIds
@@ -38,7 +42,7 @@ export function ExecutionCard({
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       ><ActionIcon name={expanded ? "clear" : "run"} />{expanded ? "Collapse" : "Show details"}</Button>
-      {showReusableActions && (
+      {showReusableActions && showSaveAction && (
         <Button
           disabled={saveDisabled}
           title={saveDisabled ? "Wait until the assistant has finished its summary" : undefined}
@@ -47,7 +51,7 @@ export function ExecutionCard({
           <ActionIcon name="save" />Save as method
         </Button>
       )}
-      {showReusableActions && <Button onClick={onRerun}><ActionIcon name="reset" />Rerun</Button>}
+      {showReusableActions && showRerunAction && <Button onClick={onRerun}><ActionIcon name="reset" />Rerun</Button>}
       <small>{execution.codeHash.slice(0, 12)} · {execution.runtimeVersion}</small>
     </div>
   );

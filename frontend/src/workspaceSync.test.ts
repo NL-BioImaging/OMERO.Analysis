@@ -76,6 +76,7 @@ function workspace(): AnalysisWorkspace {
       createdAt: "2026-07-29T00:00:00Z"
     }],
     executions: [],
+    runs: [],
     methods: [],
     pipelines: [],
     notebooks: [],

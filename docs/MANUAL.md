@@ -8,12 +8,12 @@ not sent to the configured AI provider.
 ## Getting started
 
 1. Select an Image, Dataset, Plate, or Screen in OMERO.web.
-2. Choose **Analysis Chat** or **Analysis Notebook** in the center-panel menu.
+2. Choose **Analysis** in the center-panel menu.
 3. Select the data attachments needed for the analysis.
 4. Open Analysis. Inputs appear in the Workspace **Input** folder.
 
-Use **Analysis Chat** for questions and AI-assisted analysis. Use
-**Analysis Notebook** to open or run an existing Python nbformat-4 notebook.
+Analysis opens on **Home**. Choose **Run a Method**, **Run a Pipeline**,
+**Open a Notebook**, or **Create a Method with Chat**.
 
 ## Workspace structure
 
@@ -27,11 +27,13 @@ Use **Analysis Chat** for questions and AI-assisted analysis. Use
 The Artifact Inspector can inspect every selectable Workspace item. The left
 and right panes are resizable.
 
-## Chat analysis
+## Home and Method-authoring Chat
 
-Choose a Chat, enter a question, and wait until the status returns to **Ready**.
-The assistant can inspect supported data locally, generate Python, run it in
-the isolated browser runtime, and summarize the result.
+Home is the default landing page and keeps reusable analyses prominent. Chat
+is the Method-authoring assistant: it can inspect supported data locally,
+generate and test Python in the isolated browser runtime, and help save the
+result as a reusable Method. Saved Methods and Pipelines are run from Home,
+Explorer, the Artifact Inspector, or **Methods & Pipelines**, not from Chat.
 
 Use **Attach files** or **File URL** beside the composer to add up to ten
 Chat-wide attachments of at most 25 MiB each. Supported formats are UTF-8 TXT,
@@ -108,8 +110,11 @@ The Methods folder also shows **New** while the editor is enabled. It creates
 Editor. Python uses semantic syntax colors, and SQL in a triple-quoted `sql`,
 `query`, or `statement` assignment is highlighted as SQL.
 
-Running a Method or Pipeline switches to Chat. Results are placed in the
-corresponding results folder.
+Running a Method or Pipeline opens **Methods & Pipelines**. Each direct run has
+durable status, resolved bindings, execution details, and generated files. A
+Pipeline additionally shows the status of every ordered step. Direct runs do
+not add synthetic prompts or results to Chat, and deleting a Chat does not
+delete their run history or outputs.
 
 ## Notebooks
 
@@ -172,13 +177,12 @@ Use **Reuse from +AnalysisWorkspaces** to browse synchronized Datasets and copy
 Methods, Pipelines, or Notebooks into the current browser Workspace. Imports
 are independent copies and do not modify the library original.
 
-The Analysis Notebook OMERO panel shows only reusable Notebooks. The Analysis
-Chat panel can show Methods, Pipelines, and Notebooks.
+The single Analysis OMERO panel can import Methods, Pipelines, and Notebooks.
 
 ## Analysis Settings
 
 **Enable artifact editor** is off by default. Enabling it adds the **Editor**
-tab beside Chat and Notebook and adds **Edit** to Method, Pipeline, and Notebook
+tab beside the standard Analysis tabs and adds **Edit** to Method, Pipeline, and Notebook
 menus and Artifact Inspector views. Methods save as a new version, Pipelines
 increment their version, and Notebooks update in place. **Save and Run** always
 saves before delegating to the existing runner. Use Ctrl+S or Cmd+S to save;

@@ -170,7 +170,7 @@ describe("BIOMERO measurement-skill adapter", () => {
           content: "# Instructions"
         }]
       } : {
-        schema: "nl.bioimaging.omero-workflow-skills.v1",
+        schema: "nl.bioimaging.biomero-workflow-skills.v1",
         generated_at: "",
         consumer: "omero-analysis",
         config_hash: "config",
@@ -206,7 +206,7 @@ describe("BIOMERO measurement-skill adapter", () => {
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify({
-        schema: "nl.bioimaging.omero-workflow-skills.v1",
+        schema: "nl.bioimaging.biomero-workflow-skills.v1",
         generated_at: "",
         consumer: "omero-analysis",
         config_hash: "config",

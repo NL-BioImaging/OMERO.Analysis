@@ -55,6 +55,12 @@ async function workspace(): Promise<AnalysisWorkspace> {
       inputHashes: files.slice(0, 2).map((file) => file.sha256), runtimeVersion: "runtime",
       model: "gpt-5", evidenceId: "evidence", createdAt
     }],
+    runs: [{
+      id: "run", workspaceId: "workspace", kind: "method", artifactId: "method",
+      artifactName: "analysis.py", artifactVersion: 1, status: "success",
+      executionIds: ["execution"], resolvedBindings: { "input.duckdb": "measurements.duckdb" },
+      steps: [], createdAt, completedAt: createdAt
+    }],
     methods: [],
     pipelines: [],
     notebooks: [],
@@ -98,6 +104,8 @@ describe("workspace archive", () => {
     expect(restored.files.find((file) => file.source === "local")?.data).toBeInstanceOf(ArrayBuffer);
     expect(restored.evidence).toHaveLength(1);
     expect(restored.executions[0].evidenceId).toBe(restored.evidence[0].id);
+    expect(restored.runs).toHaveLength(1);
+    expect(restored.runs[0].executionIds).toEqual([restored.executions[0].id]);
 
     const rebound = await importWorkspace(archive.data.buffer as ArrayBuffer, {
       object_type: "Screen",
@@ -143,6 +151,23 @@ describe("workspace archive", () => {
     const attachment = restored.files.find((file) => file.role === "chat-attachment");
     expect(attachment?.data).toBeInstanceOf(ArrayBuffer);
     expect(attachment?.chatId).toBe(restored.chats[0].id);
+  });
+
+  it("imports v1 archives as legacy Chat-owned history", async () => {
+    const source = await workspace();
+    const entries = unzipSync(exportWorkspace(source, 1024 * 1024).data);
+    const manifest = JSON.parse(strFromU8(entries["workspace.json"]));
+    manifest.version = 1;
+    delete manifest.runs;
+    const encoded = strToU8(JSON.stringify(manifest));
+    const ArchiveUint8Array = entries["workspace.json"].constructor as Uint8ArrayConstructor;
+    const replacement = new ArchiveUint8Array(encoded.byteLength);
+    replacement.set(encoded);
+    entries["workspace.json"] = replacement;
+    const restored = await importWorkspace(asArrayBuffer(zipSync(entries)));
+    expect(restored.runs).toEqual([]);
+    expect(restored.executions[0].chatId).toBe(restored.chats[0].id);
+    expect(restored.executions[0].runId).toBeUndefined();
   });
 
   it("rejects legacy Analysis Chat workspace snapshots", async () => {

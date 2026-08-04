@@ -21,7 +21,7 @@ class FakeCatalog:
         assert consumer == "omero-analysis"
         return FakePayload(
             {
-                "schema": "nl.bioimaging.omero-workflow-skills.v1",
+                "schema": "nl.bioimaging.biomero-workflow-skills.v1",
                 "consumer": consumer,
                 "workflows": [
                     {

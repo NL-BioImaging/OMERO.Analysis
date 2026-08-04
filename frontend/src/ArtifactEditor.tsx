@@ -22,7 +22,7 @@ import type {
 } from "./types";
 
 type EditorLanguage = "python" | "markdown" | "json" | "text";
-export type EditorOriginTab = "chat" | "notebook" | "settings";
+export type EditorOriginTab = "home" | "runs" | "chat" | "notebook" | "settings";
 
 interface EditorSessionBase {
   id: string;

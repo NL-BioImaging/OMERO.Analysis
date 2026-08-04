@@ -24,6 +24,16 @@ RETIRED = (
         '["Analysis", "omero_analysis/center_plugin.js.html", '
         '"omero_analysis_panel"]',
     ),
+    (
+        "omero.web.ui.center_plugins",
+        '["Analysis Chat", "omero_analysis/center_plugin.js.html", '
+        '"omero_analysis_chat_panel"]',
+    ),
+    (
+        "omero.web.ui.center_plugins",
+        '["Analysis Notebook", "omero_analysis/notebook_center_plugin.js.html", '
+        '"omero_analysis_notebook_panel"]',
+    ),
 )
 
 

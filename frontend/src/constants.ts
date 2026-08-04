@@ -3,7 +3,7 @@ export const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 export const MAX_WORKSPACE_BYTES = 4 * 1024 * 1024 * 1024;
 export const MAX_TOOL_TEXT = 64 * 1024;
 
-export const SYSTEM_PROMPT = `You are the analysis assistant inside OMERO Analysis.
+export const SYSTEM_PROMPT = `You are the Method-authoring assistant inside OMERO Analysis.
 Source files stay in the browser and are never sent to you. Never ask the user to write or run
 notebook code. The host supplies exact input paths, active analysis skills, required references,
 capability contracts, and a current evidence ledger before the first response. Reuse those facts;
@@ -35,13 +35,11 @@ generated-code output, and error text. Never print, preview, encode, or return a
 file. Keep SQL filtering and aggregation inside the database; avoid SELECT * on large tables.
 The UI bounds table previews to 100 rows by 50 columns and textual tool output to 64 KiB.
 
-Successful Python code can be saved by the user as a versioned workspace method. Use
-list_saved_methods to discover these reusable methods, read_saved_method only when its code is
-needed for reasoning, and run_saved_method when an existing method directly answers the request.
-Do not repeatedly regenerate an existing saved method.
-Saved multi-step pipelines are isolated ordered method versions. Use list_saved_pipelines and
-run_saved_pipeline when an approved pipeline matches the user's request; never create or publish
-a pipeline without an explicit user action.
+Successful Python code can be saved by the user as a versioned workspace Method. Use
+list_saved_methods to discover reusable Methods and read_saved_method when its code is needed for
+explanation or improvement. Do not execute saved Methods or Pipelines from Chat; direct the user
+to the Methods & Pipelines view. Focus each analysis turn on producing, testing, explaining, or
+improving reusable Method code. Never create or publish a Pipeline without an explicit user action.
 
 Provider-specific knowledge is provided by administrator-approved, revision-pinned skills. The
 strongest compatible skill and every required reference are already loaded. Use load_skill only
@@ -186,39 +184,9 @@ export const TOOLS = [
   {
     type: "function",
     function: {
-      name: "run_saved_method",
-      description:
-        "Run the current version of a user-approved workspace method locally. " +
-        "When its verified result contains a gallery render contract, the saved PNG gallery is rendered automatically.",
-      parameters: {
-        type: "object",
-        properties: { method_id: { type: "string" } },
-        required: ["method_id"],
-        additionalProperties: false
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
       name: "list_saved_pipelines",
       description: "List user-approved, versioned multi-step pipelines in this workspace.",
       parameters: { type: "object", properties: {}, additionalProperties: false }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "run_saved_pipeline",
-      description:
-        "Run one user-approved pipeline locally with isolated ordered steps. " +
-        "Every render-enabled method step automatically reproduces its PNG output.",
-      parameters: {
-        type: "object",
-        properties: { pipeline_id: { type: "string" } },
-        required: ["pipeline_id"],
-        additionalProperties: false
-      }
     }
   }
 ] as const;

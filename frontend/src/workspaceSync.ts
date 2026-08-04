@@ -53,7 +53,7 @@ function sameResultOrigin(
   left: AnalysisWorkspace["files"][number],
   right: AnalysisWorkspace["files"][number]
 ): boolean {
-  const fields = ["executionId", "chatId", "methodId", "pipelineId", "notebookId"] as const;
+  const fields = ["executionId", "runId", "chatId", "methodId", "pipelineId", "notebookId"] as const;
   return fields.some((field) => Boolean(left[field]) && left[field] === right[field]);
 }
 
@@ -177,6 +177,7 @@ export async function buildWorkspaceSyncPayload(
       fileId: file.id,
       name: file.name,
       logicalPath: file.logicalPath,
+      runId: file.runId || null,
       chatId: file.chatId || null,
       methodId: file.methodId || null,
       pipelineId: file.pipelineId || null,

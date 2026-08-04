@@ -36,13 +36,14 @@ continues to route `/omero_analysis/` through OMERO.web.
 2. Confirm the top navigation contains one **Analysis** link and no
    **JupyterLab** link.
 3. Select an Image, Dataset, Plate, or Screen and confirm the center panel
-   contains **Analysis Chat** and **Analysis Notebook**, with no **Jupyter**
-   entry.
-4. Open Chat, select data, and confirm the composer stays disabled until every
+   contains one **Analysis** entry, with no separate Chat, Notebook, or
+   Jupyter entry.
+4. Open Analysis, select data, and confirm the Home landing page appears.
+5. Open Chat and confirm the composer stays disabled until every
    attachment is downloaded.
-5. Open Notebook, upload a Python nbformat-4 notebook, and confirm it is
+6. Open Notebook, upload a Python nbformat-4 notebook, and confirm it is
    attached before the run-only tab opens.
-6. Confirm Settings lists the optional BIOMERO measurement provider and
+7. Confirm Settings lists the optional BIOMERO measurement provider and
    ZarrViewer provider independently when installed.
 
 For temporary local installation:

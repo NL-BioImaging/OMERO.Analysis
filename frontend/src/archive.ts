@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type {
   AnalysisWorkspace,
+  AnalysisRunRecord,
   ArtifactRecord,
   ChatRecord,
   EvidenceRecord,
@@ -17,17 +18,18 @@ import { sha256 } from "./storage";
 import { chatTranscriptMarkdown } from "./chatTranscript";
 
 export const WORKSPACE_FORMAT = "nl.bioimaging.analysis.workspace.v1";
-export const WORKSPACE_FORMAT_VERSION = 1;
+export const WORKSPACE_FORMAT_VERSION = 2;
 export const MAX_ARCHIVE_ENTRIES = 10_000;
 export const MAX_ARCHIVE_UNCOMPRESSED = 512 * 1024 * 1024;
 
 export interface WorkspaceManifest {
   format: typeof WORKSPACE_FORMAT;
-  version: typeof WORKSPACE_FORMAT_VERSION;
+  version: 1 | typeof WORKSPACE_FORMAT_VERSION;
   exportedAt: string;
   workspace: WorkspaceRecord;
   chats: ChatRecord[];
   executions: ExecutionRecord[];
+  runs: AnalysisRunRecord[];
   methods: MethodRecord[];
   pipelines: PipelineRecord[];
   notebooks: NotebookRecord[];
@@ -71,7 +73,9 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
     if (file.source === "omero" || !file.data) return metadata;
     const owner = file.notebookId
       ? `Notebook/${safeSegment(file.notebookId)}`
-      : `Chat/${safeSegment(file.chatId || "unassigned")}`;
+      : file.runId
+        ? `Run/${safeSegment(file.runId)}`
+        : `Chat/${safeSegment(file.chatId || "unassigned")}`;
     const archivePath = file.role === "chat-attachment"
       ? `Chat/${safeSegment(file.chatId || "unassigned")}/Attachments/${safeSegment(file.id)}--${safeSegment(file.name)}`
       : file.source === "local"
@@ -88,6 +92,7 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
     workspace: { ...workspace.workspace },
     chats: workspace.chats,
     executions: workspace.executions,
+    runs: workspace.runs,
     methods: workspace.methods,
     pipelines: workspace.pipelines,
     notebooks: workspace.notebooks,
@@ -185,7 +190,7 @@ function validateArchiveDirectory(data: Uint8Array): void {
 function requireManifest(value: unknown): WorkspaceManifest {
   if (!value || typeof value !== "object") throw new Error("Workspace manifest must be an object");
   const raw = value as Partial<WorkspaceManifest>;
-  if (raw.format !== WORKSPACE_FORMAT || raw.version !== WORKSPACE_FORMAT_VERSION) {
+  if (raw.format !== WORKSPACE_FORMAT || (raw.version !== 1 && raw.version !== WORKSPACE_FORMAT_VERSION)) {
     throw new Error("Unsupported OMERO Analysis Workspace format");
   }
   if (
@@ -197,6 +202,7 @@ function requireManifest(value: unknown): WorkspaceManifest {
   return {
     ...raw,
     executions: Array.isArray(raw.executions) ? raw.executions : [],
+    runs: Array.isArray(raw.runs) ? raw.runs : [],
     artifacts: Array.isArray(raw.artifacts) ? raw.artifacts : [],
     audits: Array.isArray(raw.audits) ? raw.audits : [],
     evidence: Array.isArray(raw.evidence) ? raw.evidence : [],
@@ -238,6 +244,7 @@ export async function importWorkspace(
   const now = new Date().toISOString();
   const chatIds = new Map(manifest.chats.map((item) => [item.id, crypto.randomUUID()]));
   const executionIds = new Map(manifest.executions.map((item) => [item.id, crypto.randomUUID()]));
+  const runIds = new Map(manifest.runs.map((item) => [item.id, crypto.randomUUID()]));
   const evidenceIds = new Map(manifest.evidence.map((item) => [item.id, crypto.randomUUID()]));
   const fileIds = new Map(manifest.files.map((item) => [item.id, crypto.randomUUID()]));
   const artifactIds = new Map(manifest.artifacts.map((item) => [item.id, crypto.randomUUID()]));
@@ -276,6 +283,7 @@ export async function importWorkspace(
       id: fileIds.get(metadata.id)!,
       workspaceId,
       chatId: metadata.chatId ? chatIds.get(metadata.chatId) : undefined,
+      runId: metadata.runId ? runIds.get(metadata.runId) : undefined,
       notebookId: metadata.notebookId ? notebookIds.get(metadata.notebookId) : undefined,
       executionId: metadata.executionId ? executionIds.get(metadata.executionId) : undefined,
       data: fileData,
@@ -291,10 +299,30 @@ export async function importWorkspace(
     ...execution,
     id: executionIds.get(execution.id)!,
     workspaceId,
-    chatId: chatIds.get(execution.chatId)!,
+    chatId: execution.chatId ? chatIds.get(execution.chatId) : undefined,
+    runId: execution.runId ? runIds.get(execution.runId) : undefined,
     outputFileIds: execution.outputFileIds.map((id) => fileIds.get(id)).filter(Boolean) as string[],
     reusedFrom: execution.reusedFrom ? executionIds.get(execution.reusedFrom) : undefined,
     evidenceId: execution.evidenceId ? evidenceIds.get(execution.evidenceId) : undefined
+  }));
+  const runs = manifest.runs.map((run) => ({
+    ...run,
+    id: runIds.get(run.id)!,
+    workspaceId,
+    artifactId: run.kind === "method"
+      ? methodIds.get(run.artifactId) || run.artifactId
+      : pipelineIds.get(run.artifactId) || run.artifactId,
+    executionIds: run.executionIds
+      .map((executionId) => executionIds.get(executionId))
+      .filter(Boolean) as string[],
+    steps: run.steps.map((step) => ({
+      ...step,
+      stepId: crypto.randomUUID(),
+      methodId: methodIds.get(step.methodId) || step.methodId,
+      executionIds: step.executionIds
+        .map((executionId) => executionIds.get(executionId))
+        .filter(Boolean) as string[]
+    }))
   }));
   const methods = manifest.methods.map((method) => ({
     ...method,
@@ -354,7 +382,8 @@ export async function importWorkspace(
     ...artifact,
     id: artifactIds.get(artifact.id)!,
     workspaceId,
-    chatId: chatIds.get(artifact.chatId) || activeChatId,
+    chatId: artifact.chatId ? chatIds.get(artifact.chatId) || activeChatId : undefined,
+    runId: artifact.runId ? runIds.get(artifact.runId) : undefined,
     executionId: artifact.executionId ? executionIds.get(artifact.executionId) : undefined,
     fileId: artifact.fileId ? fileIds.get(artifact.fileId) : undefined,
     viewer: artifact.viewer ? { ...artifact.viewer, viewerUrl: "" } : undefined
@@ -363,7 +392,8 @@ export async function importWorkspace(
     ...item,
     id: evidenceIds.get(item.id)!,
     workspaceId,
-    chatId: chatIds.get(item.chatId) || activeChatId,
+    chatId: item.chatId ? chatIds.get(item.chatId) || activeChatId : undefined,
+    runId: item.runId ? runIds.get(item.runId) : undefined,
     executionId: item.executionId ? executionIds.get(item.executionId) : undefined
   }));
   return {
@@ -371,6 +401,7 @@ export async function importWorkspace(
     chats,
     files,
     executions,
+    runs,
     methods,
     pipelines,
     notebooks,

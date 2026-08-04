@@ -11,16 +11,18 @@ import type {
   ArtifactRecord,
   OutboundPayloadAudit,
   WorkspaceFile,
-  EvidenceRecord
+  EvidenceRecord,
+  AnalysisRunRecord
 } from "./types";
 
 const DB_NAME = "omero-analysis-workspaces";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORES = [
   "workspaces",
   "chats",
   "files",
   "executions",
+  "runs",
   "methods",
   "pipelines",
   "notebooks",
@@ -149,6 +151,8 @@ export const saveFile = (value: WorkspaceFile) =>
   serializedWrite(() => putEntity("files", value));
 export const saveExecution = (value: ExecutionRecord) =>
   serializedWrite(() => putEntity("executions", value));
+export const saveRun = (value: AnalysisRunRecord) =>
+  serializedWrite(() => putEntity("runs", value));
 export const saveMethod = (value: MethodRecord) =>
   serializedWrite(() => putEntity("methods", value));
 export const savePipeline = (value: PipelineRecord) =>
@@ -293,6 +297,7 @@ export async function replaceWorkspace(workspace: AnalysisWorkspace): Promise<An
       chats: workspace.chats,
       files: workspace.files,
       executions: workspace.executions,
+      runs: workspace.runs,
       methods: workspace.methods,
       pipelines: workspace.pipelines,
       notebooks: workspace.notebooks,
@@ -341,6 +346,7 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
       chats: [chat],
       files: [],
       executions: [],
+      runs: [],
       methods: [],
       pipelines: [],
       notebooks: [],
@@ -350,10 +356,11 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
     };
     return replaceWorkspace(workspace);
   }
-  const [chats, files, executions, methods, pipelines, notebooks, artifacts, audits, evidence] = await Promise.all([
+  const [chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence] = await Promise.all([
     entitiesForWorkspace<ChatRecord>("chats", workspaceRecord.id),
     entitiesForWorkspace<WorkspaceFile>("files", workspaceRecord.id),
     entitiesForWorkspace<ExecutionRecord>("executions", workspaceRecord.id),
+    entitiesForWorkspace<AnalysisRunRecord>("runs", workspaceRecord.id),
     entitiesForWorkspace<MethodRecord>("methods", workspaceRecord.id),
     entitiesForWorkspace<PipelineRecord>("pipelines", workspaceRecord.id),
     entitiesForWorkspace<NotebookRecord>("notebooks", workspaceRecord.id),
@@ -369,6 +376,7 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
       chats: [chat],
       files,
       executions,
+      runs,
       methods,
       pipelines,
       notebooks,
@@ -379,7 +387,7 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
     workspaceRecord = replaced.workspace;
     chats.push(chat);
   }
-  return { workspace: workspaceRecord, chats, files, executions, methods, pipelines, notebooks, artifacts, audits, evidence };
+  return { workspace: workspaceRecord, chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence };
 }
 
 export async function listContextWorkspaces(context: OmeroContext | null): Promise<WorkspaceRecord[]> {
@@ -399,10 +407,11 @@ export async function loadWorkspace(workspaceId: string): Promise<AnalysisWorksp
   const tx = db.transaction("workspaces", "readonly");
   const workspaceRecord = await requestValue(tx.objectStore("workspaces").get(workspaceId)) as WorkspaceRecord | undefined;
   if (!workspaceRecord) return undefined;
-  const [chats, files, executions, methods, pipelines, notebooks, artifacts, audits, evidence] = await Promise.all([
+  const [chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence] = await Promise.all([
     entitiesForWorkspace<ChatRecord>("chats", workspaceRecord.id),
     entitiesForWorkspace<WorkspaceFile>("files", workspaceRecord.id),
     entitiesForWorkspace<ExecutionRecord>("executions", workspaceRecord.id),
+    entitiesForWorkspace<AnalysisRunRecord>("runs", workspaceRecord.id),
     entitiesForWorkspace<MethodRecord>("methods", workspaceRecord.id),
     entitiesForWorkspace<PipelineRecord>("pipelines", workspaceRecord.id),
     entitiesForWorkspace<NotebookRecord>("notebooks", workspaceRecord.id),
@@ -410,7 +419,7 @@ export async function loadWorkspace(workspaceId: string): Promise<AnalysisWorksp
     entitiesForWorkspace<OutboundPayloadAudit>("audits", workspaceRecord.id),
     entitiesForWorkspace<EvidenceRecord>("evidence", workspaceRecord.id)
   ]);
-  return { workspace: workspaceRecord, chats, files, executions, methods, pipelines, notebooks, artifacts, audits, evidence };
+  return { workspace: workspaceRecord, chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence };
 }
 
 export async function storageEstimate(): Promise<{ usage: number; quota: number }> {

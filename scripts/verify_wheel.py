@@ -23,8 +23,6 @@ REQUIRED = {
     "omero_analysis/templates/omero_analysis/panel.html",
     "omero_analysis/templates/omero_analysis/runtime_sandbox.html",
     "omero_analysis/templates/omero_analysis/center_plugin.js.html",
-    "omero_analysis/templates/omero_analysis/notebook_center_plugin.js.html",
-    "omero_analysis/templates/omero_analysis/notebook_panel.html",
 }
 PACKAGES = {
     "duckdb",

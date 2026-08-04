@@ -50,6 +50,7 @@ const workspace = {
     createdAt: "2026-07-26T00:00:00Z"
   }],
   executions: [],
+  runs: [],
   methods: [],
   pipelines: [],
   notebooks: [],

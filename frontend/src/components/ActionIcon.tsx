@@ -7,6 +7,7 @@ import {
   Edit,
   FloppyDisk,
   FlowBranch,
+  Home,
   Import,
   Manual,
   Paperclip,
@@ -31,6 +32,7 @@ export type ActionIconName =
   | "download"
   | "edit"
   | "import"
+  | "home"
   | "notebook"
   | "pipeline"
   | "reset"
@@ -52,6 +54,7 @@ export function ActionIcon({ name }: { name: ActionIconName }) {
     download: Download,
     edit: Edit,
     import: Import,
+    home: Home,
     notebook: Manual,
     pipeline: FlowBranch,
     reset: Reset,

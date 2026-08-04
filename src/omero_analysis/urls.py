@@ -24,11 +24,6 @@ urlpatterns = [
         views.panel,
         name="omero_analysis_panel",
     ),
-    re_path(
-        r"^notebook-panel/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
-        views.notebook_panel,
-        name="omero_analysis_notebook_panel",
-    ),
     re_path(r"^api/context-token/$", views.context_token, name="omero_analysis_token"),
     re_path(
         r"^api/context/(?P<object_type>\w+)/(?P<object_id>\d+)/$",

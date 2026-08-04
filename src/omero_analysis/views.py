@@ -269,31 +269,11 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
     )
 
 
-@login_required(setGroupContext=True)
-def notebook_panel(request, object_type, object_id, conn=None, **kwargs):
-    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
-    context = object_context(object_type, object_id, obj, conn)
-    context["analysis_library_datasets"] = _panel_library_datasets(
-        conn, obj, {"notebook"}
-    )
-    context["analysis_library_step"] = "3"
-    context["analysis_library_notebooks_only"] = True
-    return render(
-        request,
-        "omero_analysis/notebook_panel.html",
-        {"context": context},
-    )
-
-
 def _workflow_skill_catalog():
     try:
         from biomero_workflow_skills import WorkflowSkillCatalog
     except ImportError:
-        try:
-            # Temporary compatibility with the pre-rename provider.
-            from omero_workflow_skills import WorkflowSkillCatalog
-        except ImportError:
-            return None
+        return None
 
     return WorkflowSkillCatalog(
         package_url=_workflow_skill_package_url
@@ -351,7 +331,7 @@ def workflow_skills(request, conn=None, **kwargs):
         if catalog is None:
             return JsonResponse(
                 {
-                    "schema": "nl.bioimaging.omero-workflow-skills.v1",
+                    "schema": "nl.bioimaging.biomero-workflow-skills.v1",
                     "generated_at": "",
                     "consumer": WORKFLOW_SKILLS_CONSUMER,
                     "config_hash": "",

@@ -10,7 +10,7 @@ describe("generic AI provider", () => {
     expect(TEMPERATURE).toBe(1);
   });
 
-  it("exposes bounded analysis and user-approved saved-method tools", () => {
+  it("exposes bounded Method-authoring tools without saved-artifact runners", () => {
     expect(TOOLS.map((tool) => tool.function.name)).toEqual([
       "discover_skills",
       "load_skill",
@@ -20,10 +20,9 @@ describe("generic AI provider", () => {
       "reset_python",
       "list_saved_methods",
       "read_saved_method",
-      "run_saved_method",
-      "list_saved_pipelines",
-      "run_saved_pipeline"
+      "list_saved_pipelines"
     ]);
+    expect(SYSTEM_PROMPT).toContain("Do not execute saved Methods or Pipelines from Chat");
   });
 
   it("supports blocking user choices without exposing private reasoning", () => {

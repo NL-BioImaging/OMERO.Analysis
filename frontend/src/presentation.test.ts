@@ -36,7 +36,7 @@ describe("browser-local workspace selection", () => {
 
 describe("measurement-skill tooltip", () => {
   const catalog = {
-    schema: "nl.bioimaging.omero-workflow-skills.v1",
+    schema: "nl.bioimaging.biomero-workflow-skills.v1",
     consumer: "omero-analysis",
     generated_at: "2026-07-27T00:00:00Z",
     config_hash: "config",

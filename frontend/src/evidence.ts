@@ -46,12 +46,15 @@ export function upsertBoundedEvidence(
   record: EvidenceRecord,
 ): EvidenceRecord[] {
   const without = records.filter((item) => item.id !== record.id);
-  const sameChat = [...without.filter((item) => item.chatId === record.chatId), record]
+  const sameOwner = (item: EvidenceRecord) => record.chatId
+    ? item.chatId === record.chatId
+    : item.runId === record.runId;
+  const sameChat = [...without.filter(sameOwner), record]
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     .slice(-MAX_EVIDENCE_PER_CHAT);
   const keep = new Set(sameChat.map((item) => item.id));
   return [
-    ...without.filter((item) => item.chatId !== record.chatId || keep.has(item.id)),
+    ...without.filter((item) => !sameOwner(item) || keep.has(item.id)),
     ...sameChat.filter((item) => !without.some((prior) => prior.id === item.id)),
   ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }

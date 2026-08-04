@@ -71,14 +71,33 @@ function Build-Wheel {
     return $wheel
 }
 
+function Invoke-OptionalPipUninstall([string] $Distribution) {
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        docker exec --user root $Container $ContainerPython -m pip uninstall -y $Distribution *> $null
+        $status = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($status -ne 0) { throw "Failed to uninstall optional distribution $Distribution." }
+}
+
 function Restart-Web([bool] $ExpectActive) {
     if ($NoRestart) { Write-Warning "Restart deferred; the change is not active."; return }
     docker restart $Container | Out-Null
     $deadline = (Get-Date).AddSeconds(90)
     do {
         Start-Sleep -Seconds 2
-        docker exec $Container $ContainerOmero web status *> $null
-        if ($LASTEXITCODE -eq 0) {
+        $previousPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            docker exec $Container $ContainerOmero web status *> $null
+            $webStatus = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previousPreference
+        }
+        if ($webStatus -eq 0) {
             $apps = docker exec $Container $ContainerOmero config get omero.web.apps 2>$null
             if (($apps -match "omero_analysis") -eq $ExpectActive) { return }
         }
@@ -93,8 +112,8 @@ function Show-Status {
     Write-Host $(if ($LASTEXITCODE -eq 0) { "Catalog: installed ($catalogVersion)" } else { "Catalog: not installed" })
     $apps = docker exec $Container $ContainerOmero config get omero.web.apps 2>$null
     Write-Host $(if ($apps -match "omero_analysis") { "OMERO.web: app active" } else { "OMERO.web: app inactive" })
-    $jupyter = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(m.version('$JupyterPackage'))" 2>$null
-    Write-Host $(if ($LASTEXITCODE -eq 0 -or $apps -match "omero_jupyterlite") {
+    $jupyter = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(next((d.version for d in m.distributions() if (d.metadata.get('Name') or '').lower() == '$JupyterPackage'), ''))"
+    Write-Host $(if ($jupyter -or $apps -match "omero_jupyterlite") {
         "JupyterLite: removal incomplete"
     } else {
         "JupyterLite: removed"
@@ -117,22 +136,22 @@ switch ($Action) {
 import importlib.metadata as m
 from packaging.version import Version
 try:
-    installed = Version(m.version("biomero-workflow-skills"))
+    installed = Version(m.version('biomero-workflow-skills'))
 except m.PackageNotFoundError:
     raise SystemExit(0)
-if not (Version("0.3") <= installed < Version("0.4")):
-    raise SystemExit(f"Incompatible installed biomero-workflow-skills {installed}")
+if not (Version('0.3') <= installed < Version('0.4')):
+    raise SystemExit(f'Incompatible installed biomero-workflow-skills {installed}')
 "@
         docker exec $Container $ContainerPython -c $compatibility
         if ($LASTEXITCODE -ne 0) { throw "The installed measurement-skill provider is incompatible; the container was not changed." }
         docker exec --user root $Container rm -f $LegacyContainerConfig
         docker exec --user root $Container rm -rf $LegacyContainerStatic
-        docker exec --user root $Container $ContainerPython -m pip uninstall -y $LegacyPackageName *> $null
+        Invoke-OptionalPipUninstall $LegacyPackageName
         docker exec --user root $Container rm -f $JupyterConfig
         docker exec --user root $Container rm -rf $JupyterStatic
-        docker exec --user root $Container $ContainerPython -m pip uninstall -y $JupyterPackage *> $null
-        docker exec $Container $ContainerPython -c "import importlib.metadata as m; m.distribution('$LegacyPackageName')" *> $null
-        if ($LASTEXITCODE -eq 0) {
+        Invoke-OptionalPipUninstall $JupyterPackage
+        $legacyInstalled = docker exec $Container $ContainerPython -c "import importlib.metadata as m; print(any((d.metadata.get('Name') or '').lower() == '$LegacyPackageName' for d in m.distributions()))"
+        if ($legacyInstalled.Trim() -eq "True") {
             throw "The legacy $LegacyPackageName distribution is still installed; the container was not changed further."
         }
         $remote = "/tmp/omero-analysis-wheelhouse"

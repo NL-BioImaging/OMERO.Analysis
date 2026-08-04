@@ -19,6 +19,8 @@ def test_center_panel_supports_expected_omero_objects():
     assert "ACTIVE_OBJECT" not in source
     assert "omero_analysis/panel.css" in source
     assert 'panel.addClass("omero-analysis-center")' in source
+    assert '$("#omero_analysis_panel")' in source
+    assert "tab=chat" not in source
 
     panel = (
         ROOT / "src/omero_analysis/templates/omero_analysis/panel.html"
@@ -30,6 +32,14 @@ def test_center_panel_supports_expected_omero_objects():
     assert "analysis_library_tree.html" in panel
     assert "Upload Attachment" in panel
     assert "oa-attachment-upload-input" in panel
+
+    deployment = (ROOT / "docker/90-omero-analysis.omero").read_text(
+        encoding="utf-8"
+    )
+    assert deployment.count("omero.web.ui.center_plugins") == 1
+    assert '["Analysis", "omero_analysis/center_plugin.js.html", "omero_analysis_panel"]' in deployment
+    assert "Analysis Chat" not in deployment
+    assert "Analysis Notebook" not in deployment
 
 
 def test_combined_shell_includes_notebook_runtime_contract():
@@ -45,20 +55,6 @@ def test_combined_shell_includes_notebook_runtime_contract():
     assert "{% load analysis_assets %}" in source
     assert "{% analysis_static 'omero_analysis/app.js' %}" in source
     assert "?v=0.10.0" not in source
-
-    notebook_panel = (
-        ROOT / "src/omero_analysis/templates/omero_analysis/notebook_panel.html"
-    ).read_text(encoding="utf-8")
-    assert "Select data attachments" in notebook_panel
-    assert "Use attached Notebooks" in notebook_panel
-    assert "oa-notebook-upload" in notebook_panel
-    assert "Upload Attachment" in notebook_panel
-    assert "oa-attachment-upload-input" in notebook_panel
-    assert "context.notebooks" in notebook_panel
-    assert "analysis_library_tree.html" in notebook_panel
-    assert notebook_panel.index("Select data attachments") < notebook_panel.index(
-        "Use attached Notebooks"
-    ) < notebook_panel.index("analysis_library_tree.html")
 
     library_tree = (
         ROOT

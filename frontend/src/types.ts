@@ -100,7 +100,7 @@ export interface WorkflowSkillEntry {
 }
 
 export interface WorkflowSkillCatalog {
-  schema: "nl.bioimaging.omero-workflow-skills.v1";
+  schema: "nl.bioimaging.biomero-workflow-skills.v1";
   generated_at: string;
   consumer: string;
   config_hash: string;
@@ -213,6 +213,7 @@ export interface WorkspaceFile {
   id: string;
   workspaceId: string;
   chatId?: string;
+  runId?: string;
   methodId?: string;
   pipelineId?: string;
   notebookId?: string;
@@ -302,13 +303,14 @@ export interface AiActivity {
   completedAt?: string;
 }
 
-export type ExecutionPurpose = "inspection" | "analysis" | "method" | "notebook";
+export type ExecutionPurpose = "inspection" | "analysis" | "method" | "pipeline" | "notebook";
 
 export interface ExecutionRecord {
   id: string;
   workspaceId: string;
-  chatId: string;
-  promptId: string;
+  chatId?: string;
+  promptId?: string;
+  runId?: string;
   code: string;
   codeHash: string;
   cacheKey: string;
@@ -341,8 +343,9 @@ export type EvidenceKind =
 export interface EvidenceRecord {
   id: string;
   workspaceId: string;
-  chatId: string;
-  promptId: string;
+  chatId?: string;
+  promptId?: string;
+  runId?: string;
   kind: EvidenceKind;
   status: "success" | "failed";
   sourceHashes: string[];
@@ -422,10 +425,45 @@ export interface PipelineRecord {
   deletedAt?: string;
 }
 
+export type AnalysisRunStatus =
+  | "running"
+  | "success"
+  | "failed"
+  | "incomplete"
+  | "stopped";
+
+export interface AnalysisRunStepRecord {
+  stepId: string;
+  name: string;
+  methodId: string;
+  methodVersion: number;
+  status: AnalysisRunStatus | "pending";
+  executionIds: string[];
+  resolvedBindings: Record<string, string>;
+  error?: string;
+}
+
+export interface AnalysisRunRecord {
+  id: string;
+  workspaceId: string;
+  kind: "method" | "pipeline";
+  artifactId: string;
+  artifactName: string;
+  artifactVersion: number;
+  status: AnalysisRunStatus;
+  executionIds: string[];
+  resolvedBindings: Record<string, string>;
+  steps: AnalysisRunStepRecord[];
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface ArtifactRecord {
   id: string;
   workspaceId: string;
-  chatId: string;
+  chatId?: string;
+  runId?: string;
   executionId?: string;
   fileId?: string;
   kind: "plot" | "table" | "file" | "report" | "viewer-preview";
@@ -569,7 +607,8 @@ export interface ModelPayload {
 export interface OutboundPayloadAudit {
   id: string;
   workspaceId: string;
-  chatId: string;
+  chatId?: string;
+  runId?: string;
   executionId?: string;
   categories: string[];
   byteLength: number;
@@ -677,6 +716,7 @@ export interface AnalysisWorkspace {
   chats: ChatRecord[];
   files: WorkspaceFile[];
   executions: ExecutionRecord[];
+  runs: AnalysisRunRecord[];
   methods: MethodRecord[];
   pipelines: PipelineRecord[];
   notebooks: NotebookRecord[];

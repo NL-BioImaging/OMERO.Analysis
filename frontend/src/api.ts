@@ -602,7 +602,7 @@ function hierarchyFrom(value: unknown): OmeroHierarchy {
 function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
   const body = record(value, "workflow skill catalog");
   if (
-    body.schema !== "nl.bioimaging.omero-workflow-skills.v1" ||
+    body.schema !== "nl.bioimaging.biomero-workflow-skills.v1" ||
     body.consumer !== "omero-analysis" ||
     !Array.isArray(body.workflows) ||
     !Array.isArray(body.diagnostics)
@@ -654,7 +654,7 @@ function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
     throw new Error("Application skills are served by their owning application provider");
   }
   workflowSkillCatalogFrom({
-    schema: "nl.bioimaging.omero-workflow-skills.v1",
+    schema: "nl.bioimaging.biomero-workflow-skills.v1",
     consumer: "omero-analysis",
     workflows: [{
       source: body.source,

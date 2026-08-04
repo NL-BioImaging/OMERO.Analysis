@@ -54,6 +54,7 @@ import {
   newChat,
   saveChat,
   saveExecution,
+  saveRun,
   saveFile,
   saveWorkspaceRecord,
   saveMethod,
@@ -61,6 +62,7 @@ import {
   saveNotebook,
   saveAudit,
   saveArtifact,
+  saveEvidence,
   saveEvidenceLedger,
   replaceWorkspace,
   settingsKey,
@@ -111,7 +113,8 @@ import type {
   SyncStatus,
   AiProfileStore,
   CustomSkill,
-  AnalysisSettingsStatus
+  AnalysisSettingsStatus,
+  AnalysisRunRecord
 } from "./types";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
@@ -346,9 +349,7 @@ function toolActivityLabel(name: string): string {
     reset_python: "Resetting local Python",
     list_saved_methods: "Checking saved Methods",
     read_saved_method: "Reading a saved Method",
-    run_saved_method: "Running a saved Method",
     list_saved_pipelines: "Checking saved Pipelines",
-    run_saved_pipeline: "Running a saved Pipeline",
     open_zarr_view: "Preparing an OME-Zarr view",
     render_zarr_roi: "Rendering an OME-Zarr region",
     render_zarr_gallery: "Rendering an OME-Zarr gallery",
@@ -439,6 +440,18 @@ interface ExecutionOrigin {
   pipelineId?: string;
 }
 
+type ExecutionContext =
+  | { kind: "chat"; chatId: string; promptId: string }
+  | { kind: "run"; runId: string };
+
+function executionOwner(context: ExecutionContext) {
+  return context.kind === "chat"
+    ? { chatId: context.chatId, promptId: context.promptId }
+    : { runId: context.runId };
+}
+
+type AppTab = "home" | "runs" | "chat" | "notebook" | "editor" | "settings";
+
 interface VisibleZarrSource {
   id: string;
   name: string;
@@ -483,8 +496,9 @@ export default function App() {
   );
   const dialogs = useDialogs();
   const initialTab = new URLSearchParams(window.location.search).get("tab");
-  const [activeTab, setActiveTabState] = useState<"chat" | "notebook" | "editor" | "settings">(
-    initialTab === "notebook" || initialTab === "editor" || initialTab === "settings" ? initialTab : "chat"
+  const [activeTab, setActiveTabState] = useState<AppTab>(
+    initialTab === "runs" || initialTab === "chat" || initialTab === "notebook" ||
+      initialTab === "editor" || initialTab === "settings" ? initialTab : "home"
   );
   const [analysisWorkspace, setWorkspace] = useState<AnalysisWorkspace | null>(null);
   const workspaceRef = useRef<AnalysisWorkspace | null>(null);
@@ -542,6 +556,13 @@ export default function App() {
   const [notebookRunRequest, setNotebookRunRequest] =
     useState<{ id: string; nonce: number } | null>(null);
   const [editorSession, setEditorSession] = useState<ArtifactEditorSession | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(
+    new URLSearchParams(window.location.search).get("runId")
+  );
+  const [homeMethodId, setHomeMethodId] = useState("");
+  const [homePipelineId, setHomePipelineId] = useState("");
+  const [homeNotebookId, setHomeNotebookId] = useState("");
+  const stoppedRunIds = useRef(new Set<string>());
   const [editorSaving, setEditorSaving] = useState(false);
   const [explorerQuery, setExplorerQuery] = useState("");
   const [status, setStatus] = useState("Preparing workspace…");
@@ -602,11 +623,19 @@ export default function App() {
   workspaceRef.current = analysisWorkspace;
   workflowSkillCatalogRef.current = workflowSkillCatalog;
 
-  function setActiveTab(tab: "chat" | "notebook" | "editor" | "settings") {
+  function setActiveTab(tab: AppTab) {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
     window.history.replaceState({}, "", url);
     setActiveTabState(tab);
+  }
+
+  function selectRun(runId: string | null) {
+    const url = new URL(window.location.href);
+    if (runId) url.searchParams.set("runId", runId);
+    else url.searchParams.delete("runId");
+    window.history.replaceState({}, "", url);
+    setSelectedRunId(runId);
   }
 
   function toggleTheme() {
@@ -652,7 +681,7 @@ export default function App() {
   }, [bootstrap.context?.user_id, bootstrap.context?.group_id]);
   useEffect(() => {
     if (!syncPreferencesLoaded || editorEnabled || activeTab !== "editor") return;
-    setActiveTab("chat");
+    setActiveTab("home");
   }, [activeTab, editorEnabled, syncPreferencesLoaded]);
   useEffect(() => {
     if (
@@ -664,9 +693,9 @@ export default function App() {
     const kind = params.get("editorKind");
     const artifactId = params.get("editorId");
     if ((kind === "method" || kind === "pipeline" || kind === "notebook") && artifactId) {
-      void openArtifactEditor(kind, artifactId, "chat");
+      void openArtifactEditor(kind, artifactId, "home");
     } else {
-      setActiveTab("chat");
+      setActiveTab("home");
     }
   }, [activeTab, analysisWorkspace?.workspace.id, editorEnabled, syncPreferencesLoaded]);
   useEffect(() => {
@@ -718,6 +747,20 @@ export default function App() {
   const visibleInputs = inputFiles.filter((file) => matchesExplorer(file.name));
   const trashedFiles = (analysisWorkspace?.files || []).filter((file) => Boolean(file.deletedAt));
   const activeMethods = (analysisWorkspace?.methods || []).filter((method) => !method.deletedAt);
+  const activePipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => !pipeline.deletedAt);
+  const activeNotebooks = analysisWorkspace?.notebooks || [];
+  const selectedRun = (analysisWorkspace?.runs || []).find((run) => run.id === selectedRunId) ||
+    [...(analysisWorkspace?.runs || [])].sort((left, right) =>
+      right.createdAt.localeCompare(left.createdAt)
+    )[0] || null;
+  const selectedRunExecutions = selectedRun
+    ? selectedRun.executionIds
+      .map((executionId) => analysisWorkspace?.executions.find((execution) => execution.id === executionId))
+      .filter((execution): execution is ExecutionRecord => Boolean(execution))
+    : [];
+  const selectedRunFiles = selectedRun
+    ? outputFiles.filter((file) => file.runId === selectedRun.id)
+    : [];
   const trashedMethods = (analysisWorkspace?.methods || []).filter((method) => Boolean(method.deletedAt));
   const trashedPipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => Boolean(pipeline.deletedAt));
   const canChat =
@@ -1513,6 +1556,21 @@ export default function App() {
     void saveExecution(execution);
   }
 
+  function upsertRun(run: AnalysisRunRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const exists = current.runs.some((item) => item.id === run.id);
+    const updated = {
+      ...current,
+      runs: exists
+        ? current.runs.map((item) => item.id === run.id ? run : item)
+        : [...current.runs, run]
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    void saveRun(run);
+  }
+
   function upsertFiles(values: WorkspaceFile[]) {
     if (!values.length) return;
     const current = workspaceRef.current;
@@ -1543,7 +1601,11 @@ export default function App() {
     const updated = { ...current, evidence };
     workspaceRef.current = updated;
     setWorkspace(updated);
-    void saveEvidenceLedger(record.chatId, evidence.filter((item) => item.chatId === record.chatId));
+    if (record.chatId) {
+      void saveEvidenceLedger(record.chatId, evidence.filter((item) => item.chatId === record.chatId));
+    } else {
+      void saveEvidence(record);
+    }
   }
 
   function upsertArtifacts(artifacts: ArtifactRecord[]) {
@@ -3124,8 +3186,7 @@ export default function App() {
 
   async function createZarrGalleryResult(
     args: Record<string, unknown>,
-    chatId: string,
-    promptId: string,
+    executionContext: ExecutionContext,
     origin: ExecutionOrigin = {}
   ): Promise<string> {
     const current = workspaceRef.current;
@@ -3133,12 +3194,14 @@ export default function App() {
       throw new Error(zarrViewerWarning || "OMERO ZarrViewer is unavailable");
     }
     const { recipe, evidenceIds } = zarrRecipeFromToolArgs(args);
-    const ledger = currentEvidence(
-      current.evidence,
-      chatId,
-      workspaceInputHashes(current),
-      turnWorkflowSkills.current.map((skill) => skill.sha256)
-    );
+    const sourceHashes = workspaceInputHashes(current);
+    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
+    const ledger = executionContext.kind === "chat"
+      ? currentEvidence(current.evidence, executionContext.chatId, sourceHashes, skillHashes)
+      : current.evidence.filter((record) =>
+        record.runId === executionContext.runId &&
+        record.sourceSkillKey === sourceSkillKey(sourceHashes, skillHashes)
+      );
     requireGalleryEvidence(args, evidenceIds, ledger);
     const { binding, capability } = await resolveZarrTarget(recipe.storeUuid);
     const data = await renderZarrRecipe(capability, recipe);
@@ -3150,11 +3213,12 @@ export default function App() {
     const file: WorkspaceFile = {
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
+      ...executionOwner(executionContext),
       ...origin,
       name: filename,
       logicalPath: `${current.workspace.rootPath}/${
-        origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
+        executionContext.kind === "run" ? "Runs" :
+          origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
       }/Results/zarr/${filename}`,
       type: "image/png",
       size: data.byteLength,
@@ -3169,34 +3233,32 @@ export default function App() {
     const artifact: ArtifactRecord = {
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
+      ...executionOwner(executionContext),
       fileId: file.id,
       kind: "viewer-preview",
       title: recipe.title || "OME-Zarr gallery",
       pinned: false,
-      promptId,
       viewer: viewerMetadata,
       createdAt: now()
     };
     upsertArtifacts([artifact]);
-    appendMessage(chatId, {
-      id: id(),
-      role: "assistant",
-      content: `Rendered one ${recipe.panels.length}-panel OME-Zarr gallery from verified analysis evidence.`,
-      kind: "viewer-preview",
-      artifactId: artifact.id,
-      activity: "worked",
-      createdAt: now()
-    });
+    if (executionContext.kind === "chat") {
+      appendMessage(executionContext.chatId, {
+        id: id(),
+        role: "assistant",
+        content: `Rendered one ${recipe.panels.length}-panel OME-Zarr gallery from verified analysis evidence.`,
+        kind: "viewer-preview",
+        artifactId: artifact.id,
+        activity: "worked",
+        createdAt: now()
+      });
+    }
     setSelectedArtifactFileId(file.id);
     const renderEvidenceId = id();
-    const sourceHashes = workspaceInputHashes(current);
-    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
     upsertEvidence({
       id: renderEvidenceId,
       workspaceId: current.workspace.id,
-      chatId,
-      promptId,
+      ...executionOwner(executionContext),
       kind: "render",
       status: "success",
       sourceHashes,
@@ -3218,20 +3280,21 @@ export default function App() {
 
   async function createSavedZarrRecipeResult(
     replay: SavedRecipeReplay,
-    chatId: string,
-    promptId: string,
+    executionContext: ExecutionContext,
     origin: ExecutionOrigin = {}
   ): Promise<string> {
     const current = workspaceRef.current;
     if (!current || !zarrViewerStatus?.available) {
       throw new Error(zarrViewerWarning || "OMERO ZarrViewer is unavailable");
     }
-    const ledger = currentEvidence(
-      current.evidence,
-      chatId,
-      workspaceInputHashes(current),
-      turnWorkflowSkills.current.map((skill) => skill.sha256)
-    );
+    const sourceHashes = workspaceInputHashes(current);
+    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
+    const ledger = executionContext.kind === "chat"
+      ? currentEvidence(current.evidence, executionContext.chatId, sourceHashes, skillHashes)
+      : current.evidence.filter((record) =>
+        record.runId === executionContext.runId &&
+        record.sourceSkillKey === sourceSkillKey(sourceHashes, skillHashes)
+      );
     requireEvidenceIds(replay.evidenceIds, ledger);
     const { binding, capability } = await resolveZarrTarget(replay.recipe.storeUuid);
     const data = await renderZarrRecipe(capability, replay.recipe);
@@ -3255,11 +3318,12 @@ export default function App() {
     const file: WorkspaceFile = {
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
+      ...executionOwner(executionContext),
       ...origin,
       name: filename,
       logicalPath: `${current.workspace.rootPath}/${
-        origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
+        executionContext.kind === "run" ? "Runs" :
+          origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
       }/Results/zarr/${filename}`,
       type: "image/png",
       size: data.byteLength,
@@ -3274,36 +3338,34 @@ export default function App() {
     const artifact: ArtifactRecord = {
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
+      ...executionOwner(executionContext),
       fileId: file.id,
       kind: "viewer-preview",
       title,
       pinned: false,
-      promptId,
       viewer: viewerMetadata,
       createdAt: now()
     };
     upsertArtifacts([artifact]);
-    appendMessage(chatId, {
-      id: id(),
-      role: "assistant",
-      content: replay.renderKind === "roi"
-        ? `Reproduced ${title} through ZarrViewer without an AI request.`
-        : `Reproduced the ${replay.recipe.panels.length}-panel ${title} gallery through ZarrViewer without an AI request.`,
-      kind: "viewer-preview",
-      artifactId: artifact.id,
-      activity: "worked",
-      createdAt: now()
-    });
+    if (executionContext.kind === "chat") {
+      appendMessage(executionContext.chatId, {
+        id: id(),
+        role: "assistant",
+        content: replay.renderKind === "roi"
+          ? `Reproduced ${title} through ZarrViewer without an AI request.`
+          : `Reproduced the ${replay.recipe.panels.length}-panel ${title} gallery through ZarrViewer without an AI request.`,
+        kind: "viewer-preview",
+        artifactId: artifact.id,
+        activity: "worked",
+        createdAt: now()
+      });
+    }
     setSelectedArtifactFileId(file.id);
     const renderEvidenceId = id();
-    const sourceHashes = workspaceInputHashes(current);
-    const skillHashes = turnWorkflowSkills.current.map((skill) => skill.sha256);
     upsertEvidence({
       id: renderEvidenceId,
       workspaceId: current.workspace.id,
-      chatId,
-      promptId,
+      ...executionOwner(executionContext),
       kind: "render",
       status: "success",
       sourceHashes,
@@ -3329,8 +3391,7 @@ export default function App() {
 
   async function replaySavedRender(
     executionResult: string,
-    chatId: string,
-    promptId: string,
+    executionContext: ExecutionContext,
     scriptName: string,
     recipe?: ZarrRenderRecipe,
     origin: ExecutionOrigin = {}
@@ -3341,33 +3402,31 @@ export default function App() {
       recipe
     );
     if (request) {
-      return createZarrGalleryResult(request, chatId, promptId, origin);
+      return createZarrGalleryResult(request, executionContext, origin);
     }
     const replay = savedRecipeReplay(executionResult, recipe);
     if (!replay) return null;
-    return createSavedZarrRecipeResult(replay, chatId, promptId, origin);
+    return createSavedZarrRecipeResult(replay, executionContext, origin);
   }
 
   async function executeSavedMethodVersion(
     method: MethodRecord,
     version: MethodVersion,
     code: string,
-    chatId: string,
-    promptId: string,
-    origin: ExecutionOrigin = {}
+    executionContext: ExecutionContext,
+    origin: ExecutionOrigin = {},
+    force = false
   ): Promise<{ executionResult: string; renderResult: string | null }> {
     const executionResult = await executeCode(
       code,
-      chatId,
-      promptId,
-      true,
-      "method",
+      executionContext,
+      force,
+      origin.pipelineId ? "pipeline" : "method",
       origin
     );
     const renderResult = await replaySavedRender(
       executionResult,
-      chatId,
-      promptId,
+      executionContext,
       method.name,
       version.renderRecipe || zarrRenderRecipeFromCode(code),
       origin
@@ -3389,8 +3448,7 @@ export default function App() {
 
   async function executeCode(
     code: string,
-    chatId: string,
-    promptId: string,
+    executionContext: ExecutionContext,
     force = false,
     purpose: ExecutionPurpose = "analysis",
     origin: ExecutionOrigin = {}
@@ -3398,6 +3456,7 @@ export default function App() {
     const current = workspaceRef.current;
     if (!current) return toolErrorText("Workspace is not ready");
     const startedAt = performance.now();
+    const owner = executionOwner(executionContext);
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
     const inputHashes = workspaceInputHashes(current);
@@ -3409,14 +3468,19 @@ export default function App() {
       `${RUNTIME_VERSION}|plotCsv=${current.workspace.plotCsv}`
     );
     const previous = current.executions
-      .filter((execution) => execution.cacheKey === cacheKey && execution.status !== "running")
+      .filter((execution) =>
+        execution.cacheKey === cacheKey && execution.status !== "running" &&
+        (executionContext.kind === "chat" ? Boolean(execution.chatId) : Boolean(execution.runId))
+      )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (previous && !force) {
       const reused: ExecutionRecord = {
         ...previous,
         id: id(),
-        chatId,
-        promptId,
+        chatId: undefined,
+        promptId: undefined,
+        runId: undefined,
+        ...owner,
         status: previous.status === "success" || previous.status === "reused" ? "reused" : "failed",
         reusedFrom: previous.id,
         purpose,
@@ -3424,40 +3488,39 @@ export default function App() {
         createdAt: now()
       };
       upsertExecution(reused);
-      appendMessage(chatId, {
-        id: id(),
-        role: "assistant",
-        content: reused.status === "reused"
-          ? "Reused a previous successful local Python run because its code and inputs are unchanged."
-          : "Skipped unchanged Python that already failed; the AI provider must correct the code.",
-        kind: "execution",
-        executionId: reused.id,
-        createdAt: now()
-      });
+      if (executionContext.kind === "chat") {
+        appendMessage(executionContext.chatId, {
+          id: id(),
+          role: "assistant",
+          content: reused.status === "reused"
+            ? "Reused a previous successful local Python run because its code and inputs are unchanged."
+            : "Skipped unchanged Python that already failed; the AI provider must correct the code.",
+          kind: "execution",
+          executionId: reused.id,
+          createdAt: now()
+        });
+      }
       if (reused.status === "reused") {
-        let evidenceId = previous.evidenceId;
-        if (!evidenceId) {
-          evidenceId = id();
-          upsertEvidence({
-            id: evidenceId,
-            workspaceId: current.workspace.id,
-            chatId,
-            promptId,
-            kind: evidenceKind(previous.code),
-            status: "success",
-            sourceHashes: inputHashes,
-            skillHashes,
-            sourceSkillKey: sourceSkillKey(inputHashes, skillHashes),
-            executionId: previous.id,
-            summary: `Reused verified execution ${previous.id}`,
-            payload: boundedEvidencePayload({
-              stdout: previous.stdout,
-              preview: previous.preview,
-              outputFileIds: previous.outputFileIds
-            }),
-            createdAt: now()
-          });
-        }
+        const evidenceId = id();
+        upsertEvidence({
+          id: evidenceId,
+          workspaceId: current.workspace.id,
+          ...owner,
+          kind: evidenceKind(previous.code),
+          status: "success",
+          sourceHashes: inputHashes,
+          skillHashes,
+          sourceSkillKey: sourceSkillKey(inputHashes, skillHashes),
+          executionId: reused.id,
+          summary: `Reused verified execution ${previous.id}`,
+          payload: boundedEvidencePayload({
+            stdout: previous.stdout,
+            preview: previous.preview,
+            outputFileIds: previous.outputFileIds
+          }),
+          createdAt: now()
+        });
+        upsertExecution({ ...reused, evidenceId });
         return JSON.stringify({
           reused: true,
           execution_id: previous.id,
@@ -3479,8 +3542,7 @@ export default function App() {
     const execution: ExecutionRecord = {
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
-      promptId,
+      ...owner,
       code: normalizedCode,
       codeHash,
       cacheKey,
@@ -3497,14 +3559,16 @@ export default function App() {
       createdAt: now()
     };
     upsertExecution(execution);
-    appendMessage(chatId, {
-      id: id(),
-      role: "assistant",
-      content: "Python execution",
-      kind: "execution",
-      executionId: execution.id,
-      createdAt: now()
-    });
+    if (executionContext.kind === "chat") {
+      appendMessage(executionContext.chatId, {
+        id: id(),
+        role: "assistant",
+        content: "Python execution",
+        kind: "execution",
+        executionId: execution.id,
+        createdAt: now()
+      });
+    }
 
     let output: RuntimeOutput;
     try {
@@ -3524,8 +3588,7 @@ export default function App() {
       upsertEvidence({
         id: evidenceId,
         workspaceId: current.workspace.id,
-        chatId,
-        promptId,
+        ...owner,
         kind: "failed-approah",
         status: "failed",
         sourceHashes: inputHashes,
@@ -3536,8 +3599,10 @@ export default function App() {
         payload: boundedEvidencePayload({ code: normalizedCode, error: detail }),
         createdAt: now()
       });
-      setStatus("Python error sent to the AI provider; waiting for corrected code…");
-      setAnalysisPhase("repairing");
+      setStatus(executionContext.kind === "chat"
+        ? "Python error sent to the AI provider; waiting for corrected code…"
+        : "Local Python execution failed");
+      setAnalysisPhase(executionContext.kind === "chat" ? "repairing" : "ready");
       return toolErrorText(error);
     }
 
@@ -3545,14 +3610,15 @@ export default function App() {
     for (const file of output.files) {
       const fileId = id();
       generated.push({
-        id: fileId,
-        workspaceId: current.workspace.id,
-        chatId,
+      id: fileId,
+      workspaceId: current.workspace.id,
+        ...owner,
         ...origin,
         executionId: execution.id,
         name: file.name,
         logicalPath: `${current.workspace.rootPath}/${
-          origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
+          executionContext.kind === "run" ? "Runs" :
+            origin.pipelineId ? "Pipelines" : origin.methodId ? "Methods" : "Chat"
         }/Results/${execution.id}/${file.name}`,
         type: file.type,
         size: file.data.byteLength,
@@ -3568,7 +3634,7 @@ export default function App() {
     upsertArtifacts(generated.map((file) => ({
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
+      ...owner,
       executionId: execution.id,
       fileId: file.id,
       kind: file.type.startsWith("image/") ? "plot" : "file",
@@ -3600,8 +3666,7 @@ export default function App() {
     upsertEvidence({
       id: evidenceId,
       workspaceId: current.workspace.id,
-      chatId,
-      promptId,
+      ...owner,
       kind: evidenceKind(normalizedCode),
       status: "success",
       sourceHashes: inputHashes,
@@ -3626,7 +3691,7 @@ export default function App() {
     upsertAudit({
       id: id(),
       workspaceId: current.workspace.id,
-      chatId,
+      ...owner,
       executionId: execution.id,
       categories: ["bounded-preview", "generated-file-metadata", ...(output.modelPayload.stderr ? ["error"] : [])],
       byteLength: new TextEncoder().encode(modelPayloadText).byteLength,
@@ -3637,7 +3702,10 @@ export default function App() {
     if (!missing.length) {
       const latest = workspaceRef.current;
       for (const prior of latest?.executions || []) {
-        if (prior.chatId !== chatId || prior.promptId !== promptId || !prior.missingPlotCsv.length) continue;
+        const sameOwner = executionContext.kind === "chat"
+          ? prior.chatId === executionContext.chatId && prior.promptId === executionContext.promptId
+          : prior.runId === executionContext.runId;
+        if (!sameOwner || !prior.missingPlotCsv.length) continue;
         const remaining = prior.missingPlotCsv.filter(
           (plot) => !turnOutputNames.current.has(plot.replace(/\.(png|svg)$/i, ".csv"))
         );
@@ -3651,8 +3719,12 @@ export default function App() {
       }
     }
 
-    setStatus("Python completed locally; continuing the analysis…");
-    setAnalysisPhase(missing.length ? "repairing" : "checking");
+    setStatus(executionContext.kind === "chat"
+      ? "Python completed locally; continuing the analysis…"
+      : "Python completed locally");
+    setAnalysisPhase(executionContext.kind === "chat"
+      ? missing.length ? "repairing" : "checking"
+      : "ready");
     if (missing.length) {
       return toolErrorText(
         `Plot data CSV required. Create ${missing.map((name) => name.replace(/\.(png|svg)$/i, ".csv")).join(", ")} containing the data used for the plot. Do not regenerate unrelated analysis.`
@@ -3803,7 +3875,7 @@ export default function App() {
     ) {
       try {
         if (call.function.name === "render_zarr_gallery") {
-          return await createZarrGalleryResult(args, chatId, promptId);
+          return await createZarrGalleryResult(args, { kind: "chat", chatId, promptId });
         }
         return await createZarrViewerResult(
           args,
@@ -3850,28 +3922,6 @@ export default function App() {
         ? JSON.stringify({ id: method.id, name: method.name, version: version.version, code: version.code })
         : toolErrorText("Saved method has no readable current version");
     }
-    if (call.function.name === "run_saved_method") {
-      const method = current.methods.find((item) => item.id === args.method_id && !item.deletedAt);
-      const version = method?.versions.find((item) => item.version === method.currentVersion);
-      if (!method || !version) return toolErrorText("Saved method was not found");
-      try {
-        const bound = bindMethodInputs(version.code, current.files);
-        const { executionResult, renderResult } = await executeSavedMethodVersion(
-          method,
-          version,
-          bound.code,
-          chatId,
-          promptId
-        );
-        return JSON.stringify({
-          execution: JSON.parse(executionResult),
-          render_replayed: Boolean(renderResult),
-          render: renderResult ? JSON.parse(renderResult) : undefined
-        }).slice(0, MAX_TOOL_TEXT);
-      } catch (error) {
-        return toolErrorText(error);
-      }
-    }
     if (call.function.name === "list_saved_pipelines") {
       return JSON.stringify(current.pipelines.filter((pipeline) => !pipeline.deletedAt).map((pipeline) => ({
         id: pipeline.id,
@@ -3881,51 +3931,12 @@ export default function App() {
         steps: pipeline.steps.map((step) => step.name)
       })));
     }
-    if (call.function.name === "run_saved_pipeline") {
-      const pipeline = current.pipelines.find(
-        (item) => item.id === args.pipeline_id && !item.deletedAt
-      );
-      if (!pipeline) return toolErrorText("Saved pipeline was not found");
-      const results: string[] = [];
-      let renders = 0;
-      for (const step of pipeline.steps) {
-        const latest = workspaceRef.current!;
-        const method = latest.methods.find((item) => item.id === step.methodId && !item.deletedAt);
-        const version = method?.versions.find((item) => item.version === step.methodVersion);
-        if (!method || !version) return toolErrorText(`Pipeline step ${step.name} is unavailable`);
-        try {
-          await runtime.beginTurn();
-          const bound = bindPipelineStepCodeStrict(
-            version.code,
-            latest.files,
-            step.inputBindings || {}
-          );
-          const outcome = await executeSavedMethodVersion(
-            method,
-            version,
-            bound.code,
-            chatId,
-            promptId
-          );
-          results.push(outcome.executionResult);
-          if (outcome.renderResult) renders += 1;
-        } catch (error) {
-          return toolErrorText(`Pipeline step ${step.name} failed: ${String(error)}`);
-        }
-      }
-      return JSON.stringify({
-        pipeline: pipeline.name,
-        steps: pipeline.steps.length,
-        renders,
-        results
-      }).slice(0, MAX_TOOL_TEXT);
-    }
     if (call.function.name !== "run_python" || typeof args.code !== "string") {
       return toolErrorText(`Unsupported or invalid tool call: ${call.function.name}`);
     }
     const purpose: ExecutionPurpose =
       args.purpose === "analysis" ? "analysis" : "inspection";
-    return executeCode(args.code, chatId, promptId, false, purpose);
+    return executeCode(args.code, { kind: "chat", chatId, promptId }, false, purpose);
   }
 
   async function sendPrompt() {
@@ -4398,6 +4409,21 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   function stop() {
     abort.current?.abort();
+    const running = workspaceRef.current?.runs
+      .filter((run) => run.status === "running")
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    if (running) {
+      stoppedRunIds.current.add(running.id);
+      upsertRun({
+        ...running,
+        status: "stopped",
+        error: "Stopped by the user",
+        completedAt: now(),
+        steps: running.steps.map((step) => step.status === "running"
+          ? { ...step, status: "stopped", error: "Stopped by the user" }
+          : step)
+      });
+    }
     for (const [questionId, pending] of questionResolvers.current) {
       questionResolvers.current.delete(questionId);
       pending.resolve(toolErrorText("The user stopped the analysis before answering"));
@@ -4412,6 +4438,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (
       busy ||
       !current ||
+      !execution.chatId ||
+      !execution.promptId ||
       execution.purpose === "inspection" ||
       executionPreparesViewer(current, execution) ||
       !["success", "reused"].includes(execution.status)
@@ -4512,7 +4540,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   async function saveAnalysisRender(artifact: ArtifactRecord, png: WorkspaceFile) {
     const current = workspaceRef.current;
-    if (!current || busy) return;
+    if (!current || busy || !artifact.chatId || !artifact.promptId) return;
     try {
       const chat = current.chats.find((item) => item.id === artifact.chatId);
       const assistantSummary = assistantSummaryForPrompt(chat, artifact.promptId || "");
@@ -4646,36 +4674,57 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     }
   }
 
-  async function runMethod(method: MethodRecord, fromEditor = false) {
+  async function runMethod(
+    method: MethodRecord,
+    fromEditor = false,
+    force = false,
+    requestedVersion = method.currentVersion
+  ) {
     const current = workspaceRef.current;
-    if (!current?.workspace.activeChatId) return;
+    if (!current || busy) return;
     if (!fromEditor && activeTab === "editor" && !await confirmDiscardEditor()) return;
     if (activeTab === "editor") {
       setEditorSession(null);
       editorRoute();
     }
-    setActiveTab("chat");
-    const version = method.versions.find((item) => item.version === method.currentVersion);
+    setActiveTab("runs");
+    const version = method.versions.find((item) => item.version === requestedVersion);
     if (!version) return;
+    const runId = id();
+    const createdAt = now();
+    let run: AnalysisRunRecord = {
+      id: runId,
+      workspaceId: current.workspace.id,
+      kind: "method",
+      artifactId: method.id,
+      artifactName: method.name,
+      artifactVersion: requestedVersion,
+      status: "running",
+      executionIds: [],
+      resolvedBindings: {},
+      steps: [],
+      createdAt
+    };
+    selectRun(runId);
+    upsertRun(run);
     let bound: ReturnType<typeof bindMethodInputs>;
     try {
       bound = bindMethodInputs(version.code, current.files);
+      run = {
+        ...run,
+        resolvedBindings: Object.fromEntries(
+          bound.bindings.map((binding) => [binding.from, binding.to])
+        )
+      };
+      upsertRun(run);
     } catch (error) {
-      setStatus(`Cannot bind ${method.name}: ${String(error)}`);
+      const message = String(error);
+      upsertRun({ ...run, status: "failed", error: message, completedAt: now() });
+      setStatus(`Cannot bind ${method.name}: ${message}`);
       return;
     }
     setBusy(true);
     turnOutputNames.current.clear();
-    const promptId = id();
-    appendMessage(current.workspace.activeChatId, {
-      id: promptId,
-      role: "user",
-      content: `Run saved method ${method.name} version ${method.currentVersion}` +
-        (bound.bindings.length
-          ? ` with workspace input binding ${bound.bindings.map((item) => `${item.from} → ${item.to}`).join(", ")}`
-          : ""),
-      createdAt: now()
-    });
     try {
       await ensureRuntime(current.files);
       await runtime.beginTurn();
@@ -4683,17 +4732,43 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         method,
         version,
         bound.code,
-        current.workspace.activeChatId,
-        promptId,
-        { methodId: method.id }
+        { kind: "run", runId },
+        { methodId: method.id },
+        force
       );
+      const executions = (workspaceRef.current?.executions || [])
+        .filter((execution) => execution.runId === runId);
+      const failed = executions.find((execution) => execution.status === "failed");
+      const incomplete = executions.some((execution) => execution.status === "incomplete");
+      const finalRun: AnalysisRunRecord = {
+        ...run,
+        status: failed ? "failed" : incomplete ? "incomplete" : "success",
+        executionIds: executions.map((execution) => execution.id),
+        error: failed?.stderr || undefined,
+        completedAt: now()
+      };
+      upsertRun(finalRun);
       setStatus(
-        renderResult
+        failed
+          ? `Method ${method.name} failed`
+          : renderResult
           ? `Ran ${method.name} locally and rendered its ZarrViewer PNG`
           : `Ran ${method.name} locally`
       );
     } catch (error) {
-      setStatus(`Could not complete ${method.name}: ${String(error)}`);
+      const stopped = stoppedRunIds.current.delete(runId);
+      const message = String(error);
+      const executions = (workspaceRef.current?.executions || [])
+        .filter((execution) => execution.runId === runId)
+        .map((execution) => execution.id);
+      upsertRun({
+        ...run,
+        status: stopped ? "stopped" : "failed",
+        executionIds: executions,
+        error: stopped ? "Stopped by the user" : message,
+        completedAt: now()
+      });
+      setStatus(stopped ? `Stopped ${method.name}` : `Could not complete ${method.name}: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -4925,23 +5000,38 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   async function runPipeline(pipeline: PipelineRecord, fromEditor = false) {
     const current = workspaceRef.current;
-    if (!current?.workspace.activeChatId || busy) return;
+    if (!current || busy) return;
     if (!fromEditor && activeTab === "editor" && !await confirmDiscardEditor()) return;
     if (activeTab === "editor") {
       setEditorSession(null);
       editorRoute();
     }
-    setActiveTab("chat");
+    setActiveTab("runs");
     setBusy(true);
-    const workflowStartedAt = performance.now();
-    const chatId = current.workspace.activeChatId;
-    const promptId = id();
-    appendMessage(chatId, {
-      id: promptId,
-      role: "user",
-      content: `Run pipeline ${pipeline.name} version ${pipeline.version}`,
+    const runId = id();
+    let run: AnalysisRunRecord = {
+      id: runId,
+      workspaceId: current.workspace.id,
+      kind: "pipeline",
+      artifactId: pipeline.id,
+      artifactName: pipeline.name,
+      artifactVersion: pipeline.version,
+      status: "running",
+      executionIds: [],
+      resolvedBindings: {},
+      steps: pipeline.steps.map((step) => ({
+        stepId: step.id,
+        name: step.name,
+        methodId: step.methodId,
+        methodVersion: step.methodVersion,
+        status: "pending",
+        executionIds: [],
+        resolvedBindings: {}
+      })),
       createdAt: now()
-    });
+    };
+    selectRun(runId);
+    upsertRun(run);
     try {
       await ensureRuntime(current.files);
       let availableInputs = current.files.filter(
@@ -4955,6 +5045,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         const method = latest.methods.find((item) => item.id === step.methodId && !item.deletedAt);
         const version = method?.versions.find((item) => item.version === step.methodVersion);
         if (!method || !version) throw new Error(`Pipeline step ${step.name} is unavailable`);
+        run = {
+          ...run,
+          steps: run.steps.map((item) => item.stepId === step.id
+            ? { ...item, status: "running" }
+            : item)
+        };
+        upsertRun(run);
         setStatus(`Pipeline ${pipeline.name}: step ${index + 1} of ${pipeline.steps.length}`);
         await runtime.beginTurn();
         turnOutputNames.current.clear();
@@ -4963,20 +5060,46 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           availableInputs,
           step.inputBindings || {}
         );
+        const resolvedBindings = Object.fromEntries(
+          bound.bindings.map((binding) => [binding.from, binding.to])
+        );
+        run = {
+          ...run,
+          resolvedBindings: { ...run.resolvedBindings, ...resolvedBindings },
+          steps: run.steps.map((item) => item.stepId === step.id
+            ? { ...item, resolvedBindings }
+            : item)
+        };
+        upsertRun(run);
         const outcome = await executeSavedMethodVersion(
           method,
           version,
           bound.code,
-          chatId,
-          promptId,
+          { kind: "run", runId },
           { methodId: method.id, pipelineId: pipeline.id }
         );
         if (outcome.renderResult) rendered += 1;
+        const stepExecutions = workspaceRef.current!.executions
+          .filter((execution) => execution.runId === runId && !run.executionIds.includes(execution.id));
+        const failedExecution = stepExecutions.find((execution) => execution.status === "failed");
+        run = {
+          ...run,
+          executionIds: [...run.executionIds, ...stepExecutions.map((execution) => execution.id)],
+          steps: run.steps.map((item) => item.stepId === step.id
+            ? {
+              ...item,
+              status: failedExecution ? "failed" :
+                stepExecutions.some((execution) => execution.status === "incomplete")
+                  ? "incomplete" : "success",
+              executionIds: stepExecutions.map((execution) => execution.id),
+              error: failedExecution?.stderr || undefined
+            }
+            : item)
+        };
+        upsertRun(run);
+        if (failedExecution) throw new Error(failedExecution.stderr || `Pipeline step ${step.name} failed`);
         const produced = workspaceRef.current!.files.filter(
-          (file) => file.source === "result" && file.executionId &&
-            workspaceRef.current!.executions.some(
-              (execution) => execution.id === file.executionId && execution.promptId === promptId
-            ) && !file.deletedAt
+          (file) => file.source === "result" && file.runId === runId && !file.deletedAt
         );
         availableInputs = [...availableInputs, ...produced];
         if (index < pipeline.steps.length - 1) await runtime.syncInputs(availableInputs);
@@ -4989,18 +5112,32 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         `Pipeline ${pipeline.name} completed` +
         (rendered ? ` and rendered ${rendered} PNG ${rendered === 1 ? "image" : "images"}` : "")
       );
+      const incomplete = run.steps.some((step) => step.status === "incomplete");
+      run = { ...run, status: incomplete ? "incomplete" : "success", completedAt: now() };
+      upsertRun(run);
     } catch (error) {
-      appendMessage(chatId, {
-        id: id(),
-        role: "assistant",
-        content: `Pipeline stopped: ${String(error)}`,
-        kind: "error",
-        activity: "worked",
-        durationMs: performance.now() - workflowStartedAt,
-        createdAt: now()
-      });
-      setStatus(`Pipeline ${pipeline.name} failed`);
+      const stopped = stoppedRunIds.current.delete(runId);
+      const message = stopped ? "Stopped by the user" : String(error);
+      run = {
+        ...run,
+        status: stopped ? "stopped" : "failed",
+        error: message,
+        completedAt: now(),
+        steps: run.steps.map((step) => step.status === "running"
+          ? { ...step, status: stopped ? "stopped" : "failed", error: message }
+          : step)
+      };
+      upsertRun(run);
+      setStatus(stopped ? `Stopped pipeline ${pipeline.name}` : `Pipeline ${pipeline.name} failed`);
     } finally {
+      try {
+        await runtime.syncInputs(current.files.filter(
+          (file) => file.source !== "result" && file.role !== "chat-attachment" &&
+            file.state === "ready" && !file.deletedAt
+        ));
+      } catch {
+        // Runtime may have been deliberately stopped.
+      }
       setBusy(false);
     }
   }
@@ -5865,7 +6002,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         (editorSession.kind !== kind || editorSession.id !== artifactId) &&
         !await confirmDiscardEditor()) return;
     const originTab = requestedOrigin ||
-      (activeTab === "editor" ? editorSession?.originTab || "chat" : activeTab);
+      (activeTab === "editor" ? editorSession?.originTab || "home" : activeTab);
     try {
       const prepared = preparedEditorSession(kind, artifactId, originTab);
       setEditorSession(prepared);
@@ -6042,13 +6179,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   async function closeEditor() {
     if (!await confirmDiscardEditor()) return;
-    const origin = editorSession?.originTab || "chat";
+    const origin = editorSession?.originTab || "home";
     setEditorSession(null);
     editorRoute();
     setActiveTab(origin);
   }
 
-  async function navigateFromEditor(tab: "chat" | "notebook" | "editor" | "settings") {
+  async function navigateFromEditor(tab: AppTab) {
     if (tab === "editor" || activeTab !== "editor") {
       setActiveTab(tab);
       return;
@@ -6062,7 +6199,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
   async function createUntitledMethod() {
     const current = workspaceRef.current;
     if (!current || !editorEnabled) return;
-    const originTab = activeTab === "editor" ? editorSession?.originTab || "chat" : activeTab;
+    const originTab = activeTab === "editor" ? editorSession?.originTab || "home" : activeTab;
     if (editorSession?.dirty && !await confirmDiscardEditor()) return;
     const timestamp = now();
     const name = nextUntitledName(current.methods.map((method) => method.name), ".py");
@@ -6101,7 +6238,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
   async function createUntitledNotebook() {
     const current = workspaceRef.current;
     if (!current || !editorEnabled) return;
-    const originTab = activeTab === "editor" ? editorSession?.originTab || "chat" : activeTab;
+    const originTab = activeTab === "editor" ? editorSession?.originTab || "home" : activeTab;
     if (editorSession?.dirty && !await confirmDiscardEditor()) return;
     const timestamp = now();
     const name = nextUntitledName(current.notebooks.map((notebook) => notebook.name), ".ipynb");
@@ -6176,6 +6313,18 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       { label: "Download", run: () => downloadNotebook(notebook) },
       { label: "Delete notebook", danger: true, run: () => void removeNotebook(notebook) }
     ];
+  }
+
+  function rerunAnalysisRun(run: AnalysisRunRecord) {
+    const current = workspaceRef.current;
+    if (!current || busy) return;
+    if (run.kind === "method") {
+      const method = current.methods.find((item) => item.id === run.artifactId && !item.deletedAt);
+      if (method) void runMethod(method, false, true, run.artifactVersion);
+      return;
+    }
+    const pipeline = current.pipelines.find((item) => item.id === run.artifactId && !item.deletedAt);
+    if (pipeline) void runPipeline(pipeline);
   }
 
   function snapshotActions(snapshot: Attachment): BrowserMenuAction[] {
@@ -7247,15 +7396,221 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
         <section className="center-pane">
         <nav className="analysis-tabs" aria-label="Analysis views">
-          {(["chat", "notebook", ...(editorEnabled ? ["editor" as const] : [])] as const).map((tab) => (
+          {(["home", "runs", "notebook", "chat", ...(editorEnabled ? ["editor" as const] : [])] as const).map((tab) => (
             <Button key={tab} className={activeTab === tab ? "active" : ""}
               aria-current={activeTab === tab ? "page" : undefined}
               onClick={() => void navigateFromEditor(tab)}>
-              <ActionIcon name={tab === "chat" ? "chat" : tab === "notebook" ? "notebook" : "edit"} />
-              {tab[0].toUpperCase() + tab.slice(1)}
+              <ActionIcon name={tab === "home" ? "home" : tab === "runs" ? "pipeline" : tab === "chat" ? "chat" : tab === "notebook" ? "notebook" : "edit"} />
+              {tab === "runs" ? "Methods & Pipelines" : tab[0].toUpperCase() + tab.slice(1)}
             </Button>
           ))}
         </nav>
+        {activeTab === "home" && (
+          <section className="analysis-home" aria-labelledby="analysis-home-title">
+            <header className="analysis-home-header">
+              <span className="eyebrow">Reusable browser-local analysis</span>
+              <h2 id="analysis-home-title">What would you like to do?</h2>
+              <p>Run a saved analysis, work in a Notebook, or use Chat to develop a reusable Python Method.</p>
+            </header>
+            <div className="analysis-home-grid">
+              <article className="analysis-start-card">
+                <ActionIcon name="run" />
+                <h3>Run a Method</h3>
+                <p>Execute the current saved version with inputs from this Workspace.</p>
+                <select
+                  aria-label="Method to run"
+                  value={homeMethodId || activeMethods[0]?.id || ""}
+                  onChange={(event) => setHomeMethodId(event.target.value)}
+                  disabled={!activeMethods.length}
+                >
+                  {activeMethods.map((method) => (
+                    <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>
+                  ))}
+                </select>
+                <Button
+                  disabled={!activeMethods.length || busy}
+                  onClick={() => {
+                    const method = activeMethods.find((item) => item.id === (homeMethodId || activeMethods[0]?.id));
+                    if (method) void runMethod(method);
+                  }}
+                ><ActionIcon name="run" />Run Method</Button>
+                {!activeMethods.length && <small>Create a Method with Chat, import one, or use New when Editor is enabled.</small>}
+              </article>
+              <article className="analysis-start-card">
+                <ActionIcon name="pipeline" />
+                <h3>Run a Pipeline</h3>
+                <p>Run an ordered collection of pinned Method versions.</p>
+                <select
+                  aria-label="Pipeline to run"
+                  value={homePipelineId || activePipelines[0]?.id || ""}
+                  onChange={(event) => setHomePipelineId(event.target.value)}
+                  disabled={!activePipelines.length}
+                >
+                  {activePipelines.map((pipeline) => (
+                    <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>
+                  ))}
+                </select>
+                <Button
+                  disabled={!activePipelines.length || busy}
+                  onClick={() => {
+                    const pipeline = activePipelines.find((item) => item.id === (homePipelineId || activePipelines[0]?.id));
+                    if (pipeline) void runPipeline(pipeline);
+                  }}
+                ><ActionIcon name="run" />Run Pipeline</Button>
+                {!activePipelines.length && <small>Select at least two Methods in Explorer and combine them into a Pipeline.</small>}
+              </article>
+              <article className="analysis-start-card">
+                <ActionIcon name="notebook" />
+                <h3>Open a Notebook</h3>
+                <p>Review cells, reattach Workspace inputs, and run the Notebook.</p>
+                <select
+                  aria-label="Notebook to open"
+                  value={homeNotebookId || activeNotebooks[0]?.id || ""}
+                  onChange={(event) => setHomeNotebookId(event.target.value)}
+                  disabled={!activeNotebooks.length}
+                >
+                  {activeNotebooks.map((notebook) => (
+                    <option key={notebook.id} value={notebook.id}>{notebook.name}</option>
+                  ))}
+                </select>
+                <Button
+                  disabled={!activeNotebooks.length}
+                  onClick={() => {
+                    const notebook = activeNotebooks.find((item) => item.id === (homeNotebookId || activeNotebooks[0]?.id));
+                    if (notebook) void openNotebook(notebook);
+                  }}
+                ><ActionIcon name="notebook" />Open Notebook</Button>
+                {!activeNotebooks.length && <small>Upload a .ipynb file, import a Notebook, or create one when Editor is enabled.</small>}
+              </article>
+              <article className="analysis-start-card method-assistant-card">
+                <ActionIcon name="chat" />
+                <h3>Create a Method with Chat</h3>
+                <p>Ask the assistant to inspect your data and develop, test, explain, or improve a reusable Python Method.</p>
+                <Button onClick={() => setActiveTab("chat")}><ActionIcon name="chat" />Open Method Assistant</Button>
+                {!providerReady && <small>Configure an AI provider in Settings before sending a request.</small>}
+              </article>
+            </div>
+          </section>
+        )}
+        {activeTab === "runs" && (
+          <section className="runs-view" aria-label="Methods and Pipelines">
+            <div className="runs-toolbar">
+              <div>
+                <strong>Methods &amp; Pipelines</strong>
+                <span>Run reusable analyses and inspect their durable output history.</span>
+              </div>
+              <div className="runs-launchers">
+                <select aria-label="Method" value={homeMethodId || activeMethods[0]?.id || ""}
+                  disabled={!activeMethods.length || busy}
+                  onChange={(event) => setHomeMethodId(event.target.value)}>
+                  {activeMethods.map((method) => <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>)}
+                </select>
+                <Button disabled={!activeMethods.length || busy} onClick={() => {
+                  const method = activeMethods.find((item) => item.id === (homeMethodId || activeMethods[0]?.id));
+                  if (method) void runMethod(method);
+                }}><ActionIcon name="run" />Run Method</Button>
+                <select aria-label="Pipeline" value={homePipelineId || activePipelines[0]?.id || ""}
+                  disabled={!activePipelines.length || busy}
+                  onChange={(event) => setHomePipelineId(event.target.value)}>
+                  {activePipelines.map((pipeline) => <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>)}
+                </select>
+                <Button disabled={!activePipelines.length || busy} onClick={() => {
+                  const pipeline = activePipelines.find((item) => item.id === (homePipelineId || activePipelines[0]?.id));
+                  if (pipeline) void runPipeline(pipeline);
+                }}><ActionIcon name="run" />Run Pipeline</Button>
+              </div>
+              {busy
+                ? <Button onClick={stop}><ActionIcon name="stop" />Stop</Button>
+                : selectedRun && <Button onClick={() => rerunAnalysisRun(selectedRun)}><ActionIcon name="reset" />Rerun</Button>}
+            </div>
+            <div className="runs-layout">
+              <aside className="run-history" aria-label="Run history">
+                <h3>Run history</h3>
+                {!(analysisWorkspace.runs || []).length && <p>No Method or Pipeline has been run yet.</p>}
+                {[...(analysisWorkspace.runs || [])]
+                  .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+                  .map((run) => (
+                    <button
+                      key={run.id}
+                      className={selectedRun?.id === run.id ? "active" : ""}
+                      onClick={() => selectRun(run.id)}
+                    >
+                      <ActionIcon name={run.kind === "method" ? "run" : "pipeline"} />
+                      <span><strong>{run.artifactName}</strong><small>v{run.artifactVersion} · {run.status}</small></span>
+                    </button>
+                  ))}
+              </aside>
+              <div className="run-detail">
+                {!selectedRun && (
+                  <div className="run-empty">
+                    <h2>No run selected</h2>
+                    <p>Run a Method or Pipeline from Home, Explorer, or the Artifact Inspector.</p>
+                  </div>
+                )}
+                {selectedRun && (
+                  <>
+                    <header className={`run-summary ${selectedRun.status}`}>
+                      <div>
+                        <span>{selectedRun.kind === "method" ? "Method" : "Pipeline"} run</span>
+                        <h2>{selectedRun.artifactName}</h2>
+                        <p>Version {selectedRun.artifactVersion} · {selectedRun.status} · {new Date(selectedRun.createdAt).toLocaleString()}</p>
+                      </div>
+                      {selectedRun.error && <pre>{selectedRun.error}</pre>}
+                    </header>
+                    {selectedRun.steps.length > 0 && (
+                      <ol className="run-steps">
+                        {selectedRun.steps.map((step) => (
+                          <li key={step.stepId} className={step.status}>
+                            <span>{step.status}</span>
+                            <strong>{step.name}</strong>
+                            <small>Method v{step.methodVersion}</small>
+                            {step.error && <p>{step.error}</p>}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    {Object.keys(selectedRun.resolvedBindings).length > 0 && (
+                      <details className="run-bindings">
+                        <summary>Resolved input bindings</summary>
+                        <dl>{Object.entries(selectedRun.resolvedBindings).map(([from, to]) => (
+                          <div key={from}><dt>{from}</dt><dd>{to}</dd></div>
+                        ))}</dl>
+                      </details>
+                    )}
+                    <div className="run-executions">
+                      {selectedRunExecutions.map((execution) => (
+                        <ExecutionCard
+                          key={execution.id}
+                          execution={execution}
+                          files={analysisWorkspace.files}
+                          onSave={() => undefined}
+                          onRerun={() => rerunAnalysisRun(selectedRun)}
+                          saveDisabled={busy}
+                          showSaveAction={false}
+                          showRerunAction={false}
+                        />
+                      ))}
+                      {!selectedRunExecutions.length && selectedRun.status === "running" && <p>Preparing the local Python runtime…</p>}
+                    </div>
+                    {selectedRunFiles.length > 0 && (
+                      <section className="run-files" aria-label="Generated files">
+                        <h3>Generated files</h3>
+                        <div>
+                          {selectedRunFiles.map((file) => (
+                            <button key={file.id} onClick={() => setSelectedArtifactFileId(file.id)}>
+                              <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
+                              <span><strong>{file.name}</strong><small>{bytesLabel(file.size)} · inspect or download</small></span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
         {activeTab === "chat" && (
         <section className="chat">
           <div className="workspace-toolbar">
@@ -7274,18 +7629,18 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           <div className="messages" aria-live="polite" ref={messagesElement}>
             {!activeChat.messages.length && (
               <div className="welcome">
-                <h2>What would you like to learn from these data?</h2>
-                <p>This named chat, its code, outputs, and reusable pipelines are saved automatically in the browser workspace.</p>
+                <h2>What Method would you like to create?</h2>
+                <p>Chat can inspect these data and test Python while helping you build a reusable Method.</p>
                 {profiles.length > 0 && (
                   <div className="suggested-prompts">
-                    <Button onClick={() => setPrompt("Summarize the available datasets, tables, columns, and important data-quality issues.")}>
-                      Summarize these data
+                    <Button onClick={() => setPrompt("Inspect the available data and propose a reusable Method that summarizes its tables, columns, and important quality issues.")}>
+                      Create a data summary Method
                     </Button>
-                    <Button onClick={() => setPrompt("Find the most biologically meaningful differences and visualize them with reproducible plot data.")}>
-                      Find meaningful differences
+                    <Button onClick={() => setPrompt("Develop and test a reusable Method for finding biologically meaningful differences with reproducible plot data.")}>
+                      Create a comparison Method
                     </Button>
-                    <Button onClick={() => setPrompt("Explain the CI Segmentation schema and suggest three safe analyses for these measurements.")}>
-                      Explore the measurement schema
+                    <Button onClick={() => setPrompt("Explain the CI Segmentation schema and draft a safe reusable Method for these measurements.")}>
+                      Draft a CI Segmentation Method
                     </Button>
                   </div>
                 )}
@@ -7931,6 +8286,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       !runtimeReady ||
       busy ||
       !current ||
+      !execution.chatId ||
       execution.purpose === "inspection" ||
       executionPreparesViewer(current, execution)
     ) return;
@@ -7942,8 +8298,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const promptId = id();
       const executionResult = await executeCode(
         execution.code,
-        execution.chatId,
-        promptId,
+        { kind: "chat", chatId: execution.chatId, promptId },
         true,
         execution.purpose === "method" ? "method" : "analysis"
       );
@@ -7953,8 +8308,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       ).find(({ version }) => version.codeHash === execution.codeHash);
       const renderResult = await replaySavedRender(
         executionResult,
-        execution.chatId,
-        promptId,
+        { kind: "chat", chatId: execution.chatId, promptId },
         saved?.method.name || "python-rerun-analysis.py",
         saved?.version.renderRecipe
       );

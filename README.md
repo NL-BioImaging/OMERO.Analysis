@@ -4,11 +4,12 @@ The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
 and through the modeless **Help** window in OMERO.Analysis.
 
 OMERO.Analysis is a browser-local research workspace for OMERO.web. Its one
-Analysis shell has three standard routable tabs and one optional tab:
+Analysis shell has four standard routable tabs and one optional tab:
 
-- **Chat** — AI-assisted analysis with visible, isolated Python execution.
+- **Home** — choose whether to run a Method, Pipeline, or Notebook, or create a Method with Chat.
+- **Methods & Pipelines** — run reusable analyses and inspect durable run history and outputs.
 - **Notebook** — run-only Python nbformat-4 notebooks attached to OMERO.
-- **Settings** — AI provider configuration and discovered skill provenance.
+- **Chat** — AI-assisted development and testing of reusable Method scripts.
 - **Editor** — optional structured editing for Methods, Pipelines, and Notebooks.
 
 The Workspace explorer is organized as:
@@ -47,7 +48,7 @@ in the browser when needed. The configured provider receives only extracted
 text or derived image pixels, never original PDF or DOCX bytes. OCR, webpages,
 authenticated file URLs, and silent context truncation are not supported.
 
-Chat may load matching measurement-analysis skills from the optional
+The Method-authoring Chat may load matching measurement-analysis skills from the optional
 `biomero-workflow-skills` distribution. Explicit ZarrViewer requests use the
 skill published by BIOMERO.ZarrViewer itself. Analysis starts with generic Chat
 when either provider is absent.
@@ -56,9 +57,8 @@ when either provider is absent.
 
 The deployment registers:
 
-- one top link: **Analysis** (opens Chat);
-- center panel **Analysis Chat**;
-- center panel **Analysis Notebook**.
+- one top link: **Analysis** (opens Home);
+- one center panel: **Analysis**.
 
 Image, Dataset, Plate, and Screen contexts are supported. Notebook upload
 automatically creates and links a FileAnnotation in namespace
@@ -113,7 +113,7 @@ server limit does not guarantee that a browser can safely hold the file.
 Development-stage Project/Script/Workflow formats are intentionally not
 migrated.
 
-- Browser database: `omero-analysis-workspaces`, schema version 1.
+- Browser database: `omero-analysis-workspaces`, schema version 2.
 - Workspace snapshot:
   - namespace/format `nl.bioimaging.analysis.workspace.v1`;
   - filename `*.oa-workspace.zip`;

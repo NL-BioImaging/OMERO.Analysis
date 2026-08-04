@@ -38,7 +38,7 @@ const server = createServer(async (request, response) => {
   }
   if (pathname === "/workflow-skills/") {
     json(response, {
-      schema: "nl.bioimaging.omero-workflow-skills.v1",
+      schema: "nl.bioimaging.biomero-workflow-skills.v1",
       generated_at: "", consumer: "omero-analysis", config_hash: "",
       workflows: [], applications: [], diagnostics: []
     });
@@ -181,7 +181,7 @@ const answerDialog = async (answer) => {
 
 try {
   await page.goto(`http://127.0.0.1:${port}/`);
-  await page.getByText("Ready — browser Python will start when needed").waitFor({ timeout: 15_000 });
+  await page.getByRole("heading", { name: "What would you like to do?" }).waitFor({ timeout: 15_000 });
   if (await page.locator('iframe[title="OMERO Analysis Python runtime"]').count()) {
     throw new Error("Opening Analysis eagerly created the Python runtime");
   }
@@ -192,13 +192,20 @@ try {
   if (await page.getByRole("button", { name: "Editor", exact: true }).count()) {
     throw new Error("Artifact Editor was enabled by default");
   }
-  const notebookTab = page.getByRole("button", { name: "Notebook" });
+  const homeTab = page.getByRole("button", { name: "Home" });
+  if (await homeTab.getAttribute("aria-current") !== "page") {
+    throw new Error("Analysis did not open on the Home landing page");
+  }
+  if (!await page.getByRole("button", { name: "Methods & Pipelines" }).count()) {
+    throw new Error("Methods & Pipelines tab is missing");
+  }
+  const notebookTab = page.getByRole("button", { name: "Notebook", exact: true });
   await notebookTab.focus();
   await page.keyboard.press("Enter");
   if (await notebookTab.getAttribute("aria-current") !== "page") {
     throw new Error("Notebook tab was not keyboard accessible");
   }
-  const chatTab = page.getByRole("button", { name: "Chat" });
+  const chatTab = page.getByRole("button", { name: "Chat", exact: true });
   await chatTab.focus();
   await page.keyboard.press("Enter");
   const themeToggle = page.getByRole("button", { name: "Switch to light theme" });
@@ -226,7 +233,7 @@ try {
   await page.getByLabel("API endpoint").fill("https://provider.example/v1");
   await page.getByLabel("Model or deployment").fill("smoke-model");
   await page.getByLabel("API key").fill("smoke-key");
-  await page.getByRole("button", { name: "Chat" }).click();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByPlaceholder("Ask a question about the loaded data…").fill("Plot the uploaded values.");
   await page.getByRole("button", { name: /Send/ }).click();
 
@@ -264,6 +271,21 @@ try {
   await page.getByRole("menuitem", { name: "Edit" }).click();
   await page.getByRole("region", { name: "Editor" }).waitFor();
   await page.getByRole("button", { name: "Close" }).click();
+  const chatItemsBeforeDirectRun = await page.locator(".messages > *").count();
+  await page.getByRole("button", { name: "Actions for smoke-analysis.py" }).click();
+  await page.getByRole("menuitem", { name: "Run" }).click();
+  const runsTab = page.getByRole("button", { name: "Methods & Pipelines", exact: true });
+  await runsTab.waitFor();
+  if (await runsTab.getAttribute("aria-current") !== "page") {
+    throw new Error("Direct Method execution did not open Methods & Pipelines");
+  }
+  await page.locator(".run-summary.success").getByText("smoke-analysis.py", { exact: true })
+    .waitFor({ timeout: 120_000 });
+  await page.locator(".run-files").getByText("smoke.png", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  if (await page.locator(".messages > *").count() !== chatItemsBeforeDirectRun) {
+    throw new Error("Direct Method execution inserted synthetic Chat messages");
+  }
   if (await page.getByText("Copy to…", { exact: true }).count()) {
     throw new Error("Removed Method transfer UI is still visible");
   }
@@ -275,7 +297,7 @@ try {
     .waitFor();
   if (completions !== 2) throw new Error(`Expected two provider rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
-  console.log("Browser smoke passed: lazy runtime, safe provider boundary, Artifact Editor, Markdown, consolidated execution, Method, and Notebook conversion");
+  console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Chat, and Notebook conversion");
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));
   console.error("Browser errors:", errors.join("\n"));
