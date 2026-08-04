@@ -657,13 +657,15 @@ export function ArtifactInspector({
   profiles,
   canUpload,
   onDownload,
-  onAttach
+  onAttach,
+  onEdit
 }: {
   item?: InspectorItem | null;
   profiles: DataProfile[];
   canUpload: boolean;
   onDownload: (file: WorkspaceFile) => void;
   onAttach: (file: WorkspaceFile) => void;
+  onEdit?: (item: InspectorItem) => void;
 }) {
   const file = item?.file;
   const fileProfile = file
@@ -708,6 +710,9 @@ export function ArtifactInspector({
           <span>Artifact inspector</span>
           <strong>{item?.title || "Workspace overview"}</strong>
         </div>
+        {item && onEdit && ["method", "pipeline", "notebook"].includes(item.kind) && (
+          <Button onClick={() => onEdit(item)}><ActionIcon name="edit" />Edit</Button>
+        )}
       </div>
       <div className="artifact-body">
           {item && !file ? (

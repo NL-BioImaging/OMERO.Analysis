@@ -8,7 +8,7 @@ interface DialogState {
   confirmLabel: string;
   danger?: boolean;
   choices?: Array<{ value: string; label: string; description?: string }>;
-  mode: "text" | "confirm" | "choose";
+  mode: "text" | "confirm" | "choose" | "alert";
 }
 
 export interface DialogController {
@@ -19,6 +19,7 @@ export interface DialogController {
     confirmLabel?: string,
     danger?: boolean
   ) => Promise<boolean>;
+  alert: (title: string, description: string) => Promise<void>;
   choose: (
     title: string,
     choices: Array<{ value: string; label: string; description?: string }>,
@@ -71,12 +72,20 @@ export function useDialogs(): DialogController {
     });
   });
 
+  const alert = (title: string, description: string) =>
+    new Promise<void>((resolve) => {
+      resolver.current = () => resolve();
+      setState({ title, description, confirmLabel: "Close", mode: "alert" });
+    });
+
   const element = state ? (
     <div
       className="dialog-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close(state.mode === "confirm" ? false : null);
+        if (event.target === event.currentTarget) {
+          close(state.mode === "confirm" ? false : null);
+        }
       }}
     >
       <form
@@ -125,9 +134,11 @@ export function useDialogs(): DialogController {
           </label>
         )}
         <div className="dialog-actions">
-          <Button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
-            Cancel
-          </Button>
+          {state.mode !== "alert" && (
+            <Button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
+              Cancel
+            </Button>
+          )}
           <Button className={state.danger ? "danger-button" : ""} type="submit">
             {state.confirmLabel}
           </Button>
@@ -136,5 +147,5 @@ export function useDialogs(): DialogController {
     </div>
   ) : null;
 
-  return { askText, confirm, choose, element };
+  return { askText, confirm, alert, choose, element };
 }

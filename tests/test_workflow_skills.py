@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from django.test import RequestFactory
@@ -81,6 +82,20 @@ def test_catalog_and_package_adapters(monkeypatch):
     )
     assert response.status_code == 200
     assert b"analyze-cisegmentation-measurements" in response.content
+
+
+def test_catalog_provider_is_optional(monkeypatch):
+    monkeypatch.setattr(views, "_workflow_skill_catalog", lambda: None)
+    response = views.workflow_skills(
+        RequestFactory().get("/api/workflow-skills/"),
+        conn=object(),
+    )
+
+    assert response.status_code == 200
+    payload = json.loads(response.content)
+    assert payload["workflows"] == []
+    assert payload["service_status"] == {"available": False}
+    assert payload["diagnostics"][0]["code"] == "provider-not-installed"
 
 
 def test_refresh_is_admin_only(monkeypatch):

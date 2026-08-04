@@ -738,11 +738,12 @@ export async function completeChat(
   messages: AiMessage[],
   signal: AbortSignal,
   onDelta?: (content: string) => void,
-  tools: readonly unknown[] = TOOLS
+  tools: readonly unknown[] = TOOLS,
+  forceToolCall = false
 ): Promise<AiResponse> {
   return settings.protocol === "anthropic"
-    ? completeAnthropic(settings, messages, signal, onDelta, tools)
-    : completeOpenAi(settings, messages, signal, onDelta, tools);
+    ? completeAnthropic(settings, messages, signal, onDelta, tools, forceToolCall)
+    : completeOpenAi(settings, messages, signal, onDelta, tools, forceToolCall);
 }
 
 const visionProbeCache = new Map<string, Promise<boolean>>();
@@ -873,22 +874,36 @@ export function providerEndpoint(settings: ProviderSettings): string {
     : `${value}/chat/completions`;
 }
 
+function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    const hostname = new URL(endpoint).hostname.toLowerCase();
+    return hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "127.0.0.1" ||
+      hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 async function completeOpenAi(
   settings: ProviderSettings,
   messages: AiMessage[],
   signal: AbortSignal,
   onDelta?: (content: string) => void,
-  tools: readonly unknown[] = TOOLS
+  tools: readonly unknown[] = TOOLS,
+  forceToolCall = false
 ): Promise<AiResponse> {
   const toolConfiguration = tools.length
-    ? { tools, tool_choice: "auto" }
+    ? { tools, tool_choice: forceToolCall ? "required" : "auto" }
     : {};
   const authorization: Record<string, string> = settings.authMode === "api-key"
     ? { "api-key": settings.apiKey }
     : settings.authMode === "bearer"
       ? { Authorization: `Bearer ${settings.apiKey}` }
       : {};
-  const response = await fetch(providerEndpoint(settings), {
+  const endpoint = providerEndpoint(settings);
+  const request = (stream: boolean) => fetch(endpoint, {
     method: "POST",
     signal,
     headers: {
@@ -900,10 +915,26 @@ async function completeOpenAi(
       temperature: TEMPERATURE,
       messages: openAiMessages(messages),
       ...toolConfiguration,
-      stream: Boolean(onDelta),
-      stream_options: onDelta ? { include_usage: true } : undefined
+      stream,
+      stream_options: stream ? { include_usage: true } : undefined
     })
   });
+  const streaming = Boolean(onDelta);
+  let response = await request(streaming);
+  // Some local OpenAI-compatible runtimes can fail while incrementally
+  // reconstructing a streamed tool call even though the same completion is
+  // valid as a single response. Retry once without streaming so a transient
+  // parser failure does not abort the complete analysis turn.
+  if (
+    streaming &&
+    isLoopbackEndpoint(endpoint) &&
+    response.status >= 500 &&
+    response.status < 600 &&
+    !signal.aborted
+  ) {
+    onDelta?.("");
+    response = await request(false);
+  }
   if (!response.ok) throw new Error(await errorText(response));
   if (!onDelta || !response.headers.get("content-type")?.includes("text/event-stream")) {
     return aiResponseFrom(await response.json(), providerLabel(settings));
@@ -1055,7 +1086,8 @@ async function completeAnthropic(
   messages: AiMessage[],
   signal: AbortSignal,
   onDelta?: (content: string) => void,
-  tools: readonly unknown[] = TOOLS
+  tools: readonly unknown[] = TOOLS,
+  forceToolCall = false
 ): Promise<AiResponse> {
   const converted = anthropicMessages(messages);
   const response = await fetch(providerEndpoint(settings), {
@@ -1072,7 +1104,8 @@ async function completeAnthropic(
       temperature: TEMPERATURE,
       system: converted.system || undefined,
       messages: converted.messages,
-      tools: tools.length ? anthropicTools(tools) : undefined
+      tools: tools.length ? anthropicTools(tools) : undefined,
+      tool_choice: tools.length && forceToolCall ? { type: "any" } : undefined
     })
   });
   if (!response.ok) throw new Error(await errorText(response));

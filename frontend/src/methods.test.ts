@@ -1,4 +1,4 @@
-import { bindMethodInputs, methodUsesZarrViewer } from "./App";
+import { bindMethodInputs, methodUsesZarrViewer, nextUntitledName } from "./App";
 import type { MethodRecord, WorkspaceFile } from "./types";
 
 function input(name: string): WorkspaceFile {
@@ -52,5 +52,12 @@ describe("portable saved methods", () => {
     expect(methodUsesZarrViewer(method, "print('ordinary Python')")).toBe(true);
     expect(methodUsesZarrViewer({} as MethodRecord, "render_panels(store_uuid)")).toBe(true);
     expect(methodUsesZarrViewer({} as MethodRecord, "print('ordinary Python')")).toBe(false);
+  });
+
+  it("allocates the first free zero-padded untitled artifact name", () => {
+    expect(nextUntitledName([], ".py")).toBe("untitled01.py");
+    expect(nextUntitledName(["untitled01.py", "Untitled02.py", "other.py"], ".py"))
+      .toBe("untitled03.py");
+    expect(nextUntitledName(["untitled01.ipynb"], ".ipynb")).toBe("untitled02.ipynb");
   });
 });

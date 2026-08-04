@@ -95,18 +95,41 @@ The Method menu provides **Run**, **Rename**, **Download**, and **Delete
 method**. The Pipeline menu provides the corresponding **Run**, **Rename**,
 **Download**, and **Delete pipeline** actions.
 
+When **Enable artifact editor** is on, Method and Pipeline menus and their
+Artifact Inspector views also provide **Edit**. The Editor strictly resolves
+every referenced `/input/...` file before opening. Exact filenames are used
+first; otherwise exactly one ready file with the same extension is required.
+Missing or ambiguous input data stops the editor from opening and is reported
+as an error. Pipelines may bind later steps to literal `/output/...` files
+declared by earlier steps.
+
+The Methods folder also shows **New** while the editor is enabled. It creates
+`untitled01.py`, or the first higher unused two-digit name, and opens it in the
+Editor. Python uses semantic syntax colors, and SQL in a triple-quoted `sql`,
+`query`, or `statement` assignment is highlighted as SQL.
+
 Running a Method or Pipeline switches to Chat. Results are placed in the
 corresponding results folder.
 
 ## Notebooks
 
-Notebooks are read-only Python nbformat-4 documents. They never run
-automatically. Use **Open** to inspect a Notebook and **Run** to reset the
-kernel, attach current inputs, and execute all cells in order.
+Notebooks are Python nbformat-4 documents. Outside the optional artifact
+Editor they are read-only and never run automatically. Use **Open** to inspect
+a Notebook and **Run** to reset the kernel, attach current inputs, and execute
+all cells in order.
 
 The Notebook menu provides **Open**, **Run**, **Rename**, **Download**, and
 **Delete notebook**. Deleting the browser copy does not delete an existing
 OMERO FileAnnotation.
+
+With the artifact editor enabled, **Edit** opens a structured cell editor after
+strictly reattaching current inputs. The generated input-binding cell is
+read-only. Saving edited content clears stored execution counts and outputs so
+stale results are not presented as current. Code cells use Python and embedded
+SQL syntax highlighting. Markdown cells render formatted text when run or
+previewed. Raw text cells preserve text exactly and are neither executed nor
+formatted. The Notebooks folder **New** button creates the first available
+`untitled01.ipynb`-style name and opens a blank code cell in the Editor.
 
 Use **Reattach input data** after the Workspace inputs change. Analysis
 synchronizes the ready local inputs under `/input`, adds or updates one visible
@@ -153,6 +176,14 @@ The Analysis Notebook OMERO panel shows only reusable Notebooks. The Analysis
 Chat panel can show Methods, Pipelines, and Notebooks.
 
 ## Analysis Settings
+
+**Enable artifact editor** is off by default. Enabling it adds the **Editor**
+tab beside Chat and Notebook and adds **Edit** to Method, Pipeline, and Notebook
+menus and Artifact Inspector views. Methods save as a new version, Pipelines
+increment their version, and Notebooks update in place. **Save and Run** always
+saves before delegating to the existing runner. Use Ctrl+S or Cmd+S to save;
+leaving a dirty editor asks before discarding changes. The preference applies
+to the current user and group and is included by **Sync Settings**.
 
 **Plot + CSV** asks Chat to save both a visual plot and the corresponding
 tabular data. This preference is included when settings are synchronized.

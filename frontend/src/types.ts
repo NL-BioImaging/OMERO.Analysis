@@ -53,6 +53,7 @@ export interface Bootstrap {
   zarrViewerStatusUrl: string;
   keepaliveUrl: string;
   keepaliveInterval: number;
+  styleNonce?: string;
   runtimeBase: string;
 }
 
@@ -624,6 +625,7 @@ export interface AnalysisSettingsBundle {
     analysis: {
       plotCsv: boolean;
       theme?: "dark" | "light";
+      editorEnabled?: boolean;
       syncChatAttachments?: boolean;
       syncAnalysisWorkspace?: boolean;
       syncAnalysisSettings?: boolean;

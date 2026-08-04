@@ -34,6 +34,7 @@ window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   zarrViewerStatusUrl: value("zarrViewerStatusUrl"),
   keepaliveUrl: value("keepaliveUrl"),
   keepaliveInterval: Number(value("keepaliveInterval")) || 0,
+  styleNonce: value("styleNonce"),
   runtimeBase: value("runtimeBase").replace(/ASSET$/, "")
 };
 

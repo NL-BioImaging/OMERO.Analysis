@@ -52,10 +52,11 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (pathname === "/") {
+    const styleNonce = "smoke-artifact-editor";
     response.setHeader("Content-Type", "text/html");
     response.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
+      `default-src 'self'; script-src 'self'; style-src 'self' 'nonce-${styleNonce}'; img-src 'self' data: blob:; ` +
       "connect-src 'self' https: http://localhost:*; worker-src blob:; frame-src 'self' blob:; " +
       "object-src 'none'; base-uri 'self'; form-action 'self'"
     );
@@ -64,6 +65,7 @@ const server = createServer(async (request, response) => {
       <div id="root"
         data-workflow-skills-url="/workflow-skills/"
         data-zarr-viewer-status-url="/zarr-status/"
+        data-style-nonce="${styleNonce}"
         data-runtime-base="/runtime/ASSET"></div>
       <script id="omero-analysis-context" type="application/json">null</script>
       <script type="module" src="/app.js"></script>`);
@@ -187,6 +189,9 @@ try {
   if (JSON.stringify(rootFolders) !== JSON.stringify(["Input", "Chat", "Methods", "Pipelines", "Notebooks"])) {
     throw new Error(`Unexpected Workspace folder order: ${rootFolders.join(", ")}`);
   }
+  if (await page.getByRole("button", { name: "Editor", exact: true }).count()) {
+    throw new Error("Artifact Editor was enabled by default");
+  }
   const notebookTab = page.getByRole("button", { name: "Notebook" });
   await notebookTab.focus();
   await page.keyboard.press("Enter");
@@ -215,6 +220,8 @@ try {
     throw new Error("Explorer items do not expose their full name as a tooltip");
   }
   await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("checkbox", { name: /Enable artifact editor/ }).check();
+  await page.getByRole("button", { name: "Editor", exact: true }).waitFor();
   await page.getByText("AI Settings", { exact: true }).click();
   await page.getByLabel("API endpoint").fill("https://provider.example/v1");
   await page.getByLabel("Model or deployment").fill("smoke-model");
@@ -245,6 +252,18 @@ try {
   await answerDialog("smoke-analysis.py");
   await answerDialog("Reusable smoke analysis");
   await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
+  await page.getByText("smoke-analysis.py", { exact: true }).click();
+  const methodInspector = page.locator(".artifact-inspector");
+  await methodInspector.getByRole("button", { name: "Edit" }).click();
+  await page.getByRole("region", { name: "Editor" }).waitFor();
+  if (await page.locator(".editor-method .cm-editor").count() !== 1) {
+    throw new Error("Method Editor did not create its syntax editor");
+  }
+  await page.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Actions for smoke-analysis.py" }).click();
+  await page.getByRole("menuitem", { name: "Edit" }).click();
+  await page.getByRole("region", { name: "Editor" }).waitFor();
+  await page.getByRole("button", { name: "Close" }).click();
   if (await page.getByText("Copy to…", { exact: true }).count()) {
     throw new Error("Removed Method transfer UI is still visible");
   }
@@ -256,7 +275,7 @@ try {
     .waitFor();
   if (completions !== 2) throw new Error(`Expected two provider rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
-  console.log("Browser smoke passed: lazy runtime, safe provider boundary, Markdown, consolidated execution, Method, and Notebook conversion");
+  console.log("Browser smoke passed: lazy runtime, safe provider boundary, Artifact Editor, Markdown, consolidated execution, Method, and Notebook conversion");
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));
   console.error("Browser errors:", errors.join("\n"));

@@ -29,8 +29,21 @@ import {
 } from "./constants";
 import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
 import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
+import ArtifactEditor, {
+  type ArtifactEditorSession,
+  type EditorOriginTab
+} from "./ArtifactEditor";
+import {
+  bindNotebookInputsStrict,
+  bindPipelineInputsStrict,
+  bindPipelineStepCodeStrict,
+  bindPythonInputsStrict,
+  clearNotebookOutputs,
+  readyWorkspaceInputs
+} from "./artifactBindings";
 import {
   defaultSettings,
+  deleteChatCascade,
   deleteWorkspaceCascade,
   deleteFile as deleteStoredFile,
   deleteNotebook as deleteStoredNotebook,
@@ -173,6 +186,7 @@ import {
   workflowSkillTooltip
 } from "./presentation";
 import {
+  artifactEvidenceGap,
   chatRoundPolicy,
   FINAL_SYNTHESIS_INSTRUCTION,
   MAX_TOOL_ROUNDS
@@ -219,6 +233,8 @@ const workspaceSyncPreferenceKey = (context: OmeroContext | null) =>
   `analysis:sync-workspace:${context?.user_id || 0}:${context?.group_id || 0}`;
 const settingsSyncPreferenceKey = (context: OmeroContext | null) =>
   `analysis:sync-settings:${context?.user_id || 0}:${context?.group_id || 0}`;
+const editorPreferenceKey = (context: OmeroContext | null) =>
+  `analysis:artifact-editor:${context?.user_id || 0}:${context?.group_id || 0}`;
 const defaultAiProfiles = (): AiProfileStore => ({
   activeProfileId: DEFAULT_AI_PROFILE_ID,
   profiles: [{
@@ -252,6 +268,15 @@ function slug(value: string): string {
     .replace(/-+/g, "-")
     .slice(0, 72)
     .toLowerCase() || "analysis";
+}
+
+export function nextUntitledName(names: string[], extension: ".py" | ".ipynb"): string {
+  const used = new Set(names.map((name) => name.toLowerCase()));
+  let sequence = 1;
+  while (used.has(`untitled${String(sequence).padStart(2, "0")}${extension}`)) {
+    sequence += 1;
+  }
+  return `untitled${String(sequence).padStart(2, "0")}${extension}`;
 }
 
 function titleFromPrompt(value: string): string {
@@ -290,27 +315,13 @@ export function bindMethodInputs(
   code: string,
   files: WorkspaceFile[]
 ): { code: string; bindings: Array<{ from: string; to: string }> } {
-  const inputs = files.filter((file) =>
-    file.source !== "result" && file.role !== "chat-attachment" && file.state === "ready"
-  );
-  const bindings: Array<{ from: string; to: string }> = [];
-  const rebound = code.replace(/(["'])\/input\/([^"']+)\1/g, (match, quote, sourceName) => {
-    if (inputs.some((file) => file.name === sourceName)) return match;
-    const extension = sourceName.match(/(\.[^.]+)$/)?.[1]?.toLowerCase() || "";
-    const candidates = inputs.filter((file) =>
-      extension && file.name.toLowerCase().endsWith(extension)
-    );
-    if (candidates.length !== 1) {
-      throw new Error(
-        candidates.length
-          ? `Method input ${sourceName} is ambiguous: ${candidates.map((file) => file.name).join(", ")}`
-          : `Method input ${sourceName} has no compatible file in this workspace`
-      );
-    }
-    bindings.push({ from: sourceName, to: candidates[0].name });
-    return `${quote}/input/${candidates[0].name}${quote}`;
-  });
-  return { code: rebound, bindings };
+  const rebound = bindPythonInputsStrict(code, files);
+  return {
+    code: rebound.code,
+    bindings: rebound.bindings
+      .filter((binding) => binding.from !== binding.to)
+      .map(({ from, to }) => ({ from, to }))
+  };
 }
 
 function estimateTokens(value: unknown): number {
@@ -472,8 +483,8 @@ export default function App() {
   );
   const dialogs = useDialogs();
   const initialTab = new URLSearchParams(window.location.search).get("tab");
-  const [activeTab, setActiveTabState] = useState<"chat" | "notebook" | "settings">(
-    initialTab === "notebook" || initialTab === "settings" ? initialTab : "chat"
+  const [activeTab, setActiveTabState] = useState<"chat" | "notebook" | "editor" | "settings">(
+    initialTab === "notebook" || initialTab === "editor" || initialTab === "settings" ? initialTab : "chat"
   );
   const [analysisWorkspace, setWorkspace] = useState<AnalysisWorkspace | null>(null);
   const workspaceRef = useRef<AnalysisWorkspace | null>(null);
@@ -513,6 +524,7 @@ export default function App() {
   const [syncChatAttachments, setSyncChatAttachments] = useState(false);
   const [syncAnalysisWorkspace, setSyncAnalysisWorkspace] = useState(true);
   const [syncAnalysisSettings, setSyncAnalysisSettings] = useState(true);
+  const [editorEnabled, setEditorEnabled] = useState(false);
   const [syncPreferencesLoaded, setSyncPreferencesLoaded] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -529,6 +541,8 @@ export default function App() {
   const [artifactWidth, setArtifactWidth] = useState(360);
   const [notebookRunRequest, setNotebookRunRequest] =
     useState<{ id: string; nonce: number } | null>(null);
+  const [editorSession, setEditorSession] = useState<ArtifactEditorSession | null>(null);
+  const [editorSaving, setEditorSaving] = useState(false);
   const [explorerQuery, setExplorerQuery] = useState("");
   const [status, setStatus] = useState("Preparing workspace…");
   const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
@@ -550,7 +564,9 @@ export default function App() {
   const [openLibraryDatasets, setOpenLibraryDatasets] = useState<Set<number>>(new Set());
   const [libraryLoading, setLibraryLoading] = useState(false);
   const initialLibraryRequestHandled = useRef(false);
+  const initialEditorRequestHandled = useRef(false);
   const remoteSettingsLoaded = useRef(false);
+  const localEditorPreference = useRef<boolean | undefined>(undefined);
   const localAutodetectStarted = useRef(false);
   const [openFolders, setOpenFolders] = useState({
     chat: true,
@@ -586,7 +602,7 @@ export default function App() {
   workspaceRef.current = analysisWorkspace;
   workflowSkillCatalogRef.current = workflowSkillCatalog;
 
-  function setActiveTab(tab: "chat" | "notebook" | "settings") {
+  function setActiveTab(tab: "chat" | "notebook" | "editor" | "settings") {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
     window.history.replaceState({}, "", url);
@@ -619,16 +635,46 @@ export default function App() {
     void Promise.all([
       getValue<boolean>(attachmentSyncPreferenceKey(bootstrap.context)),
       getValue<boolean>(workspaceSyncPreferenceKey(bootstrap.context)),
-      getValue<boolean>(settingsSyncPreferenceKey(bootstrap.context))
-    ]).then(([attachments, workspaceSyncEnabled, settingsSyncEnabled]) => {
+      getValue<boolean>(settingsSyncPreferenceKey(bootstrap.context)),
+      getValue<boolean>(editorPreferenceKey(bootstrap.context))
+    ]).then(([attachments, workspaceSyncEnabled, settingsSyncEnabled, savedEditorEnabled]) => {
       if (!alive) return;
+      localEditorPreference.current = typeof savedEditorEnabled === "boolean"
+        ? savedEditorEnabled
+        : undefined;
       setSyncChatAttachments(attachments === true);
       setSyncAnalysisWorkspace(workspaceSyncEnabled !== false);
       setSyncAnalysisSettings(settingsSyncEnabled !== false);
+      setEditorEnabled(savedEditorEnabled === true);
       setSyncPreferencesLoaded(true);
     });
     return () => { alive = false; };
   }, [bootstrap.context?.user_id, bootstrap.context?.group_id]);
+  useEffect(() => {
+    if (!syncPreferencesLoaded || editorEnabled || activeTab !== "editor") return;
+    setActiveTab("chat");
+  }, [activeTab, editorEnabled, syncPreferencesLoaded]);
+  useEffect(() => {
+    if (
+      initialEditorRequestHandled.current || !syncPreferencesLoaded ||
+      !analysisWorkspace || activeTab !== "editor" || !editorEnabled
+    ) return;
+    initialEditorRequestHandled.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const kind = params.get("editorKind");
+    const artifactId = params.get("editorId");
+    if ((kind === "method" || kind === "pipeline" || kind === "notebook") && artifactId) {
+      void openArtifactEditor(kind, artifactId, "chat");
+    } else {
+      setActiveTab("chat");
+    }
+  }, [activeTab, analysisWorkspace?.workspace.id, editorEnabled, syncPreferencesLoaded]);
+  useEffect(() => {
+    if (!editorSession?.dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [editorSession?.dirty]);
   const inputFiles = (analysisWorkspace?.files || []).filter(
     (file) => file.source !== "result" && file.role !== "chat-attachment" && !file.deletedAt
   );
@@ -1049,11 +1095,16 @@ export default function App() {
       );
       const restoredWorkspaceSync = payload.analysis.syncAnalysisWorkspace !== false;
       const restoredSettingsSync = payload.analysis.syncAnalysisSettings !== false;
+      const restoredEditorEnabled = localEditorPreference.current ??
+        (payload.analysis.editorEnabled === true);
+      localEditorPreference.current = restoredEditorEnabled;
       setSyncAnalysisWorkspace(restoredWorkspaceSync);
       setSyncAnalysisSettings(restoredSettingsSync);
+      setEditorEnabled(restoredEditorEnabled);
       await Promise.all([
         setValue(workspaceSyncPreferenceKey(bootstrap.context), restoredWorkspaceSync),
-        setValue(settingsSyncPreferenceKey(bootstrap.context), restoredSettingsSync)
+        setValue(settingsSyncPreferenceKey(bootstrap.context), restoredSettingsSync),
+        setValue(editorPreferenceKey(bootstrap.context), restoredEditorEnabled)
       ]);
       const current = workspaceRef.current;
       if (current && current.workspace.plotCsv !== payload.analysis.plotCsv) {
@@ -1765,6 +1816,7 @@ export default function App() {
         analysis: {
           plotCsv: current.workspace.plotCsv,
           theme,
+          editorEnabled,
           syncChatAttachments,
           syncAnalysisWorkspace,
           syncAnalysisSettings
@@ -2039,14 +2091,20 @@ export default function App() {
     );
   }
 
-  function openNotebook(record: NotebookRecord) {
+  async function openNotebook(record: NotebookRecord, fromEditor = false): Promise<boolean> {
+    if (!fromEditor && activeTab === "editor" && !await confirmDiscardEditor()) return false;
+    if (activeTab === "editor") {
+      setEditorSession(null);
+      editorRoute();
+    }
     setActiveNotebookId(record.id);
     setInspectorSelection({ kind: "notebook", id: record.id });
     setActiveTab("notebook");
+    return true;
   }
 
-  async function runNotebook(record: NotebookRecord) {
-    openNotebook(record);
+  async function runNotebook(record: NotebookRecord, fromEditor = false) {
+    if (!await openNotebook(record, fromEditor)) return;
     await ensureRuntime(workspaceRef.current?.files || []);
     setNotebookRunRequest({ id: record.id, nonce: Date.now() });
   }
@@ -2562,6 +2620,75 @@ export default function App() {
     ))?.trim();
     if (!title) return;
     updateChat(manuallyNamedChat(chat, title, now()));
+  }
+
+  async function removeChat(chat: ChatRecord) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    if (busy && current.workspace.activeChatId === chat.id) {
+      setStatus("Stop the active analysis before deleting this chat");
+      return;
+    }
+    const chatFiles = current.files.filter((file) => file.chatId === chat.id);
+    const resultCount = chatFiles.filter((file) => file.source === "result").length;
+    const attachmentCount = chatFiles.filter((file) => file.role === "chat-attachment").length;
+    if (!await dialogs.confirm(
+      "Delete chat and results?",
+      `${chat.title} and its complete conversation will be permanently removed, together with ` +
+      `${resultCount} result${resultCount === 1 ? "" : "s"}, ` +
+      `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}, executions, and evidence. ` +
+      "Saved Methods, Pipelines, and Notebooks are kept.",
+      "Delete chat",
+      true
+    )) return;
+
+    const remainingChats = current.chats.filter((item) => item.id !== chat.id);
+    const replacement = remainingChats[0] || newChat(current.workspace.id);
+    const chats = remainingChats.length ? remainingChats : [replacement];
+    const deletingActiveChat = current.workspace.activeChatId === chat.id;
+    const nextWorkspace = {
+      ...current.workspace,
+      activeChatId: deletingActiveChat ? replacement.id : current.workspace.activeChatId,
+      updatedAt: now()
+    };
+    await deleteChatCascade(chat.id);
+    if (!remainingChats.length) await saveChat(replacement);
+    const persistedWorkspace = await saveWorkspaceRecord(nextWorkspace);
+    const removedFileIds = new Set(chatFiles.map((file) => file.id));
+    const updated: AnalysisWorkspace = {
+      ...current,
+      workspace: persistedWorkspace,
+      chats,
+      files: current.files.filter((file) => file.chatId !== chat.id),
+      executions: current.executions.filter((execution) => execution.chatId !== chat.id),
+      artifacts: current.artifacts.filter((artifact) => artifact.chatId !== chat.id),
+      audits: current.audits.filter((audit) => audit.chatId !== chat.id),
+      evidence: current.evidence.filter((evidence) => evidence.chatId !== chat.id)
+    };
+    workspaceRef.current = updated;
+    setWorkspace(updated);
+    setOpenChatFolders((folders) => {
+      const next = new Set(folders);
+      next.delete(chat.id);
+      return next;
+    });
+    if (
+      inspectorSelection?.kind === "chat" && inspectorSelection.id === chat.id ||
+      inspectorSelection?.kind === "file" && removedFileIds.has(inspectorSelection.id)
+    ) setInspectorSelection(null);
+    if (deletingActiveChat) {
+      setUsage(null);
+      usageRef.current = null;
+      turnOutputNames.current.clear();
+    }
+    setStatus(`Deleted chat ${chat.title} and all of its local results`);
+  }
+
+  function chatActions(chat: ChatRecord): BrowserMenuAction[] {
+    return [
+      { label: "Rename chat", run: () => void renameChat(chat) },
+      { label: "Delete chat and results", danger: true, run: () => void removeChat(chat) }
+    ];
   }
 
   function openBrowserMenu(
@@ -3768,7 +3895,11 @@ export default function App() {
         if (!method || !version) return toolErrorText(`Pipeline step ${step.name} is unavailable`);
         try {
           await runtime.beginTurn();
-          const bound = bindMethodInputs(version.code, latest.files);
+          const bound = bindPipelineStepCodeStrict(
+            version.code,
+            latest.files,
+            step.inputBindings || {}
+          );
           const outcome = await executeSavedMethodVersion(
             method,
             version,
@@ -3966,7 +4097,9 @@ export default function App() {
       : 24_000;
     const threshold = Math.max(1_000, baseThreshold - attachmentPayload.tokens);
     const ordinary = currentChat.messages.filter((message) =>
-      message.kind !== "execution" && message.kind !== "ai-activity"
+      message.kind !== "execution" &&
+      message.kind !== "ai-activity" &&
+      message.kind !== "error"
     );
     if (estimateTokens(ordinary) > threshold) {
       currentChat = { ...currentChat, summary: compactSummary(ordinary), updatedAt: now() };
@@ -4034,6 +4167,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         ),
         ...(zarrViewerStatus?.available ? ZARR_VIEWER_TOOLS : [])
       ];
+      let forceToolCall = false;
       for (let turn = 0; turn <= MAX_TOOL_ROUNDS; turn += 1) {
         const policy = chatRoundPolicy(turn, availableTools);
         if (policy.finalSynthesis) {
@@ -4064,8 +4198,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           conversation,
           abort.current.signal,
           (partial) => setStreamingText(partial),
-          policy.tools
+          policy.tools,
+          forceToolCall
         );
+        forceToolCall = false;
         const answer = response.choices[0]?.message;
         if (!answer) throw new Error("The AI provider returned no response");
         const responseDurationMs = performance.now() - responseStartedAt;
@@ -4086,6 +4222,49 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         };
         updateChatUsage(chat.id, nextUsage);
         conversation.push({ role: "assistant", content: answer.content, tool_calls: answer.tool_calls });
+        const availableOutputNames = (workspaceRef.current?.files || [])
+          .filter((file) => file.source === "result" && file.state === "ready" && !file.deletedAt)
+          .map((file) => file.name);
+        const outputGap = !answer.tool_calls?.length
+          ? artifactEvidenceGap(
+              text,
+              answer.content || "",
+              Array.from(turnOutputNames.current),
+              availableOutputNames
+            )
+          : null;
+        if (outputGap && !policy.finalSynthesis) {
+          const missingDetail = outputGap.missingOutputNames.length
+            ? ` Missing claimed files: ${outputGap.missingOutputNames.join(", ")}.`
+            : "";
+          finishAiActivityEntry(
+            chat.id,
+            activityMessageId,
+            responseEntryId,
+            "failed",
+            `No generated artifact from this turn verifies the response.${missingDetail}`
+          );
+          conversation.push({
+            role: "system",
+            content:
+              "The user requested a generated artifact, but the previous response has no matching " +
+              `successful local output.${missingDetail} Do not claim success or give a final answer yet. ` +
+              "Call run_python or a matching saved Method/Pipeline now, verify the generated files returned " +
+              "by the tool, and only then report their exact names."
+          });
+          forceToolCall = true;
+          setStreamingText("");
+          setAnalysisPhase("repairing");
+          continue;
+        }
+        if (outputGap && policy.finalSynthesis) {
+          const missing = outputGap.missingOutputNames.length
+            ? ` The claimed files do not exist: ${outputGap.missingOutputNames.join(", ")}.`
+            : "";
+          answer.content =
+            "I could not create or verify the requested output in the local workspace." +
+            `${missing} No successful local execution produced an artifact, so I will not report it as completed.`;
+        }
         finishAiActivityEntry(
           chat.id,
           activityMessageId,
@@ -4467,9 +4646,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     }
   }
 
-  async function runMethod(method: MethodRecord) {
+  async function runMethod(method: MethodRecord, fromEditor = false) {
     const current = workspaceRef.current;
     if (!current?.workspace.activeChatId) return;
+    if (!fromEditor && activeTab === "editor" && !await confirmDiscardEditor()) return;
+    if (activeTab === "editor") {
+      setEditorSession(null);
+      editorRoute();
+    }
     setActiveTab("chat");
     const version = method.versions.find((item) => item.version === method.currentVersion);
     if (!version) return;
@@ -4739,9 +4923,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     setStatus(`Created pipeline ${pipeline.name} with ${selected.length} isolated steps`);
   }
 
-  async function runPipeline(pipeline: PipelineRecord) {
+  async function runPipeline(pipeline: PipelineRecord, fromEditor = false) {
     const current = workspaceRef.current;
     if (!current?.workspace.activeChatId || busy) return;
+    if (!fromEditor && activeTab === "editor" && !await confirmDiscardEditor()) return;
+    if (activeTab === "editor") {
+      setEditorSession(null);
+      editorRoute();
+    }
     setActiveTab("chat");
     setBusy(true);
     const workflowStartedAt = performance.now();
@@ -4769,7 +4958,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         setStatus(`Pipeline ${pipeline.name}: step ${index + 1} of ${pipeline.steps.length}`);
         await runtime.beginTurn();
         turnOutputNames.current.clear();
-        const bound = bindMethodInputs(version.code, availableInputs);
+        const bound = bindPipelineStepCodeStrict(
+          version.code,
+          availableInputs,
+          step.inputBindings || {}
+        );
         const outcome = await executeSavedMethodVersion(
           method,
           version,
@@ -5478,6 +5671,28 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     updateWorkspaceRecord({ ...workspace, plotCsv: !workspace.plotCsv, updatedAt: now() });
   }
 
+  async function toggleEditorEnabled() {
+    const next = !editorEnabled;
+    if (!next && editorSession?.dirty && !await dialogs.confirm(
+      "Disable artifact editor?",
+      "The current editor has unsaved changes. Disabling the editor will discard them.",
+      "Disable and discard",
+      true
+    )) return;
+    localEditorPreference.current = next;
+    setEditorEnabled(next);
+    await setValue(editorPreferenceKey(bootstrap.context), next);
+    if (!next) {
+      setEditorSession(null);
+      if (activeTab === "editor") setActiveTab("settings");
+    }
+    setSettingsSyncMessage(
+      next
+        ? "The artifact Editor tab and Edit actions are enabled"
+        : "The artifact Editor tab and Edit actions are disabled"
+    );
+  }
+
   function toggleSyncChatAttachments() {
     const next = !syncChatAttachments;
     setSyncChatAttachments(next);
@@ -5554,9 +5769,388 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     ];
   }
 
+  async function confirmDiscardEditor(): Promise<boolean> {
+    if (!editorSession?.dirty) return true;
+    return dialogs.confirm(
+      "Discard unsaved editor changes?",
+      `Unsaved changes to ${editorSession.name} will be lost.`,
+      "Discard changes",
+      true
+    );
+  }
+
+  function editorRoute(kind?: ArtifactEditorSession["kind"], artifactId?: string) {
+    const url = new URL(window.location.href);
+    if (kind && artifactId) {
+      url.searchParams.set("editorKind", kind);
+      url.searchParams.set("editorId", artifactId);
+    } else {
+      url.searchParams.delete("editorKind");
+      url.searchParams.delete("editorId");
+    }
+    window.history.replaceState({}, "", url);
+  }
+
+  function preparedEditorSession(
+    kind: ArtifactEditorSession["kind"],
+    artifactId: string,
+    originTab: EditorOriginTab
+  ): ArtifactEditorSession {
+    const current = workspaceRef.current;
+    if (!current) throw new Error("Workspace is not ready");
+    if (kind === "method") {
+      const method = current.methods.find((item) => item.id === artifactId && !item.deletedAt);
+      const version = method?.versions.find((item) => item.version === method.currentVersion);
+      if (!method || !version) throw new Error("Method is unavailable");
+      const rebound = bindPythonInputsStrict(version.code, current.files);
+      return {
+        kind,
+        id: method.id,
+        name: method.name,
+        originTab,
+        original: method,
+        draftCode: rebound.code,
+        bindingCount: rebound.bindings.length,
+        dirty: rebound.code !== version.code
+      };
+    }
+    if (kind === "pipeline") {
+      const pipeline = current.pipelines.find((item) => item.id === artifactId && !item.deletedAt);
+      if (!pipeline) throw new Error("Pipeline is unavailable");
+      const rebound = bindPipelineInputsStrict(pipeline, current.methods, current.files);
+      return {
+        kind,
+        id: pipeline.id,
+        name: pipeline.name,
+        originTab,
+        original: pipeline,
+        draft: rebound.pipeline,
+        bindingCount: rebound.bindings.length,
+        dirty: JSON.stringify(rebound.pipeline.steps) !== JSON.stringify(pipeline.steps)
+      };
+    }
+    const notebook = current.notebooks.find((item) => item.id === artifactId);
+    if (!notebook) throw new Error("Notebook is unavailable");
+    const rebound = bindNotebookInputsStrict(notebook.document, current.files);
+    const draft = {
+      ...notebook,
+      document: rebound.document,
+      selectedDataFileIds: readyWorkspaceInputs(current.files).map((file) => file.id)
+    };
+    return {
+      kind,
+      id: notebook.id,
+      name: notebook.name,
+      originTab,
+      original: notebook,
+      draft,
+      bindingCount: rebound.bindings.length,
+      dirty: JSON.stringify(draft.document) !== JSON.stringify(notebook.document) ||
+        JSON.stringify(draft.selectedDataFileIds) !== JSON.stringify(notebook.selectedDataFileIds)
+    };
+  }
+
+  async function openArtifactEditor(
+    kind: ArtifactEditorSession["kind"],
+    artifactId: string,
+    requestedOrigin?: EditorOriginTab
+  ) {
+    if (!editorEnabled) return;
+    if (editorSession?.kind === kind && editorSession.id === artifactId) {
+      editorRoute(kind, artifactId);
+      setActiveTab("editor");
+      return;
+    }
+    if (editorSession?.dirty &&
+        (editorSession.kind !== kind || editorSession.id !== artifactId) &&
+        !await confirmDiscardEditor()) return;
+    const originTab = requestedOrigin ||
+      (activeTab === "editor" ? editorSession?.originTab || "chat" : activeTab);
+    try {
+      const prepared = preparedEditorSession(kind, artifactId, originTab);
+      setEditorSession(prepared);
+      setInspectorSelection({ kind, id: artifactId });
+      editorRoute(kind, artifactId);
+      setActiveTab("editor");
+      setStatus(`Editing ${prepared.name}; current inputs rebound successfully`);
+    } catch (error) {
+      await dialogs.alert("Editor could not open", String(error));
+      setStatus(`Editor could not open: ${String(error)}`);
+    }
+  }
+
+  function changeEditorSession(next: ArtifactEditorSession) {
+    const current = workspaceRef.current;
+    if (next.kind !== "pipeline" || !current) {
+      setEditorSession(next);
+      return;
+    }
+    try {
+      const rebound = bindPipelineInputsStrict(next.draft, current.methods, current.files);
+      setEditorSession({
+        ...next,
+        draft: rebound.pipeline,
+        bindingCount: rebound.bindings.length,
+        error: undefined
+      });
+    } catch (error) {
+      setEditorSession({ ...next, error: String(error) });
+    }
+  }
+
+  async function saveEditor(): Promise<MethodRecord | PipelineRecord | NotebookRecord | null> {
+    const session = editorSession;
+    const current = workspaceRef.current;
+    if (!session || !current || session.error) return null;
+    if (!session.dirty) {
+      return session.kind === "method"
+        ? current.methods.find((item) => item.id === session.id) || null
+        : session.kind === "pipeline"
+          ? current.pipelines.find((item) => item.id === session.id) || null
+          : current.notebooks.find((item) => item.id === session.id) || null;
+    }
+    setEditorSaving(true);
+    try {
+      if (session.kind === "method") {
+        const source = current.methods.find((item) => item.id === session.id && !item.deletedAt);
+        if (!source) throw new Error("Method is unavailable");
+        const rebound = bindPythonInputsStrict(session.draftCode, current.files);
+        const nextVersion = source.currentVersion + 1;
+        const updated: MethodRecord = {
+          ...source,
+          currentVersion: nextVersion,
+          inputContract: inputContractFromCode(rebound.code),
+          requiredCapabilities: methodUsesZarrViewer(
+            { ...source, requiredCapabilities: [] },
+            rebound.code
+          ) ? ["zarrviewer"] : [],
+          versions: [...source.versions, {
+            version: nextVersion,
+            code: rebound.code,
+            codeHash: await sha256(rebound.code),
+            executionId: "",
+            renderRecipe: zarrRenderRecipeFromCode(rebound.code),
+            createdAt: now()
+          }],
+          updatedAt: now()
+        };
+        const nextWorkspace = {
+          ...current,
+          methods: current.methods.map((item) => item.id === updated.id ? updated : item)
+        };
+        workspaceRef.current = nextWorkspace;
+        setWorkspace(nextWorkspace);
+        await saveMethod(updated);
+        setEditorSession({
+          ...session,
+          original: updated,
+          draftCode: rebound.code,
+          bindingCount: rebound.bindings.length,
+          dirty: false
+        });
+        setStatus(`Saved ${updated.name} version ${nextVersion}`);
+        return updated;
+      }
+      if (session.kind === "pipeline") {
+        if (!session.draft.steps.length) throw new Error("A Pipeline must contain at least one step");
+        const rebound = bindPipelineInputsStrict(session.draft, current.methods, current.files);
+        const source = current.pipelines.find((item) => item.id === session.id && !item.deletedAt);
+        if (!source) throw new Error("Pipeline is unavailable");
+        const updated: PipelineRecord = {
+          ...source,
+          description: rebound.pipeline.description,
+          steps: rebound.pipeline.steps,
+          version: source.version + 1,
+          updatedAt: now()
+        };
+        const nextWorkspace = {
+          ...current,
+          pipelines: current.pipelines.map((item) => item.id === updated.id ? updated : item)
+        };
+        workspaceRef.current = nextWorkspace;
+        setWorkspace(nextWorkspace);
+        await savePipeline(updated);
+        setEditorSession({
+          ...session,
+          original: updated,
+          draft: updated,
+          bindingCount: rebound.bindings.length,
+          dirty: false
+        });
+        setStatus(`Saved ${updated.name} version ${updated.version}`);
+        return updated;
+      }
+      const source = current.notebooks.find((item) => item.id === session.id);
+      if (!source) throw new Error("Notebook is unavailable");
+      const rebound = bindNotebookInputsStrict(session.draft.document, current.files);
+      const updated: NotebookRecord = {
+        ...source,
+        document: clearNotebookOutputs(rebound.document),
+        selectedDataFileIds: readyWorkspaceInputs(current.files).map((file) => file.id),
+        updatedAt: now()
+      };
+      const nextWorkspace = {
+        ...current,
+        notebooks: current.notebooks.map((item) => item.id === updated.id ? updated : item)
+      };
+      workspaceRef.current = nextWorkspace;
+      setWorkspace(nextWorkspace);
+      await saveNotebook(updated);
+      setEditorSession({
+        ...session,
+        original: updated,
+        draft: updated,
+        bindingCount: rebound.bindings.length,
+        dirty: false
+      });
+      setStatus(`Saved ${updated.name}`);
+      return updated;
+    } catch (error) {
+      await dialogs.alert("Editor save failed", String(error));
+      setStatus(`Editor save failed: ${String(error)}`);
+      return null;
+    } finally {
+      setEditorSaving(false);
+    }
+  }
+
+  async function saveAndRunEditor() {
+    const session = editorSession;
+    if (!session) return;
+    const saved = await saveEditor();
+    if (!saved) return;
+    setEditorSession(null);
+    editorRoute();
+    if (session.kind === "method") await runMethod(saved as MethodRecord, true);
+    else if (session.kind === "pipeline") await runPipeline(saved as PipelineRecord, true);
+    else await runNotebook(saved as NotebookRecord, true);
+  }
+
+  function revertEditor() {
+    if (!editorSession) return;
+    try {
+      setEditorSession(preparedEditorSession(
+        editorSession.kind,
+        editorSession.id,
+        editorSession.originTab
+      ));
+      setStatus(`Reverted ${editorSession.name} to its saved content and rebound current inputs`);
+    } catch (error) {
+      void dialogs.alert("Editor could not revert", String(error));
+    }
+  }
+
+  async function closeEditor() {
+    if (!await confirmDiscardEditor()) return;
+    const origin = editorSession?.originTab || "chat";
+    setEditorSession(null);
+    editorRoute();
+    setActiveTab(origin);
+  }
+
+  async function navigateFromEditor(tab: "chat" | "notebook" | "editor" | "settings") {
+    if (tab === "editor" || activeTab !== "editor") {
+      setActiveTab(tab);
+      return;
+    }
+    if (!await confirmDiscardEditor()) return;
+    setEditorSession(null);
+    editorRoute();
+    setActiveTab(tab);
+  }
+
+  async function createUntitledMethod() {
+    const current = workspaceRef.current;
+    if (!current || !editorEnabled) return;
+    const originTab = activeTab === "editor" ? editorSession?.originTab || "chat" : activeTab;
+    if (editorSession?.dirty && !await confirmDiscardEditor()) return;
+    const timestamp = now();
+    const name = nextUntitledName(current.methods.map((method) => method.name), ".py");
+    const code = "# New analysis method\n\n";
+    const method: MethodRecord = {
+      id: id(),
+      workspaceId: current.workspace.id,
+      name,
+      description: "Untitled Method",
+      currentVersion: 1,
+      versions: [{
+        version: 1,
+        code,
+        codeHash: await sha256(code),
+        executionId: "",
+        createdAt: timestamp
+      }],
+      inputContract: inputContractFromCode(code),
+      parameters: [],
+      requiredCapabilities: [],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    const nextWorkspace = { ...current, methods: [...current.methods, method] };
+    workspaceRef.current = nextWorkspace;
+    setWorkspace(nextWorkspace);
+    await saveMethod(method);
+    const prepared = preparedEditorSession("method", method.id, originTab);
+    setEditorSession(prepared);
+    setInspectorSelection({ kind: "method", id: method.id });
+    editorRoute("method", method.id);
+    setActiveTab("editor");
+    setStatus(`Created ${name} and opened it in the Editor`);
+  }
+
+  async function createUntitledNotebook() {
+    const current = workspaceRef.current;
+    if (!current || !editorEnabled) return;
+    const originTab = activeTab === "editor" ? editorSession?.originTab || "chat" : activeTab;
+    if (editorSession?.dirty && !await confirmDiscardEditor()) return;
+    const timestamp = now();
+    const name = nextUntitledName(current.notebooks.map((notebook) => notebook.name), ".ipynb");
+    const notebook: NotebookRecord = {
+      id: id(),
+      workspaceId: current.workspace.id,
+      name,
+      document: {
+        nbformat: 4,
+        nbformat_minor: 5,
+        metadata: {
+          kernelspec: {
+            display_name: "Python (Pyodide)",
+            language: "python",
+            name: "python"
+          },
+          language_info: { name: "python" }
+        },
+        cells: [{
+          id: id(),
+          cell_type: "code",
+          source: "",
+          metadata: {},
+          execution_count: null,
+          outputs: []
+        }]
+      },
+      attachmentIds: [],
+      selectedDataFileIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    const nextWorkspace = { ...current, notebooks: [...current.notebooks, notebook] };
+    workspaceRef.current = nextWorkspace;
+    setWorkspace(nextWorkspace);
+    setActiveNotebookId(notebook.id);
+    await saveNotebook(notebook);
+    const prepared = preparedEditorSession("notebook", notebook.id, originTab);
+    setEditorSession(prepared);
+    setInspectorSelection({ kind: "notebook", id: notebook.id });
+    editorRoute("notebook", notebook.id);
+    setActiveTab("editor");
+    setStatus(`Created ${name} and opened it in the Editor`);
+  }
+
   function methodActions(method: MethodRecord): BrowserMenuAction[] {
     return [
       { label: "Run", run: () => void runMethod(method) },
+      ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("method", method.id) }] : []),
       { label: "Rename", run: () => void renameMethod(method) },
       { label: "Download", run: () => downloadMethod(method) },
       { label: "Delete method", danger: true, run: () => void removeMethod(method) }
@@ -5566,6 +6160,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
   function pipelineActions(pipeline: PipelineRecord): BrowserMenuAction[] {
     return [
       { label: "Run", run: () => void runPipeline(pipeline) },
+      ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("pipeline", pipeline.id) }] : []),
       { label: "Rename", run: () => void renamePipeline(pipeline) },
       { label: "Download", run: () => downloadPipeline(pipeline) },
       { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
@@ -5574,8 +6169,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   function notebookActions(notebook: NotebookRecord): BrowserMenuAction[] {
     return [
-      { label: "Open", run: () => openNotebook(notebook) },
+      { label: "Open", run: () => void openNotebook(notebook) },
       { label: "Run", run: () => runNotebook(notebook) },
+      ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("notebook", notebook.id) }] : []),
       { label: "Rename", run: () => void renameNotebook(notebook) },
       { label: "Download", run: () => downloadNotebook(notebook) },
       { label: "Delete notebook", danger: true, run: () => void removeNotebook(notebook) }
@@ -5944,7 +6540,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           </Button>
           <Button
             className={activeTab === "settings" ? "active" : ""}
-            onClick={() => setActiveTab("settings")}
+            onClick={() => void navigateFromEditor("settings")}
           >
             <Icon name="settings" /> Settings
           </Button>
@@ -6329,7 +6925,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     onContextMenu={(event) => openBrowserMenu(
                       event,
                       `${slug(chat.title)}/`,
-                      [{ label: "Rename folder", run: () => void renameChat(chat) }]
+                      chatActions(chat)
                     )}
                   >
                     <Icon name="chevron" className="folder-chevron" />
@@ -6343,7 +6939,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                       onClick={(event) => openBrowserMenu(
                         event,
                         `${slug(chat.title)}/`,
-                        [{ label: "Rename folder", run: () => void renameChat(chat) }]
+                        chatActions(chat)
                       )}
                     ><Icon name="more" /></button>
                   </summary>
@@ -6418,6 +7014,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <summary
               onClick={() => setInspectorSelection({ kind: "folder", id: "methods" })}
               onContextMenu={(event) => openBrowserMenu(event, "methods/", [
+                ...(editorEnabled ? [{ label: "New Method", run: () => void createUntitledMethod() }] : []),
                 { label: "To Pipeline", run: () => void combineSelectedMethods() }
               ])}
             >
@@ -6425,9 +7022,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               <Icon name="folder" />
               <strong>Methods</strong><small>{activeMethods.length}</small>
             </summary>
-            {activeMethods.length > 0 && (
+            {(activeMethods.length > 0 || editorEnabled) && (
               <div className="method-selection-toolbar">
                 <span>{selectedMethodIds.size} selected</span>
+                {editorEnabled && <button onClick={() => void createUntitledMethod()}><ActionIcon name="add" />New</button>}
                 <button disabled={selectedMethodIds.size < 2} onClick={() => void combineSelectedMethods()}><ActionIcon name="pipeline" />To Pipeline</button>
                 <button disabled={!selectedMethodIds.size} onClick={() => void convertSelectedMethodsToNotebook()}><ActionIcon name="notebook" />To Notebook</button>
               </div>
@@ -6510,7 +7108,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     onChange={() => togglePipelineSelection(pipeline.id)}
                     onDoubleClick={(event) => event.stopPropagation()}
                   />
-                  <Icon name="file" />
+                  <span className="browser-icon pipeline" aria-hidden="true" />
                   <div className="browser-name">
                     <strong title={pipeline.name}>{pipeline.name}</strong>
                     <small>v{pipeline.version} · {pipeline.steps.length} isolated steps</small>
@@ -6561,6 +7159,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             <summary
               onClick={() => setInspectorSelection({ kind: "folder", id: "notebooks" })}
               onContextMenu={(event) => openBrowserMenu(event, "Notebooks/", [
+                ...(editorEnabled ? [{ label: "New Notebook", run: () => void createUntitledNotebook() }] : []),
                 { label: "Upload notebook", run: () => notebookUploadInput.current?.click() }
               ])}
             >
@@ -6570,6 +7169,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             </summary>
             <div className="method-selection-toolbar notebook-folder-toolbar">
               <span>{analysisWorkspace.notebooks.length} notebook{analysisWorkspace.notebooks.length === 1 ? "" : "s"}</span>
+              {editorEnabled && <button onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New</button>}
               <button onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload</button>
             </div>
             <ul className="browser-list">
@@ -6581,10 +7181,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     setActiveNotebookId(notebook.id);
                     setInspectorSelection({ kind: "notebook", id: notebook.id });
                   }}
-                  onDoubleClick={() => openNotebook(notebook)}
+                  onDoubleClick={() => void openNotebook(notebook)}
                   onContextMenu={(event) =>
                     openBrowserMenu(event, notebook.name, notebookActions(notebook))}>
-                  <span className="browser-icon json" aria-hidden="true" />
+                  <span className="browser-icon notebook" aria-hidden="true" />
                   <div className="browser-name">
                     <strong title={notebook.name}>{notebook.name}</strong>
                     <small>{notebook.attachmentIds.length
@@ -6647,11 +7247,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
         <section className="center-pane">
         <nav className="analysis-tabs" aria-label="Analysis views">
-          {(["chat", "notebook"] as const).map((tab) => (
+          {(["chat", "notebook", ...(editorEnabled ? ["editor" as const] : [])] as const).map((tab) => (
             <Button key={tab} className={activeTab === tab ? "active" : ""}
               aria-current={activeTab === tab ? "page" : undefined}
-              onClick={() => setActiveTab(tab)}>
-              <ActionIcon name={tab === "chat" ? "chat" : "notebook"} />
+              onClick={() => void navigateFromEditor(tab)}>
+              <ActionIcon name={tab === "chat" ? "chat" : tab === "notebook" ? "notebook" : "edit"} />
               {tab[0].toUpperCase() + tab.slice(1)}
             </Button>
           ))}
@@ -6847,6 +7447,21 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             onFiles={saveNotebookFiles}
           />
         )}
+        {activeTab === "editor" && editorEnabled && (
+          <ArtifactEditor
+            session={editorSession}
+            methods={activeMethods}
+            inputs={inputFiles}
+            theme={theme}
+            cspNonce={bootstrap.styleNonce || ""}
+            saving={editorSaving}
+            onChange={changeEditorSession}
+            onSave={() => void saveEditor()}
+            onSaveRun={() => void saveAndRunEditor()}
+            onRevert={revertEditor}
+            onClose={() => void closeEditor()}
+          />
+        )}
         {activeTab === "settings" && (
           <section className="settings-tab settings-stack" aria-label="Settings">
             <div className="settings-sync-toolbar">
@@ -6876,6 +7491,18 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                       Ask Chat to save both a visual plot and its underlying tabular data
                       when an analysis produces a chart. Disable this when you only need
                       the requested result.
+                    </small>
+                  </span>
+                </label>
+                <label className="settings-check">
+                  <input type="checkbox" checked={editorEnabled}
+                    onChange={() => void toggleEditorEnabled()} />
+                  <span>
+                    <strong>Enable artifact editor</strong>
+                    <small>
+                      Show the Editor tab and Edit actions for Methods, Pipelines,
+                      and Notebooks. Inputs are rebound and validated before the
+                      editor opens. Default: off.
                     </small>
                   </span>
                 </label>
@@ -7262,6 +7889,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           canUpload={bridge.canUpload}
           onDownload={downloadFile}
           onAttach={(file) => void attach(file)}
+          onEdit={editorEnabled && inspectorSelection &&
+            ["method", "pipeline", "notebook"].includes(inspectorSelection.kind)
+            ? () => void openArtifactEditor(
+              inspectorSelection.kind as ArtifactEditorSession["kind"],
+              inspectorSelection.id
+            )
+            : undefined}
         />
       </div>
     </main>

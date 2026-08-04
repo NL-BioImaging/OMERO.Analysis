@@ -1,4 +1,5 @@
 import json
+import re
 from types import SimpleNamespace
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -168,6 +169,10 @@ def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
     assert response["Content-Security-Policy"].startswith("default-src 'self'")
     assert "connect-src 'self' https:" in response["Content-Security-Policy"]
     assert "aumc-aicode" not in response["Content-Security-Policy"]
+    policy_nonce = re.search(r"style-src 'self' 'nonce-([^']+)'", response["Content-Security-Policy"])
+    document_nonce = re.search(rb'data-style-nonce="([^"]+)"', response.content)
+    assert policy_nonce and document_nonce
+    assert policy_nonce.group(1) == document_nonce.group(1).decode()
 
 
 def test_notebook_upload_download_and_bootstrap_selection():
