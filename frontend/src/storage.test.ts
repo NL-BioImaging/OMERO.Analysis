@@ -2,6 +2,7 @@ import {
   loadOrCreateWorkspace,
   loadWorkspace,
   newChat,
+  deleteChatCascade,
   deleteWorkspaceCascade,
   saveChat,
   saveEvidenceLedger,
@@ -55,6 +56,81 @@ describe("normalized workspace storage", () => {
     expect((await loadWorkspace(workspace.workspace.id))?.workspace.name).toBe("latest");
     await deleteWorkspaceCascade(workspace.workspace.id);
     expect(await loadWorkspace(workspace.workspace.id)).toBeUndefined();
+  });
+
+  it("deletes a chat and every chat-owned record while preserving sibling data", async () => {
+    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 65 });
+    const removed = workspace.chats[0];
+    const kept = newChat(workspace.workspace.id, "Keep me");
+    const record = (id: string, chatId: string) => ({
+      id,
+      workspaceId: workspace.workspace.id,
+      chatId,
+      createdAt: "2026-08-03T00:00:00Z"
+    });
+    await replaceWorkspace({
+      ...workspace,
+      chats: [removed, kept],
+      files: [removed, kept].map((chat) => ({
+        ...record(`file-${chat.id}`, chat.id),
+        name: `${chat.id}.csv`,
+        logicalPath: `/output/${chat.id}.csv`,
+        type: "text/csv",
+        size: 1,
+        sha256: chat.id,
+        source: "result" as const,
+        state: "ready" as const
+      })),
+      executions: [removed, kept].map((chat) => ({
+        ...record(`execution-${chat.id}`, chat.id),
+        promptId: `prompt-${chat.id}`,
+        code: "result = 1",
+        codeHash: chat.id,
+        cacheKey: chat.id,
+        status: "success" as const,
+        stdout: "",
+        stderr: "",
+        outputFileIds: [`file-${chat.id}`],
+        missingPlotCsv: [],
+        inputHashes: [],
+        runtimeVersion: "test",
+        model: "test"
+      })),
+      artifacts: [removed, kept].map((chat) => ({
+        ...record(`artifact-${chat.id}`, chat.id),
+        kind: "file" as const,
+        title: chat.title,
+        pinned: false
+      })),
+      audits: [removed, kept].map((chat) => ({
+        ...record(`audit-${chat.id}`, chat.id),
+        categories: [],
+        byteLength: 2,
+        payload: "{}"
+      })),
+      evidence: [removed, kept].map((chat) => ({
+        ...record(`evidence-${chat.id}`, chat.id),
+        promptId: `prompt-${chat.id}`,
+        kind: "tool-result" as const,
+        status: "success" as const,
+        sourceHashes: [],
+        skillHashes: [],
+        sourceSkillKey: chat.id,
+        summary: chat.title,
+        payload: "{}"
+      }))
+    });
+
+    await deleteChatCascade(removed.id);
+    const loaded = await loadWorkspace(workspace.workspace.id);
+    expect(loaded?.chats.map((chat) => chat.id)).toEqual([kept.id]);
+    for (const values of [
+      loaded?.files,
+      loaded?.executions,
+      loaded?.artifacts,
+      loaded?.audits,
+      loaded?.evidence
+    ]) expect(values?.map((value) => value.chatId)).toEqual([kept.id]);
   });
 
   it("returns authoritative monotonic Workspace revisions", async () => {

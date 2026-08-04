@@ -176,6 +176,34 @@ export const deleteChat = (id: string) => serializedWrite(() => deleteEntity("ch
 export const deleteMethod = (id: string) => serializedWrite(() => deleteEntity("methods", id));
 export const deleteNotebook = (id: string) => serializedWrite(() => deleteEntity("notebooks", id));
 
+export async function deleteChatCascade(chatId: string): Promise<void> {
+  await serializedWrite(async () => {
+    const db = await database();
+    const relatedStores = ["files", "executions", "artifacts", "audits", "evidence"] as const;
+    const tx = db.transaction(["chats", ...relatedStores], "readwrite");
+    tx.objectStore("chats").delete(chatId);
+    const pending = relatedStores.map((storeName) => {
+      const store = tx.objectStore(storeName);
+      const indexed = store.indexNames.contains("chatId");
+      const request = indexed
+        ? store.index("chatId").getAllKeys(chatId)
+        : store.getAll();
+      return { store, indexed, request };
+    });
+    const results = await Promise.all(pending.map(({ request }) => requestValue(request)));
+    pending.forEach(({ store, indexed }, index) => {
+      if (indexed) {
+        (results[index] as IDBValidKey[]).forEach((key) => store.delete(key));
+      } else {
+        (results[index] as Array<{ id: string; chatId?: string }>)
+          .filter((value) => value.chatId === chatId)
+          .forEach((value) => store.delete(value.id));
+      }
+    });
+    await transactionDone(tx);
+  });
+}
+
 export async function deleteWorkspaceCascade(workspaceId: string): Promise<void> {
   await serializedWrite(async () => {
     const db = await database();

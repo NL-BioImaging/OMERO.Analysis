@@ -14,4 +14,4 @@
 *.omero text eol=lf
 Dockerfile* text eol=lf
 *.ps1 text eol=crlf
-
+src/omero_analysis/static/omero_analysis/*.js -whitespace

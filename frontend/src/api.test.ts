@@ -274,6 +274,36 @@ describe("AI completion requests", () => {
     vi.unstubAllGlobals();
   });
 
+  it("can require a tool call when output evidence is missing", async () => {
+    let requestBody: Record<string, unknown> = {};
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body || "{}"));
+      return new Response(JSON.stringify({
+        choices: [{ message: { role: "assistant", content: null, tool_calls: [] } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+
+    await completeChat(
+      {
+        protocol: "openai",
+        endpoint: "http://localhost:1234/v1",
+        authMode: "none",
+        model: "local-model",
+        apiKey: "",
+        rememberKey: false,
+        contextWindow: 0
+      },
+      [{ role: "user", content: "create a plot" }],
+      new AbortController().signal,
+      undefined,
+      [{ type: "function", function: { name: "run_python" } }],
+      true
+    );
+
+    expect(requestBody).toHaveProperty("tool_choice", "required");
+    vi.unstubAllGlobals();
+  });
+
   it("validates a generic OpenAI-compatible endpoint", async () => {
     let requestBody: Record<string, unknown> = {};
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
@@ -317,6 +347,72 @@ describe("AI completion requests", () => {
     const headers = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers;
     expect(headers).not.toHaveProperty("Authorization");
     expect(headers).not.toHaveProperty("api-key");
+    vi.unstubAllGlobals();
+  });
+
+  it("retries a local streamed 5xx once without streaming", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response("Internal Server Error", {
+        status: 500,
+        statusText: "Internal Server Error"
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { role: "assistant", content: "Recovered" } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(completeChat(
+      {
+        protocol: "openai",
+        endpoint: "http://localhost:1234/v1",
+        authMode: "none",
+        model: "local-model",
+        apiKey: "",
+        rememberKey: false,
+        contextWindow: 0
+      },
+      [{ role: "user", content: "use a tool" }],
+      new AbortController().signal,
+      () => undefined
+    )).resolves.toMatchObject({
+      choices: [{ message: { content: "Recovered" } }]
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(
+      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body
+    ));
+    const retryBody = JSON.parse(String(
+      (vi.mocked(fetch).mock.calls[1][1] as RequestInit).body
+    ));
+    expect(firstBody).toHaveProperty("stream", true);
+    expect(firstBody).toHaveProperty("stream_options.include_usage", true);
+    expect(retryBody).toHaveProperty("stream", false);
+    expect(retryBody).not.toHaveProperty("stream_options");
+    vi.unstubAllGlobals();
+  });
+
+  it("does not automatically retry a remote provider 5xx", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Internal Server Error", {
+      status: 500,
+      statusText: "Internal Server Error"
+    })));
+
+    await expect(completeChat(
+      {
+        protocol: "openai",
+        endpoint: "https://provider.example/v1",
+        authMode: "bearer",
+        model: "model",
+        apiKey: "key",
+        rememberKey: false,
+        contextWindow: 0
+      },
+      [{ role: "user", content: "answer" }],
+      new AbortController().signal,
+      () => undefined
+    )).rejects.toThrow("500 Internal Server Error");
+
+    expect(fetch).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 

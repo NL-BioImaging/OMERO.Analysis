@@ -150,6 +150,8 @@ def _validated_payload(value):
         raise InvalidObject("Analysis settings bundle is incomplete")
     if analysis.get("theme", "dark") not in {"dark", "light"}:
         raise InvalidObject("The Analysis color theme is invalid")
+    if not isinstance(analysis.get("editorEnabled", False), bool):
+        raise InvalidObject("The artifact editor preference is invalid")
     if not isinstance(analysis.get("syncChatAttachments", False), bool):
         raise InvalidObject("The Chat attachment synchronization preference is invalid")
     if not isinstance(analysis.get("syncAnalysisWorkspace", True), bool):

@@ -18,8 +18,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
       - run: python -m pip install --no-deps -e .
-      - run: python -m pip install "Django>=3.2,<6" pytest pytest-django build setuptools wheel
-      - run: python -m pip install "biomero-workflow-skills @ git+https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills.git@main"
+      - run: >-
+          python -m pip install
+          "Django>=3.2,<6"
+          "cryptography>=42,<50"
+          "numpy>=1.24,<3"
+          "Pillow>=10,<13"
+          pytest pytest-django build setuptools wheel
+      - run: >-
+          python -m pip install
+          "biomero-workflow-skills @ git+https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills.git@v0.3.0"
       - run: python -m pytest
 
   frontend-and-wheel:
@@ -53,6 +61,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: NL-BioImaging/BIOMERO.WorkflowSkills
+          ref: v0.3.0
           path: BIOMERO.WorkflowSkills
       - run: >-
           python scripts/build_companion_wheelhouse.py

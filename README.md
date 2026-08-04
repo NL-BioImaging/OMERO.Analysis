@@ -4,11 +4,12 @@ The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
 and through the modeless **Help** window in OMERO.Analysis.
 
 OMERO.Analysis is a browser-local research workspace for OMERO.web. Its one
-Analysis shell has three routable tabs:
+Analysis shell has three standard routable tabs and one optional tab:
 
 - **Chat** — AI-assisted analysis with visible, isolated Python execution.
 - **Notebook** — run-only Python nbformat-4 notebooks attached to OMERO.
 - **Settings** — AI provider configuration and discovered skill provenance.
+- **Editor** — optional structured editing for Methods, Pipelines, and Notebooks.
 
 The Workspace explorer is organized as:
 
@@ -27,10 +28,10 @@ Workspace
 ```
 
 Methods are reusable `.py` analyses. Pipelines are ordered, isolated Method
-steps. Notebooks remain read-only: **Run** resets the kernel, attaches current
+steps. Notebooks remain read-only in the Notebook tab: **Run** resets the kernel, attaches current
 inputs, and executes every cell in order. Users can stop execution, clear
-outputs, reattach inputs, and inspect safe outputs, but cannot create or edit
-notebooks.
+outputs, reattach inputs, and inspect safe outputs. Editing is available only
+when **Enable artifact editor** is turned on in Analysis Settings.
 
 ## Privacy and execution
 

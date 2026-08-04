@@ -73,6 +73,22 @@ def test_settings_bundle_rejects_an_unknown_color_theme():
         _validated_payload(payload)
 
 
+def test_settings_bundle_accepts_default_off_artifact_editor_preference():
+    legacy = settings_payload()
+    assert _validated_payload(legacy)["analysis"].get("editorEnabled", False) is False
+
+    current = settings_payload()
+    current["analysis"]["editorEnabled"] = True
+    assert _validated_payload(current)["analysis"]["editorEnabled"] is True
+
+
+def test_settings_bundle_rejects_non_boolean_artifact_editor_preference():
+    payload = settings_payload()
+    payload["analysis"]["editorEnabled"] = "yes"
+    with pytest.raises(InvalidObject, match="editor preference"):
+        _validated_payload(payload)
+
+
 def test_settings_bundle_accepts_optional_chat_attachment_sync_preference():
     legacy = settings_payload()
     assert _validated_payload(legacy)["analysis"].get("syncChatAttachments") is None

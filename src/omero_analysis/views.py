@@ -1,5 +1,6 @@
 import json
 import logging
+import secrets
 import uuid
 from functools import wraps
 from pathlib import Path
@@ -196,6 +197,7 @@ def chat(request, conn=None, **kwargs):
                 context["selected_notebook"] = notebook_info.to_dict()
         except AnalysisError as exc:
             return HttpResponseBadRequest(str(exc))
+    style_nonce = secrets.token_urlsafe(18)
     response = render(
         request,
         "omero_analysis/chat.html",
@@ -204,12 +206,13 @@ def chat(request, conn=None, **kwargs):
             "keepalive_interval": max(
                 0, int(getattr(settings, "PING_INTERVAL", 60000))
             ),
+            "style_nonce": style_nonce,
         },
     )
     response["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self'; "
+        f"style-src 'self' 'nonce-{style_nonce}'; "
         "img-src 'self' data: blob:; "
         "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; "
         "worker-src blob:; "
