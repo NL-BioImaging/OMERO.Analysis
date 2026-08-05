@@ -1,14 +1,12 @@
 import { sha256 } from "./storage";
 import type {
   AnalysisWorkspace,
-  ChatRecord,
   OmeroContext,
   SyncInventory,
   SyncInventoryItem,
   SyncItemKind,
   SyncPayload
 } from "./types";
-import { chatTranscriptMarkdown } from "./chatTranscript";
 
 const encoder = new TextEncoder();
 
@@ -88,15 +86,7 @@ async function itemFromBytes(
 
 export async function buildWorkspaceSyncPayload(
   workspace: AnalysisWorkspace,
-  context: OmeroContext,
-  options: {
-    includeChatAttachments?: boolean;
-    workspaceSnapshot?: {
-      name: string;
-      data: Uint8Array;
-      omittedLocalInputs: string[];
-    };
-  } = {}
+  context: OmeroContext
 ): Promise<SyncPayload> {
   const items: SyncInventoryItem[] = [];
   const bytes = new Map<string, Uint8Array>();
@@ -116,21 +106,6 @@ export async function buildWorkspaceSyncPayload(
     ));
   };
 
-  if (options.workspaceSnapshot) {
-    await add(
-      `workspace-snapshot:${workspace.workspace.id}`,
-      "workspace-snapshot",
-      options.workspaceSnapshot.name,
-      "application/zip",
-      `Workspace/${options.workspaceSnapshot.name}`,
-      options.workspaceSnapshot.data,
-      {
-        workspaceId: workspace.workspace.id,
-        omittedLocalInputs: options.workspaceSnapshot.omittedLocalInputs
-      }
-    );
-  }
-
   const resultGroups = new Map<string, {
     kind: SyncItemKind;
     mimetype: string;
@@ -139,7 +114,11 @@ export async function buildWorkspaceSyncPayload(
     files: typeof workspace.files;
   }>();
   for (const file of workspace.files
-    .filter((entry) => entry.source === "result" && !entry.deletedAt)
+    .filter((entry) =>
+      entry.source === "result" &&
+      !entry.deletedAt &&
+      Boolean(entry.runId || entry.methodId || entry.pipelineId || entry.notebookId)
+    )
     .sort((left, right) =>
       left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
     )) {
@@ -233,58 +212,6 @@ export async function buildWorkspaceSyncPayload(
         sourceAnnotationId: file.annotationId || null,
         originalLogicalPath: file.logicalPath
       }
-    );
-  }
-
-  if (options.includeChatAttachments) {
-    for (const file of workspace.files
-      .filter((entry) => entry.role === "chat-attachment" && !entry.deletedAt)
-      .sort((left, right) => left.id.localeCompare(right.id))) {
-      if (file.state !== "ready" || !file.data) {
-        throw new Error(`Chat attachment ${file.name} is unavailable in this browser`);
-      }
-      const chat = workspace.chats.find((entry) => entry.id === file.chatId && !entry.deletedAt);
-      if (!chat) throw new Error(`Chat attachment ${file.name} refers to an unavailable Chat`);
-      await add(
-        `chat-attachment:${file.id}`,
-        "chat-attachment",
-        file.name,
-        file.type,
-        `Chat/${slug(chat.title)}/Attachments/${safeName(file.name)}`,
-        new Uint8Array(file.data.slice(0)),
-        {
-          fileId: file.id,
-          chatId: chat.id,
-          origin: file.attachment?.origin || "upload"
-        }
-      );
-    }
-  }
-
-  for (const chat of workspace.chats
-    .filter((entry) => !entry.deletedAt)
-    .sort((left, right) => left.id.localeCompare(right.id))) {
-    const base = `Chat/${slug(chat.title)}`;
-    await add(
-      `chat:${chat.id}:json`,
-      "chat-json",
-      `${slug(chat.title)}--chat.json`,
-      "application/json",
-      `${base}/chat.json`,
-      encoder.encode(canonicalJson({
-        schema: "nl.bioimaging.analysis.chat.v1",
-        chat
-      })),
-      { chatId: chat.id, title: chat.title }
-    );
-    await add(
-      `chat:${chat.id}:markdown`,
-      "chat-markdown",
-      `${slug(chat.title)}--chat.md`,
-      "text/markdown",
-      `${base}/chat.md`,
-      encoder.encode(chatTranscriptMarkdown(chat)),
-      { chatId: chat.id, title: chat.title }
     );
   }
 

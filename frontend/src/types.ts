@@ -25,6 +25,7 @@ export interface OmeroContext {
   selected_workspace_snapshot?: Attachment | null;
   selected_notebook?: Attachment | null;
   notebooks?: Attachment[];
+  selected_objects?: HierarchyItem[];
 }
 
 export interface Bootstrap {
@@ -665,9 +666,6 @@ export interface AnalysisSettingsBundle {
       plotCsv: boolean;
       theme?: "dark" | "light";
       editorEnabled?: boolean;
-      syncChatAttachments?: boolean;
-      syncAnalysisWorkspace?: boolean;
-      syncAnalysisSettings?: boolean;
     };
   ai: AiProfileStore;
   skills: CustomSkill[];
@@ -779,9 +777,6 @@ export type SyncItemKind =
   | "png-image"
   | "result"
   | "template-input"
-  | "chat-json"
-  | "chat-markdown"
-  | "chat-attachment"
   | "workspace-snapshot"
   | "method"
   | "method-python"

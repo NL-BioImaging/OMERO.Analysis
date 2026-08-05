@@ -19,7 +19,7 @@ REQUIRED = {
     str(STATIC / "pyodide/pyodide-lock.json"),
     str(STATIC / "pyodide/RUNTIME.json"),
     str(STATIC / "pyodide/seaborn-0.13.2-py3-none-any.whl"),
-    "omero_analysis/templates/omero_analysis/chat.html",
+    "omero_analysis/templates/omero_analysis/analysis.html",
     "omero_analysis/templates/omero_analysis/panel.html",
     "omero_analysis/templates/omero_analysis/runtime_sandbox.html",
     "omero_analysis/templates/omero_analysis/center_plugin.js.html",
@@ -42,15 +42,6 @@ def main():
     args = parser.parse_args()
     with zipfile.ZipFile(args.wheel) as archive:
         names = set(archive.namelist())
-        legacy = sorted(
-            name for name in names
-            if name == "omero_analysis_chat" or name.startswith("omero_analysis_chat/")
-        )
-        if legacy:
-            raise RuntimeError(
-                "Wheel contains the retired omero_analysis_chat package; "
-                "remove the stale build directory and rebuild"
-            )
         missing = sorted(REQUIRED - names)
         if missing:
             raise RuntimeError(f"Wheel is missing packaged assets: {missing}")

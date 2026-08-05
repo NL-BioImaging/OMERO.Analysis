@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -29,9 +31,9 @@ import {
 } from "./constants";
 import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
 import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
-import ArtifactEditor, {
-  type ArtifactEditorSession,
-  type EditorOriginTab
+import type {
+  ArtifactEditorSession,
+  EditorOriginTab
 } from "./ArtifactEditor";
 import {
   bindNotebookInputsStrict,
@@ -111,6 +113,7 @@ import type {
   LibraryItem,
   LibraryOrigin,
   SyncStatus,
+  SyncPayload,
   AiProfileStore,
   CustomSkill,
   AnalysisSettingsStatus,
@@ -123,11 +126,16 @@ import {
   ArtifactInspector,
   ComposerPanel,
   MarkdownPreview,
+  RuntimeProgressPanel,
   ViewerPreviewCard,
   type InspectorItem
 } from "./components/WorkspacePanels";
 import { WorkspaceLibraryTree } from "./components/WorkspaceLibraryTree";
 import { HelpWindow } from "./components/HelpWindow";
+import { AnalysisHome } from "./components/AnalysisHome";
+import { AnalysisNavigation } from "./components/AnalysisNavigation";
+import { AnalysisRunsView } from "./components/AnalysisRunsView";
+import { WorkspacePreparationScreen } from "./components/WorkspacePreparationScreen";
 import { ActionIcon, type ActionIconName } from "./components/ActionIcon";
 import {
   BlueprintThemeProvider,
@@ -163,8 +171,10 @@ import {
   upsertBoundedEvidence
 } from "./evidence";
 import { buildRenderBundle, zarrRenderRecipeFromCode } from "./renderBundle";
+import { newMethodSource, newNotebookDocument } from "./creationTemplates";
 import {
   assistantSummaryForPrompt,
+  splitAssistantDocumentation,
   withAssistantSummaryComments
 } from "./methodDocumentation";
 import {
@@ -185,15 +195,22 @@ import {
 import {
   activityText,
   formatDuration,
-  workspaceRowClassName,
   workflowSkillTooltip
 } from "./presentation";
 import {
   artifactEvidenceGap,
   chatRoundPolicy,
   FINAL_SYNTHESIS_INSTRUCTION,
+  hasMethodResponseNarrative,
+  hasReusableMethodScript,
   MAX_TOOL_ROUNDS
 } from "./chatRounds";
+import { chatMessagesForPresentation } from "./chatPresentation";
+import {
+  appTabFromRoute,
+  runKindForTab,
+  type AppTab
+} from "./navigation";
 import {
   groupChatResults,
   normalizeWorkspaceName,
@@ -201,6 +218,10 @@ import {
   trashWorkspaceOutputs
 } from "./workspaceModel";
 import { buildWorkspaceSyncPayload, syncHasChanges } from "./workspaceSync";
+import {
+  reconcileDeletedRemoteWorkspaces,
+  remoteWorkspaceWasDeleted
+} from "./workspaceReconciliation";
 import {
   customSkillFromText,
   customSkillInstructions,
@@ -212,6 +233,7 @@ import {
   modelCapabilities,
   type LocalAiServer
 } from "./localProviders";
+
 import {
   ATTACHMENT_EXTRACTOR_VERSION,
   MAX_CHAT_ATTACHMENTS,
@@ -227,17 +249,16 @@ import { chatTranscriptMarkdown } from "./chatTranscript";
 import { manuallyNamedChat, shouldAutoTitleChat } from "./chatTitle";
 import { useSessionKeepalive } from "./useSessionKeepalive";
 
+const ArtifactEditor = lazy(() => import("./ArtifactEditor"));
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
 const DEFAULT_AI_PROFILE_ID = "default";
-const attachmentSyncPreferenceKey = (context: OmeroContext | null) =>
-  `analysis:sync-chat-attachments:${context?.user_id || 0}:${context?.group_id || 0}`;
-const workspaceSyncPreferenceKey = (context: OmeroContext | null) =>
-  `analysis:sync-workspace:${context?.user_id || 0}:${context?.group_id || 0}`;
-const settingsSyncPreferenceKey = (context: OmeroContext | null) =>
-  `analysis:sync-settings:${context?.user_id || 0}:${context?.group_id || 0}`;
 const editorPreferenceKey = (context: OmeroContext | null) =>
   `analysis:artifact-editor:${context?.user_id || 0}:${context?.group_id || 0}`;
+const explorerVisibilityKey = (context: OmeroContext | null) =>
+  `analysis:explorer-visible:${context?.user_id || 0}:${context?.group_id || 0}`;
+const inspectorVisibilityKey = (context: OmeroContext | null) =>
+  `analysis:inspector-visible:${context?.user_id || 0}:${context?.group_id || 0}`;
 const defaultAiProfiles = (): AiProfileStore => ({
   activeProfileId: DEFAULT_AI_PROFILE_ID,
   profiles: [{
@@ -284,7 +305,7 @@ export function nextUntitledName(names: string[], extension: ".py" | ".ipynb"): 
 
 function titleFromPrompt(value: string): string {
   const concise = value.replace(/\s+/g, " ").trim().slice(0, 64);
-  return concise ? concise.charAt(0).toUpperCase() + concise.slice(1) : "New analysis";
+  return concise ? concise.charAt(0).toUpperCase() + concise.slice(1) : "New Assistant Chat";
 }
 
 function inputContractFromCode(code: string): InputContract {
@@ -450,8 +471,6 @@ function executionOwner(context: ExecutionContext) {
     : { runId: context.runId };
 }
 
-type AppTab = "home" | "runs" | "chat" | "notebook" | "editor" | "settings";
-
 interface VisibleZarrSource {
   id: string;
   name: string;
@@ -495,15 +514,13 @@ export default function App() {
     [bootstrap]
   );
   const dialogs = useDialogs();
-  const initialTab = new URLSearchParams(window.location.search).get("tab");
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  const initialTab = appTabFromRoute(requestedTab);
   const [activeTab, setActiveTabState] = useState<AppTab>(
-    initialTab === "runs" || initialTab === "chat" || initialTab === "notebook" ||
-      initialTab === "editor" || initialTab === "settings" ? initialTab : "home"
+    initialTab
   );
   const [analysisWorkspace, setWorkspace] = useState<AnalysisWorkspace | null>(null);
   const workspaceRef = useRef<AnalysisWorkspace | null>(null);
-  const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
-  const [snapshots, setSnapshots] = useState<Attachment[]>([]);
   const [hierarchy, setHierarchy] = useState<OmeroHierarchy | null>(null);
   const [pipelineTemplates, setPipelineTemplates] = useState<Attachment[]>([]);
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
@@ -535,9 +552,6 @@ export default function App() {
     useState<AnalysisSettingsStatus | null>(null);
   const [settingsSyncing, setSettingsSyncing] = useState(false);
   const [settingsSyncMessage, setSettingsSyncMessage] = useState("");
-  const [syncChatAttachments, setSyncChatAttachments] = useState(false);
-  const [syncAnalysisWorkspace, setSyncAnalysisWorkspace] = useState(true);
-  const [syncAnalysisSettings, setSyncAnalysisSettings] = useState(true);
   const [editorEnabled, setEditorEnabled] = useState(false);
   const [syncPreferencesLoaded, setSyncPreferencesLoaded] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -553,6 +567,8 @@ export default function App() {
     useState<InspectorSelection | null>(null);
   const [explorerWidth, setExplorerWidth] = useState(480);
   const [artifactWidth, setArtifactWidth] = useState(360);
+  const [explorerVisible, setExplorerVisible] = useState(true);
+  const [inspectorVisible, setInspectorVisible] = useState(true);
   const [notebookRunRequest, setNotebookRunRequest] =
     useState<{ id: string; nonce: number } | null>(null);
   const [editorSession, setEditorSession] = useState<ArtifactEditorSession | null>(null);
@@ -562,13 +578,19 @@ export default function App() {
   const [homeMethodId, setHomeMethodId] = useState("");
   const [homePipelineId, setHomePipelineId] = useState("");
   const [homeNotebookId, setHomeNotebookId] = useState("");
+  const [homeNotebookPipelineId, setHomeNotebookPipelineId] = useState("");
+  const [pipelineBuilderOpen, setPipelineBuilderOpen] = useState(false);
   const stoppedRunIds = useRef(new Set<string>());
   const [editorSaving, setEditorSaving] = useState(false);
   const [explorerQuery, setExplorerQuery] = useState("");
   const [status, setStatus] = useState("Preparing workspace…");
+  const [, setWorkspacePreparing] = useState(true);
+  const [workspaceProgress, setWorkspaceProgress] = useState<RuntimeProgress>({
+    percent: 3,
+    message: "Opening the current Analysis Workspace…"
+  });
+  const [workspaceError, setWorkspaceError] = useState("");
   const [browserMenu, setBrowserMenu] = useState<BrowserMenuState | null>(null);
-  const [browserAtParent, setBrowserAtParent] = useState(false);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [selectedMethodIds, setSelectedMethodIds] = useState<Set<string>>(new Set());
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<Set<string>>(new Set());
   const [selectedOutputIds, setSelectedOutputIds] = useState<Set<string>>(new Set());
@@ -587,16 +609,21 @@ export default function App() {
   const initialLibraryRequestHandled = useRef(false);
   const initialEditorRequestHandled = useRef(false);
   const remoteSettingsLoaded = useRef(false);
+  const workspaceSyncInFlight = useRef(false);
+  const workspaceSyncQueued = useRef(false);
+  const remoteDeletionInFlight = useRef(false);
+  const settingsSyncInFlight = useRef(false);
+  const settingsSyncQueued = useRef(false);
+  const [settingsRestoreComplete, setSettingsRestoreComplete] = useState(false);
   const localEditorPreference = useRef<boolean | undefined>(undefined);
   const localAutodetectStarted = useRef(false);
   const [openFolders, setOpenFolders] = useState({
-    chat: true,
+    assistant: true,
     inputs: true,
     methods: true,
     pipelines: true,
     notebooks: true,
-    trash: false,
-    snapshots: false
+    trash: false
   });
   const [openChatFolders, setOpenChatFolders] = useState<Set<string>>(new Set());
   const [usage, setUsage] = useState<TokenUsage | null>(null);
@@ -644,6 +671,22 @@ export default function App() {
     void setValue(uiThemeKey, next);
   }
 
+  function toggleExplorer() {
+    setExplorerVisible((visible) => {
+      const next = !visible;
+      void setValue(explorerVisibilityKey(bootstrap.context), next);
+      return next;
+    });
+  }
+
+  function toggleInspector() {
+    setInspectorVisible((visible) => {
+      const next = !visible;
+      void setValue(inspectorVisibilityKey(bootstrap.context), next);
+      return next;
+    });
+  }
+
   const workspace = analysisWorkspace?.workspace || null;
   const chats = analysisWorkspace?.chats || [];
   const activeChat = chats.find((chat) => chat.id === workspace?.activeChatId) || chats[0] || null;
@@ -662,19 +705,21 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     void Promise.all([
-      getValue<boolean>(attachmentSyncPreferenceKey(bootstrap.context)),
-      getValue<boolean>(workspaceSyncPreferenceKey(bootstrap.context)),
-      getValue<boolean>(settingsSyncPreferenceKey(bootstrap.context)),
-      getValue<boolean>(editorPreferenceKey(bootstrap.context))
-    ]).then(([attachments, workspaceSyncEnabled, settingsSyncEnabled, savedEditorEnabled]) => {
+      getValue<boolean>(editorPreferenceKey(bootstrap.context)),
+      getValue<boolean>(explorerVisibilityKey(bootstrap.context)),
+      getValue<boolean>(inspectorVisibilityKey(bootstrap.context))
+    ]).then(([
+      savedEditorEnabled,
+      savedExplorerVisible,
+      savedInspectorVisible
+    ]) => {
       if (!alive) return;
       localEditorPreference.current = typeof savedEditorEnabled === "boolean"
         ? savedEditorEnabled
         : undefined;
-      setSyncChatAttachments(attachments === true);
-      setSyncAnalysisWorkspace(workspaceSyncEnabled !== false);
-      setSyncAnalysisSettings(settingsSyncEnabled !== false);
       setEditorEnabled(savedEditorEnabled === true);
+      setExplorerVisible(savedExplorerVisible !== false);
+      setInspectorVisible(savedInspectorVisible !== false);
       setSyncPreferencesLoaded(true);
     });
     return () => { alive = false; };
@@ -749,8 +794,12 @@ export default function App() {
   const activeMethods = (analysisWorkspace?.methods || []).filter((method) => !method.deletedAt);
   const activePipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => !pipeline.deletedAt);
   const activeNotebooks = analysisWorkspace?.notebooks || [];
-  const selectedRun = (analysisWorkspace?.runs || []).find((run) => run.id === selectedRunId) ||
-    [...(analysisWorkspace?.runs || [])].sort((left, right) =>
+  const activeRunKind = runKindForTab(activeTab);
+  const visibleRuns = (analysisWorkspace?.runs || []).filter((run) =>
+    !activeRunKind || run.kind === activeRunKind
+  );
+  const selectedRun = visibleRuns.find((run) => run.id === selectedRunId) ||
+    [...visibleRuns].sort((left, right) =>
       right.createdAt.localeCompare(left.createdAt)
     )[0] || null;
   const selectedRunExecutions = selectedRun
@@ -774,11 +823,11 @@ export default function App() {
   const composerPlaceholder = busy
     ? "Analysis in progress — wait for the answer or press Stop…"
     : blockedAttachments.length
-      ? "Chat is blocked — reselect or remove the missing attachment…"
+        ? "Assistant is blocked — reselect or remove the missing attachment…"
       : attachmentsModelBlocked
-        ? "Chat is blocked — the selected model does not support image attachments…"
+        ? "Assistant is blocked — the selected model does not support image attachments…"
     : blockedFiles.some((file) => file.state === "failed" || file.state === "missing")
-      ? "Chat is blocked — retry, reselect, or remove the missing data file…"
+      ? "Assistant is blocked — retry, reselect, or remove the missing data file…"
       : blockedFiles.length
         ? "Downloading selected data — chat will unlock when every file is ready…"
         : !runtimeReady
@@ -824,6 +873,36 @@ export default function App() {
     };
   }, [browserMenu]);
 
+  const workspaceSyncSignature = useMemo(() => {
+    if (!analysisWorkspace) return "";
+    const reusableFiles = analysisWorkspace.files.filter((file) =>
+      !file.deletedAt && (
+        (file.source === "result" && Boolean(
+          file.runId || file.methodId || file.pipelineId || file.notebookId
+        )) ||
+        (file.source !== "result" && file.role !== "chat-attachment" &&
+          file.state === "ready" && /template/i.test(file.name))
+      )
+    );
+    return JSON.stringify({
+      workspace: [analysisWorkspace.workspace.id, analysisWorkspace.workspace.name],
+      methods: analysisWorkspace.methods.map((item) =>
+        [item.id, item.currentVersion, item.updatedAt, item.deletedAt || null]
+      ),
+      pipelines: analysisWorkspace.pipelines.map((item) =>
+        [item.id, item.version, item.updatedAt, item.deletedAt || null]
+      ),
+      notebooks: analysisWorkspace.notebooks.map((item) =>
+        [item.id, item.name, item.updatedAt]
+      ),
+      files: reusableFiles.map((item) => [
+        item.id, item.name, item.logicalPath, item.sha256, item.size,
+        item.runId || null, item.methodId || null, item.pipelineId || null,
+        item.notebookId || null
+      ])
+    });
+  }, [analysisWorkspace]);
+
   useEffect(() => {
     if (!analysisWorkspace || !bootstrap.context) {
       setRemoteSync(null);
@@ -833,24 +912,77 @@ export default function App() {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void Promise.all([
-        buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!, {
-          includeChatAttachments: syncChatAttachments
-        }),
+        buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!),
         bridge.syncStatus(analysisWorkspace.workspace.id)
-      ]).then(([payload, remote]) => {
+      ]).then(async ([payload, remote]) => {
         if (cancelled) return;
         setLocalSyncDigest(payload.inventory.digest);
         setRemoteSync(remote);
         setSyncError("");
+        if (remoteWorkspaceWasDeleted(analysisWorkspace.workspace, remote)) {
+          await discardWorkspaceDeletedInOmero(analysisWorkspace.workspace);
+          return;
+        }
+        if (remote.canSync && (payload.inventory.items.length > 0 || remote.linked) &&
+          (!remote.linked || syncHasChanges(
+          payload.inventory.digest,
+          remote.inventoryDigest
+        ))) {
+          await synchronizeWorkspace(payload);
+        }
       }).catch((error) => {
         if (!cancelled) setSyncError(String(error));
       });
-    }, 350);
+    }, 1000);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [analysisWorkspace, bootstrap.context, bridge, syncChatAttachments]);
+  }, [workspaceSyncSignature, bootstrap.context, bridge]);
+
+  useEffect(() => {
+    const workspaceRecord = analysisWorkspace?.workspace;
+    if (!workspaceRecord?.omeroSync || !bootstrap.context) return;
+    let disposed = false;
+    let checking = false;
+    const checkRemoteWorkspace = async () => {
+      if (disposed || checking || remoteDeletionInFlight.current) return;
+      checking = true;
+      try {
+        const remote = await bridge.syncStatus(workspaceRecord.id);
+        if (disposed) return;
+        if (remoteWorkspaceWasDeleted(workspaceRecord, remote)) {
+          await discardWorkspaceDeletedInOmero(workspaceRecord);
+          return;
+        }
+        setRemoteSync(remote);
+      } catch (error) {
+        // A failed probe is not evidence of deletion. Keep all local data and
+        // allow the normal sync status UI to report transport failures.
+        console.warn("Remote Workspace deletion check failed; local data was preserved", error);
+      } finally {
+        checking = false;
+      }
+    };
+    const onFocus = () => { void checkRemoteWorkspace(); };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void checkRemoteWorkspace();
+    };
+    const timer = window.setInterval(() => void checkRemoteWorkspace(), 30_000);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [
+    analysisWorkspace?.workspace.id,
+    analysisWorkspace?.workspace.omeroSync?.datasetId,
+    bootstrap.context,
+    bridge
+  ]);
 
   useEffect(() => {
     if (!analysisWorkspace || initialLibraryRequestHandled.current) return;
@@ -869,22 +1001,25 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      setWorkspacePreparing(true);
+      setWorkspaceError("");
+      setWorkspaceProgress({ percent: 5, message: "Opening browser storage…" });
       const [
         savedSettings,
         savedProfiles,
         savedCustomSkills,
         savedTheme,
-        savedWorkspaceSync,
-        localWorkspacesAtStart
+        storedContextWorkspaces
       ] = await Promise.all([
         getValue<ProviderSettings>(settingsKey),
         getValue<AiProfileStore>(aiProfilesKey),
         getValue<CustomSkill[]>(customSkillsKey),
         getValue<"dark" | "light">(uiThemeKey),
-        getValue<boolean>(workspaceSyncPreferenceKey(bootstrap.context)),
         listContextWorkspaces(bootstrap.context)
       ]);
-      const baseWorkspace = await loadOrCreateWorkspace(bootstrap.context);
+      let localWorkspacesAtStart = storedContextWorkspaces;
+      setWorkspaceProgress({ percent: 15, message: "Loading the current Workspace record…" });
+      let baseWorkspace = await loadOrCreateWorkspace(bootstrap.context);
       if (!alive) return;
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
       if (savedProfiles?.profiles?.length) {
@@ -906,7 +1041,33 @@ export default function App() {
         setSettings(migrated.profiles[0].settings);
       }
       if (Array.isArray(savedCustomSkills)) setCustomSkills(savedCustomSkills);
+      setWorkspaceProgress({ percent: 24, message: "Connecting to the current OMERO object…" });
       await bridge.connect();
+      if (localWorkspacesAtStart.some((item) => item.omeroSync)) {
+        setWorkspaceProgress({
+          percent: 29,
+          message: "Checking for Workspace changes made in OMERO…"
+        });
+        const reconciliation = await reconcileDeletedRemoteWorkspaces(
+          localWorkspacesAtStart,
+          (workspaceId) => bridge.syncStatus(workspaceId),
+          deleteWorkspaceCascade
+        );
+        if (reconciliation.errors.length) {
+          console.warn(
+            "Remote Workspace deletion check was incomplete; local data was preserved",
+            reconciliation.errors
+          );
+        }
+        if (reconciliation.deletedWorkspaceIds.length) {
+          const removed = new Set(reconciliation.deletedWorkspaceIds);
+          localWorkspacesAtStart = reconciliation.retained;
+          if (removed.has(baseWorkspace.workspace.id)) {
+            baseWorkspace = await loadOrCreateWorkspace(bootstrap.context);
+          }
+        }
+      }
+      setWorkspaceProgress({ percent: 34, message: "Reading OMERO data and viewer capabilities…" });
       const [loadedHierarchy, viewerStatus] = await Promise.all([
         bridge.hierarchy(),
         bridge.zarrViewerStatus().catch((error) => ({
@@ -935,6 +1096,7 @@ export default function App() {
               ? "OMERO ZarrViewer is installed but not enabled in OMERO.web."
               : `OMERO ZarrViewer integration unavailable: ${viewerStatus.reason || "unknown reason"}`
       );
+      setWorkspaceProgress({ percent: 45, message: "Discovering installed analysis skills…" });
       try {
         const catalog = await bridge.listWorkflowSkills();
         if (alive) {
@@ -956,7 +1118,7 @@ export default function App() {
       let automaticRestoreMessage = "";
       const requestedSnapshot = bootstrap.context?.selected_workspace_snapshot;
       if (requestedSnapshot) {
-        setRuntimeProgress({ percent: 8, message: "Restoring the selected OMERO workspace…" });
+        setWorkspaceProgress({ percent: 55, message: "Restoring the selected Analysis Workspace…" });
         const localWorkspaces = await listContextWorkspaces(bootstrap.context);
         const existing = localWorkspaces.find(
           (item) => item.sourceWorkspaceSnapshotAnnotationId === requestedSnapshot.annotation_id
@@ -984,7 +1146,6 @@ export default function App() {
         }
       } else if (
         bootstrap.context &&
-        savedWorkspaceSync !== false &&
         localWorkspacesAtStart.length === 0
       ) {
         try {
@@ -1000,8 +1161,8 @@ export default function App() {
             );
           const latest = candidates[0];
           if (latest?.snapshot) {
-            setRuntimeProgress({
-              percent: 8,
+            setWorkspaceProgress({
+              percent: 55,
               message: `Restoring the latest synchronized Workspace from ${latest.datasetName}…`
             });
             const imported = await importWorkspace(
@@ -1026,6 +1187,7 @@ export default function App() {
           automaticRestoreMessage = `Automatic Workspace restore was skipped: ${String(error)}`;
         }
       }
+      setWorkspaceProgress({ percent: 68, message: "Loading attached Notebooks…" });
       for (const attached of bootstrap.context?.notebooks || []) {
         if (initial.notebooks.some(
           (item) => item.sourceAnnotationId === attached.annotation_id
@@ -1080,23 +1242,27 @@ export default function App() {
       } else if (initial.notebooks.length) {
         setActiveNotebookId(initial.notebooks[0].id);
       }
+      setWorkspaceProgress({ percent: 82, message: "Preparing current Workspace inputs…" });
       const prepared = await prepareInputs(initial);
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
-      setWorkspaces(await listContextWorkspaces(bootstrap.context));
-      setSnapshots(await bridge.listSnapshots());
+      setWorkspaceProgress({ percent: 94, message: "Finishing the Analysis interface…" });
       setPipelineTemplates(await bridge.listPipelineTemplates());
       if (alive) {
         setRuntimeReady(true);
         setRuntimeProgress({ percent: 100, message: "Browser Python starts when an analysis needs it" });
         setStatus(automaticRestoreMessage || "Ready — browser Python will start when needed");
         setStorage(await storageEstimate());
+        setWorkspaceProgress({ percent: 100, message: "Workspace ready" });
+        setWorkspacePreparing(false);
       }
     })().catch((error) => {
       if (!alive) return;
       setStatus(`Workspace failed: ${String(error)}`);
-      setRuntimeProgress({ percent: 0, message: `Workspace failed: ${String(error)}` });
+      setWorkspaceError(String(error));
+      setWorkspaceProgress({ percent: 0, message: "Workspace preparation failed" });
+      setWorkspacePreparing(false);
     });
     return () => {
       alive = false;
@@ -1115,7 +1281,7 @@ export default function App() {
     void bridge.analysisSettings().then(async (remote) => {
       setSettingsSync(remote);
       const payload = remote.payload;
-      if (!remote.synced || !payload || !syncAnalysisSettings) return;
+      if (!remote.synced || !payload) return;
       if (payload.ai.profiles.length) {
         const active = payload.ai.profiles.find(
           (profile) => profile.id === payload.ai.activeProfileId
@@ -1130,25 +1296,11 @@ export default function App() {
         setTheme(payload.analysis.theme);
         await setValue(uiThemeKey, payload.analysis.theme);
       }
-      const restoredSyncAttachments = payload.analysis.syncChatAttachments === true;
-      setSyncChatAttachments(restoredSyncAttachments);
-      await setValue(
-        attachmentSyncPreferenceKey(bootstrap.context),
-        restoredSyncAttachments
-      );
-      const restoredWorkspaceSync = payload.analysis.syncAnalysisWorkspace !== false;
-      const restoredSettingsSync = payload.analysis.syncAnalysisSettings !== false;
       const restoredEditorEnabled = localEditorPreference.current ??
         (payload.analysis.editorEnabled === true);
       localEditorPreference.current = restoredEditorEnabled;
-      setSyncAnalysisWorkspace(restoredWorkspaceSync);
-      setSyncAnalysisSettings(restoredSettingsSync);
       setEditorEnabled(restoredEditorEnabled);
-      await Promise.all([
-        setValue(workspaceSyncPreferenceKey(bootstrap.context), restoredWorkspaceSync),
-        setValue(settingsSyncPreferenceKey(bootstrap.context), restoredSettingsSync),
-        setValue(editorPreferenceKey(bootstrap.context), restoredEditorEnabled)
-      ]);
+      await setValue(editorPreferenceKey(bootstrap.context), restoredEditorEnabled);
       const current = workspaceRef.current;
       if (current && current.workspace.plotCsv !== payload.analysis.plotCsv) {
         const updated = {
@@ -1166,13 +1318,31 @@ export default function App() {
       setSettingsSyncMessage("Settings restored from ~AnalysisSettings");
     }).catch((error) => {
       setSettingsSyncMessage(`Settings could not be restored: ${String(error)}`);
+    }).finally(() => {
+      setSettingsRestoreComplete(true);
     });
   }, [
     analysisWorkspace?.workspace.id,
     bootstrap.context,
     bridge,
-    syncAnalysisSettings,
     syncPreferencesLoaded
+  ]);
+
+  useEffect(() => {
+    if (!settingsRestoreComplete || !bridge.canSettingsSync || !workspaceRef.current) return;
+    const timer = window.setTimeout(() => {
+      void syncAllSettings();
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [
+    settingsRestoreComplete,
+    bridge.canSettingsSync,
+    workspace?.plotCsv,
+    theme,
+    editorEnabled,
+    settings,
+    aiProfileStore,
+    customSkills
   ]);
 
   useEffect(() => {
@@ -1692,7 +1862,7 @@ export default function App() {
     );
     const confirmed = await dialogs.confirm(
       "Delete AI profile?",
-      `Delete ${active?.name || "this profile"} from this browser? The synchronized copy changes only after Sync Settings.`
+      `Delete ${active?.name || "this profile"}? This change will be saved automatically.`
     );
     if (!confirmed) return;
     const profiles = aiProfileStore.profiles.filter(
@@ -1797,7 +1967,7 @@ export default function App() {
     setProviderValidation("");
     await setValue(aiProfilesKey, browserSafeAiProfiles(nextStore));
     setLocalDiscoveryMessage(
-      `Created and selected ${name}. Use Sync Settings to preserve this profile in OMERO.`
+      `Created and selected ${name}. It will be saved to OMERO automatically.`
     );
   }
 
@@ -1820,7 +1990,7 @@ export default function App() {
       });
       await persistCustomSkills([...customSkills, skill]);
       setSettingsSyncMessage(
-        `Added ${skill.name}. Use Sync Settings to copy it to ~AnalysisSettings / Skills.`
+        `Added ${skill.name}. It will be copied to ~AnalysisSettings / Skills automatically.`
       );
     } catch (error) {
       setSettingsSyncMessage(`Could not add skill: ${String(error)}`);
@@ -1861,9 +2031,14 @@ export default function App() {
 
   async function syncAllSettings(): Promise<boolean> {
     const current = workspaceRef.current;
-    if (!current) return false;
+    if (!current || !bridge.canSettingsSync) return false;
+    if (settingsSyncInFlight.current) {
+      settingsSyncQueued.current = true;
+      return false;
+    }
+    settingsSyncInFlight.current = true;
     setSettingsSyncing(true);
-    setSettingsSyncMessage("Synchronizing settings…");
+    setSettingsSyncMessage("Saving settings automatically…");
     const profiles = {
       ...aiProfileStore,
       profiles: aiProfileStore.profiles.map((profile) =>
@@ -1878,24 +2053,26 @@ export default function App() {
         analysis: {
           plotCsv: current.workspace.plotCsv,
           theme,
-          editorEnabled,
-          syncChatAttachments,
-          syncAnalysisWorkspace,
-          syncAnalysisSettings
+          editorEnabled
         },
         ai: profiles,
         skills: customSkills
       });
       setSettingsSync(synced);
       setSettingsSyncMessage(
-        `Settings synchronized: ${profiles.profiles.length} AI profile(s), ${customSkills.length} skill(s)`
+        `Settings saved automatically: ${profiles.profiles.length} AI profile(s), ${customSkills.length} skill(s)`
       );
       return true;
     } catch (error) {
       setSettingsSyncMessage(`Settings synchronization failed: ${String(error)}`);
       return false;
     } finally {
+      settingsSyncInFlight.current = false;
       setSettingsSyncing(false);
+      if (settingsSyncQueued.current) {
+        settingsSyncQueued.current = false;
+        window.setTimeout(() => void syncAllSettings(), 0);
+      }
     }
   }
 
@@ -1935,7 +2112,7 @@ export default function App() {
       setWorkspace(updated);
       setActiveNotebookId(record.id);
       setInspectorSelection({ kind: "notebook", id: record.id });
-      setActiveTab("notebook");
+      setActiveTab("notebooks");
       await saveNotebook(record);
       setStatus(
         attachment
@@ -1961,14 +2138,14 @@ export default function App() {
           ? `Notebook conversion skipped every ZarrViewer-dependent item: ${skipped.join(", ")}`
           : "Notebook conversion found no executable Python"
       );
-      return;
+      return null;
     }
     const requested = (await dialogs.askText(
       "Notebook filename",
       `${slug(suggestedName.replace(/\.ipynb$/i, ""))}.ipynb`,
       "The generated Notebook is run-only and uses the current Workspace input data."
     ))?.trim();
-    if (!requested) return;
+    if (!requested) return null;
     const stem = slug(requested.replace(/\.ipynb$/i, ""));
     let name = `${stem}.ipynb`;
     let suffix = 2;
@@ -2033,6 +2210,7 @@ export default function App() {
         ? `Created ${record.name}; skipped ${skipped.length} ZarrViewer-dependent item(s)`
         : `Created ${record.name}`
     );
+    return record;
   }
 
   async function convertSelectedMethodsToNotebook() {
@@ -2086,15 +2264,17 @@ export default function App() {
     );
   }
 
-  async function convertSelectedPipelinesToNotebook() {
+  async function convertSelectedPipelinesToNotebook(
+    requestedPipelines?: PipelineRecord[]
+  ) {
     const current = workspaceRef.current;
-    if (!current) return;
-    const selected = current.pipelines.filter((pipeline) =>
+    if (!current) return null;
+    const selected = requestedPipelines || current.pipelines.filter((pipeline) =>
       !pipeline.deletedAt && selectedPipelineIds.has(pipeline.id)
     );
     if (!selected.length) {
       setStatus("Select at least one Pipeline to convert");
-      return;
+      return null;
     }
     const skipped: string[] = [];
     const cells: NotebookRecord["document"]["cells"] = [];
@@ -2137,7 +2317,7 @@ export default function App() {
         });
       }
     }
-    await saveConvertedNotebook(
+    return saveConvertedNotebook(
       selected.length === 1 ? selected[0].name : "combined-pipelines",
       selected.length === 1 ? selected[0].name : "Combined Pipelines",
       cells,
@@ -2161,7 +2341,7 @@ export default function App() {
     }
     setActiveNotebookId(record.id);
     setInspectorSelection({ kind: "notebook", id: record.id });
-    setActiveTab("notebook");
+    setActiveTab("notebooks");
     return true;
   }
 
@@ -2657,7 +2837,7 @@ export default function App() {
     workspaceRef.current = updated;
     setWorkspace(updated);
     await Promise.all([saveChat(chat), commitWorkspaceRecord(nextWorkspace)]);
-    setActiveTab("chat");
+    setActiveTab("assistant");
     setUsage(null);
     usageRef.current = null;
     turnOutputNames.current.clear();
@@ -2669,14 +2849,14 @@ export default function App() {
     const chat = analysisWorkspace.chats.find((item) => item.id === chatId);
     const next = { ...analysisWorkspace.workspace, activeChatId: chatId, updatedAt: now() };
     updateWorkspaceRecord(next);
-    setActiveTab("chat");
+    setActiveTab("assistant");
     setUsage(null);
     usageRef.current = null;
   }
 
   async function renameChat(chat: ChatRecord) {
     const title = (await dialogs.askText(
-      "Rename chat",
+      "Rename Assistant Chat",
       chat.title,
       "The chat folder and exported transcript use this name."
     ))?.trim();
@@ -2748,7 +2928,7 @@ export default function App() {
 
   function chatActions(chat: ChatRecord): BrowserMenuAction[] {
     return [
-      { label: "Rename chat", run: () => void renameChat(chat) },
+      { label: "Rename Assistant Chat", run: () => void renameChat(chat) },
       { label: "Delete chat and results", danger: true, run: () => void removeChat(chat) }
     ];
   }
@@ -2803,24 +2983,14 @@ export default function App() {
   async function refreshWorkspace() {
     if (!workspace) return;
     setBrowserMenu(null);
-    setWorkspaces(await listContextWorkspaces(bootstrap.context));
-    await switchWorkspace(workspace.id);
-  }
-
-  async function removeLocalWorkspace(target: WorkspaceRecord) {
-    if (target.id === workspace?.id) {
-      setStatus("Open another local workspace before deleting this one");
-      return;
-    }
-    if (!await dialogs.confirm(
-      "Delete browser-local workspace?",
-      `${target.name} and its local chats, methods, pipelines, and outputs will be permanently removed. OMERO attachments are unchanged.`,
-      "Delete local workspace",
-      true
-    )) return;
-    await deleteWorkspaceCascade(target.id);
-    setWorkspaces(await listContextWorkspaces(bootstrap.context));
-    setStatus(`Deleted browser-local workspace ${target.name}`);
+    const selected = await loadWorkspace(workspace.id);
+    if (!selected) return;
+    const prepared = await prepareInputs(selected);
+    setWorkspace(prepared);
+    workspaceRef.current = prepared;
+    setSelectedMethodIds(new Set());
+    setSelectedPipelineIds(new Set());
+    await syncRuntimeIfStarted(prepared.files, "Workspace refreshed");
   }
 
   async function renameWorkspace(target: WorkspaceRecord) {
@@ -2867,7 +3037,6 @@ export default function App() {
       workspaceRef.current = renamed;
       setWorkspace(renamed);
     }
-    setWorkspaces(await listContextWorkspaces(bootstrap.context));
     setStatus(`Renamed workspace to ${name}`);
   }
 
@@ -2944,19 +3113,6 @@ export default function App() {
           : `Renamed ${file.name} to ${cleanName}`
       );
     }
-  }
-
-  async function switchWorkspace(workspaceId: string) {
-    const selected = await loadWorkspace(workspaceId);
-    if (!selected) return;
-    const prepared = await prepareInputs(selected);
-    setWorkspace(prepared);
-    workspaceRef.current = prepared;
-    setSelectedWorkspaceId(workspaceId);
-    setBrowserAtParent(false);
-    setSelectedMethodIds(new Set());
-    setSelectedPipelineIds(new Set());
-    await syncRuntimeIfStarted(prepared.files, "Workspace loaded");
   }
 
   async function resolveZarrTarget(
@@ -4140,9 +4296,9 @@ ${activeSkillInstructions || (
     : "No compatible specialized pipeline skill matched; use generic schema-first analysis."
 )}
 
-Efficiency contract: answer an initial most-foci request within four tool rounds and a follow-up
-render within two tool rounds. Do not repeat schema discovery while the listed source and skill
-hashes are unchanged. Reuse matching evidence IDs and verified rows from the ledger.`;
+Efficiency contract: use the fewest useful tool loops. After each result, stop tool use when the
+core request has sufficient evidence and every requested output exists. Do not repeat discovery
+while the listed source and skill hashes are unchanged; reuse matching evidence and verified rows.`;
     const pinnedIds = new Set(currentChat.pinnedMessageIds || []);
     const history = [
       ...ordinary.filter((message) => pinnedIds.has(message.id)),
@@ -4241,9 +4397,39 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               text,
               answer.content || "",
               Array.from(turnOutputNames.current),
-              availableOutputNames
+              availableOutputNames,
+              (workspaceRef.current?.files || [])
+                .filter((file) => file.source !== "result" && !file.deletedAt)
+                .map((file) => file.name)
             )
           : null;
+        const missingMethodScript = !answer.tool_calls?.length &&
+          !hasReusableMethodScript(answer.content || "");
+        const missingMethodNarrative = !answer.tool_calls?.length &&
+          !hasMethodResponseNarrative(answer.content || "");
+        if ((missingMethodScript || missingMethodNarrative) && !policy.finalSynthesis) {
+          finishAiActivityEntry(
+            chat.id,
+            activityMessageId,
+            responseEntryId,
+            "failed",
+            missingMethodScript
+              ? "The response did not contain a reusable Python Method"
+              : "The response did not contain the required user-facing review"
+          );
+          conversation.push({
+            role: "system",
+            content:
+              "Return one final response with exactly these sections in order: ## Summary (plain-language " +
+              "result and key findings), ## Review (data used, validation, and caveats), ## Recommendations " +
+              "(useful next steps), and ## Reusable Method (the full validated script in one fenced python " +
+              "code block). Keep the first three sections concise. Do not omit the script or answer with " +
+              "source code alone."
+          });
+          setStreamingText("");
+          setAnalysisPhase("repairing");
+          continue;
+        }
         if (outputGap && !policy.finalSynthesis) {
           const missingDetail = outputGap.missingOutputNames.length
             ? ` Missing claimed files: ${outputGap.missingOutputNames.join(", ")}.`
@@ -4275,6 +4461,38 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           answer.content =
             "I could not create or verify the requested output in the local workspace." +
             `${missing} No successful local execution produced an artifact, so I will not report it as completed.`;
+        }
+        if (missingMethodScript && policy.finalSynthesis) {
+          const fallback = (workspaceRef.current?.executions || [])
+            .filter((execution) =>
+              execution.chatId === chat.id && execution.promptId === promptId &&
+              execution.purpose === "analysis" &&
+              ["success", "reused"].includes(execution.status)
+            )
+            .at(-1)?.code;
+          answer.content = fallback
+            ? `${answer.content || "The validated reusable Method is below."}\n\n\`\`\`python\n${fallback.trim()}\n\`\`\``
+            : "I could not produce a validated reusable Python Method for this request.";
+        }
+        if (missingMethodNarrative && policy.finalSynthesis &&
+            hasReusableMethodScript(answer.content || "")) {
+          const generated = Array.from(turnOutputNames.current);
+          const outputDetail = generated.length
+            ? ` Generated outputs: ${generated.join(", ")}.`
+            : "";
+          answer.content = [
+            "## Summary",
+            `The reusable Method below completed its local validation.${outputDetail}`,
+            "",
+            "## Review",
+            "The Method was executed against the current read-only Workspace inputs. Review the generated outputs for scientific interpretation and any dataset-specific limitations.",
+            "",
+            "## Recommendations",
+            "Inspect the supporting results, then save the Method when its output matches the intended analysis.",
+            "",
+            "## Reusable Method",
+            answer.content || ""
+          ].join("\n");
         }
         finishAiActivityEntry(
           chat.id,
@@ -4687,7 +4905,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       setEditorSession(null);
       editorRoute();
     }
-    setActiveTab("runs");
+    setActiveTab("methods");
     const version = method.versions.find((item) => item.version === requestedVersion);
     if (!version) return;
     const runId = id();
@@ -4946,11 +5164,15 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
 
   async function combineSelectedMethods() {
     const current = workspaceRef.current;
-    if (!current) return;
-    const selected = current.methods.filter((method) => !method.deletedAt && selectedMethodIds.has(method.id));
+    if (!current) return null;
+    const selected = Array.from(selectedMethodIds)
+      .map((methodId) => current.methods.find((method) =>
+        method.id === methodId && !method.deletedAt
+      ))
+      .filter((method): method is MethodRecord => Boolean(method));
     if (selected.length < 2) {
       setStatus("Select at least two methods to combine");
-      return;
+      return null;
     }
     const suggested = slug(selected.map((method) => method.name.replace(/\.py$/i, "")).join("-"));
     const requested = (await dialogs.askText(
@@ -4958,7 +5180,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       suggested,
       "The selected methods will become isolated, ordered pipeline steps."
     ))?.trim();
-    if (!requested) return;
+    if (!requested) return null;
     const stem = slug(requested);
     let name = stem;
     let suffix = 2;
@@ -4995,7 +5217,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     setWorkspace(updated);
     setSelectedMethodIds(new Set());
     await savePipeline(pipeline);
+    setHomePipelineId(pipeline.id);
+    setInspectorSelection({ kind: "pipeline", id: pipeline.id });
     setStatus(`Created pipeline ${pipeline.name} with ${selected.length} isolated steps`);
+    return pipeline;
   }
 
   async function runPipeline(pipeline: PipelineRecord, fromEditor = false) {
@@ -5006,7 +5231,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       setEditorSession(null);
       editorRoute();
     }
-    setActiveTab("runs");
+    setActiveTab("pipelines");
     setBusy(true);
     const runId = id();
     let run: AnalysisRunRecord = {
@@ -5382,60 +5607,50 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     }
   }
 
-  async function saveArchiveToOmero() {
-    if (!bridge.canUpload) return;
+  async function discardWorkspaceDeletedInOmero(record: WorkspaceRecord) {
+    if (remoteDeletionInFlight.current) return;
+    remoteDeletionInFlight.current = true;
+    setWorkspacePreparing(true);
+    setWorkspaceProgress({
+      percent: 20,
+      message: `Removing ${record.name} because it was deleted in OMERO…`
+    });
+    setStatus(`Removing ${record.name}; its synchronized OMERO Workspace was deleted`);
     try {
-      const archive = await createArchive();
-      if (archive.omittedLocalInputs.length && !await dialogs.confirm(
-        "Save snapshot without oversized local inputs?",
-        `The following files will be omitted and required again after restore: ${archive.omittedLocalInputs.join(", ")}`,
-        "Save without files"
-      )) return;
-      const snapshot = await bridge.uploadSnapshot(archive.filename, archive.data);
-      setSnapshots((current) => [...current, snapshot]);
-      setStatus(`Saved workspace snapshot as FileAnnotation ${snapshot.annotation_id}`);
+      await deleteWorkspaceCascade(record.id);
+      if (workspaceRef.current?.workspace.id === record.id) {
+        workspaceRef.current = null;
+        setWorkspace(null);
+      }
+      window.location.reload();
     } catch (error) {
-      setStatus(`OMERO workspace snapshot failed: ${String(error)}`);
+      remoteDeletionInFlight.current = false;
+      setWorkspacePreparing(false);
+      setSyncError(`Could not remove the deleted OMERO Workspace locally: ${String(error)}`);
     }
   }
 
-  async function synchronizeWorkspace() {
+  async function synchronizeWorkspace(prepared?: SyncPayload) {
     const current = workspaceRef.current;
     const context = bootstrap.context;
-    if (!current || !context || syncing) return;
+    if (!current || !context || remoteDeletionInFlight.current) return;
+    if (workspaceSyncInFlight.current) {
+      workspaceSyncQueued.current = true;
+      return;
+    }
+    workspaceSyncInFlight.current = true;
     setSyncing(true);
     setSyncError("");
     try {
-      const workspaceSnapshot = syncAnalysisWorkspace
-        ? await createArchive()
-        : null;
-      const payload = await buildWorkspaceSyncPayload(current, context, {
-        includeChatAttachments: syncChatAttachments,
-        workspaceSnapshot: workspaceSnapshot ? {
-          name: workspaceSnapshot.filename,
-          data: workspaceSnapshot.data,
-          omittedLocalInputs: workspaceSnapshot.omittedLocalInputs
-        } : undefined
-      });
+      if (current.workspace.omeroSync) {
+        const remote = await bridge.syncStatus(current.workspace.id);
+        if (remoteWorkspaceWasDeleted(current.workspace, remote)) {
+          await discardWorkspaceDeletedInOmero(current.workspace);
+          return;
+        }
+      }
+      const payload = prepared || await buildWorkspaceSyncPayload(current, context);
       let plan = await bridge.planWorkspaceSync(payload.inventory);
-      const summary = [
-        `Target: ${plan.projectName} / ${plan.datasetName}`,
-        `Create: ${plan.create}`,
-        `Replace: ${plan.update}`,
-        `Delete remotely: ${plan.delete}`,
-        `Unchanged: ${plan.unchanged}`,
-        `Upload: ${bytesLabel(plan.uploadBytes)}`,
-        syncAnalysisWorkspace
-          ? `Restorable Workspace: included${workspaceSnapshot?.omittedLocalInputs.length
-            ? ` (${workspaceSnapshot.omittedLocalInputs.length} local file(s) omitted by size fallback)`
-            : ""}`
-          : "Restorable Workspace: excluded by Analysis Settings"
-      ].join("\n");
-      if (!await dialogs.confirm(
-        "Synchronize Workspace with OMERO?",
-        summary,
-        "Synchronize"
-      )) return;
       let synced: SyncStatus;
       try {
         synced = await bridge.applyWorkspaceSync(
@@ -5465,51 +5680,18 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       await commitWorkspaceRecord(nextRecord);
       setRemoteSync(synced);
       setLocalSyncDigest(payload.inventory.digest);
-      setStatus(`Synchronized with ${synced.projectName} / ${synced.datasetName}`);
+      setStatus(`Reusable Analysis items saved automatically to ${synced.projectName} / ${synced.datasetName}`);
     } catch (error) {
       const message = String(error);
       setSyncError(message);
       setStatus(`Workspace synchronization failed: ${message}`);
     } finally {
+      workspaceSyncInFlight.current = false;
       setSyncing(false);
-    }
-  }
-
-  async function removeWorkspaceSynchronization() {
-    const current = workspaceRef.current;
-    if (!current || !remoteSync?.linked || syncing) return;
-    const confirmed = await dialogs.confirm(
-      "Remove synchronization from OMERO?",
-      [
-        `Dataset: ${remoteSync.datasetName || remoteSync.datasetId}`,
-        `Managed items to remove: ${remoteSync.itemCount}`,
-        "",
-        "This removes the managed OMERO mirror. The browser Workspace and the +AnalysisWorkspaces Project are preserved."
-      ].join("\n"),
-      "Continue"
-    );
-    if (!confirmed || !await dialogs.confirm(
-      "Confirm permanent OMERO removal",
-      `Permanently remove ${remoteSync.itemCount} managed item(s) from Dataset ${remoteSync.datasetName}?`,
-      "Remove sync"
-    )) return;
-    setSyncing(true);
-    try {
-      const result = await bridge.removeWorkspaceSync(current.workspace.id);
-      const nextRecord = { ...current.workspace, omeroSync: undefined };
-      const next = { ...current, workspace: nextRecord };
-      workspaceRef.current = next;
-      setWorkspace(next);
-      await commitWorkspaceRecord(nextRecord);
-      setRemoteSync(await bridge.syncStatus(current.workspace.id));
-      setStatus(result.datasetDeleted
-        ? `Removed ${result.removed} managed OMERO objects and the managed Dataset`
-        : `Removed ${result.removed} managed objects; preserved the Dataset because it contains ${result.preservedUnmanaged} unmanaged item(s)`);
-    } catch (error) {
-      setSyncError(String(error));
-      setStatus(`Remove synchronization failed: ${String(error)}`);
-    } finally {
-      setSyncing(false);
+      if (workspaceSyncQueued.current) {
+        workspaceSyncQueued.current = false;
+        window.setTimeout(() => void synchronizeWorkspace(), 0);
+      }
     }
   }
 
@@ -5769,37 +5951,11 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const prepared = await prepareInputs(restored);
       setWorkspace(prepared);
       workspaceRef.current = prepared;
-      setWorkspaces(await listContextWorkspaces(bootstrap.context));
       await syncRuntimeIfStarted(prepared.files, "Imported workspace restored");
     } catch (error) {
       setStatus(`Workspace import failed: ${String(error)}`);
     } finally {
       if (importInput.current) importInput.current.value = "";
-    }
-  }
-
-  async function resumeSnapshot(snapshot: Attachment) {
-    try {
-      setStatus(`Downloading ${snapshot.name}…`);
-      const imported = await importWorkspace(
-        await bridge.downloadSnapshot(snapshot),
-        bootstrap.context
-      );
-      if (
-        bootstrap.context &&
-        (imported.workspace.objectType !== bootstrap.context.object_type ||
-          imported.workspace.objectId !== bootstrap.context.object_id)
-      ) {
-        throw new Error("Workspace snapshot belongs to a different OMERO object");
-      }
-      const restored = await replaceWorkspace(imported);
-      const prepared = await prepareInputs(restored);
-      setWorkspace(prepared);
-      workspaceRef.current = prepared;
-      setWorkspaces(await listContextWorkspaces(bootstrap.context));
-      await syncRuntimeIfStarted(prepared.files, "OMERO workspace snapshot restored");
-    } catch (error) {
-      setStatus(`Snapshot restore failed: ${String(error)}`);
     }
   }
 
@@ -5827,40 +5983,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       next
         ? "The artifact Editor tab and Edit actions are enabled"
         : "The artifact Editor tab and Edit actions are disabled"
-    );
-  }
-
-  function toggleSyncChatAttachments() {
-    const next = !syncChatAttachments;
-    setSyncChatAttachments(next);
-    void setValue(attachmentSyncPreferenceKey(bootstrap.context), next);
-    setSettingsSyncMessage(
-      next
-        ? "Chat attachments will be included in the next explicit Workspace Sync"
-        : "Chat attachments will be removed from the managed mirror by the next explicit Workspace Sync"
-    );
-  }
-
-  function toggleSyncAnalysisWorkspace() {
-    const next = !syncAnalysisWorkspace;
-    setSyncAnalysisWorkspace(next);
-    void setValue(workspaceSyncPreferenceKey(bootstrap.context), next);
-    setSettingsSyncMessage(
-      next
-        ? "The next Workspace Sync will include a restorable snapshot; an empty browser can restore it automatically"
-        : "The next Workspace Sync will remove the managed restore snapshot"
-    );
-  }
-
-  function toggleSyncAnalysisSettings() {
-    const next = !syncAnalysisSettings;
-    setSyncAnalysisSettings(next);
-    void setValue(settingsSyncPreferenceKey(bootstrap.context), next);
-    if (next) remoteSettingsLoaded.current = false;
-    setSettingsSyncMessage(
-      next
-        ? "AnalysisSettings will be restored automatically when available"
-        : "Automatic AnalysisSettings restore is disabled on this browser"
     );
   }
 
@@ -6203,7 +6325,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (editorSession?.dirty && !await confirmDiscardEditor()) return;
     const timestamp = now();
     const name = nextUntitledName(current.methods.map((method) => method.name), ".py");
-    const code = "# New analysis method\n\n";
+    const code = newMethodSource(current.files);
     const method: MethodRecord = {
       id: id(),
       workspaceId: current.workspace.id,
@@ -6242,32 +6364,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (editorSession?.dirty && !await confirmDiscardEditor()) return;
     const timestamp = now();
     const name = nextUntitledName(current.notebooks.map((notebook) => notebook.name), ".ipynb");
+    const selectedDataFileIds = readyWorkspaceInputs(current.files).map((file) => file.id);
     const notebook: NotebookRecord = {
       id: id(),
       workspaceId: current.workspace.id,
       name,
-      document: {
-        nbformat: 4,
-        nbformat_minor: 5,
-        metadata: {
-          kernelspec: {
-            display_name: "Python (Pyodide)",
-            language: "python",
-            name: "python"
-          },
-          language_info: { name: "python" }
-        },
-        cells: [{
-          id: id(),
-          cell_type: "code",
-          source: "",
-          metadata: {},
-          execution_count: null,
-          outputs: []
-        }]
-      },
+      document: newNotebookDocument(current.files, id()),
       attachmentIds: [],
-      selectedDataFileIds: [],
+      selectedDataFileIds,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -6281,7 +6385,9 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     setInspectorSelection({ kind: "notebook", id: notebook.id });
     editorRoute("notebook", notebook.id);
     setActiveTab("editor");
-    setStatus(`Created ${name} and opened it in the Editor`);
+    setStatus(
+      `Created ${name} with ${selectedDataFileIds.length} attached input connection${selectedDataFileIds.length === 1 ? "" : "s"} and opened it in the Editor`
+    );
   }
 
   function methodActions(method: MethodRecord): BrowserMenuAction[] {
@@ -6327,15 +6433,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     if (pipeline) void runPipeline(pipeline);
   }
 
-  function snapshotActions(snapshot: Attachment): BrowserMenuAction[] {
-    return [{
-      label: "Resume as new workspace",
-      run: () => void resumeSnapshot(snapshot)
-    }];
-  }
-
   if (!analysisWorkspace || !workspace || !activeChat) {
-    return <main className="app-shell" data-theme={theme}><div className="boot-message">{status}</div></main>;
+    return <WorkspacePreparationScreen theme={theme}
+      workspaceName={bootstrap.context?.name || "Analysis Workspace"}
+      progress={workspaceProgress} error={workspaceError} />;
   }
 
   const quotaPercent = storage.quota ? Math.round(storage.usage / storage.quota * 100) : 0;
@@ -6363,7 +6464,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           ...(bootstrap.context
             ? { "OMERO object": `${workspace.objectType} ${workspace.objectId}` }
             : {}),
-          Chats: chats.length,
+          "Assistant chats": chats.length,
           Inputs: inputFiles.length,
           Results: outputFiles.length,
           Methods: activeMethods.length,
@@ -6384,7 +6485,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       if (chat) return {
         kind: "chat",
         title: chat.title,
-        description: "Active Chat conversation.",
+        description: "Active Assistant conversation for developing a Method.",
         metadata: {
           Messages: chat.messages.length,
           "Pinned messages": chat.pinnedMessageIds?.length || 0,
@@ -6401,19 +6502,23 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       const version = method?.versions.find(
         (item) => item.version === method.currentVersion
       );
-      if (method) return {
-        kind: "method",
-        title: method.name,
-        description: method.description || "Reusable Python analysis Method.",
-        metadata: {
-          Version: method.currentVersion,
-          "Saved versions": method.versions.length,
-          Capabilities: method.requiredCapabilities?.join(", ") || "Browser Python",
-          Updated: new Date(method.updatedAt).toLocaleString()
-        },
-        content: version?.code || "",
-        language: "python"
-      };
+      if (method) {
+        const documented = splitAssistantDocumentation(version?.code || "");
+        return {
+          kind: "method",
+          title: method.name,
+          description: method.description || "Reusable Python analysis Method.",
+          metadata: {
+            Version: method.currentVersion,
+            "Saved versions": method.versions.length,
+            Capabilities: method.requiredCapabilities?.join(", ") || "Browser Python",
+            Updated: new Date(method.updatedAt).toLocaleString()
+          },
+          methodNarrative: documented.narrative,
+          content: documented.source,
+          language: "python"
+        };
+      }
     }
     if (selection.kind === "pipeline") {
       const pipeline = analysisWorkspace.pipelines.find(
@@ -6428,7 +6533,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           Steps: pipeline.steps.length,
           Updated: new Date(pipeline.updatedAt).toLocaleString()
         },
-        content: JSON.stringify(pipeline.steps, null, 2)
+        pipeline
       };
     }
     if (selection.kind === "notebook") {
@@ -6472,7 +6577,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         inputs: {
           kind: "folder",
           title: "Input",
-          description: "Source data available to Chat, Methods, Pipelines, and Notebooks.",
+          description: "Source data available to the Assistant, Methods, Pipelines, and Notebooks.",
           metadata: {
             "Downloaded inputs": inputFiles.length,
             "ZarrViewer sources": visibleZarrSources.length
@@ -6480,14 +6585,14 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         },
         chat: {
           kind: "folder",
-          title: "Chat",
-          description: "Autosaved conversations and readable transcripts.",
+          title: "Assistant",
+          description: "Autosaved Method-development conversations and readable transcripts.",
           metadata: { Items: chats.length }
         },
         "chat-results": {
           kind: "folder",
-          title: "Chat results",
-          description: "Files generated directly by Chat analyses.",
+          title: "Assistant validation results",
+          description: "Browser-local files generated while validating draft Methods. These are not synchronized.",
           metadata: { Items: chatOutputFiles.length }
         },
         "methods-results": {
@@ -6549,55 +6654,38 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
     syncHasChanges(localSyncDigest, remoteSync.inventoryDigest)
   );
   const syncButtonLabel = syncing
-    ? "Synchronizing…"
+    ? "Saving reusable items…"
     : syncError
-      ? "Sync error"
+      ? "Automatic sync paused"
       : !remoteSync?.linked
-        ? "Sync to OMERO"
+        ? "Automatic sync ready"
         : syncChanged
-          ? "Sync changes"
-          : "Synced";
+          ? "Waiting to save…"
+          : "Saved automatically";
   const workspaceBrowserActions = (): BrowserMenuAction[] => [
     { label: "Add files", run: () => addFilesInput.current?.click() },
-    { label: "New chat", run: () => void newConversation() },
-    { label: "Rename current chat", run: () => void renameChat(activeChat) },
+    { label: "New Assistant Chat", run: () => void newConversation() },
+    { label: "Rename current Assistant Chat", run: () => void renameChat(activeChat) },
     { label: "Rename workspace", run: () => void renameWorkspace(workspace) },
-    ...(bridge.canSync ? [{
-      label: "Sync AnalysisWorkspace now",
-      run: () => void synchronizeWorkspace()
-    }] : []),
     {
       label: "Reuse from +AnalysisWorkspaces",
       run: () => void openWorkspaceLibrary()
     },
-    ...(remoteSync?.linked && bridge.canSync ? [{
-      label: "Remove AnalysisWorkspace sync",
-      danger: true,
-      run: () => void removeWorkspaceSynchronization()
-    }] : []),
     { label: "Refresh", run: () => void refreshWorkspace() }
   ];
   const workspaceActionsMenu = () => (
     <details className="workspace-actions">
-      <summary>Workspace &amp; OMERO</summary>
+      <summary>Workspace</summary>
       <div>
         <span className="menu-heading">Browser Workspace</span>
         <button onClick={() => void renameWorkspace(workspace)}><ActionIcon name="edit" />Rename AnalysisWorkspace</button>
         <button onClick={() => void downloadArchive()}><ActionIcon name="download" />Export Workspace archive</button>
         <button onClick={() => importInput.current?.click()}><ActionIcon name="import" />Import Workspace archive</button>
         <span className="menu-heading">OMERO synchronization</span>
-        {bridge.canUpload && <button onClick={() => void saveArchiveToOmero()}><ActionIcon name="save" />Save separate OMERO snapshot</button>}
-        {bridge.canSync && <button onClick={() => void synchronizeWorkspace()}>
-          <ActionIcon name="sync" />Sync AnalysisWorkspace now
-        </button>}
+        <span className="menu-note">Methods, Pipelines, Notebooks, direct run results, and settings save automatically. Assistant content stays browser-local.</span>
         <button onClick={() => void openWorkspaceLibrary()}>
           <ActionIcon name="import" />Reuse from +AnalysisWorkspaces
         </button>
-        {remoteSync?.linked && bridge.canSync && (
-          <button className="danger" onClick={() => void removeWorkspaceSynchronization()}>
-            <ActionIcon name="delete" />Remove AnalysisWorkspace sync
-          </button>
-        )}
       </div>
     </details>
   );
@@ -6676,9 +6764,29 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       <header className="workspace-header">
         <div className="header-brand">
           <h1>OMERO.Analysis</h1>
-          <p>{workspace.rootPath}</p>
+          <p>{workspace.name}</p>
         </div>
         <div className="header-actions">
+          <Button
+            className="panel-visibility-toggle"
+            aria-pressed={explorerVisible}
+            aria-label={`${explorerVisible ? "Hide" : "Show"} Explorer`}
+            title={`${explorerVisible ? "Hide" : "Show"} Explorer`}
+            onClick={toggleExplorer}
+          >
+            <Icon name="chevron" className={explorerVisible ? "points-left" : "points-right"} />
+            Explorer
+          </Button>
+          <Button
+            className="panel-visibility-toggle"
+            aria-pressed={inspectorVisible}
+            aria-label={`${inspectorVisible ? "Hide" : "Show"} Artifact Inspector`}
+            title={`${inspectorVisible ? "Hide" : "Show"} Artifact Inspector`}
+            onClick={toggleInspector}
+          >
+            Inspector
+            <Icon name="chevron" className={inspectorVisible ? "points-right" : "points-left"} />
+          </Button>
           <Button
             className="theme-toggle"
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
@@ -6771,12 +6879,13 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
       )}
 
       <div
-        className="workspace artifact-visible"
+        className={`workspace ${explorerVisible ? "explorer-visible" : "explorer-hidden"} ${inspectorVisible ? "inspector-visible" : "inspector-hidden"}`}
         style={{
           "--explorer-width": `${explorerWidth}px`,
           "--artifact-width": `${artifactWidth}px`
         } as CSSProperties}
       >
+        {explorerVisible && (<>
         <aside
           className="workspace-tree"
           onDragOver={(event) => {
@@ -6795,24 +6904,24 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               event, workspace.name, workspaceBrowserActions()
             )}
           >
-            <div><h2>Workspace files</h2><small>{bytesLabel(workspaceBytes(analysisWorkspace))} · browser {quotaPercent || "?"}%</small></div>
+            <div><h2>Explorer</h2><small>{bytesLabel(workspaceBytes(analysisWorkspace))} · browser {quotaPercent || "?"}%</small></div>
             <button
               className="browser-more"
-              aria-label="Workspace and OMERO actions"
-              title="Workspace and OMERO actions"
+              aria-label="Workspace actions"
+              title="Workspace actions"
               onClick={(event) => openBrowserMenu(
                 event, workspace.name, workspaceBrowserActions()
               )}
             ><Icon name="more" /></button>
           </div>
           <div className={`workspace-sync-bar ${syncError ? "error" : syncChanged ? "changes" : ""}`}>
-            <button
-              disabled={!bridge.canSync || syncing || !remoteSync?.canSync}
-              title={syncError || remoteSync?.reason || "Synchronize this Workspace with OMERO"}
-              onClick={() => void synchronizeWorkspace()}
-            >
+            <span title={syncError || remoteSync?.reason || "Reusable Analysis items save automatically to OMERO"}>
+              <ActionIcon name="sync" />
               {syncButtonLabel}
-            </button>
+            </span>
+            {syncError && bridge.canSync && (
+              <button onClick={() => void synchronizeWorkspace()}>Retry</button>
+            )}
             {remoteSync?.linked && (
               <small title={remoteSync.datasetName}>
                 revision {remoteSync.remoteRevision} · {remoteSync.itemCount} items
@@ -6820,38 +6929,30 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             )}
           </div>
           <div className="file-browser-toolbar" role="toolbar" aria-label="Workspace file actions">
-            <button
-              title="Up to OMERO object workspaces"
-              aria-label="Up to OMERO object workspaces"
-              disabled={browserAtParent}
-              onClick={() => setBrowserAtParent(true)}
-            ><Icon name="up" /></button>
             <button title="Add files" aria-label="Add files" onClick={() => addFilesInput.current?.click()}><Icon name="upload" /></button>
             <button title="Refresh workspace" aria-label="Refresh workspace" onClick={() => void refreshWorkspace()}><Icon name="refresh" /></button>
             <button
               title="Collapse all folders"
               aria-label="Collapse all folders"
               onClick={() => setOpenFolders({
-                chat: false,
+                assistant: false,
                 inputs: false,
                 methods: false,
                 pipelines: false,
                 notebooks: false,
-                trash: false,
-                snapshots: false
+                trash: false
               })}
             ><Icon name="collapse" /></button>
             <button
               title="Expand all folders"
               aria-label="Expand all folders"
               onClick={() => setOpenFolders({
-                chat: true,
+                assistant: true,
                 inputs: true,
                 methods: true,
                 pipelines: true,
                 notebooks: true,
-                trash: true,
-                snapshots: true
+                trash: true
               })}
             ><Icon name="expand" /></button>
             <input ref={addFilesInput} hidden type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} />
@@ -6867,94 +6968,12 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               onChange={(event) => setExplorerQuery(event.target.value)}
             />
           </label>
-          <div
-            className="browser-path"
-            title={browserAtParent ? `OMERO/${workspace.objectType}-${workspace.objectId}` : workspace.rootPath}
-            onDoubleClick={() => setBrowserAtParent(true)}
-          >
+          <div className="browser-path" title={`Current Workspace: ${workspace.name}`}>
             <Icon name="root" />
-            <span>{browserAtParent ? `OMERO/${workspace.objectType}-${workspace.objectId}` : workspace.rootPath}</span>
+            <span>{workspace.name}</span>
           </div>
           <div className="browser-columns"><span>Name</span><span>Size</span></div>
-          {browserAtParent ? (
-            <>
-            <div className="hierarchy-section">
-              <strong>OMERO hierarchy</strong>
-              {[...(hierarchy?.parents || []), ...(hierarchy?.children || [])].map((item) => (
-                <button
-                  key={`${item.type}:${item.id}`}
-                  disabled={!item.supported}
-                  onClick={() => {
-                    if (item.supported) {
-                      window.location.assign(
-                        `${bootstrap.tokenUrl.replace(/api\/context-token\/$/, "")}?type=${encodeURIComponent(item.type)}&id=${item.id}`
-                      );
-                    }
-                  }}
-                >
-                  <Icon name="folder" />
-                  <span>{item.name}</span>
-                  <small>{item.type} {item.id}</small>
-                </button>
-              ))}
-              {!hierarchy?.parents.length && !hierarchy?.children.length && (
-                <p>No readable immediate OMERO relations.</p>
-              )}
-            </div>
-            <div className="hierarchy-section-title">Browser-local workspaces for this object</div>
-            <ul className="browser-list workspace-list">
-              {workspaces.map((item) => (
-                <li
-                  key={item.id}
-                  className={workspaceRowClassName(
-                    item.id,
-                    workspace.id,
-                    selectedWorkspaceId
-                  )}
-                  aria-selected={item.id === (selectedWorkspaceId || workspace.id)}
-                  onClick={() => setSelectedWorkspaceId(item.id)}
-                  onDoubleClick={() => void switchWorkspace(item.id)}
-                  onContextMenu={(event) => {
-                    setSelectedWorkspaceId(item.id);
-                    openBrowserMenu(event, item.name, [
-                      { label: "Open workspace", run: () => void switchWorkspace(item.id) },
-                      { label: "Rename workspace", run: () => void renameWorkspace(item) },
-                      ...(item.id !== workspace.id ? [{
-                        label: "Delete local workspace",
-                        danger: true,
-                        run: () => void removeLocalWorkspace(item)
-                      }] : [])
-                    ]);
-                  }}
-                >
-                  <Icon name="folder" />
-                  <div className="browser-name">
-                    <strong title={item.name}>{item.name}</strong>
-                    <small>{item.id === workspace.id ? "open now" : item.sourceWorkspaceSnapshotAnnotationId ? `restored from Annotation ${item.sourceWorkspaceSnapshotAnnotationId}` : "browser-local workspace"}</small>
-                  </div>
-                  <span className="browser-size">{new Date(item.updatedAt).toLocaleDateString()}</span>
-                  <button
-                    className="browser-more"
-                    aria-label={`Actions for ${item.name}`}
-                    onClick={(event) => {
-                      setSelectedWorkspaceId(item.id);
-                      openBrowserMenu(event, item.name, [
-                        { label: "Open workspace", run: () => void switchWorkspace(item.id) },
-                        { label: "Rename workspace", run: () => void renameWorkspace(item) },
-                        ...(item.id !== workspace.id ? [{
-                          label: "Delete local workspace",
-                          danger: true,
-                          run: () => void removeLocalWorkspace(item)
-                        }] : [])
-                      ]);
-                    }}
-                  ><Icon name="more" /></button>
-                </li>
-              ))}
-            </ul>
-            </>
-          ) : (<>
-          {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Archive or download old workspaces.</p>}
+          {quotaPercent >= 75 && <p className="quota-warning">Browser storage is {quotaPercent}% full. Download important results and remove items you no longer need.</p>}
 
           <details
             open={openFolders.inputs}
@@ -7027,17 +7046,40 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           </details>
 
           <details
-            open={openFolders.chat}
-            className="browser-folder"
+            open={openFolders.methods}
+            className="browser-folder methods-folder"
             onToggle={(event) => {
               const open = event.currentTarget.open;
-              setOpenFolders((current) => ({ ...current, chat: open }));
+              setOpenFolders((current) => ({ ...current, methods: open }));
+            }}
+          >
+            <summary
+              onClick={() => setInspectorSelection({ kind: "folder", id: "methods" })}
+              onContextMenu={(event) => openBrowserMenu(event, "methods/", [
+                ...(editorEnabled ? [{ label: "New Method", run: () => void createUntitledMethod() }] : []),
+                { label: "To Pipeline", run: () => void combineSelectedMethods() }
+              ])}
+            >
+              <Icon name="chevron" className="folder-chevron" />
+              <Icon name="folder" />
+              <strong>Methods</strong><small>{activeMethods.length}</small>
+            </summary>
+
+          <div className="methods-folder-content" style={{ display: "flex", flexDirection: "column" }}>
+
+          <details
+            open={openFolders.assistant}
+            className="browser-subfolder assistant-folder"
+            style={{ order: 4 }}
+            onToggle={(event) => {
+              const open = event.currentTarget.open;
+              setOpenFolders((current) => ({ ...current, assistant: open }));
             }}
           >
             <summary onClick={() => setInspectorSelection({ kind: "folder", id: "chat" })}>
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>Chat</strong><small>{chats.length}</small>
+              <strong>Assistant</strong><small>{chats.length}</small>
             </summary>
             {chats.map((chat) => {
               const chatAttachments = analysisWorkspace.files.filter((file) =>
@@ -7152,29 +7194,10 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             )}
           </details>
 
-          <details
-            open={openFolders.methods}
-            className="browser-folder"
-            onToggle={(event) => {
-              const open = event.currentTarget.open;
-              setOpenFolders((current) => ({ ...current, methods: open }));
-            }}
-          >
-            <summary
-              onClick={() => setInspectorSelection({ kind: "folder", id: "methods" })}
-              onContextMenu={(event) => openBrowserMenu(event, "methods/", [
-                ...(editorEnabled ? [{ label: "New Method", run: () => void createUntitledMethod() }] : []),
-                { label: "To Pipeline", run: () => void combineSelectedMethods() }
-              ])}
-            >
-              <Icon name="chevron" className="folder-chevron" />
-              <Icon name="folder" />
-              <strong>Methods</strong><small>{activeMethods.length}</small>
-            </summary>
             {(activeMethods.length > 0 || editorEnabled) && (
               <div className="method-selection-toolbar">
                 <span>{selectedMethodIds.size} selected</span>
-                {editorEnabled && <button onClick={() => void createUntitledMethod()}><ActionIcon name="add" />New</button>}
+                {editorEnabled && <button aria-label="Create new Method" onClick={() => void createUntitledMethod()}><ActionIcon name="add" />New Method</button>}
                 <button disabled={selectedMethodIds.size < 2} onClick={() => void combineSelectedMethods()}><ActionIcon name="pipeline" />To Pipeline</button>
                 <button disabled={!selectedMethodIds.size} onClick={() => void convertSelectedMethodsToNotebook()}><ActionIcon name="notebook" />To Notebook</button>
               </div>
@@ -7201,7 +7224,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   <div className="browser-name">
                     <strong title={method.name}>{method.name}</strong><small>v{method.currentVersion} · {method.description || "saved Python method"}</small>
                   </div>
-                  <span className="browser-size">v{method.currentVersion}</span>
                   <button
                     className="browser-more"
                     aria-label={`Actions for ${method.name}`}
@@ -7212,6 +7234,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               {!activeMethods.filter((method) => matchesExplorer(method.name)).length && <li className="browser-empty">No matching methods</li>}
             </ul>
             {resultFolder("Methods results", "methods-results", methodOutputFiles)}
+          </div>
           </details>
 
           <details
@@ -7318,8 +7341,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             </summary>
             <div className="method-selection-toolbar notebook-folder-toolbar">
               <span>{analysisWorkspace.notebooks.length} notebook{analysisWorkspace.notebooks.length === 1 ? "" : "s"}</span>
-              {editorEnabled && <button onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New</button>}
-              <button onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload</button>
+              {editorEnabled && <button aria-label="Create new Notebook" onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New Notebook</button>}
+              <button aria-label="Upload Notebook" onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload Notebook</button>
             </div>
             <ul className="browser-list">
               {analysisWorkspace.notebooks.filter((notebook) =>
@@ -7360,7 +7383,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 event.target.value = "";
               }} />
           </details>
-          </>)}
         </aside>
         <div
           className="pane-resizer"
@@ -7368,6 +7390,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           aria-label="Resize workspace explorer"
           onMouseDown={beginExplorerResize}
         />
+        </>)}
 
         {browserMenu && (
           <div
@@ -7394,225 +7417,88 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
         <input ref={importInput} hidden type="file" accept=".oa-workspace.zip,application/zip"
           onChange={(event) => void importArchive(event.target.files?.[0] || null)} />
 
-        <section className="center-pane">
-        <nav className="analysis-tabs" aria-label="Analysis views">
-          {(["home", "runs", "notebook", "chat", ...(editorEnabled ? ["editor" as const] : [])] as const).map((tab) => (
-            <Button key={tab} className={activeTab === tab ? "active" : ""}
-              aria-current={activeTab === tab ? "page" : undefined}
-              onClick={() => void navigateFromEditor(tab)}>
-              <ActionIcon name={tab === "home" ? "home" : tab === "runs" ? "pipeline" : tab === "chat" ? "chat" : tab === "notebook" ? "notebook" : "edit"} />
-              {tab === "runs" ? "Methods & Pipelines" : tab[0].toUpperCase() + tab.slice(1)}
-            </Button>
-          ))}
-        </nav>
+        <section className={`center-pane ${!runtimeReady && (
+          activeTab === "methods" || activeTab === "pipelines" || activeTab === "notebooks"
+        ) ? "runtime-loading" : ""}`}>
+        <AnalysisNavigation activeTab={activeTab} editorEnabled={editorEnabled}
+          onNavigate={(tab) => void navigateFromEditor(tab)} />
+        {!runtimeReady && (activeTab === "methods" || activeTab === "pipelines" || activeTab === "notebooks") && (
+          <RuntimeProgressPanel
+            progress={runtimeProgress}
+            detail={activeTab === "methods"
+              ? "The Method starts automatically when browser Python is ready."
+              : activeTab === "pipelines"
+                ? "The Pipeline starts automatically when browser Python is ready."
+                : "The Notebook starts automatically when browser Python is ready."}
+          />
+        )}
         {activeTab === "home" && (
-          <section className="analysis-home" aria-labelledby="analysis-home-title">
-            <header className="analysis-home-header">
-              <span className="eyebrow">Reusable browser-local analysis</span>
-              <h2 id="analysis-home-title">What would you like to do?</h2>
-              <p>Run a saved analysis, work in a Notebook, or use Chat to develop a reusable Python Method.</p>
-            </header>
-            <div className="analysis-home-grid">
-              <article className="analysis-start-card">
-                <ActionIcon name="run" />
-                <h3>Run a Method</h3>
-                <p>Execute the current saved version with inputs from this Workspace.</p>
-                <select
-                  aria-label="Method to run"
-                  value={homeMethodId || activeMethods[0]?.id || ""}
-                  onChange={(event) => setHomeMethodId(event.target.value)}
-                  disabled={!activeMethods.length}
-                >
-                  {activeMethods.map((method) => (
-                    <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>
-                  ))}
-                </select>
-                <Button
-                  disabled={!activeMethods.length || busy}
-                  onClick={() => {
-                    const method = activeMethods.find((item) => item.id === (homeMethodId || activeMethods[0]?.id));
-                    if (method) void runMethod(method);
-                  }}
-                ><ActionIcon name="run" />Run Method</Button>
-                {!activeMethods.length && <small>Create a Method with Chat, import one, or use New when Editor is enabled.</small>}
-              </article>
-              <article className="analysis-start-card">
-                <ActionIcon name="pipeline" />
-                <h3>Run a Pipeline</h3>
-                <p>Run an ordered collection of pinned Method versions.</p>
-                <select
-                  aria-label="Pipeline to run"
-                  value={homePipelineId || activePipelines[0]?.id || ""}
-                  onChange={(event) => setHomePipelineId(event.target.value)}
-                  disabled={!activePipelines.length}
-                >
-                  {activePipelines.map((pipeline) => (
-                    <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>
-                  ))}
-                </select>
-                <Button
-                  disabled={!activePipelines.length || busy}
-                  onClick={() => {
-                    const pipeline = activePipelines.find((item) => item.id === (homePipelineId || activePipelines[0]?.id));
-                    if (pipeline) void runPipeline(pipeline);
-                  }}
-                ><ActionIcon name="run" />Run Pipeline</Button>
-                {!activePipelines.length && <small>Select at least two Methods in Explorer and combine them into a Pipeline.</small>}
-              </article>
-              <article className="analysis-start-card">
-                <ActionIcon name="notebook" />
-                <h3>Open a Notebook</h3>
-                <p>Review cells, reattach Workspace inputs, and run the Notebook.</p>
-                <select
-                  aria-label="Notebook to open"
-                  value={homeNotebookId || activeNotebooks[0]?.id || ""}
-                  onChange={(event) => setHomeNotebookId(event.target.value)}
-                  disabled={!activeNotebooks.length}
-                >
-                  {activeNotebooks.map((notebook) => (
-                    <option key={notebook.id} value={notebook.id}>{notebook.name}</option>
-                  ))}
-                </select>
-                <Button
-                  disabled={!activeNotebooks.length}
-                  onClick={() => {
-                    const notebook = activeNotebooks.find((item) => item.id === (homeNotebookId || activeNotebooks[0]?.id));
-                    if (notebook) void openNotebook(notebook);
-                  }}
-                ><ActionIcon name="notebook" />Open Notebook</Button>
-                {!activeNotebooks.length && <small>Upload a .ipynb file, import a Notebook, or create one when Editor is enabled.</small>}
-              </article>
-              <article className="analysis-start-card method-assistant-card">
-                <ActionIcon name="chat" />
-                <h3>Create a Method with Chat</h3>
-                <p>Ask the assistant to inspect your data and develop, test, explain, or improve a reusable Python Method.</p>
-                <Button onClick={() => setActiveTab("chat")}><ActionIcon name="chat" />Open Method Assistant</Button>
-                {!providerReady && <small>Configure an AI provider in Settings before sending a request.</small>}
-              </article>
-            </div>
-          </section>
+          <AnalysisHome
+            methods={activeMethods}
+            pipelines={activePipelines}
+            notebooks={activeNotebooks}
+            methodId={homeMethodId}
+            pipelineId={homePipelineId}
+            notebookId={homeNotebookId}
+            notebookPipelineId={homeNotebookPipelineId}
+            busy={busy}
+            editorEnabled={editorEnabled}
+            providerReady={providerReady}
+            onMethodIdChange={setHomeMethodId}
+            onPipelineIdChange={setHomePipelineId}
+            onNotebookIdChange={setHomeNotebookId}
+            onNotebookPipelineIdChange={setHomeNotebookPipelineId}
+            onRunMethod={(method) => void runMethod(method)}
+            onRunPipeline={(pipeline) => void runPipeline(pipeline)}
+            onRunNotebook={(notebook) => void runNotebook(notebook)}
+            onOpenAssistant={() => setActiveTab("assistant")}
+            onNewMethod={() => void createUntitledMethod()}
+            onCreatePipeline={() => {
+              setPipelineBuilderOpen(true);
+              setActiveTab("pipelines");
+            }}
+            onPipelineToNotebook={(pipeline) => {
+              void convertSelectedPipelinesToNotebook([pipeline]).then((notebook) => {
+                if (notebook) void openNotebook(notebook);
+              });
+            }}
+            onNewNotebook={() => void createUntitledNotebook()}
+          />
         )}
-        {activeTab === "runs" && (
-          <section className="runs-view" aria-label="Methods and Pipelines">
-            <div className="runs-toolbar">
-              <div>
-                <strong>Methods &amp; Pipelines</strong>
-                <span>Run reusable analyses and inspect their durable output history.</span>
-              </div>
-              <div className="runs-launchers">
-                <select aria-label="Method" value={homeMethodId || activeMethods[0]?.id || ""}
-                  disabled={!activeMethods.length || busy}
-                  onChange={(event) => setHomeMethodId(event.target.value)}>
-                  {activeMethods.map((method) => <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>)}
-                </select>
-                <Button disabled={!activeMethods.length || busy} onClick={() => {
-                  const method = activeMethods.find((item) => item.id === (homeMethodId || activeMethods[0]?.id));
-                  if (method) void runMethod(method);
-                }}><ActionIcon name="run" />Run Method</Button>
-                <select aria-label="Pipeline" value={homePipelineId || activePipelines[0]?.id || ""}
-                  disabled={!activePipelines.length || busy}
-                  onChange={(event) => setHomePipelineId(event.target.value)}>
-                  {activePipelines.map((pipeline) => <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>)}
-                </select>
-                <Button disabled={!activePipelines.length || busy} onClick={() => {
-                  const pipeline = activePipelines.find((item) => item.id === (homePipelineId || activePipelines[0]?.id));
-                  if (pipeline) void runPipeline(pipeline);
-                }}><ActionIcon name="run" />Run Pipeline</Button>
-              </div>
-              {busy
-                ? <Button onClick={stop}><ActionIcon name="stop" />Stop</Button>
-                : selectedRun && <Button onClick={() => rerunAnalysisRun(selectedRun)}><ActionIcon name="reset" />Rerun</Button>}
-            </div>
-            <div className="runs-layout">
-              <aside className="run-history" aria-label="Run history">
-                <h3>Run history</h3>
-                {!(analysisWorkspace.runs || []).length && <p>No Method or Pipeline has been run yet.</p>}
-                {[...(analysisWorkspace.runs || [])]
-                  .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-                  .map((run) => (
-                    <button
-                      key={run.id}
-                      className={selectedRun?.id === run.id ? "active" : ""}
-                      onClick={() => selectRun(run.id)}
-                    >
-                      <ActionIcon name={run.kind === "method" ? "run" : "pipeline"} />
-                      <span><strong>{run.artifactName}</strong><small>v{run.artifactVersion} · {run.status}</small></span>
-                    </button>
-                  ))}
-              </aside>
-              <div className="run-detail">
-                {!selectedRun && (
-                  <div className="run-empty">
-                    <h2>No run selected</h2>
-                    <p>Run a Method or Pipeline from Home, Explorer, or the Artifact Inspector.</p>
-                  </div>
-                )}
-                {selectedRun && (
-                  <>
-                    <header className={`run-summary ${selectedRun.status}`}>
-                      <div>
-                        <span>{selectedRun.kind === "method" ? "Method" : "Pipeline"} run</span>
-                        <h2>{selectedRun.artifactName}</h2>
-                        <p>Version {selectedRun.artifactVersion} · {selectedRun.status} · {new Date(selectedRun.createdAt).toLocaleString()}</p>
-                      </div>
-                      {selectedRun.error && <pre>{selectedRun.error}</pre>}
-                    </header>
-                    {selectedRun.steps.length > 0 && (
-                      <ol className="run-steps">
-                        {selectedRun.steps.map((step) => (
-                          <li key={step.stepId} className={step.status}>
-                            <span>{step.status}</span>
-                            <strong>{step.name}</strong>
-                            <small>Method v{step.methodVersion}</small>
-                            {step.error && <p>{step.error}</p>}
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                    {Object.keys(selectedRun.resolvedBindings).length > 0 && (
-                      <details className="run-bindings">
-                        <summary>Resolved input bindings</summary>
-                        <dl>{Object.entries(selectedRun.resolvedBindings).map(([from, to]) => (
-                          <div key={from}><dt>{from}</dt><dd>{to}</dd></div>
-                        ))}</dl>
-                      </details>
-                    )}
-                    <div className="run-executions">
-                      {selectedRunExecutions.map((execution) => (
-                        <ExecutionCard
-                          key={execution.id}
-                          execution={execution}
-                          files={analysisWorkspace.files}
-                          onSave={() => undefined}
-                          onRerun={() => rerunAnalysisRun(selectedRun)}
-                          saveDisabled={busy}
-                          showSaveAction={false}
-                          showRerunAction={false}
-                        />
-                      ))}
-                      {!selectedRunExecutions.length && selectedRun.status === "running" && <p>Preparing the local Python runtime…</p>}
-                    </div>
-                    {selectedRunFiles.length > 0 && (
-                      <section className="run-files" aria-label="Generated files">
-                        <h3>Generated files</h3>
-                        <div>
-                          {selectedRunFiles.map((file) => (
-                            <button key={file.id} onClick={() => setSelectedArtifactFileId(file.id)}>
-                              <Icon name={file.type.startsWith("image/") ? "image" : "file"} />
-                              <span><strong>{file.name}</strong><small>{bytesLabel(file.size)} · inspect or download</small></span>
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </section>
+        {(activeTab === "methods" || activeTab === "pipelines") && (
+          <AnalysisRunsView
+            kind={activeTab === "methods" ? "method" : "pipeline"}
+            methods={activeMethods}
+            pipelines={activePipelines}
+            selectedMethodIds={selectedMethodIds}
+            methodId={homeMethodId}
+            pipelineId={homePipelineId}
+            busy={busy}
+            editorEnabled={editorEnabled}
+            pipelineBuilderOpen={pipelineBuilderOpen}
+            runs={visibleRuns}
+            selectedRun={selectedRun}
+            selectedRunExecutions={selectedRunExecutions}
+            selectedRunFiles={selectedRunFiles}
+            allFiles={analysisWorkspace.files}
+            onMethodIdChange={setHomeMethodId}
+            onPipelineIdChange={setHomePipelineId}
+            onRunMethod={(method) => void runMethod(method)}
+            onRunPipeline={(pipeline) => void runPipeline(pipeline)}
+            onEditMethod={(method) => void openArtifactEditor("method", method.id, "methods")}
+            onEditPipeline={(pipeline) => void openArtifactEditor("pipeline", pipeline.id, "pipelines")}
+            onPipelineBuilderChange={setPipelineBuilderOpen}
+            onToggleMethod={toggleMethodSelection}
+            onClearMethods={() => setSelectedMethodIds(new Set())}
+            onCreatePipeline={combineSelectedMethods}
+            onStop={stop}
+            onRerun={(run) => void rerunAnalysisRun(run)}
+            onSelectRun={selectRun}
+            onInspectFile={(fileId) => setSelectedArtifactFileId(fileId)}
+          />
         )}
-        {activeTab === "chat" && (
-        <section className="chat">
+        {activeTab === "assistant" && (
+        <section className="assistant-view">
           <div className="workspace-toolbar">
             <label className="chat-selector">
               <span className="sr-only">Current chat</span>
@@ -7622,15 +7508,15 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 ))}
               </select>
             </label>
-            <Button onClick={() => void newConversation()}><ActionIcon name="add" />New chat</Button>
-            <Button onClick={() => void renameChat(activeChat)}><ActionIcon name="edit" />Rename chat</Button>
+            <Button onClick={() => void newConversation()}><ActionIcon name="add" />New Assistant Chat</Button>
+            <Button onClick={() => void renameChat(activeChat)}><ActionIcon name="edit" />Rename Assistant Chat</Button>
             {workspaceActionsMenu()}
           </div>
           <div className="messages" aria-live="polite" ref={messagesElement}>
             {!activeChat.messages.length && (
               <div className="welcome">
                 <h2>What Method would you like to create?</h2>
-                <p>Chat can inspect these data and test Python while helping you build a reusable Method.</p>
+                <p>The Assistant inspects data and tests Python only to deliver a complete reusable Method script.</p>
                 {profiles.length > 0 && (
                   <div className="suggested-prompts">
                     <Button onClick={() => setPrompt("Inspect the available data and propose a reusable Method that summarizes its tables, columns, and important quality issues.")}>
@@ -7646,7 +7532,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                 )}
               </div>
             )}
-            {activeChat.messages.map((message) => {
+            {chatMessagesForPresentation(activeChat.messages).map((message) => {
               if (message.kind === "ai-activity") {
                 const questionId = message.aiActivity?.question?.id;
                 const active = !["completed", "failed", "stopped"].includes(
@@ -7743,7 +7629,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     </button>
                   </span>
                   {message.role === "assistant"
-                    ? <div className="message-markdown"><MarkdownPreview markdown={message.content} /></div>
+                    ? <div className="message-markdown"><MarkdownPreview markdown={message.content} collapsePython /></div>
                     : <p>{message.content}</p>}
                   {citations.length ? (
                     <div className="message-citations" aria-label="Evidence used for this answer">
@@ -7790,7 +7676,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           />
         </section>
         )}
-        {activeTab === "notebook" && (
+        {activeTab === "notebooks" && (
           <NotebookView
             notebook={activeNotebook}
             inputs={inputFiles}
@@ -7800,38 +7686,44 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
             onBeforeRun={() => ensureRuntime(analysisWorkspace.files).then(() => undefined)}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
+            onEdit={editorEnabled
+              ? (notebook) => void openArtifactEditor("notebook", notebook.id, "notebooks")
+              : undefined}
           />
         )}
         {activeTab === "editor" && editorEnabled && (
-          <ArtifactEditor
-            session={editorSession}
-            methods={activeMethods}
-            inputs={inputFiles}
-            theme={theme}
-            cspNonce={bootstrap.styleNonce || ""}
-            saving={editorSaving}
-            onChange={changeEditorSession}
-            onSave={() => void saveEditor()}
-            onSaveRun={() => void saveAndRunEditor()}
-            onRevert={revertEditor}
-            onClose={() => void closeEditor()}
-          />
+          <Suspense fallback={<RuntimeProgressPanel
+            progress={{ percent: 60, message: "Loading the artifact Editor…" }}
+            label="Loading artifact Editor"
+            detail="Syntax highlighting and structured editing controls are loading."
+          />}>
+            <ArtifactEditor
+              session={editorSession}
+              methods={activeMethods}
+              inputs={inputFiles}
+              theme={theme}
+              cspNonce={bootstrap.styleNonce || ""}
+              saving={editorSaving}
+              onChange={changeEditorSession}
+              onSave={() => void saveEditor()}
+              onSaveRun={() => void saveAndRunEditor()}
+              onRevert={revertEditor}
+              onClose={() => void closeEditor()}
+            />
+          </Suspense>
         )}
         {activeTab === "settings" && (
           <section className="settings-tab settings-stack" aria-label="Settings">
             <div className="settings-sync-toolbar">
-              <Button
-                disabled={settingsSyncing || !bridge.canSettingsSync}
-                onClick={() => void syncAllSettings()}
-              >
-                <ActionIcon name="sync" />{settingsSyncing ? "Synchronizing…" : "Sync Settings"}
-              </Button>
+              <ActionIcon name="sync" />
               <span role="status">
-                {settingsSyncMessage || (settingsSync?.synced
-                  ? "Settings are synchronized with ~AnalysisSettings"
+                {settingsSyncing
+                  ? "Saving settings automatically…"
+                  : settingsSyncMessage || (settingsSync?.synced
+                  ? "Settings are saved automatically in ~AnalysisSettings"
                   : bootstrap.context
-                    ? "Settings have not been synchronized"
-                    : "Open Analysis from an OMERO object to synchronize settings")}
+                    ? "Settings will be saved automatically"
+                    : "Open Analysis from an OMERO object to save settings automatically")}
               </span>
             </div>
             <details className="settings-section" open>
@@ -7843,7 +7735,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                   <span>
                     <strong>Plot + CSV</strong>
                     <small>
-                      Ask Chat to save both a visual plot and its underlying tabular data
+                      Ask the Assistant Method to save both a visual plot and its underlying tabular data
                       when an analysis produces a chart. Disable this when you only need
                       the requested result.
                     </small>
@@ -7861,52 +7753,6 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     </small>
                   </span>
                 </label>
-                <label className="settings-check">
-                  <input
-                    type="checkbox"
-                    checked={syncAnalysisWorkspace}
-                    onChange={toggleSyncAnalysisWorkspace}
-                  />
-                  <span>
-                    <strong>Sync AnalysisWorkspace</strong>
-                    <small>
-                      Include one complete, restorable browser Workspace snapshot in the
-                      managed +AnalysisWorkspaces Dataset. When this browser has no local
-                      Workspace, restore the latest matching synchronized snapshot
-                      automatically. Default: on.
-                    </small>
-                  </span>
-                </label>
-                <label className="settings-check">
-                  <input
-                    type="checkbox"
-                    checked={syncAnalysisSettings}
-                    onChange={toggleSyncAnalysisSettings}
-                  />
-                  <span>
-                    <strong>Sync AnalysisSettings</strong>
-                    <small>
-                      Restore the latest encrypted ~AnalysisSettings bundle automatically
-                      on a new or cleared browser. Settings are uploaded only when you choose
-                      Sync Settings. Default: on.
-                    </small>
-                  </span>
-                </label>
-                <label className="settings-check">
-                  <input
-                    type="checkbox"
-                    checked={syncChatAttachments}
-                    onChange={toggleSyncChatAttachments}
-                  />
-                  <span>
-                    <strong>Sync chat attachments to OMERO AnalysisWorkspaces</strong>
-                    <small>
-                      Upload original Chat attachment files to the managed AnalysisWorkspaces
-                      Dataset during explicit Workspace Sync. Extracted text, model capability
-                      checks, and source URLs are never synchronized. Default: off.
-                    </small>
-                  </span>
-                </label>
               </div>
             </details>
 
@@ -7914,8 +7760,8 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               <summary>AI Settings</summary>
               <div className="settings-section-body settings-form">
                 <p className="settings-warning">
-                  API keys are kept only in memory until Sync Settings stores every
-                  AI profile in an encrypted attachment under
+                  API keys are kept only in memory until automatic settings saving stores
+                  every AI profile in an encrypted attachment under
                   ~AnalysisSettings / AI Settings.
                 </p>
                 <details className="local-ai-discovery">
@@ -7989,7 +7835,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     ))}
                     <small className="local-ai-help">
                       The model list is detected without sending Workspace data.
-                      Full Analysis Chat requires a model with reliable OpenAI tool
+                      The full Analysis Assistant requires a model with reliable OpenAI tool
                       calling. If the browser cannot connect, enable CORS in the local
                       server; an HTTPS OMERO page may also block a plain HTTP endpoint.
                     </small>
@@ -8121,7 +7967,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
               <div className="settings-section-body">
                 <p>
                   Catalog metadata is informational. Skill instructions are loaded only
-                  for matching Chat turns and are never loaded by Notebook.
+                  for matching Assistant turns and are never loaded by Notebook.
                   {" "}
                   <Button className="inline-help-link" onClick={() => setShowHelp(true)}>
                     What is a skill?
@@ -8164,7 +8010,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                           </span>
                           <span>Version: {skill.version}</span>
                           <span>Health: {provider.status}</span>
-                          <span>{loadedSkillHashes.has(skill.sha256) ? "Loaded by Chat" : "Not loaded"}</span>
+                          <span>{loadedSkillHashes.has(skill.sha256) ? "Loaded by Assistant" : "Not loaded"}</span>
                         </div>
                       </details>
                     ))
@@ -8173,7 +8019,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     <details className="skill-card" key={`${zarrSkillCatalog.provider.name}:${skill.name}:${skill.sha256}`}>
                       <summary>
                         <strong>{skill.name}</strong>
-                        <span>Explicit Chat operations</span>
+                        <span>Explicit Assistant operations</span>
                       </summary>
                       <div>
                         <span>Provider: {zarrSkillCatalog.provider.name}</span>
@@ -8215,7 +8061,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                                 ? { ...item, enabled: event.target.checked }
                                 : item)
                             )} />
-                          Enable for matching Chat turns
+                          Enable for matching Assistant turns
                         </label>
                         <button onClick={() => void persistCustomSkills(
                           customSkills.filter((item) => item.id !== skill.id)
@@ -8224,7 +8070,7 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
                     </details>
                   ))}
                   {!catalogSkillCount && !customSkills.length && (
-                    <p>No external skills discovered. Generic Chat remains available.</p>
+                    <p>No external skills discovered. The generic Assistant remains available.</p>
                   )}
                 </div>
               </div>
@@ -8232,26 +8078,28 @@ hashes are unchanged. Reuse matching evidence IDs and verified rows from the led
           </section>
         )}
         </section>
-        <div
-          className="pane-resizer artifact-resizer"
-          role="separator"
-          aria-label="Resize Artifact Inspector"
-          onMouseDown={beginArtifactResize}
-        />
-        <ArtifactInspector
-          item={selectedInspectorItem}
-          profiles={profiles}
-          canUpload={bridge.canUpload}
-          onDownload={downloadFile}
-          onAttach={(file) => void attach(file)}
-          onEdit={editorEnabled && inspectorSelection &&
-            ["method", "pipeline", "notebook"].includes(inspectorSelection.kind)
-            ? () => void openArtifactEditor(
-              inspectorSelection.kind as ArtifactEditorSession["kind"],
-              inspectorSelection.id
-            )
-            : undefined}
-        />
+        {inspectorVisible && (<>
+          <div
+            className="pane-resizer artifact-resizer"
+            role="separator"
+            aria-label="Resize Artifact Inspector"
+            onMouseDown={beginArtifactResize}
+          />
+          <ArtifactInspector
+            item={selectedInspectorItem}
+            profiles={profiles}
+            canUpload={bridge.canUpload}
+            onDownload={downloadFile}
+            onAttach={(file) => void attach(file)}
+            onEdit={editorEnabled && inspectorSelection &&
+              ["method", "pipeline", "notebook"].includes(inspectorSelection.kind)
+              ? () => void openArtifactEditor(
+                inspectorSelection.kind as ArtifactEditorSession["kind"],
+                inspectorSelection.id
+              )
+              : undefined}
+          />
+        </>)}
       </div>
     </main>
     </BlueprintThemeProvider>

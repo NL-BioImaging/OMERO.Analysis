@@ -4,6 +4,7 @@ param(
     [string] $BaseImage,
     [string] $Tag,
     [string] $ZarrViewerWheel,
+    [switch] $WithWorkflowSkills,
     [switch] $SkipBuild,
     [switch] $SkipFrontend,
     [switch] $SkipRuntime
@@ -91,6 +92,7 @@ $wheelhouseArguments = @(
     "--plugin-wheel", $wheel.FullName,
     "--output", $wheelhouse
 )
+if ($WithWorkflowSkills) { $wheelhouseArguments += "--with-workflow-skills" }
 if (-not $ZarrViewerWheel) {
     $siblingDist = Join-Path (Split-Path -Parent $RepoRoot) "OMERO.ZarrViewer\dist"
     if (Test-Path $siblingDist) {

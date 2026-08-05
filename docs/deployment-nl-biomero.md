@@ -26,6 +26,11 @@ The Analysis layer deliberately removes OMERO.JupyterLite, its configuration,
 and its static assets. `scripts/build-docker-image.ps1` automates the base-image
 check.
 
+The image excludes BIOMERO.WorkflowSkills by default. Add
+`-WithWorkflowSkills` to `scripts/build-docker-image.ps1` only when the optional
+local provider should be bundled. The ordinary `manage-docker-plugin.ps1`
+install/update flow leaves any independently installed provider unchanged.
+
 Set the `omeroweb` service image in the selected NL-BIOMERO Compose scenario to
 the derived tag and recreate only that service. The existing reverse proxy
 continues to route `/omero_analysis/` through OMERO.web.
@@ -39,9 +44,9 @@ continues to route `/omero_analysis/` through OMERO.web.
    contains one **Analysis** entry, with no separate Chat, Notebook, or
    Jupyter entry.
 4. Open Analysis, select data, and confirm the Home landing page appears.
-5. Open Chat and confirm the composer stays disabled until every
+5. Open Assistant and confirm the composer stays disabled until every
    attachment is downloaded.
-6. Open Notebook, upload a Python nbformat-4 notebook, and confirm it is
+6. Open Notebooks, upload a Python nbformat-4 notebook, and confirm it is
    attached before the run-only tab opens.
 7. Confirm Settings lists the optional BIOMERO measurement provider and
    ZarrViewer provider independently when installed.

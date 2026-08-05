@@ -3,6 +3,8 @@ import {
   chatRoundPolicy,
   FINAL_SYNTHESIS_INSTRUCTION,
   generatedArtifactNames,
+  hasMethodResponseNarrative,
+  hasReusableMethodScript,
   MAX_TOOL_ROUNDS
 } from "./chatRounds";
 
@@ -62,6 +64,16 @@ describe("generated artifact evidence", () => {
     });
   });
 
+  it("does not mistake a named workspace input for a missing generated output", () => {
+    expect(artifactEvidenceGap(
+      "Create a plot using the template workbook",
+      "Created result.png using PlateTemplate.xlsx.",
+      ["result.png"],
+      ["result.png"],
+      ["PlateTemplate.xlsx"]
+    )).toBeNull();
+  });
+
   it("does not require execution for an explanatory question", () => {
     expect(artifactEvidenceGap(
       "What does the existing heatmap mean?",
@@ -71,5 +83,27 @@ describe("generated artifact evidence", () => {
     )).toBeNull();
     expect(generatedArtifactNames("Use /output/a.png and `b.csv`."))
       .toEqual(["a.png", "b.csv"]);
+  });
+});
+
+describe("Assistant Method deliverables", () => {
+  it("requires a fenced Python script rather than a result-only answer", () => {
+    expect(hasReusableMethodScript("The plot was saved as result.png.")).toBe(false);
+    expect(hasReusableMethodScript("```python\nprint('method')\n```" )).toBe(true);
+    expect(hasReusableMethodScript("```py\nresult = 1\n```" )).toBe(true);
+  });
+
+  it("requires a user-facing summary, review, and recommendations before the code", () => {
+    const narrative = [
+      "## Summary",
+      "The requested per-well plot and its supporting CSV were created successfully.",
+      "## Review",
+      "The calculation used the selected database and validated the generated output.",
+      "## Recommendations",
+      "Review the plotted outliers before using the Method on another plate."
+    ].join("\n\n");
+    expect(hasMethodResponseNarrative(`${narrative}\n\n\`\`\`python\nresult = 1\n\`\`\``)).toBe(true);
+    expect(hasMethodResponseNarrative("```python\n# Summary\nresult = 1\n```" )).toBe(false);
+    expect(hasMethodResponseNarrative("## Summary\nDone.\n\n```python\nresult = 1\n```" )).toBe(false);
   });
 });

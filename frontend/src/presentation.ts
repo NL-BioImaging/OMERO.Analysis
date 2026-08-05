@@ -34,20 +34,6 @@ export function executionActivityText(
     : `Worked for ${duration}`;
 }
 
-export function workspaceRowClassName(
-  itemId: string,
-  openWorkspaceId: string,
-  selectedWorkspaceId: string | null
-): string {
-  const selected = itemId === (selectedWorkspaceId || openWorkspaceId);
-  return [
-    "browser-row",
-    "workspace-row",
-    selected ? "selected" : "",
-    itemId === openWorkspaceId ? "open" : ""
-  ].filter(Boolean).join(" ");
-}
-
 export function workflowSkillTooltip(
   catalog: WorkflowSkillCatalog | null,
   warning: string,

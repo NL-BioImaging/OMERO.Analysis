@@ -45,7 +45,6 @@ from .settings import (
 
 SYNC_NAMESPACE = "nl.bioimaging.analysis.sync.v1"
 SYNC_MANIFEST_NAMESPACE = "nl.bioimaging.analysis.sync.manifest.v1"
-CHAT_ATTACHMENT_NAMESPACE = "nl.bioimaging.analysis.chat.attachment.v1"
 WORKSPACE_SNAPSHOT_NAMESPACE = "nl.bioimaging.analysis.workspace.v1"
 INVENTORY_SCHEMA = "nl.bioimaging.analysis.sync.inventory.v1"
 PLAN_SCHEMA = "nl.bioimaging.analysis.sync.plan.v1"
@@ -61,9 +60,6 @@ ITEM_KINDS = {
     "png-image",
     "result",
     "template-input",
-    "chat-json",
-    "chat-markdown",
-    "chat-attachment",
     "workspace-snapshot",
     "method",
     "method-python",
@@ -72,15 +68,6 @@ ITEM_KINDS = {
 }
 LIBRARY_KINDS = {"method", "pipeline", "notebook"}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-CHAT_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
-CHAT_ATTACHMENT_MIMES = {
-    "text/plain": (".txt",),
-    "application/pdf": (".pdf",),
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (".docx",),
-    "image/png": (".png",),
-    "image/jpeg": (".jpg", ".jpeg"),
-    "image/webp": (".webp",),
-}
 
 
 def _canonical_json(value):
@@ -313,40 +300,8 @@ def validate_inventory(payload, workspace_id, source_type, source_id, obj, conn)
         if not isinstance(item.get("metadata"), dict):
             raise InvalidObject("Synchronization item metadata is invalid")
     items_by_key = {item["key"]: item for item in items}
-    attachment_counts = {}
     for item in items:
-        if item["kind"] == "chat-attachment":
-            metadata = item["metadata"]
-            chat_id = str(metadata.get("chatId") or "")
-            file_id = str(metadata.get("fileId") or "")
-            mimetype = str(item.get("mimetype") or "")
-            filename = str(item.get("name") or "")
-            logical_path = str(item.get("logicalPath") or "").replace("\\", "/")
-            if item["size"] > CHAT_ATTACHMENT_MAX_BYTES:
-                raise FileTooLarge("Chat attachments are limited to 25 MiB")
-            if mimetype not in CHAT_ATTACHMENT_MIMES or not filename.lower().endswith(
-                CHAT_ATTACHMENT_MIMES.get(mimetype, ())
-            ):
-                raise UnsupportedMedia("Chat attachment filename and MIME type do not match")
-            if not re.fullmatch(r"[-\w]{1,128}", chat_id):
-                raise InvalidObject("Chat attachment Chat ID is invalid")
-            attachment_counts[chat_id] = attachment_counts.get(chat_id, 0) + 1
-            if attachment_counts[chat_id] > 10:
-                raise FileTooLarge("A Chat can synchronize at most 10 attachments")
-            if metadata.get("origin") not in {"upload", "url"}:
-                raise InvalidObject("Chat attachment origin is invalid")
-            if (
-                not re.fullmatch(r"[-\w]{1,128}", file_id)
-                or item["key"] != f"chat-attachment:{file_id}"
-            ):
-                raise InvalidObject("Chat attachment file ID is invalid")
-            if "sourceUrl" in metadata or "source_url" in metadata:
-                raise InvalidObject("Chat attachment source URLs cannot be synchronized")
-            if not re.fullmatch(r"Chat/[^/]+/Attachments/[^/]+", logical_path):
-                raise InvalidObject("Chat attachment logical path is invalid")
-            if f"chat:{chat_id}:json" not in items_by_key:
-                raise InvalidObject("Chat attachment refers to an unknown synchronized Chat")
-        elif item["kind"] == "workspace-snapshot":
+        if item["kind"] == "workspace-snapshot":
             metadata = item["metadata"]
             if (
                 item.get("mimetype") != "application/zip"
@@ -501,35 +456,7 @@ def _validate_payload(item, uploaded):
         raise InvalidObject(f"Uploaded size does not match inventory for {item['key']}")
     if hashlib.sha256(data).hexdigest() != item["sha256"]:
         raise InvalidObject(f"Uploaded SHA-256 does not match inventory for {item['key']}")
-    if item["kind"] == "chat-attachment":
-        mimetype = item["mimetype"]
-        valid = False
-        if mimetype == "text/plain":
-            try:
-                text = data.decode("utf-8")
-                valid = "\x00" not in text
-            except UnicodeDecodeError:
-                valid = False
-        elif mimetype == "application/pdf":
-            valid = data.startswith(b"%PDF-")
-        elif mimetype == "image/png":
-            valid = data.startswith(b"\x89PNG\r\n\x1a\n")
-        elif mimetype == "image/jpeg":
-            valid = data.startswith(b"\xff\xd8\xff")
-        elif mimetype == "image/webp":
-            valid = len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
-        elif mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            try:
-                with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                    names = set(archive.namelist())
-                    valid = "[Content_Types].xml" in names and "word/document.xml" in names
-            except (zipfile.BadZipFile, OSError):
-                valid = False
-        if not valid:
-            raise UnsupportedMedia(
-                f"{item['name']} content does not match its declared attachment type"
-            )
-    elif item["kind"] == "workspace-snapshot":
+    if item["kind"] == "workspace-snapshot":
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
                 names = archive.namelist()
@@ -572,7 +499,7 @@ def _validate_payload(item, uploaded):
                 return self._stream.seek(*args)
 
         validate_notebook(Upload())
-    elif item["kind"] in {"method", "pipeline", "chat-json"}:
+    elif item["kind"] in {"method", "pipeline"}:
         try:
             value = json.loads(data)
         except (ValueError, UnicodeDecodeError) as exc:
@@ -613,7 +540,7 @@ def _validate_payload(item, uploaded):
             or value.get("schema") != "nl.bioimaging.analysis.chat.v1"
         ):
             raise UnsupportedMedia("Chat bundle has an unsupported schema")
-    elif item["kind"] in {"method-python", "chat-markdown"}:
+    elif item["kind"] == "method-python":
         try:
             data.decode("utf-8")
         except UnicodeDecodeError as exc:
@@ -623,9 +550,6 @@ def _validate_payload(item, uploaded):
 
 def _item_namespace(kind):
     return {
-        "chat-json": "nl.bioimaging.analysis.chat.v1",
-        "chat-markdown": "nl.bioimaging.analysis.chat.v1",
-        "chat-attachment": CHAT_ATTACHMENT_NAMESPACE,
         "workspace-snapshot": WORKSPACE_SNAPSHOT_NAMESPACE,
         "method": "nl.bioimaging.analysis.method.v1",
         "method-python": "nl.bioimaging.analysis.method.v1",

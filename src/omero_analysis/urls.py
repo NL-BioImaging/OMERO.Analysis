@@ -3,7 +3,7 @@ from django.urls import re_path
 from . import views
 
 urlpatterns = [
-    re_path(r"^$", views.chat, name="omero_analysis_index"),
+    re_path(r"^$", views.analysis, name="omero_analysis_index"),
     re_path(
         r"^runtime-sandbox/$",
         views.runtime_sandbox,

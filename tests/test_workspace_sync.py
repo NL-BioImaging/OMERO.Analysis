@@ -11,7 +11,6 @@ from django.test import RequestFactory
 
 from omero_analysis.errors import FileTooLarge, InvalidObject, PermissionDenied, UnsupportedMedia
 from omero_analysis.workspace_sync import (
-    CHAT_ATTACHMENT_NAMESPACE,
     INVENTORY_SCHEMA,
     _canonical_json,
     _item_marker_values,
@@ -97,61 +96,22 @@ def test_template_input_is_a_supported_managed_file_kind():
     assert validated["items"][0]["kind"] == "template-input"
 
 
-def test_chat_attachment_requires_safe_metadata_and_a_synchronized_chat():
+@pytest.mark.parametrize("kind", ["chat-json", "chat-markdown", "chat-attachment"])
+def test_assistant_content_is_not_a_supported_sync_item(kind):
     obj = FakeObject(object_id=151, name="2DWellTestZarr")
     conn = FakeConnection(obj)
-    data = b"notes"
-    items = [{
-        "key": "chat:chat-1:json",
-        "kind": "chat-json",
-        "name": "chat.json",
-        "mimetype": "application/json",
-        "size": 2,
-        "sha256": "a" * 64,
-        "logicalPath": "Chat/cells/chat.json",
-        "metadata": {"chatId": "chat-1"},
-    }, {
-        "key": "chat-attachment:file-1",
-        "kind": "chat-attachment",
-        "name": "notes.txt",
+    payload = inventory(obj, conn, [{
+        "key": f"assistant:{kind}",
+        "kind": kind,
+        "name": "assistant-item.txt",
         "mimetype": "text/plain",
-        "size": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "logicalPath": "Chat/cells/Attachments/notes.txt",
-        "metadata": {"fileId": "file-1", "chatId": "chat-1", "origin": "url"},
-    }]
-    validated = validate_inventory(
-        inventory(obj, conn, items), "workspace-1", "Screen", 151, obj, conn
-    )
-    assert validated["items"][1]["kind"] == "chat-attachment"
-    assert _item_namespace("chat-attachment") == CHAT_ATTACHMENT_NAMESPACE
-
-    items[1]["metadata"]["sourceUrl"] = "https://secret.example/file.txt"
-    with pytest.raises(InvalidObject, match="source URLs"):
-        validate_inventory(
-            inventory(obj, conn, items), "workspace-1", "Screen", 151, obj, conn
-        )
-
-
-def test_chat_attachment_payload_signature_must_match_declared_mime():
-    class Upload:
-        def __init__(self, data):
-            self.data = data
-
-        def chunks(self):
-            return [self.data]
-
-    data = b"not a PDF"
-    item = {
-        "key": "chat-attachment:file-1",
-        "kind": "chat-attachment",
-        "name": "paper.pdf",
-        "mimetype": "application/pdf",
-        "size": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-    }
-    with pytest.raises(UnsupportedMedia, match="does not match"):
-        _validate_payload(item, Upload(data))
+        "size": 1,
+        "sha256": "a" * 64,
+        "logicalPath": "Assistant/item.txt",
+        "metadata": {},
+    }])
+    with pytest.raises(UnsupportedMedia, match="Unsupported synchronization item kind"):
+        validate_inventory(payload, "workspace-1", "Screen", 151, obj, conn)
 
 
 def test_workspace_snapshot_is_validated_as_the_managed_restore_item():

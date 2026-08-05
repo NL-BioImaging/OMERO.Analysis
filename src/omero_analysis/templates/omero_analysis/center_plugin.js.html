@@ -13,8 +13,11 @@ $(function () {
     image: "Image",
     dataset: "Dataset",
     plate: "Plate",
-    screen: "Screen"
+    screen: "Screen",
+    project: "Project",
+    well: "Well"
   };
+  var multiSourceTypes = {image: true, plate: true};
 
   function objectUrl(pattern, type, id) {
     return pattern.replace("/Image/1/", "/" + type + "/" + id + "/");
@@ -61,7 +64,11 @@ $(function () {
         return body.attachment;
       }); })
       .then(function () {
-        return renderSelection(root.dataset.objectType, root.dataset.objectId);
+        return renderSelection(
+          [{id: root.dataset.objectType.toLowerCase() + "-" + root.dataset.objectId}],
+          root.dataset.objectType,
+          root.dataset.objectId
+        );
       })
       .catch(function (error) { status.textContent = error.message; });
   }
@@ -110,9 +117,19 @@ $(function () {
     if (empty) empty.hidden = !normalized || anyDataset;
   }
 
-  function analysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds) {
+  function selectedSourceIds(root) {
+    return String(root.dataset.selectionIds || "")
+      .split(",")
+      .map(function (value) { return Number(value); })
+      .filter(function (value) { return Number.isInteger(value) && value > 0; });
+  }
+
+  function analysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds, selectionIds) {
     var url = analysisBase + "?type=" + encodeURIComponent(type) +
       "&id=" + encodeURIComponent(id);
+    (selectionIds || []).forEach(function (selectionId) {
+      url += "&selection_id=" + encodeURIComponent(selectionId);
+    });
     if (workspaceAnnotationId) {
       url += "&workspace_annotation=" + encodeURIComponent(workspaceAnnotationId);
     } else {
@@ -130,9 +147,11 @@ $(function () {
   }
 
   function updateSelection(root) {
+    if (root.dataset.panelKind !== "source") return;
     var count = selectedAnnotationIds(root).length;
     var workspaceId = selectedWorkspaceId(root);
     var libraryCount = selectedLibraryIds(root).length;
+    var selectionCount = selectedSourceIds(root).length;
     var countBadge = root.querySelector(".oa-selected-count");
     var libraryBadge = root.querySelector(".oa-library-selected-count");
     var status = root.querySelector(".oa-panel-status");
@@ -148,6 +167,9 @@ $(function () {
         : libraryCount
         ? libraryCount + " reusable item" + (libraryCount === 1 ? "" : "s") +
           " will be imported into Analysis automatically."
+        : selectionCount > 1
+        ? selectionCount + " selected " + root.dataset.objectType +
+          "s will define one Analysis Workspace."
         : "No OMERO data selected; you can add local files after opening Analysis.";
     }
     if (button) {
@@ -158,18 +180,65 @@ $(function () {
           " attachment" + (count === 1 ? "" : "s")
         : libraryCount
         ? '<span aria-hidden="true">&#8599;</span> Open with library selection'
+        : selectionCount > 1
+        ? '<span aria-hidden="true">&#8599;</span> Open ' + selectionCount +
+          '-' + root.dataset.objectType.toLowerCase() + ' Workspace'
         : '<span aria-hidden="true">&#8599;</span> Open Analysis';
     }
   }
 
-  function renderSelection(dtype, oid) {
+  function selectionParts(selected) {
+    return (selected || []).map(function (item) {
+      var parts = String(item.id || "").split("-");
+      return {type: String(parts[0] || "").toLowerCase(), id: Number(parts[1])};
+    }).filter(function (item) { return item.type && Number.isInteger(item.id) && item.id > 0; });
+  }
+
+  function renderGuidance(title, message) {
+    panel.html(
+      '<section class="oa-object"><header class="oa-panel-header"><div>' +
+      '<span class="oa-eyebrow">OMERO Analysis</span><h2></h2></div>' +
+      '<span class="oa-object-badge">Selection</span></header>' +
+      '<section class="oa-card oa-info-card"><div class="oa-section-heading"><div>' +
+      '<span class="oa-step">i</span><h3></h3></div></div><p class="oa-help"></p>' +
+      '</section></section>'
+    );
+    panel.find(".oa-panel-header h2, .oa-info-card h3").text(title);
+    panel.find(".oa-info-card .oa-help").text(message);
+  }
+
+  function renderSelection(selected, dtype, oid) {
+    var parts = selectionParts(selected);
+    if (parts.length > 1) {
+      var firstType = parts[0].type;
+      var sameType = parts.every(function (item) { return item.type === firstType; });
+      if (!sameType || !multiSourceTypes[firstType]) {
+        renderGuidance(
+          "Choose one analysis source",
+          "Multiple selection creates one Workspace only for Images or Plates of the same type. " +
+          "Select one Dataset or Screen, or select Images or Plates together."
+        );
+        return Promise.resolve();
+      }
+      dtype = firstType;
+      oid = parts[0].id;
+    }
     var type = typeMap[String(dtype || "").toLowerCase()];
     if (!type || !oid) {
-      panel.html('<div class="oa-empty-state"><strong>Select an OMERO object</strong><span>Choose an Image, Dataset, Plate, or Screen.</span></div>');
+      renderGuidance(
+        "Select an analysis source",
+        "Choose a Dataset, Screen, Plate, Image, or a selection of Images or Plates."
+      );
       return Promise.resolve();
     }
     panel.html('<div class="oa-empty-state"><strong>Loading Analysis…</strong></div>');
-    return fetch(objectUrl(panelPattern, type, oid), {credentials: "same-origin"})
+    var panelUrl = objectUrl(panelPattern, type, oid);
+    if (parts.length > 1) {
+      panelUrl += "?" + parts.map(function (item) {
+        return "selection_id=" + encodeURIComponent(item.id);
+      }).join("&");
+    }
+    return fetch(panelUrl, {credentials: "same-origin"})
       .then(function (response) {
         if (!response.ok) {
           throw new Error("Could not load Analysis (HTTP " + response.status + ")");
@@ -190,9 +259,9 @@ $(function () {
   panel.omeroweb_center_plugin({
     plugin_index: {{ forloop.counter|default:"0" }},
     empty_on_sel_change: false,
-    supported_obj_types: ["image", "dataset", "plate", "screen"],
+    plugin_enabled: function (selected) { return Boolean(selected && selected.length); },
     load_plugin_content: function (selected, dtype, oid) {
-      renderSelection(dtype, oid);
+      renderSelection(selected, dtype, oid);
     }
   });
 
@@ -231,11 +300,12 @@ $(function () {
     if (!root) return;
     window.open(
       analysisUrl(
-        root.dataset.objectType,
-        root.dataset.objectId,
+        root.dataset.analysisObjectType || root.dataset.objectType,
+        root.dataset.analysisObjectId || root.dataset.objectId,
         selectedAnnotationIds(root),
         selectedWorkspaceId(root),
-        selectedLibraryIds(root)
+        selectedLibraryIds(root),
+        selectedSourceIds(root)
       ),
       "_blank",
       "noopener"

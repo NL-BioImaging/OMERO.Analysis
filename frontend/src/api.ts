@@ -1195,8 +1195,14 @@ export function toolResultText(output: RuntimeOutput): string {
 }
 
 export function toolErrorText(error: unknown): string {
-  const detail = String(error instanceof Error ? error.message : error)
-    .slice(0, MAX_TOOL_TEXT);
+  const rawDetail = String(error instanceof Error ? error.message : error);
+  const pythonBoundary = rawDetail.search(/\n(?:PythonError:|Traceback \(most recent call last\):)/);
+  const relevantDetail = pythonBoundary >= 0 ? rawDetail.slice(pythonBoundary + 1) : rawDetail;
+  const detail = relevantDetail
+    .split("\n")
+    .filter((line) => !/pyodide(?:-asm)?\.js|wasm-function\[|_pythonexc2js/i.test(line))
+    .join("\n")
+    .slice(0, 12 * 1024);
   const value = JSON.stringify({
     ok: false,
     error: detail,

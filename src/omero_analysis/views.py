@@ -32,6 +32,7 @@ except ImportError:
 
 from .errors import AnalysisError
 from .integrations import zarr_viewer_status
+from .managed_omero import marker as managed_marker, plain as managed_plain
 from .services import (
     can_annotate,
     checked_download,
@@ -49,8 +50,9 @@ from .services import (
     upload_pipeline_annotation,
 )
 from .tokens import make_context_token, validate_context_token
-from .settings_store import load_settings, save_settings
+from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
 from .workspace_sync import (
+    SYNC_NAMESPACE,
     apply_sync,
     library_annotation,
     library_datasets,
@@ -62,6 +64,9 @@ from .workspace_sync import (
 
 logger = logging.getLogger(__name__)
 WORKFLOW_SKILLS_CONSUMER = "omero-analysis"
+PANEL_OBJECT_TYPES = {"Image", "Dataset", "Plate", "Screen", "Project", "Well"}
+MULTI_SOURCE_TYPES = {"Image", "Plate"}
+MAX_PANEL_SELECTION = 100
 RUNTIME_ROOT = (
     Path(__file__).resolve().parent
     / "static"
@@ -97,6 +102,76 @@ def api_errors(function):
             return response
 
     return wrapped
+
+
+def _panel_context_object(conn, object_type, object_id):
+    canonical = str(object_type or "").strip().capitalize()
+    if canonical not in PANEL_OBJECT_TYPES:
+        from .errors import InvalidObject
+
+        raise InvalidObject("The selected OMERO object is not supported by Analysis")
+    try:
+        canonical_id = int(object_id)
+    except (TypeError, ValueError) as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Object ID must be a positive integer") from exc
+    if canonical_id <= 0:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Object ID must be a positive integer")
+    obj = conn.getObject(canonical, canonical_id)
+    if obj is None:
+        from .errors import ObjectNotFound
+
+        raise ObjectNotFound("The selected object does not exist or is not readable")
+    return canonical, canonical_id, obj
+
+
+def _selected_source_objects(request, conn, object_type, object_id, obj):
+    raw_ids = request.GET.getlist("selection_id")
+    if not raw_ids:
+        return []
+    if object_type not in MULTI_SOURCE_TYPES:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Multiple selection is supported for Images and Plates")
+    values = []
+    for raw in raw_ids:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError) as exc:
+            from .errors import InvalidObject
+
+            raise InvalidObject("Selection IDs must be positive integers") from exc
+        if value <= 0:
+            from .errors import InvalidObject
+
+            raise InvalidObject("Selection IDs must be positive integers")
+        if value not in values:
+            values.append(value)
+    if object_id not in values:
+        values.insert(0, object_id)
+    if len(values) > MAX_PANEL_SELECTION:
+        from .errors import InvalidObject
+
+        raise InvalidObject(
+            f"Select no more than {MAX_PANEL_SELECTION} Images or Plates"
+        )
+    selected = []
+    for value in values:
+        candidate = obj if value == object_id else conn.getObject(object_type, value)
+        if candidate is None:
+            from .errors import ObjectNotFound
+
+            raise ObjectNotFound("A selected object does not exist or is not readable")
+        selected.append({
+            "type": object_type,
+            "id": value,
+            "name": str(managed_plain(candidate.getName())),
+            "supported": True,
+        })
+    return selected
 
 
 @require_GET
@@ -154,13 +229,16 @@ def session_keepalive(request, conn=None, **kwargs):
 
 
 @login_required(setGroupContext=True)
-def chat(request, conn=None, **kwargs):
+def analysis(request, conn=None, **kwargs):
     context = None
     object_type = request.GET.get("type")
     object_id = request.GET.get("id")
     if object_type or object_id:
         try:
             object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+            selected_objects = _selected_source_objects(
+                request, conn, object_type, object_id, obj
+            )
             selected = []
             seen = set()
             for value in request.GET.getlist("data_annotation"):
@@ -185,6 +263,14 @@ def chat(request, conn=None, **kwargs):
                 "selected_workspace_snapshot": selected_workspace_snapshot,
                 "selected_notebook": None,
             }
+            if len(selected_objects) > 1:
+                context.update({
+                    "name": (
+                        f"{len(selected_objects)} selected "
+                        f"{object_type}{'s' if len(selected_objects) != 1 else ''}"
+                    ),
+                    "selected_objects": selected_objects,
+                })
             notebook_value = request.GET.get("notebook_annotation")
             if notebook_value:
                 _, notebook_info = get_direct_attachment(obj, notebook_value)
@@ -200,7 +286,7 @@ def chat(request, conn=None, **kwargs):
     style_nonce = secrets.token_urlsafe(18)
     response = render(
         request,
-        "omero_analysis/chat.html",
+        "omero_analysis/analysis.html",
         {
             "context": context,
             "keepalive_interval": max(
@@ -257,11 +343,139 @@ def _panel_library_datasets(conn, obj, allowed_kinds=None):
     return datasets
 
 
+def _workspace_panel_summary(conn, obj, values):
+    workspace_id = str(values.get("workspace_id") or "")
+    selected = next(
+        (
+            dataset for dataset in library_datasets(conn, obj)
+            if dataset["workspaceId"] == workspace_id
+        ),
+        None,
+    )
+    source_type = str(
+        values.get("source_object_type") or
+        (selected or {}).get("sourceObjectType") or ""
+    ).capitalize()
+    try:
+        source_id = int(
+            values.get("source_object_id") or
+            (selected or {}).get("sourceObjectId") or 0
+        )
+    except (TypeError, ValueError):
+        source_id = 0
+    items = list((selected or {}).get("items") or [])
+    counts = {
+        kind: len([item for item in items if item.get("kind") == kind])
+        for kind in ("method", "pipeline", "notebook")
+    }
+    return {
+        "workspace_id": workspace_id,
+        "workspace_name": str(
+            values.get("workspace_name") or
+            (selected or {}).get("workspaceName") or "Analysis Workspace"
+        ),
+        "dataset_name": str((selected or {}).get("datasetName") or ""),
+        "source_type": source_type,
+        "source_id": source_id,
+        "source_name": str(
+            values.get("source_object_name") or
+            (selected or {}).get("sourceObjectName") or ""
+        ),
+        "revision": int((selected or {}).get("revision") or 0),
+        "updated_at": str((selected or {}).get("updatedAt") or ""),
+        "has_snapshot": bool((selected or {}).get("snapshot")),
+        "counts": counts,
+        "can_resume": source_type in {"Image", "Dataset", "Plate", "Screen"}
+        and source_id > 0,
+    }
+
+
+def _configure_panel_context(conn, obj, context):
+    # An explicit multi-selection is always a new source set, even when its
+    # first Image is itself a synchronized result from an older Workspace.
+    if context.get("selection_count", 0) > 1:
+        context["panel_kind"] = "source"
+        context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
+        return context
+
+    _, sync_values = managed_marker(obj, SYNC_NAMESPACE)
+    _, settings_values = managed_marker(obj, SETTINGS_NAMESPACE)
+    sync_role = sync_values.get("role")
+    settings_role = settings_values.get("role")
+    object_type = context["object_type"]
+
+    if settings_role in {"project", "ai-settings", "skills"}:
+        context["panel_kind"] = "settings"
+        context["managed_role"] = settings_role
+        if settings_role == "ai-settings":
+            context["managed_title"] = "AI Settings"
+            context["managed_message"] = (
+                "This managed Dataset stores encrypted Analysis provider settings. "
+                "Open Analysis Settings to view or change profiles."
+            )
+            context["managed_count"] = settings_values.get("profile_count")
+        elif settings_role == "skills":
+            context["managed_title"] = "Skills"
+            context["managed_message"] = (
+                "This managed Dataset stores user-added Analysis skills. "
+                "Skills are restored automatically and edited from Analysis Settings."
+            )
+            context["managed_count"] = settings_values.get("skill_count")
+        else:
+            context["managed_title"] = "Analysis Settings"
+            context["managed_message"] = (
+                "This managed Project contains private AI settings and user skills. "
+                "Its contents are maintained automatically by OMERO.Analysis."
+            )
+        return context
+
+    if sync_role == "project":
+        context["panel_kind"] = "workspace-library"
+        context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
+        return context
+
+    if sync_role in {"dataset", "content-item", "item"}:
+        context["panel_kind"] = "workspace" if sync_role == "dataset" else "result"
+        context["workspace_summary"] = _workspace_panel_summary(conn, obj, sync_values)
+        context["result_kind"] = str(sync_values.get("item_kind") or "result")
+        context["result_name"] = str(
+            sync_values.get("canonical_name") or context["name"]
+        )
+        return context
+
+    if object_type in {"Image", "Dataset", "Plate", "Screen"}:
+        context["panel_kind"] = "source"
+        context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
+        return context
+
+    context["panel_kind"] = "guidance"
+    context["managed_title"] = (
+        "Select the parent Plate" if object_type == "Well" else "Select an analysis source"
+    )
+    context["managed_message"] = (
+        "Analysis Workspaces start from a Dataset, Screen, Plate, Image, or a "
+        "selection of Images or Plates."
+    )
+    return context
+
+
 @login_required(setGroupContext=True)
 def panel(request, object_type, object_id, conn=None, **kwargs):
-    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    object_type, object_id, obj = _panel_context_object(
+        conn, object_type, object_id
+    )
     context = object_context(object_type, object_id, obj, conn)
-    context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
+    selected_objects = _selected_source_objects(
+        request, conn, object_type, object_id, obj
+    )
+    if len(selected_objects) > 1:
+        context.update({
+            "name": f"{len(selected_objects)} selected {object_type}s",
+            "selected_objects": selected_objects,
+            "selection_ids": [item["id"] for item in selected_objects],
+            "selection_count": len(selected_objects),
+        })
+    _configure_panel_context(conn, obj, context)
     return render(
         request,
         "omero_analysis/panel.html",

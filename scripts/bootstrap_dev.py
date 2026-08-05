@@ -18,12 +18,6 @@ def main():
     parser.add_argument("--skip-frontend", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    run(sys.executable, "-m", "pip", "uninstall", "-y",
-        "omero-analysis-chat", "omero-jupyterlite")
-    # A historic editable install wrote its distribution metadata into this
-    # repository's src directory, where importlib.metadata can still discover
-    # it even after pip has removed the old .pth file.
-    shutil.rmtree(root / "src" / "omero_analysis_chat.egg-info", ignore_errors=True)
     if sys.platform == "win32":
         # ZeroC Ice 3.6 (pulled in by omero-web) does not build with current
         # Windows/Python toolchains. OMERO integration is provided by the

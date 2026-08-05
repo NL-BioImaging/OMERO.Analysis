@@ -162,7 +162,7 @@ def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
             "/?type=Image&id=1&workspace_annotation=21"
         )
     )
-    response = views.chat(request, conn=FakeConnection(obj))
+    response = views.analysis(request, conn=FakeConnection(obj))
     assert response.status_code == 200
     assert b'"selected_workspace_snapshot"' in response.content
     assert b'"annotation_id": 21' in response.content
@@ -173,6 +173,128 @@ def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
     document_nonce = re.search(rb'data-style-nonce="([^"]+)"', response.content)
     assert policy_nonce and document_nonce
     assert policy_nonce.group(1) == document_nonce.group(1).decode()
+
+
+def test_analysis_bootstrap_preserves_a_multi_image_source_selection():
+    first = FakeObject(object_id=11, name="Field 11")
+    second = FakeObject(object_id=12, name="Field 12")
+
+    class SelectionConnection(FakeConnection):
+        def getObject(self, object_type, object_id):
+            return {11: first, 12: second}.get(int(object_id))
+
+    request = with_session(RequestFactory().get(
+        "/?type=Image&id=11&selection_id=11&selection_id=12"
+    ))
+    response = views.analysis(request, conn=SelectionConnection(first))
+
+    assert response.status_code == 200
+    assert b'"name": "2 selected Images"' in response.content
+    assert b'"id": 11' in response.content
+    assert b'"id": 12' in response.content
+
+
+def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
+    obj = FakeObject(object_id=303, name="Screen-152 — SolHunt")
+    base = {
+        "object_type": "Dataset",
+        "object_id": 303,
+        "name": obj.name,
+    }
+
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+        None,
+        {"role": "ai-settings", "profile_count": "3"}
+        if namespace == views.SETTINGS_NAMESPACE else {},
+    ))
+    settings_context = views._configure_panel_context(None, obj, dict(base))
+    assert settings_context["panel_kind"] == "settings"
+    assert settings_context["managed_count"] == "3"
+
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+        None,
+        {
+            "role": "dataset",
+            "workspace_id": "workspace-1",
+            "workspace_name": "SolHunt",
+            "source_object_type": "Screen",
+            "source_object_id": "152",
+            "source_object_name": "SolHunt",
+        } if namespace == views.SYNC_NAMESPACE else {},
+    ))
+    monkeypatch.setattr(views, "library_datasets", lambda _conn, _obj: [])
+    workspace_context = views._configure_panel_context(None, obj, dict(base))
+    assert workspace_context["panel_kind"] == "workspace"
+    assert workspace_context["workspace_summary"]["can_resume"] is True
+    assert workspace_context["workspace_summary"]["source_id"] == 152
+
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+        None,
+        {
+            "role": "content-item",
+            "workspace_id": "workspace-1",
+            "item_kind": "png-image",
+            "canonical_name": "heatmap.png",
+        } if namespace == views.SYNC_NAMESPACE else {},
+    ))
+    result_context = views._configure_panel_context(None, obj, dict(base))
+    assert result_context["panel_kind"] == "result"
+    assert result_context["result_name"] == "heatmap.png"
+
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+        None,
+        {
+            "role": "item",
+            "workspace_id": "workspace-1",
+            "item_kind": "png-image",
+            "canonical_name": "managed-heatmap.png",
+        } if namespace == views.SYNC_NAMESPACE else {},
+    ))
+    image_result_context = views._configure_panel_context(None, obj, dict(base))
+    assert image_result_context["panel_kind"] == "result"
+    assert image_result_context["result_name"] == "managed-heatmap.png"
+
+    multi_context = views._configure_panel_context(None, obj, {
+        **base,
+        "selection_count": 2,
+        "selected_objects": [
+            {"type": "Image", "id": 2060},
+            {"type": "Image", "id": 2061},
+        ],
+    })
+    assert multi_context["panel_kind"] == "source"
+
+
+def test_panel_renders_source_guidance_and_multi_selection_variants():
+    source = FakeObject(object_id=11, name="Field 11")
+    second = FakeObject(object_id=12, name="Field 12")
+
+    class SelectionConnection(FakeConnection):
+        def getObject(self, object_type, object_id):
+            return {11: source, 12: second}.get(int(object_id))
+
+    single_response = views.panel(
+        RequestFactory().get("/panel/Image/11/"),
+        "Image", 11, conn=SelectionConnection(source)
+    )
+    assert single_response.status_code == 200
+    assert b"Select data attachments" in single_response.content
+
+    multiple_response = views.panel(
+        RequestFactory().get("/panel/Image/11/?selection_id=11&selection_id=12"),
+        "Image", 11, conn=SelectionConnection(source)
+    )
+    assert multiple_response.status_code == 200
+    assert b"2 selected Images" in multiple_response.content
+    assert b"Open selection in Analysis" in multiple_response.content
+
+    project_response = views.panel(
+        RequestFactory().get("/panel/Project/11/"),
+        "Project", 11, conn=SelectionConnection(source)
+    )
+    assert project_response.status_code == 200
+    assert b"Select an analysis source" in project_response.content
+    assert b"Select data attachments" not in project_response.content
 
 
 def test_notebook_upload_download_and_bootstrap_selection():
@@ -192,9 +314,9 @@ def test_notebook_upload_download_and_bootstrap_selection():
     conn = FakeConnection(obj)
 
     request = with_session(RequestFactory().get(
-        "/?tab=notebook&type=Image&id=1&notebook_annotation=31"
+        "/?tab=notebooks&type=Image&id=1&notebook_annotation=31"
     ))
-    response = views.chat(request, conn=conn)
+    response = views.analysis(request, conn=conn)
     assert response.status_code == 200
     assert b'"selected_notebook"' in response.content
     assert b'"annotation_id": 31' in response.content

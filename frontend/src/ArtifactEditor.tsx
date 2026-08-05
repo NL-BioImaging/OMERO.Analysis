@@ -22,7 +22,13 @@ import type {
 } from "./types";
 
 type EditorLanguage = "python" | "markdown" | "json" | "text";
-export type EditorOriginTab = "home" | "runs" | "chat" | "notebook" | "settings";
+export type EditorOriginTab =
+  | "home"
+  | "methods"
+  | "pipelines"
+  | "assistant"
+  | "notebooks"
+  | "settings";
 
 interface EditorSessionBase {
   id: string;
@@ -237,7 +243,16 @@ export default function ArtifactEditor({
   onClose: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  useEffect(() => setActiveIndex(0), [session?.kind, session?.id]);
+  useEffect(() => {
+    if (session?.kind === "notebook") {
+      const editableIndex = session.draft.document.cells.findIndex(
+        (cell) => !isInputBindingsCell(cell)
+      );
+      setActiveIndex(Math.max(0, editableIndex));
+      return;
+    }
+    setActiveIndex(0);
+  }, [session?.kind, session?.id]);
 
   if (!session) {
     return (
@@ -372,7 +387,7 @@ function PipelineEditor({
 
   return (
     <>
-      <aside className="editor-outline">
+      <aside className="editor-outline pipeline-outline">
         <div className="editor-outline-actions">
           <strong>Pipeline steps</strong>
           <Button disabled={!methods.length} onClick={addStep}><ActionIcon name="add" />Add</Button>
@@ -382,7 +397,11 @@ function PipelineEditor({
             <li key={step.id}>
               <button className={index === activeIndex ? "active" : ""}
                 onClick={() => setActiveIndex(index)}>
-                <span>{index + 1}</span>{step.name}
+                <span className="pipeline-step-number">{index + 1}</span>
+                <span className="pipeline-step-summary">
+                  <strong>{step.name}</strong>
+                  <small>Method v{step.methodVersion}</small>
+                </span>
               </button>
             </li>
           ))}
@@ -391,6 +410,11 @@ function PipelineEditor({
       <div className="editor-detail pipeline-step-editor">
         {!active ? <p>Add a Method step to this Pipeline.</p> : (
           <>
+            <header className="pipeline-step-heading">
+              <span>Step {activeIndex + 1} of {steps.length}</span>
+              <strong>{active.name}</strong>
+              <small>Uses saved Method version {active.methodVersion}</small>
+            </header>
             <div className="pipeline-step-actions">
               <Button disabled={activeIndex === 0}
                 onClick={() => { updateSteps(move(steps, activeIndex, activeIndex - 1)); setActiveIndex(activeIndex - 1); }}>

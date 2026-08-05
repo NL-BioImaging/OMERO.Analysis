@@ -2,7 +2,6 @@ import {
   activityText,
   executionActivityText,
   formatDuration,
-  workspaceRowClassName,
   workflowSkillTooltip
 } from "./presentation";
 import type { WorkflowSkillCatalog } from "./types";
@@ -19,17 +18,6 @@ describe("chat timing presentation", () => {
   it("identifies internal inspection timing", () => {
     expect(executionActivityText("inspection", 1_250)).toBe(
       "Worked for 1.3 sec · for AI data inspection"
-    );
-  });
-});
-
-describe("browser-local workspace selection", () => {
-  it("selects the clicked workspace independently from the open workspace", () => {
-    expect(workspaceRowClassName("imported", "imported", "older")).toBe(
-      "browser-row workspace-row open"
-    );
-    expect(workspaceRowClassName("older", "imported", "older")).toBe(
-      "browser-row workspace-row selected"
     );
   });
 });

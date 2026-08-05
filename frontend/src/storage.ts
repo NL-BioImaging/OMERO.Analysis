@@ -226,9 +226,15 @@ export async function deleteWorkspaceCascade(workspaceId: string): Promise<void>
 }
 
 export async function contextKey(context: OmeroContext | null): Promise<string> {
-  return context
-    ? `${context.user_id}:${context.group_id}:${context.object_type}:${context.object_id}`
-    : "standalone";
+  if (!context) return "standalone";
+  const selected = (context.selected_objects || [])
+    .filter((item) => item.type === context.object_type)
+    .map((item) => item.id)
+    .sort((left, right) => left - right);
+  const source = selected.length > 1
+    ? `${context.object_type}-selection:${selected.join(",")}`
+    : `${context.object_type}:${context.object_id}`;
+  return `${context.user_id}:${context.group_id}:${source}`;
 }
 
 function slug(value: string): string {
@@ -243,9 +249,15 @@ function slug(value: string): string {
 }
 
 export function workspaceRoot(context: OmeroContext | null): string {
-  return context
-    ? `OMERO/${context.object_type}-${context.object_id}--${slug(context.name)}`
-    : "OMERO/Local--workspace";
+  if (!context) return "OMERO/Local--workspace";
+  const selected = (context.selected_objects || [])
+    .filter((item) => item.type === context.object_type)
+    .map((item) => item.id)
+    .sort((left, right) => left - right);
+  const source = selected.length > 1
+    ? `${context.object_type}-selection-${selected.join("-")}`
+    : `${context.object_type}-${context.object_id}`;
+  return `OMERO/${source}--${slug(context.name)}`;
 }
 
 export async function sha256(data: ArrayBuffer | string): Promise<string> {
@@ -254,13 +266,13 @@ export async function sha256(data: ArrayBuffer | string): Promise<string> {
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-export function newChat(workspaceId: string, title = "New analysis"): ChatRecord {
+export function newChat(workspaceId: string, title = "New Assistant Chat"): ChatRecord {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     workspaceId,
     title,
-    titleEdited: title !== "New analysis",
+    titleEdited: title !== "New Assistant Chat",
     summary: "",
     messages: [],
     createdAt: now,

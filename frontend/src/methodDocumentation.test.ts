@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatRecord } from "./types";
 import {
   assistantSummaryForPrompt,
+  splitAssistantDocumentation,
   withAssistantSummaryComments
 } from "./methodDocumentation";
 
@@ -54,5 +55,31 @@ describe("saved Method documentation", () => {
       "# Assistant summary generated after this analysis completed:\n" +
       "# Line one\n#\n# Line two\n\nresult = 1"
     );
+  });
+
+  it("keeps the narrative but omits the fenced Method from saved comments", () => {
+    const withMethod: ChatRecord = {
+      ...chat,
+      messages: chat.messages.map((message) => message.id === "answer"
+        ? {
+          ...message,
+          content: "## Summary\nCreated the plot.\n\n```python\nresult = 1\n```"
+        }
+        : message)
+    };
+    expect(assistantSummaryForPrompt(withMethod, "prompt")).toBe(
+      "## Summary\nCreated the plot."
+    );
+  });
+
+  it("separates the Assistant narrative from reusable Method source", () => {
+    const documented = withAssistantSummaryComments(
+      "import pandas as pd\nresult = pd.DataFrame()",
+      "## Summary\nCreated a table.\n\n## Review\nValidated locally.\n\n## Recommendations\nInspect the rows."
+    );
+    expect(splitAssistantDocumentation(documented)).toEqual({
+      narrative: "## Summary\nCreated a table.\n\n## Review\nValidated locally.\n\n## Recommendations\nInspect the rows.",
+      source: "import pandas as pd\nresult = pd.DataFrame()"
+    });
   });
 });

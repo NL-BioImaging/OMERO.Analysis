@@ -430,6 +430,10 @@ export function zarrCandidates(
   hierarchy: OmeroHierarchy | null
 ): HierarchyItem[] {
   if (!context) return [];
+  const selected = (context.selected_objects || []).filter(
+    (item) => item.supported && (item.type === "Image" || item.type === "Plate")
+  );
+  if (selected.length > 1) return selected;
   const current = hierarchy?.current || {
     type: context.object_type,
     id: context.object_id,

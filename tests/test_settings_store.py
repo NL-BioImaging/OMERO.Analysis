@@ -89,43 +89,6 @@ def test_settings_bundle_rejects_non_boolean_artifact_editor_preference():
         _validated_payload(payload)
 
 
-def test_settings_bundle_accepts_optional_chat_attachment_sync_preference():
-    legacy = settings_payload()
-    assert _validated_payload(legacy)["analysis"].get("syncChatAttachments") is None
-    current = settings_payload()
-    current["analysis"]["syncChatAttachments"] = True
-    assert _validated_payload(current)["analysis"]["syncChatAttachments"] is True
-
-
-def test_settings_bundle_rejects_non_boolean_chat_attachment_sync_preference():
-    payload = settings_payload()
-    payload["analysis"]["syncChatAttachments"] = "yes"
-    with pytest.raises(InvalidObject, match="attachment synchronization"):
-        _validated_payload(payload)
-
-
-def test_settings_bundle_accepts_default_on_analysis_sync_preferences():
-    legacy = settings_payload()
-    validated = _validated_payload(legacy)
-    assert validated["analysis"].get("syncAnalysisWorkspace", True) is True
-    assert validated["analysis"].get("syncAnalysisSettings", True) is True
-
-    current = settings_payload()
-    current["analysis"].update({
-        "syncAnalysisWorkspace": False,
-        "syncAnalysisSettings": False,
-    })
-    assert _validated_payload(current)["analysis"]["syncAnalysisWorkspace"] is False
-
-
-@pytest.mark.parametrize("key", ["syncAnalysisWorkspace", "syncAnalysisSettings"])
-def test_settings_bundle_rejects_non_boolean_analysis_sync_preferences(key):
-    payload = settings_payload()
-    payload["analysis"][key] = "yes"
-    with pytest.raises(InvalidObject, match="synchronization preference"):
-        _validated_payload(payload)
-
-
 def test_marked_settings_project_is_renamed_in_place():
     class Annotation:
         def getNs(self):

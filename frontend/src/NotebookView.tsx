@@ -198,6 +198,37 @@ function textValue(value: unknown): string {
   return Array.isArray(value) ? value.join("") : String(value ?? "");
 }
 
+const ANSI_ESCAPE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const DUCKDB_PROGRESS = /\b(\d{1,3})%/g;
+
+export interface DuckDbProgressSummary {
+  percent: number;
+  elapsed: string | null;
+}
+
+export function duckDbProgressSummary(value: unknown): DuckDbProgressSummary | null {
+  const text = textValue(value).replace(ANSI_ESCAPE, "");
+  if (!/(?:seconds? remaining|elapsed)/i.test(text)) return null;
+  const percentages = Array.from(text.matchAll(DUCKDB_PROGRESS), (match) => Number(match[1]))
+    .filter((percent) => percent >= 0 && percent <= 100);
+  if (!percentages.length) return null;
+  const elapsed = text.match(/\((\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+elapsed\)/i)?.[1] || null;
+  return { percent: Math.max(...percentages), elapsed };
+}
+
+export function isDuckDbTechnicalOutput(output: NotebookOutput): boolean {
+  if (output.output_type === "stream") {
+    const text = textValue(output.text);
+    return /duckdb/i.test(text) || duckDbProgressSummary(text) != null;
+  }
+  if (output.output_type !== "execute_result" && output.output_type !== "display_data") {
+    return false;
+  }
+  const value = output.data?.["application/json"];
+  return Boolean(value && typeof value === "object" &&
+    String((value as Record<string, unknown>).engine || "").toLowerCase() === "duckdb");
+}
+
 function OutputView({ output }: { output: NotebookOutput }) {
   if (output.output_type === "stream") {
     return <pre className={`notebook-stream ${output.name || ""}`}>{textValue(output.text)}</pre>;
@@ -221,6 +252,49 @@ function OutputView({ output }: { output: NotebookOutput }) {
   return <p className="notebook-unsupported-output">Unsupported output hidden for safety.</p>;
 }
 
+function DuckDbTechnicalOutputs({ outputs }: { outputs: NotebookOutput[] }) {
+  const progress = outputs
+    .filter((output) => output.output_type === "stream")
+    .map((output) => duckDbProgressSummary(output.text))
+    .find((value): value is DuckDbProgressSummary => value != null);
+  const structured = outputs.filter((output) =>
+    output.output_type !== "stream" || duckDbProgressSummary(output.text) == null
+  );
+  const complete = progress?.percent === 100;
+
+  return (
+    <details className="notebook-duckdb-output">
+      <summary>
+        <span>DuckDB query details</span>
+        <small>{progress
+          ? `${complete ? "Completed" : "Progress"} · ${progress.percent}%${progress.elapsed ? ` · ${progress.elapsed}` : ""}`
+          : "Technical output"}</small>
+      </summary>
+      <div className="notebook-duckdb-output-body">
+        {progress && (
+          <div className="notebook-duckdb-progress" role="status">
+            <div><strong>{complete ? "Query completed" : "Query progress"}</strong><span>{progress.percent}%</span></div>
+            <progress aria-label="DuckDB query progress" max={100} value={progress.percent} />
+            {progress.elapsed && <small>Elapsed time {progress.elapsed}</small>}
+          </div>
+        )}
+        {structured.map((output, index) => <OutputView output={output} key={index} />)}
+      </div>
+    </details>
+  );
+}
+
+function NotebookOutputs({ outputs }: { outputs: NotebookOutput[] }) {
+  const duckDb = outputs.filter(isDuckDbTechnicalOutput);
+  const visible = outputs.filter((output) => !isDuckDbTechnicalOutput(output));
+  return (
+    <>
+      {duckDb.length > 0 && <DuckDbTechnicalOutputs outputs={duckDb} />}
+      {visible.map((output, index) => <OutputView output={output} key={index} />)}
+    </>
+  );
+}
+
 interface Props {
   notebook: NotebookRecord | null;
   inputs: WorkspaceFile[];
@@ -230,12 +304,13 @@ interface Props {
   onBeforeRun: () => Promise<void>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
+  onEdit?: (record: NotebookRecord) => void;
 }
 
 export default function NotebookView(props: Props) {
   const {
     notebook, inputs, runtime, runRequest, workspaceActions,
-    onBeforeRun, onChange, onFiles
+    onBeforeRun, onChange, onFiles, onEdit
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
@@ -380,6 +455,8 @@ export default function NotebookView(props: Props) {
         <Button disabled={!notebook || running} onClick={() => void clearOutputs()}><ActionIcon name="clear" />Clear output</Button>
         <Button disabled={!notebook || running}
           onClick={() => notebook && void attachInputs(notebook)}><ActionIcon name="attach" />Reattach input data</Button>
+        {onEdit && <Button aria-label="Edit selected Notebook" disabled={!notebook || running}
+          onClick={() => notebook && onEdit(notebook)}><ActionIcon name="edit" />Edit Notebook</Button>}
         {workspaceActions}
       </div>
       <p className="notebook-status" role="status">{status}</p>
@@ -406,8 +483,7 @@ export default function NotebookView(props: Props) {
                 )}
                 {cell.cell_type === "code" && (
                   <div className="notebook-outputs">
-                    {(cell.outputs || []).map((output, outputIndex) =>
-                      <OutputView output={output} key={outputIndex} />)}
+                    <NotebookOutputs outputs={cell.outputs || []} />
                   </div>
                 )}
               </div>

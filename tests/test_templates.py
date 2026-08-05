@@ -8,7 +8,11 @@ def test_center_panel_supports_expected_omero_objects():
         ROOT
         / "src/omero_analysis/templates/omero_analysis/center_plugin.js.html"
     ).read_text(encoding="utf-8")
-    assert '["image", "dataset", "plate", "screen"]' in source
+    assert 'project: "Project"' in source
+    assert 'well: "Well"' in source
+    assert "multiSourceTypes" in source
+    assert "plugin_enabled" in source
+    assert "selection_id=" in source
     assert "data_annotation=" in source
     assert "workspace_annotation=" in source
     assert "library_item=" in source
@@ -32,6 +36,11 @@ def test_center_panel_supports_expected_omero_objects():
     assert "analysis_library_tree.html" in panel
     assert "Upload Attachment" in panel
     assert "oa-attachment-upload-input" in panel
+    assert 'context.panel_kind == "workspace"' in panel
+    assert 'context.panel_kind == "result"' in panel
+    assert 'context.panel_kind == "settings"' in panel
+    assert "Open selection in Analysis" in panel
+    assert "Resume" in panel
 
     deployment = (ROOT / "docker/90-omero-analysis.omero").read_text(
         encoding="utf-8"
@@ -42,9 +51,9 @@ def test_center_panel_supports_expected_omero_objects():
     assert "Analysis Notebook" not in deployment
 
 
-def test_combined_shell_includes_notebook_runtime_contract():
+def test_analysis_shell_includes_notebook_runtime_contract():
     source = (
-        ROOT / "src/omero_analysis/templates/omero_analysis/chat.html"
+        ROOT / "src/omero_analysis/templates/omero_analysis/analysis.html"
     ).read_text(encoding="utf-8")
     assert "data-runtime-base" in source
     assert "window.OMERO_ANALYSIS" not in source
@@ -76,6 +85,9 @@ def test_combined_shell_includes_notebook_runtime_contract():
     )[1].split("}", 1)[0]
     assert "overflow: visible" in library_rule
     assert "max-height" not in library_rule
+    assert "overflow-wrap: anywhere" in panel_css
+    assert ".oa-object {" in panel_css
+    assert "max-width: 920px; min-width: 0; width: 100%" in panel_css
 
     sandbox = (
         ROOT

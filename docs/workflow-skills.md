@@ -4,7 +4,7 @@ OMERO.Analysis can use `biomero-workflow-skills>=0.3,<0.4` as an optional,
 framework-neutral catalog. It reads the existing BIOMERO pipeline
 configuration, resolves each configured GitHub tag, branch, or commit, and
 accepts only validated UTF-8 attachment-analysis skill instructions and text
-references. Analysis starts with generic Chat when the provider is absent.
+references. Analysis starts with generic Assistant guidance when the provider is absent.
 
 Authenticated routes expose a consumer-filtered catalog and package:
 
@@ -44,6 +44,9 @@ BIOMERO repository pin. Tags and commits are immutable in cache, branches are
 revalidated hourly, and only transient failures of the same source may use
 stale data.
 
-The Docker installer uses an offline wheelhouse containing the plugin and its
-tested optional companion wheel. Notebook execution never requests this
-catalog or injects skill instructions.
+The normal Docker installer and local update script install Analysis without
+the catalog. Use `scripts/build-docker-image.ps1 -WithWorkflowSkills` to add
+the optional sibling BIOMERO.WorkflowSkills package to an image. Installing,
+updating, or removing Analysis never installs or removes the provider as a
+side effect. Notebook execution never requests this catalog or injects skill
+instructions.

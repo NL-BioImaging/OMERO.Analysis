@@ -24,6 +24,28 @@ const context: OmeroContext = {
 };
 
 describe("normalized workspace storage", () => {
+  it("keeps a multi-image selection separate from each individual Image workspace", async () => {
+    const selectedContext: OmeroContext = {
+      ...context,
+      object_type: "Image",
+      object_id: 11,
+      name: "2 selected Images",
+      selected_objects: [
+        { type: "Image", id: 11, name: "Field 11", supported: true },
+        { type: "Image", id: 12, name: "Field 12", supported: true }
+      ]
+    };
+    const selection = await loadOrCreateWorkspace(selectedContext);
+    const individual = await loadOrCreateWorkspace({
+      ...selectedContext,
+      name: "Field 11",
+      selected_objects: undefined
+    });
+
+    expect(selection.workspace.id).not.toBe(individual.workspace.id);
+    expect(selection.workspace.rootPath).toContain("Image-selection-11-12");
+  });
+
   it("creates an exact-object workspace and stores chats separately", async () => {
     const workspace = await loadOrCreateWorkspace(context);
     expect(workspace.workspace.rootPath).toBe("OMERO/Dataset-42--cells");
@@ -43,7 +65,7 @@ describe("normalized workspace storage", () => {
       files: []
     });
     const created = await loadOrCreateWorkspace(legacyContext);
-    expect(created.chats[0].title).toBe("New analysis");
+    expect(created.chats[0].title).toBe("New Assistant Chat");
     expect(created.chats[0].messages).toEqual([]);
   });
 

@@ -150,6 +150,23 @@ it("selects Plate children for a Screen without inventing an OMERO id", () => {
   ]);
 });
 
+it("uses every explicitly selected Image as a Zarr candidate", () => {
+  const selected = [
+    { type: "Image" as const, id: 11, name: "Field 11", supported: true },
+    { type: "Image" as const, id: 12, name: "Field 12", supported: true }
+  ];
+  expect(zarrCandidates({
+    object_type: "Image",
+    object_id: 11,
+    name: "2 selected Images",
+    user_id: 1,
+    group_id: 1,
+    can_annotate: true,
+    selected_attachments: [],
+    selected_objects: selected
+  }, null)).toEqual(selected);
+});
+
 it("discards capability credentials and builds a validated deep link", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
     schema_version: 1,

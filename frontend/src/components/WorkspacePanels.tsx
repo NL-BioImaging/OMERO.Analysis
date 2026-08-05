@@ -3,6 +3,7 @@ import type {
   ArtifactRecord,
   DataProfile,
   NotebookRecord,
+  PipelineRecord,
   ProviderSettings,
   RuntimeProgress,
   TokenUsage,
@@ -257,7 +258,13 @@ function markdownInline(value: string): ReactNode[] {
   return parts;
 }
 
-export function MarkdownPreview({ markdown }: { markdown: string }) {
+export function MarkdownPreview({
+  markdown,
+  collapsePython = false
+}: {
+  markdown: string;
+  collapsePython?: boolean;
+}) {
   const lines = markdown.slice(0, 128 * 1024).replace(/\r\n?/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   for (let index = 0; index < lines.length;) {
@@ -275,11 +282,19 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
         index += 1;
       }
       if (index < lines.length) index += 1;
-      blocks.push(
-        <pre className="markdown-code" key={blocks.length}>
+      const codeBlock = (
+        <pre className="markdown-code">
           <code data-language={fence[1] || undefined}>{code.join("\n")}</code>
         </pre>
       );
+      blocks.push(collapsePython && /^(?:python|py)$/i.test(fence[1])
+        ? (
+          <details className="assistant-method-code" key={blocks.length}>
+            <summary>Show reusable Method code</summary>
+            {codeBlock}
+          </details>
+        )
+        : <Fragment key={blocks.length}>{codeBlock}</Fragment>);
       continue;
     }
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
@@ -443,6 +458,44 @@ function NotebookInspectorPreview({ notebook }: { notebook: NotebookRecord }) {
   );
 }
 
+function PipelineInspectorPreview({ pipeline }: { pipeline: PipelineRecord }) {
+  return (
+    <ol className="pipeline-inspector-preview">
+      {pipeline.steps.map((step, index) => {
+        const bindings = Object.entries(step.inputBindings || {});
+        const parameters = Object.entries(step.parameters || {});
+        return (
+          <li key={step.id}>
+            <span className="pipeline-inspector-step-number">{index + 1}</span>
+            <div>
+              <strong>{step.name}</strong>
+              <small>Saved Method version {step.methodVersion}</small>
+              {bindings.length > 0 ? (
+                <dl className="pipeline-binding-list">
+                  {bindings.map(([expected, resolved]) => (
+                    <Fragment key={expected}>
+                      <dt>{expected}</dt><dd><span aria-hidden="true">→</span>{resolved}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              ) : <em>Automatic input matching</em>}
+              {parameters.length > 0 && (
+                <details><summary>{parameters.length} parameter{parameters.length === 1 ? "" : "s"}</summary>
+                  <dl className="pipeline-parameter-list">{parameters.flatMap(([name, value]) => [
+                    <dt key={`${name}-term`}>{name}</dt>,
+                    <dd key={`${name}-value`}>{String(value)}</dd>
+                  ])}</dl>
+                </details>
+              )}
+            </div>
+          </li>
+        );
+      })}
+      {!pipeline.steps.length && <li className="pipeline-inspector-empty">No Method steps yet.</li>}
+    </ol>
+  );
+}
+
 export function ViewerPreviewCard({
   artifact,
   file,
@@ -556,15 +609,11 @@ export function ComposerPanel({
   return (
     <>
       {!runtimeReady && (
-        <div className="runtime-progress" role="status" aria-live="polite">
-          <div><strong>{runtimeProgress.message}</strong><span>{Math.round(runtimeProgress.percent)}%</span></div>
-          <progress max="100" value={runtimeProgress.percent} />
-          <small>Your request is queued. Analysis continues automatically when the required Python packages are ready.</small>
-        </div>
+        <RuntimeProgressPanel progress={runtimeProgress} />
       )}
       <div className="status" role="status">{status}</div>
       <div className="usage-status">
-        <span>Ordinary workspace inputs remain browser-local. For selected Chat attachments, extracted text or metadata-stripped image pixels are sent to the configured AI provider; original PDF and DOCX bytes are never sent.</span>
+        <span>Ordinary workspace inputs remain browser-local. For selected Assistant attachments, extracted text or metadata-stripped image pixels are sent to the configured AI provider; original PDF and DOCX bytes are never sent.</span>
         <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
       </div>
       {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
@@ -573,7 +622,7 @@ export function ComposerPanel({
           {`Enter an AI endpoint and model${needsApiKey ? ", and API key" : ""} in Settings.`}
         </div>
       ) : null}
-      <div className="chat-attachments" aria-label="Chat attachments">
+      <div className="chat-attachments" aria-label="Assistant attachments">
         <div className="attachment-actions">
           <label className={`button-like ${busy ? "disabled" : ""}`}>
             <ActionIcon name="attach" />Attach files
@@ -652,6 +701,25 @@ export function ComposerPanel({
   );
 }
 
+export function RuntimeProgressPanel({
+  progress,
+  detail = "Your request is queued. Analysis continues automatically when the required Python packages are ready.",
+  label = "Loading browser Python"
+}: {
+  progress: RuntimeProgress;
+  detail?: string;
+  label?: string;
+}) {
+  const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+  return (
+    <div className="runtime-progress" role="status" aria-live="polite">
+      <div><strong>{progress.message}</strong><span>{percent}%</span></div>
+      <progress max="100" value={percent} aria-label={label} />
+      <small>{detail}</small>
+    </div>
+  );
+}
+
 export function ArtifactInspector({
   item,
   profiles,
@@ -711,7 +779,9 @@ export function ArtifactInspector({
           <strong>{item?.title || "Workspace overview"}</strong>
         </div>
         {item && onEdit && ["method", "pipeline", "notebook"].includes(item.kind) && (
-          <Button onClick={() => onEdit(item)}><ActionIcon name="edit" />Edit</Button>
+          <Button aria-label={`Edit selected ${item.kind}`} onClick={() => onEdit(item)}>
+            <ActionIcon name="edit" />Edit {item.kind[0].toUpperCase() + item.kind.slice(1)}
+          </Button>
         )}
       </div>
       <div className="artifact-body">
@@ -726,13 +796,22 @@ export function ArtifactInspector({
                   ])}
                 </dl>
               )}
+              {item.methodNarrative && (
+                <section className="method-inspector-narrative" aria-label="Method summary and review">
+                  <MarkdownPreview markdown={item.methodNarrative} />
+                </section>
+              )}
               {item.content && (
                 item.language === "python"
-                  ? <PythonPreview code={item.content} />
+                  ? <details className="method-source-preview">
+                      <summary>View Python source</summary>
+                      <PythonPreview code={item.content} />
+                    </details>
                   : item.language === "markdown"
                     ? <MarkdownPreview markdown={item.content} />
                   : <pre className="artifact-text-preview">{item.content}</pre>
               )}
+              {item.pipeline && <PipelineInspectorPreview pipeline={item.pipeline} />}
               {item.notebook && <NotebookInspectorPreview notebook={item.notebook} />}
             </>
           ) : file ? (
@@ -791,7 +870,9 @@ export interface InspectorItem {
   description?: string;
   metadata?: Record<string, string | number>;
   content?: string;
+  methodNarrative?: string;
   language?: "python" | "json" | "markdown";
   notebook?: NotebookRecord;
+  pipeline?: PipelineRecord;
   file?: WorkspaceFile;
 }

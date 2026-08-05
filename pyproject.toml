@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "omero-analysis"
 version = "0.10.0"
-description = "Browser-local reusable Methods, Pipelines, Notebooks, and Method-authoring Chat for OMERO.web"
+description = "Browser-local reusable Methods, Pipelines, Notebooks, and a Method-authoring Assistant for OMERO.web"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"

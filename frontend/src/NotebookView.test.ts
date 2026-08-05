@@ -1,12 +1,14 @@
 import { fireEvent, render } from "@testing-library/react";
 import { createElement } from "react";
 import NotebookView, {
+  duckDbProgressSummary,
+  isDuckDbTechnicalOutput,
   parseNotebook,
   reattachNotebookDocument,
   serializeNotebook
 } from "./NotebookView";
 import type { PythonRuntime } from "./runtime";
-import type { NotebookDocument, NotebookRecord, WorkspaceFile } from "./types";
+import type { NotebookDocument, NotebookOutput, NotebookRecord, WorkspaceFile } from "./types";
 
 function bytes(value: unknown): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify(value)).buffer;
@@ -120,5 +122,61 @@ describe("run-only notebook validation", () => {
           "input-bindings"
       )
     ).toHaveLength(1);
+  });
+
+  it("summarizes noisy DuckDB progress and classifies its technical outputs", () => {
+    const stream = {
+      output_type: "stream", name: "stdout",
+      text: "20% (~7 seconds remaining)\r45% (~4 seconds remaining)\r100% (00:00:03.87 elapsed)"
+    } as NotebookOutput;
+    const result = {
+      output_type: "execute_result", execution_count: 1, metadata: {},
+      data: { "application/json": { engine: "DuckDB", row_count: 24 } }
+    } as NotebookOutput;
+
+    expect(duckDbProgressSummary(stream.text)).toEqual({ percent: 100, elapsed: "00:00:03.87" });
+    expect(isDuckDbTechnicalOutput(stream)).toBe(true);
+    expect(isDuckDbTechnicalOutput(result)).toBe(true);
+  });
+
+  it("hides DuckDB details by default while leaving visual output outside the card", () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "duckdb.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: {
+        nbformat: 4, nbformat_minor: 5, metadata: {},
+        cells: [{
+          id: "cell", cell_type: "code", metadata: {}, source: "query()",
+          execution_count: 1,
+          outputs: [
+            {
+              output_type: "stream", name: "stdout",
+              text: "50% (~2 seconds remaining)\r100% (00:00:03.87 elapsed)"
+            },
+            {
+              output_type: "execute_result", execution_count: 1, metadata: {},
+              data: { "application/json": { engine: "DuckDB", row_count: 24 } }
+            },
+            {
+              output_type: "display_data", metadata: {},
+              data: { "image/png": "aGVsbG8=" }
+            }
+          ]
+        }]
+      },
+      createdAt: "2026-08-05T10:00:00Z", updatedAt: "2026-08-05T10:00:00Z"
+    } as NotebookRecord;
+    const { container } = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime: {} as PythonRuntime, runRequest: null,
+      workspaceActions: null, onBeforeRun: async () => undefined,
+      onChange: async () => undefined, onFiles: async () => undefined
+    }));
+
+    const details = container.querySelector(".notebook-duckdb-output") as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain("Completed · 100% · 00:00:03.87");
+    expect(container.querySelector(".notebook-image")).not.toBeNull();
+    expect(container.querySelectorAll(".notebook-duckdb-progress")).toHaveLength(1);
   });
 });

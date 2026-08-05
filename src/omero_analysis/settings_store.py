@@ -152,12 +152,6 @@ def _validated_payload(value):
         raise InvalidObject("The Analysis color theme is invalid")
     if not isinstance(analysis.get("editorEnabled", False), bool):
         raise InvalidObject("The artifact editor preference is invalid")
-    if not isinstance(analysis.get("syncChatAttachments", False), bool):
-        raise InvalidObject("The Chat attachment synchronization preference is invalid")
-    if not isinstance(analysis.get("syncAnalysisWorkspace", True), bool):
-        raise InvalidObject("The AnalysisWorkspace synchronization preference is invalid")
-    if not isinstance(analysis.get("syncAnalysisSettings", True), bool):
-        raise InvalidObject("The AnalysisSettings synchronization preference is invalid")
     if len(ai["profiles"]) > 50 or len(skills) > MAX_SKILLS:
         raise FileTooLarge("The settings bundle contains too many profiles or skills")
     for profile in ai["profiles"]:

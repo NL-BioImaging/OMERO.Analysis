@@ -154,7 +154,7 @@ await page.route("https://provider.example/**", async (route) => {
     }]
   } : {
     role: "assistant",
-    content: "## Result\n\nRows analyzed **locally** and plotted reproducibly.",
+    content: "## Summary\n\nThe Workspace values were plotted and saved as smoke.png, with the plotted data in smoke.csv.\n\n## Review\n\nThe reusable Method read the current CSV input, preserved the rows in a result CSV, and generated the requested bar plot locally.\n\n## Recommendations\n\nInspect the plot labels and values before reusing the Method with another compatible CSV file.\n\n## Reusable Method\n\n```python\nimport pandas as pd\nimport matplotlib.pyplot as plt\ndata = pd.read_csv('/input/smoke.csv')\ndata.to_csv('/output/smoke.csv', index=False)\ndata.plot.bar(x='group', y='value', legend=False)\nplt.tight_layout()\nplt.savefig('/output/smoke.png')\n```",
     tool_calls: []
   };
   await route.fulfill({
@@ -186,8 +186,12 @@ try {
     throw new Error("Opening Analysis eagerly created the Python runtime");
   }
   const rootFolders = await page.locator(".workspace-tree > details > summary strong").allTextContents();
-  if (JSON.stringify(rootFolders) !== JSON.stringify(["Input", "Chat", "Methods", "Pipelines", "Notebooks"])) {
+  if (JSON.stringify(rootFolders) !== JSON.stringify(["Input", "Methods", "Pipelines", "Notebooks"])) {
     throw new Error(`Unexpected Workspace folder order: ${rootFolders.join(", ")}`);
+  }
+  const assistantFolder = page.locator(".workspace-tree > details").filter({ hasText: "Methods" }).locator(".assistant-folder > summary strong");
+  if (await assistantFolder.textContent() !== "Assistant") {
+    throw new Error("Assistant conversations are not nested inside Methods");
   }
   if (await page.getByRole("button", { name: "Editor", exact: true }).count()) {
     throw new Error("Artifact Editor was enabled by default");
@@ -196,16 +200,35 @@ try {
   if (await homeTab.getAttribute("aria-current") !== "page") {
     throw new Error("Analysis did not open on the Home landing page");
   }
-  if (!await page.getByRole("button", { name: "Methods & Pipelines" }).count()) {
-    throw new Error("Methods & Pipelines tab is missing");
+  for (const tab of ["Methods", "Pipelines", "Notebooks"]) {
+    if (!await page.getByRole("button", { name: tab, exact: true }).count()) {
+      throw new Error(`${tab} tab is missing`);
+    }
   }
-  const notebookTab = page.getByRole("button", { name: "Notebook", exact: true });
+  for (const heading of ["Create a Method", "Create a Pipeline", "Create a Notebook"]) {
+    if (!await page.getByRole("heading", { name: heading, exact: true }).count()) {
+      throw new Error(`${heading} Home card is missing`);
+    }
+  }
+  await page.getByRole("button", { name: "Hide Explorer" }).click();
+  if (await page.locator(".workspace-tree").count()) {
+    throw new Error("Explorer remained visible after using its header toggle");
+  }
+  await page.getByRole("button", { name: "Show Explorer" }).click();
+  await page.locator(".workspace-tree").waitFor();
+  await page.getByRole("button", { name: "Hide Artifact Inspector" }).click();
+  if (await page.locator(".artifact-inspector").count()) {
+    throw new Error("Artifact Inspector remained visible after using its header toggle");
+  }
+  await page.getByRole("button", { name: "Show Artifact Inspector" }).click();
+  await page.locator(".artifact-inspector").waitFor();
+  const notebookTab = page.getByRole("button", { name: "Notebooks", exact: true });
   await notebookTab.focus();
   await page.keyboard.press("Enter");
   if (await notebookTab.getAttribute("aria-current") !== "page") {
-    throw new Error("Notebook tab was not keyboard accessible");
+    throw new Error("Notebooks tab was not keyboard accessible");
   }
-  const chatTab = page.getByRole("button", { name: "Chat", exact: true });
+  const chatTab = page.getByRole("button", { name: "Assistant", exact: true });
   await chatTab.focus();
   await page.keyboard.press("Enter");
   const themeToggle = page.getByRole("button", { name: "Switch to light theme" });
@@ -233,13 +256,13 @@ try {
   await page.getByLabel("API endpoint").fill("https://provider.example/v1");
   await page.getByLabel("Model or deployment").fill("smoke-model");
   await page.getByLabel("API key").fill("smoke-key");
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("button", { name: "Assistant", exact: true }).click();
   await page.getByPlaceholder("Ask a question about the loaded data…").fill("Plot the uploaded values.");
   await page.getByRole("button", { name: /Send/ }).click();
 
-  await page.getByRole("heading", { name: "Result" }).waitFor({ timeout: 120_000 });
+  await page.getByRole("heading", { name: "Summary" }).waitFor({ timeout: 120_000 });
   await page.locator(".message.assistant .message-markdown")
-    .getByText("Rows analyzed locally and plotted reproducibly.", { exact: true })
+    .getByText("The Workspace values were plotted and saved as smoke.png, with the plotted data in smoke.csv.", { exact: true })
     .waitFor();
   if (await page.getByRole("button", { name: "Copy user message" }).count() !== 1) {
     throw new Error("User messages do not expose the copy control");
@@ -261,7 +284,7 @@ try {
   await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
   await page.getByText("smoke-analysis.py", { exact: true }).click();
   const methodInspector = page.locator(".artifact-inspector");
-  await methodInspector.getByRole("button", { name: "Edit" }).click();
+  await methodInspector.getByRole("button", { name: "Edit selected method" }).click();
   await page.getByRole("region", { name: "Editor" }).waitFor();
   if (await page.locator(".editor-method .cm-editor").count() !== 1) {
     throw new Error("Method Editor did not create its syntax editor");
@@ -274,15 +297,15 @@ try {
   const chatItemsBeforeDirectRun = await page.locator(".messages > *").count();
   await page.getByRole("button", { name: "Actions for smoke-analysis.py" }).click();
   await page.getByRole("menuitem", { name: "Run" }).click();
-  const runsTab = page.getByRole("button", { name: "Methods & Pipelines", exact: true });
-  await runsTab.waitFor();
-  if (await runsTab.getAttribute("aria-current") !== "page") {
-    throw new Error("Direct Method execution did not open Methods & Pipelines");
+  const methodsTab = page.getByRole("button", { name: "Methods", exact: true });
+  await methodsTab.waitFor();
+  if (await methodsTab.getAttribute("aria-current") !== "page") {
+    throw new Error("Direct Method execution did not open Methods");
   }
   await page.locator(".run-summary.success").getByText("smoke-analysis.py", { exact: true })
     .waitFor({ timeout: 120_000 });
   await page.locator(".run-files").getByText("smoke.png", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("button", { name: "Assistant", exact: true }).click();
   if (await page.locator(".messages > *").count() !== chatItemsBeforeDirectRun) {
     throw new Error("Direct Method execution inserted synthetic Chat messages");
   }
@@ -297,7 +320,7 @@ try {
     .waitFor();
   if (completions !== 2) throw new Error(`Expected two provider rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
-  console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Chat, and Notebook conversion");
+  console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Assistant, and Notebook conversion");
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));
   console.error("Browser errors:", errors.join("\n"));

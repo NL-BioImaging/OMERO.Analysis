@@ -17,6 +17,11 @@ def main() -> int:
     parser.add_argument("--application-wheel", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--catalog-repo", type=Path)
+    parser.add_argument(
+        "--with-workflow-skills",
+        action="store_true",
+        help="Build the optional BIOMERO.WorkflowSkills package into the wheelhouse",
+    )
     args = parser.parse_args()
     plugin = args.plugin_wheel.resolve(strict=True)
     application = (
@@ -25,12 +30,6 @@ def main() -> int:
         else None
     )
     root = Path(__file__).resolve().parents[1]
-    default_catalog = root.parent / "BIOMERO.WorkflowSkills"
-    if not default_catalog.is_dir():
-        default_catalog = root.parent / "OMERO.WorkflowSkills"
-    catalog = (args.catalog_repo or default_catalog).resolve()
-    if not (catalog / "pyproject.toml").is_file():
-        raise SystemExit(f"BIOMERO.WorkflowSkills repository not found at {catalog}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     for existing in output.iterdir():
@@ -38,43 +37,34 @@ def main() -> int:
             existing.unlink()
         elif existing.is_dir():
             shutil.rmtree(existing)
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--wheel",
-            "--outdir",
-            str(output),
-            str(catalog),
-        ],
-        check=True,
-    )
     shutil.copy2(plugin, output / plugin.name)
     if application:
         shutil.copy2(application, output / application.name)
-    for python_version in ("310", "311", "312"):
+    if args.with_workflow_skills or args.catalog_repo:
+        default_catalog = root.parent / "BIOMERO.WorkflowSkills"
+        catalog = (args.catalog_repo or default_catalog).resolve()
+        if not (catalog / "pyproject.toml").is_file():
+            raise SystemExit(f"BIOMERO.WorkflowSkills repository not found at {catalog}")
         subprocess.run(
             [
                 sys.executable,
-                "-m",
-                "pip",
-                "download",
-                "--only-binary=:all:",
-                "--platform",
-                "manylinux2014_x86_64",
-                "--implementation",
-                "cp",
-                "--python-version",
-                python_version,
-                "--abi",
-                f"cp{python_version}",
-                "--dest",
+                "-m", "build", "--wheel", "--outdir",
                 str(output),
-                "PyYAML>=6,<7",
+                str(catalog),
             ],
             check=True,
         )
+        for python_version in ("310", "311", "312"):
+            subprocess.run(
+                [
+                    sys.executable, "-m", "pip", "download",
+                    "--only-binary=:all:", "--platform", "manylinux2014_x86_64",
+                    "--implementation", "cp", "--python-version", python_version,
+                    "--abi", f"cp{python_version}", "--dest", str(output),
+                    "PyYAML>=6,<7",
+                ],
+                check=True,
+            )
     subprocess.run(
         [
             sys.executable,

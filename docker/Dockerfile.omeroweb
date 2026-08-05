@@ -8,10 +8,9 @@ COPY docker/49-omero-analysis-cleanup.py /startup/49-omero-analysis-cleanup.py
 COPY docker/90-omero-analysis.omero /opt/omero/web/config/90-omero-analysis.omero
 
 RUN set -eu; \
-    rm -f /opt/omero/web/config/90-omero-analysis-chat.omero /opt/omero/web/config/90-omero-jupyterlite.omero; \
-    rm -rf /opt/omero/web/OMERO.web/var/static/omero_analysis_chat; \
+    rm -f /opt/omero/web/config/90-omero-jupyterlite.omero; \
     rm -rf /opt/omero/web/OMERO.web/var/static/omero_jupyterlite; \
-    /opt/omero/web/venv3/bin/python -m pip uninstall -y omero-analysis-chat omero-jupyterlite >/dev/null 2>&1 || true; \
+    /opt/omero/web/venv3/bin/python -m pip uninstall -y omero-jupyterlite >/dev/null 2>&1 || true; \
     viewer_wheel="$(find /tmp/omero-plugin-wheelhouse -maxdepth 1 -name 'biomero_zarr_viewer-*.whl' -print -quit)"; \
     catalog_wheel="$(find /tmp/omero-plugin-wheelhouse -maxdepth 1 -name 'biomero_workflow_skills-*.whl' -print -quit)"; \
     /opt/omero/web/venv3/bin/python -m pip install \

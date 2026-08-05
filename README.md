@@ -2,25 +2,37 @@
 
 The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
 and through the modeless **Help** window in OMERO.Analysis.
+Hardware-specific offline model guidance is available in
+[docs/local-llm-recommendations.md](docs/local-llm-recommendations.md).
 
 OMERO.Analysis is a browser-local research workspace for OMERO.web. Its one
 Analysis shell has four standard routable tabs and one optional tab:
 
-- **Home** — choose whether to run a Method, Pipeline, or Notebook, or create a Method with Chat.
-- **Methods & Pipelines** — run reusable analyses and inspect durable run history and outputs.
-- **Notebook** — run-only Python nbformat-4 notebooks attached to OMERO.
-- **Chat** — AI-assisted development and testing of reusable Method scripts.
+- **Home** — run saved artifacts or create an input-ready Method, Pipeline, or Notebook, with optional assistant help.
+- **Methods** — run reusable Methods and inspect their durable run history and outputs.
+- **Pipelines** — create or run ordered Method Pipelines and inspect their durable results.
+- **Notebooks** — run-only Python nbformat-4 notebooks attached to OMERO.
+- **Assistant** — AI-assisted development and testing of reusable Method scripts.
 - **Editor** — optional structured editing for Methods, Pipelines, and Notebooks.
+
+Analysis opens only the current Workspace selected in the OMERO center panel.
+The Explorer is rooted at that Workspace and does not expose an OMERO parent
+browser or alternate local Workspaces. A startup progress indicator reports
+Workspace restoration separately from the lazy browser-Python startup.
+
+The Explorer and Artifact Inspector can be hidden independently from the
+header. Their browser-local visibility preference is remembered per user and
+group.
 
 The Workspace explorer is organized as:
 
 ```text
 Workspace
 ├── Input
-├── Chat
-│   ├── <chat>/Attachments
-│   └── Chat results
 ├── Methods
+│   ├── Assistant
+│   │   ├── <conversation>/Attachments
+│   │   └── browser-local validation results
 │   └── Methods results
 ├── Pipelines
 │   └── Pipelines results
@@ -29,7 +41,7 @@ Workspace
 ```
 
 Methods are reusable `.py` analyses. Pipelines are ordered, isolated Method
-steps. Notebooks remain read-only in the Notebook tab: **Run** resets the kernel, attaches current
+steps. Notebooks remain read-only in the Notebooks tab: **Run** resets the kernel, attaches current
 inputs, and executes every cell in order. Users can stop execution, clear
 outputs, reattach inputs, and inspect safe outputs. Editing is available only
 when **Enable artifact editor** is turned on in Analysis Settings.
@@ -41,16 +53,16 @@ Notebook execution never calls the AI provider or loads Agent Skill packages.
 Raw notebook HTML and JavaScript are never rendered. Magics, shell commands,
 widgets, non-Python kernels, and arbitrary package downloads are rejected.
 
-Each Chat can keep up to ten browser-local TXT, searchable PDF, DOCX, PNG,
+Each Assistant conversation can keep up to ten browser-local TXT, searchable PDF, DOCX, PNG,
 JPEG, or WebP attachments (25 MiB each). PDF and DOCX text is extracted in the
 offline Python sandbox; images are decoded, stripped of metadata, and resized
 in the browser when needed. The configured provider receives only extracted
 text or derived image pixels, never original PDF or DOCX bytes. OCR, webpages,
 authenticated file URLs, and silent context truncation are not supported.
 
-The Method-authoring Chat may load matching measurement-analysis skills from the optional
+The Method-authoring Assistant may load matching measurement-analysis skills from the optional
 `biomero-workflow-skills` distribution. Explicit ZarrViewer requests use the
-skill published by BIOMERO.ZarrViewer itself. Analysis starts with generic Chat
+skill published by BIOMERO.ZarrViewer itself. Analysis starts with the generic Assistant
 when either provider is absent.
 
 ## OMERO.web integration
@@ -60,8 +72,11 @@ The deployment registers:
 - one top link: **Analysis** (opens Home);
 - one center panel: **Analysis**.
 
-Image, Dataset, Plate, and Screen contexts are supported. Notebook upload
-automatically creates and links a FileAnnotation in namespace
+Image, Dataset, Plate, and Screen contexts are supported, including one
+selection-specific Workspace for multiple Images or multiple Plates. Managed
+Analysis Workspace, result, settings, and skills objects receive dedicated
+resume or information panes instead of generic data-attachment controls.
+Notebook upload automatically creates and links a FileAnnotation in namespace
 `nl.bioimaging.analysis.notebook.v1`.
 
 The standalone `omero-jupyterlite` package is deprecated and is explicitly
@@ -70,29 +85,30 @@ FileAnnotations are preserved.
 
 ## AnalysisWorkspaces library
 
-**Sync to OMERO** creates a private, managed `+AnalysisWorkspaces` Project for
+Automatic synchronization creates a private, managed `+AnalysisWorkspaces` Project for
 the current user and group, then mirrors the browser Workspace into a Dataset.
 Projects, Datasets, imported Images, and source links are discovered through
 `nl.bioimaging.analysis.sync.v1` MapAnnotations; an unmarked same-name Project
 is never adopted.
 
-Synchronization is explicit, one-way, and last-writer-wins. PNG results become
-real grayscale or RGB OMERO Images. Other results, Chats, complete Method
-history, Pipelines, and validated Python notebooks are stored as typed
-FileAnnotations. Source inputs are excluded, except that ready inputs containing
-`template` anywhere in their filename are synchronized under Templates for reuse.
-With the default-on **Sync AnalysisWorkspace** preference, the Dataset also
-contains one managed restore snapshot that is replaced by later syncs. A browser
-with no local Workspace automatically restores the newest matching snapshot.
-Chat attachment originals are excluded by default. The global Analysis
-Settings option **Sync chat attachments to OMERO AnalysisWorkspaces** includes
-them as Dataset FileAnnotations during explicit synchronization; disabling it
-again removes only those managed attachment annotations on the next sync.
+Synchronization is automatic and incremental. Local reusable changes are
+mirrored to OMERO, while deletion of a managed Workspace Dataset in OMERO
+cascades back to the browser on launch, focus, or the periodic remote check.
+Only a successfully confirmed deletion removes local data; unsynchronized
+Workspaces and temporary connection failures are preserved. Synchronization
+does not build or upload a complete Workspace ZIP. PNG outputs from direct
+Method, Pipeline, and Notebook runs become real grayscale or RGB OMERO Images;
+their other outputs, complete Method history, Pipelines, and validated Python
+notebooks are stored as typed FileAnnotations. Source inputs are excluded,
+except that ready inputs containing `template` anywhere in their filename are
+synchronized under Templates for reuse. Assistant conversations, attachments,
+and Assistant validation results always remain browser-local and are never
+included in the managed mirror.
 Unchanged objects are reused by stable key and SHA-256; managed remote
 deletions follow local deletions. Unmanaged Dataset content is never changed.
 
-The **Workspace & OMERO** menu can synchronize, browse/reuse Methods, Pipelines,
-and Notebooks, or remove the managed mirror. Imports are independent local
+The **Workspace & OMERO** menu can browse/reuse Methods, Pipelines,
+and Notebooks. Imports are independent local
 copies carrying library provenance. Pipeline imports also copy their exact
 Method-version dependencies. Imported notebooks select ready local inputs and
 open without running.
@@ -138,9 +154,7 @@ npm run build
 npm run smoke:browser
 ```
 
-The bootstrap removes obsolete editable `omero-analysis-chat` and
-`omero-jupyterlite` installations before installing this package and its test
-dependencies. Use `--skip-frontend` for a backend-only environment.
+Use `--skip-frontend` for a backend-only environment.
 
 Build the wheel:
 
@@ -161,11 +175,17 @@ The same smoke can be run manually in CI with the `OMERO_SMOKE_URL` repository
 variable and `OMERO_SMOKE_COOKIE` secret. It verifies the real container rather
 than a mocked Django process.
 
-Build the local OMERO.web image, preserving other baked-in plugins while
-updating Analysis, BIOMERO.ZarrViewer, and the optional measurement provider:
+Build the local OMERO.web image while preserving other baked-in plugins:
 
 ```powershell
 .\scripts\build-docker-image.ps1
+```
+
+BIOMERO.WorkflowSkills is not bundled by default. Include the optional local
+provider only when it is wanted and its sibling repository is available:
+
+```powershell
+.\scripts\build-docker-image.ps1 -WithWorkflowSkills
 ```
 
 ## API

@@ -40,8 +40,15 @@ describe("generic AI provider", () => {
     expect(SYSTEM_PROMPT).toContain("administrator-approved, revision-pinned skills");
     expect(SYSTEM_PROMPT).toContain("without waiting for the user to ask");
     expect(SYSTEM_PROMPT).toMatch(
-      /Never print, preview, encode, or return a complete source\s+file/
+      /Never print, preview, encode,[\s\S]*return a complete input data file/
     );
+    expect(SYSTEM_PROMPT).toContain("one complete, reusable Python Method");
+    expect(SYSTEM_PROMPT).toContain("## Summary");
+    expect(SYSTEM_PROMPT).toContain("## Review");
+    expect(SYSTEM_PROMPT).toContain("## Recommendations");
+    expect(SYSTEM_PROMPT).toContain("## Reusable Method");
+    expect(SYSTEM_PROMPT).toContain("first inspect sheet names, columns, dtypes");
+    expect(SYSTEM_PROMPT).toContain("stop tool use and deliver the Method");
     const payload = toolErrorText(new Error("ModuleNotFoundError: missing"));
     expect(payload).toContain("call run_python again");
     expect(payload).toContain("available_packages");
