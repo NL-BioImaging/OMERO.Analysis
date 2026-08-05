@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
-import { ExecutionCard } from "./ExecutionCard";
+import { ExecutionCard, executionOutputFiles } from "./ExecutionCard";
 import type { ExecutionRecord, WorkspaceFile } from "../types";
 
 Object.defineProperty(URL, "createObjectURL", {
@@ -120,5 +120,37 @@ describe("ExecutionCard", () => {
     );
 
     expect(screen.getByRole("img", { name: "result.png" })).toBeInTheDocument();
+  });
+
+  it("renders a synchronized run alias for a reused execution", () => {
+    const reused = execution({
+      id: "reused-execution",
+      runId: "current-run",
+      reusedFrom: "original-execution",
+      status: "reused",
+      outputFileIds: ["original-file"]
+    });
+    const restored: WorkspaceFile = {
+      id: "restored-file",
+      workspaceId: "workspace",
+      runId: "current-run",
+      executionId: "original-execution",
+      name: "restored-result.png",
+      logicalPath: "/output/restored-result.png",
+      type: "image/png",
+      size: 3,
+      sha256: "restored-image",
+      source: "result",
+      state: "ready",
+      data: new Uint8Array([1, 2, 3]).buffer,
+      createdAt: "2026-08-05T12:00:00Z"
+    };
+
+    expect(executionOutputFiles(reused, [restored])).toEqual([restored]);
+    render(
+      <ExecutionCard execution={reused} files={[restored]}
+        onSave={vi.fn()} onRerun={vi.fn()} />
+    );
+    expect(screen.getByRole("img", { name: "restored-result.png" })).toBeInTheDocument();
   });
 });

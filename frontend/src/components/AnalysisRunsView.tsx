@@ -8,7 +8,7 @@ import type {
 } from "../types";
 import { ActionIcon } from "./ActionIcon";
 import { Button } from "./BlueprintControls";
-import { ExecutionCard } from "./ExecutionCard";
+import { ExecutionCard, executionOutputFiles } from "./ExecutionCard";
 
 function bytesLabel(value: number): string {
   if (value < 1024) return `${value} bytes`;
@@ -23,6 +23,24 @@ function runDuration(run: AnalysisRunRecord): string {
   if (milliseconds < 1000) return `${milliseconds} ms`;
   if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(1)} sec`;
   return `${Math.floor(milliseconds / 60_000)} min ${Math.round(milliseconds % 60_000 / 1000)} sec`;
+}
+
+export function supplementalRunImages(
+  executions: ExecutionRecord[],
+  runFiles: WorkspaceFile[],
+  allFiles: WorkspaceFile[]
+): WorkspaceFile[] {
+  const displayed = executions.flatMap((execution) => executionOutputFiles(execution, allFiles));
+  const displayedIds = new Set(displayed.map((file) => file.id));
+  const displayedContent = new Set(displayed
+    .filter((file) => Boolean(file.sha256))
+    .map((file) => `${file.type}:${file.sha256}`));
+  return runFiles.filter((file) => {
+    const isImage = file.type === "image/png" || file.type === "image/svg+xml";
+    const contentKey = `${file.type}:${file.sha256}`;
+    return isImage && Boolean(file.data) && !file.deletedAt &&
+      !displayedIds.has(file.id) && (!file.sha256 || !displayedContent.has(contentKey));
+  });
 }
 
 interface AnalysisRunsViewProps {
@@ -95,6 +113,10 @@ export function AnalysisRunsView({
     .filter((run) => !query.trim() || run.artifactName.toLowerCase().includes(query.trim().toLowerCase()))
     .filter((run) => statusFilter === "all" || run.status === statusFilter)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt)), [query, runs, statusFilter]);
+  const supplementalImages = useMemo(
+    () => supplementalRunImages(selectedRunExecutions, selectedRunFiles, allFiles),
+    [allFiles, selectedRunExecutions, selectedRunFiles]
+  );
 
   return (
     <section className={`runs-view ${kind === "pipeline" && pipelineBuilderOpen ? "pipeline-builder-visible" : ""}`}
@@ -241,8 +263,11 @@ export function AnalysisRunsView({
                 </details>
               )}
               <div className="run-executions">
-                {selectedRunExecutions.map((execution) => (
+                {selectedRunExecutions.map((execution, index) => (
                   <ExecutionCard key={execution.id} execution={execution} files={allFiles}
+                    supplementalOutputs={index === selectedRunExecutions.length - 1
+                      ? supplementalImages
+                      : []}
                     onSave={() => undefined} onRerun={() => onRerun(selectedRun)}
                     saveDisabled={busy} showSaveAction={false} showRerunAction={false} />
                 ))}

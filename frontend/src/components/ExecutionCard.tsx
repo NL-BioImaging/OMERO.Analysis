@@ -4,10 +4,40 @@ import type { ExecutionRecord, WorkspaceFile } from "../types";
 import { ActionIcon } from "./ActionIcon";
 import { Button, Input } from "./BlueprintControls";
 
+export function executionOutputFiles(
+  execution: ExecutionRecord,
+  files: WorkspaceFile[]
+): WorkspaceFile[] {
+  const direct = execution.outputFileIds
+    .map((fileId) => files.find((file) => file.id === fileId && !file.deletedAt))
+    .filter(Boolean) as WorkspaceFile[];
+  if (!execution.runId) return direct;
+
+  // Content-addressed OMERO synchronization can restore a run-owned alias
+  // with a new file ID while a reused execution still references the original
+  // file ID. Recover that alias through its execution provenance so the result
+  // remains visible inline, not only in the Generated files list.
+  const executionIds = new Set([execution.id, execution.reusedFrom].filter(Boolean));
+  const restored = files.filter((file) =>
+    file.runId === execution.runId && Boolean(file.executionId) &&
+    executionIds.has(file.executionId) && !file.deletedAt
+  );
+  const seenIds = new Set<string>();
+  const seenContent = new Set<string>();
+  return [...direct, ...restored].filter((file) => {
+    const contentKey = `${file.type}:${file.sha256}`;
+    if (seenIds.has(file.id) || (file.sha256 && seenContent.has(contentKey))) return false;
+    seenIds.add(file.id);
+    if (file.sha256) seenContent.add(contentKey);
+    return true;
+  });
+}
+
 export function ExecutionCard({
   execution,
   relatedExecutions = [execution],
   files,
+  supplementalOutputs = [],
   onSave,
   onRerun,
   saveDisabled = false,
@@ -17,6 +47,7 @@ export function ExecutionCard({
   execution: ExecutionRecord;
   relatedExecutions?: ExecutionRecord[];
   files: WorkspaceFile[];
+  supplementalOutputs?: WorkspaceFile[];
   onSave: () => void;
   onRerun: () => void;
   saveDisabled?: boolean;
@@ -24,9 +55,19 @@ export function ExecutionCard({
   showRerunAction?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const outputs = execution.outputFileIds
-    .map((fileId) => files.find((file) => file.id === fileId && !file.deletedAt))
-    .filter(Boolean) as WorkspaceFile[];
+  const outputs = executionOutputFiles(execution, [...files, ...supplementalOutputs]);
+  const outputIds = new Set(outputs.map((file) => file.id));
+  const outputContent = new Set(outputs
+    .filter((file) => Boolean(file.sha256))
+    .map((file) => `${file.type}:${file.sha256}`));
+  for (const file of supplementalOutputs) {
+    const contentKey = `${file.type}:${file.sha256}`;
+    if (!outputIds.has(file.id) && (!file.sha256 || !outputContent.has(contentKey))) {
+      outputs.push(file);
+      outputIds.add(file.id);
+      if (file.sha256) outputContent.add(contentKey);
+    }
+  }
   const plots = outputs.filter((file) =>
     file.type === "image/png" || file.type === "image/svg+xml"
   );
