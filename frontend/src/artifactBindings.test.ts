@@ -3,9 +3,11 @@ import {
   bindNotebookInputsStrict,
   bindPipelineInputsStrict,
   bindPythonInputsStrict,
+  extendPipelineInputs,
   isInputBindingsCell
 } from "./artifactBindings";
 import type {
+  ExecutionRecord,
   MethodRecord,
   NotebookDocument,
   PipelineRecord,
@@ -112,5 +114,48 @@ describe("strict artifact input binding", () => {
     const rebound = bindPipelineInputsStrict(pipeline, methods, [input("screen.duckdb")]);
     expect(rebound.pipeline.steps[0].inputBindings).toEqual({ "source.duckdb": "screen.duckdb" });
     expect(rebound.pipeline.steps[1].inputBindings).toEqual({ "table.csv": "table.csv" });
+  });
+});
+
+describe("Pipeline staged outputs", () => {
+  it("uses step execution outputs, including reused files, without duplicates", () => {
+    const workspaceInput = input("measurements.duckdb");
+    const reusedOutput: WorkspaceFile = {
+      ...input("counts.csv"),
+      id: "counts-output",
+      source: "result",
+      runId: "older-run"
+    };
+    const execution = {
+      id: "execution",
+      workspaceId: "workspace",
+      runId: "current-run",
+      code: "",
+      codeHash: "hash",
+      cacheKey: "cache",
+      status: "reused",
+      stdout: "",
+      stderr: "",
+      outputFileIds: [reusedOutput.id],
+      missingPlotCsv: [],
+      inputHashes: [],
+      runtimeVersion: "test",
+      model: "test",
+      createdAt
+    } satisfies ExecutionRecord;
+
+    const extended = extendPipelineInputs(
+      [workspaceInput, reusedOutput],
+      [execution],
+      [workspaceInput, reusedOutput]
+    );
+    expect(extended.map((file) => file.id)).toEqual([workspaceInput.id, reusedOutput.id]);
+
+    const newlyExtended = extendPipelineInputs(
+      [workspaceInput],
+      [execution],
+      [workspaceInput, reusedOutput]
+    );
+    expect(newlyExtended.map((file) => file.id)).toEqual([workspaceInput.id, reusedOutput.id]);
   });
 });

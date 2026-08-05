@@ -41,6 +41,7 @@ import {
   bindPipelineStepCodeStrict,
   bindPythonInputsStrict,
   clearNotebookOutputs,
+  extendPipelineInputs,
   readyWorkspaceInputs
 } from "./artifactBindings";
 import {
@@ -217,7 +218,11 @@ import {
   renameAnalysisWorkspace,
   trashWorkspaceOutputs
 } from "./workspaceModel";
-import { buildWorkspaceSyncPayload, syncHasChanges } from "./workspaceSync";
+import {
+  buildWorkspaceSyncPayload,
+  syncHasChanges,
+  withWorkspaceSyncStatus
+} from "./workspaceSync";
 import {
   reconcileDeletedRemoteWorkspaces,
   remoteWorkspaceWasDeleted
@@ -5323,10 +5328,11 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         };
         upsertRun(run);
         if (failedExecution) throw new Error(failedExecution.stderr || `Pipeline step ${step.name} failed`);
-        const produced = workspaceRef.current!.files.filter(
-          (file) => file.source === "result" && file.runId === runId && !file.deletedAt
+        availableInputs = extendPipelineInputs(
+          availableInputs,
+          stepExecutions,
+          workspaceRef.current!.files
         );
-        availableInputs = [...availableInputs, ...produced];
         if (index < pipeline.steps.length - 1) await runtime.syncInputs(availableInputs);
       }
       await runtime.syncInputs(current.files.filter(
@@ -5663,18 +5669,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           payload.inventory, plan, payload.bytes
         );
       }
-      const nextRecord: WorkspaceRecord = {
-        ...current.workspace,
-        omeroSync: {
-          projectId: synced.projectId!,
-          datasetId: synced.datasetId!,
-          manifestAnnotationId: synced.manifestAnnotationId!,
-          remoteRevision: synced.remoteRevision,
-          inventoryDigest: synced.inventoryDigest,
-          lastSyncedAt: synced.lastSyncedAt || now()
-        }
-      };
-      const next = { ...current, workspace: nextRecord };
+      const latest = workspaceRef.current;
+      if (!latest || latest.workspace.id !== current.workspace.id) return;
+      // Synchronization may finish while a Method or Pipeline is still
+      // updating runs, executions, and files. Merge the remote metadata into
+      // the latest Workspace rather than restoring the snapshot captured when
+      // synchronization began.
+      const next = withWorkspaceSyncStatus(latest, synced, now());
+      const nextRecord = next.workspace;
       workspaceRef.current = next;
       setWorkspace(next);
       await commitWorkspaceRecord(nextRecord);
@@ -7679,6 +7681,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         {activeTab === "notebooks" && (
           <NotebookView
             notebook={activeNotebook}
+            notebooks={activeNotebooks}
             inputs={inputFiles}
             runtime={runtime}
             runRequest={notebookRunRequest}
@@ -7686,6 +7689,10 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onBeforeRun={() => ensureRuntime(analysisWorkspace.files).then(() => undefined)}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
+            onSelect={(notebookId) => {
+              setActiveNotebookId(notebookId);
+              setInspectorSelection({ kind: "notebook", id: notebookId });
+            }}
             onEdit={editorEnabled
               ? (notebook) => void openArtifactEditor("notebook", notebook.id, "notebooks")
               : undefined}

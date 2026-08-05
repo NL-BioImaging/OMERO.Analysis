@@ -2,6 +2,7 @@ import { sha256 } from "./storage";
 import type {
   AnalysisWorkspace,
   OmeroContext,
+  SyncStatus,
   SyncInventory,
   SyncInventoryItem,
   SyncItemKind,
@@ -9,6 +10,35 @@ import type {
 } from "./types";
 
 const encoder = new TextEncoder();
+
+export function withWorkspaceSyncStatus(
+  workspace: AnalysisWorkspace,
+  synced: SyncStatus,
+  timestamp: string
+): AnalysisWorkspace {
+  if (
+    !synced.linked ||
+    !synced.projectId ||
+    !synced.datasetId ||
+    !synced.manifestAnnotationId
+  ) {
+    throw new Error("OMERO returned an incomplete linked Workspace status");
+  }
+  return {
+    ...workspace,
+    workspace: {
+      ...workspace.workspace,
+      omeroSync: {
+        projectId: synced.projectId,
+        datasetId: synced.datasetId,
+        manifestAnnotationId: synced.manifestAnnotationId,
+        remoteRevision: synced.remoteRevision,
+        inventoryDigest: synced.inventoryDigest,
+        lastSyncedAt: synced.lastSyncedAt || timestamp
+      }
+    }
+  };
+}
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);

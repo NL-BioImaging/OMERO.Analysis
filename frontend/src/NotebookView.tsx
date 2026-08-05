@@ -297,6 +297,7 @@ function NotebookOutputs({ outputs }: { outputs: NotebookOutput[] }) {
 
 interface Props {
   notebook: NotebookRecord | null;
+  notebooks?: NotebookRecord[];
   inputs: WorkspaceFile[];
   runtime: PythonRuntime;
   runRequest: { id: string; nonce: number } | null;
@@ -304,13 +305,14 @@ interface Props {
   onBeforeRun: () => Promise<void>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
+  onSelect?: (id: string) => void;
   onEdit?: (record: NotebookRecord) => void;
 }
 
 export default function NotebookView(props: Props) {
   const {
-    notebook, inputs, runtime, runRequest, workspaceActions,
-    onBeforeRun, onChange, onFiles, onEdit
+    notebook, notebooks = notebook ? [notebook] : [], inputs, runtime, runRequest, workspaceActions,
+    onBeforeRun, onChange, onFiles, onSelect, onEdit
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
@@ -449,15 +451,22 @@ export default function NotebookView(props: Props) {
   return (
     <section className="notebook-tab" aria-label="Notebook">
       <div className="notebook-toolbar">
-        <strong>{notebook?.name || "No notebook selected"}</strong>
-        <Button disabled={!notebook || running} onClick={() => void runAll()}><ActionIcon name="run" />Run</Button>
-        <Button disabled={!notebook || !running} onClick={() => void stopReset()}><ActionIcon name="stop" />Stop</Button>
-        <Button disabled={!notebook || running} onClick={() => void clearOutputs()}><ActionIcon name="clear" />Clear output</Button>
-        <Button disabled={!notebook || running}
-          onClick={() => notebook && void attachInputs(notebook)}><ActionIcon name="attach" />Reattach input data</Button>
-        {onEdit && <Button aria-label="Edit selected Notebook" disabled={!notebook || running}
-          onClick={() => notebook && onEdit(notebook)}><ActionIcon name="edit" />Edit Notebook</Button>}
-        {workspaceActions}
+        <select className="notebook-selector" aria-label="Notebook"
+          value={notebook?.id || ""} disabled={!notebooks.length || running}
+          onChange={(event) => onSelect?.(event.target.value)}>
+          {!notebooks.length && <option value="">No notebook selected</option>}
+          {notebooks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+        <div className="notebook-toolbar-actions">
+          <Button disabled={!notebook || running} onClick={() => void runAll()}><ActionIcon name="run" />Run</Button>
+          <Button disabled={!notebook || !running} onClick={() => void stopReset()}><ActionIcon name="stop" />Stop</Button>
+          <Button disabled={!notebook || running} onClick={() => void clearOutputs()}><ActionIcon name="clear" />Clear output</Button>
+          <Button disabled={!notebook || running}
+            onClick={() => notebook && void attachInputs(notebook)}><ActionIcon name="attach" />Reattach input data</Button>
+          {onEdit && <Button aria-label="Edit selected Notebook" disabled={!notebook || running}
+            onClick={() => notebook && onEdit(notebook)}><ActionIcon name="edit" />Edit Notebook</Button>}
+          {workspaceActions}
+        </div>
       </div>
       <p className="notebook-status" role="status">{status}</p>
       {!notebook ? (

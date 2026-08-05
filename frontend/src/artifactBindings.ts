@@ -1,4 +1,5 @@
 import type {
+  ExecutionRecord,
   MethodRecord,
   NotebookCell,
   NotebookDocument,
@@ -223,6 +224,25 @@ export function bindPipelineStepCodeStrict(
         source: file.source === "result" ? "pipeline-output" as const : "workspace" as const
       }))
   ], inputBindings);
+}
+
+/**
+ * Add only the files produced by the executions for the completed Pipeline
+ * step. Output ownership can point at an earlier run when an execution was
+ * reused, so execution output IDs are the durable source of truth here.
+ */
+export function extendPipelineInputs(
+  inputs: WorkspaceFile[],
+  stepExecutions: ExecutionRecord[],
+  files: WorkspaceFile[]
+): WorkspaceFile[] {
+  const outputIds = new Set(stepExecutions.flatMap((execution) => execution.outputFileIds));
+  const includedIds = new Set(inputs.map((file) => file.id));
+  const produced = files.filter((file) =>
+    outputIds.has(file.id) && file.source === "result" && file.state === "ready" &&
+    !file.deletedAt && !includedIds.has(file.id)
+  );
+  return [...inputs, ...produced];
 }
 
 export function clearNotebookOutputs(document: NotebookDocument): NotebookDocument {

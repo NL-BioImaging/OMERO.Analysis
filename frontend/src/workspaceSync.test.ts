@@ -1,5 +1,10 @@
-import { buildWorkspaceSyncPayload, canonicalJson, syncHasChanges } from "./workspaceSync";
-import type { AnalysisWorkspace, OmeroContext } from "./types";
+import {
+  buildWorkspaceSyncPayload,
+  canonicalJson,
+  syncHasChanges,
+  withWorkspaceSyncStatus
+} from "./workspaceSync";
+import type { AnalysisWorkspace, OmeroContext, SyncStatus } from "./types";
 
 const context: OmeroContext = {
   object_type: "Screen",
@@ -178,5 +183,28 @@ describe("Workspace synchronization inventory", () => {
       .toBe(false);
     expect(payload.inventory.items.some((item) => item.kind === "png-image")).toBe(false);
     expect(JSON.stringify(payload.inventory)).not.toContain("secret.example");
+  });
+
+  it("merges sync metadata without restoring stale run state", () => {
+    const latest = workspace();
+    latest.runs = [{
+      id: "run-1", workspaceId: latest.workspace.id, kind: "pipeline",
+      artifactId: "pipeline-1", artifactName: "Pipeline", artifactVersion: 1,
+      status: "success", executionIds: [], resolvedBindings: {}, steps: [],
+      createdAt: "2026-08-05T12:00:00Z", completedAt: "2026-08-05T12:00:03Z"
+    }];
+    const synced: SyncStatus = {
+      schema: "nl.bioimaging.analysis.sync.status.v1", canSync: true, reason: "",
+      linked: true, projectId: 2, datasetId: 303, manifestAnnotationId: 1002,
+      remoteRevision: 4, inventoryDigest: "remote", itemCount: 2
+    };
+
+    const merged = withWorkspaceSyncStatus(latest, synced, "2026-08-05T12:00:04Z");
+    expect(merged.runs[0].status).toBe("success");
+    expect(merged.workspace.omeroSync).toMatchObject({
+      datasetId: 303,
+      remoteRevision: 4,
+      inventoryDigest: "remote"
+    });
   });
 });
