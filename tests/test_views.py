@@ -175,6 +175,46 @@ def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
     assert policy_nonce.group(1) == document_nonce.group(1).decode()
 
 
+def test_embedded_biomero_launch_preserves_context_and_is_same_origin_only():
+    obj = FakeObject(object_id=11, name="Field 11")
+    conn = FakeConnection(obj)
+    standalone = views.analysis(
+        with_session(RequestFactory().get("/?type=Image&id=11")),
+        conn=conn,
+    )
+    embedded = views.analysis(
+        with_session(RequestFactory().get(
+            "/?embedded=biomero&type=Image&id=11"
+        )),
+        conn=conn,
+    )
+
+    assert standalone.status_code == embedded.status_code == 200
+    assert b'"object_type": "Image"' in embedded.content
+    assert b'"object_id": 11' in embedded.content
+    assert b'data-embedded-host="biomero"' in embedded.content
+    assert b'data-embedded-host=""' in standalone.content
+    assert "frame-ancestors 'self'" in embedded["Content-Security-Policy"]
+    assert embedded["X-Frame-Options"] == "SAMEORIGIN"
+    assert standalone["X-Frame-Options"] == "SAMEORIGIN"
+
+
+def test_analysis_rejects_unknown_or_repeated_embedded_hosts():
+    conn = FakeConnection(FakeObject())
+    unknown = views.analysis(
+        with_session(RequestFactory().get("/?embedded=https://example.org")),
+        conn=conn,
+    )
+    repeated = views.analysis(
+        with_session(RequestFactory().get("/?embedded=biomero&embedded=biomero")),
+        conn=conn,
+    )
+
+    assert unknown.status_code == 400
+    assert repeated.status_code == 400
+    assert b"Unsupported embedded Analysis host" in unknown.content
+
+
 def test_analysis_bootstrap_preserves_a_multi_image_source_selection():
     first = FakeObject(object_id=11, name="Field 11")
     second = FakeObject(object_id=12, name="Field 12")
@@ -265,7 +305,7 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
     assert multi_context["panel_kind"] == "source"
 
 
-def test_panel_renders_source_guidance_and_multi_selection_variants():
+def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
     source = FakeObject(object_id=11, name="Field 11")
     second = FakeObject(object_id=12, name="Field 12")
 
@@ -279,6 +319,14 @@ def test_panel_renders_source_guidance_and_multi_selection_variants():
     )
     assert single_response.status_code == 200
     assert b"Select data attachments" in single_response.content
+    assert b'data-integrated-data-analysis="false"' in single_response.content
+
+    settings.INTEGRATE_DATA_ANALYSIS = " TRUE "
+    integrated_response = views.panel(
+        RequestFactory().get("/panel/Image/11/"),
+        "Image", 11, conn=SelectionConnection(source)
+    )
+    assert b'data-integrated-data-analysis="true"' in integrated_response.content
 
     multiple_response = views.panel(
         RequestFactory().get("/panel/Image/11/?selection_id=11&selection_id=12"),

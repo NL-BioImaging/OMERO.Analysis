@@ -1,5 +1,21 @@
 # BIOMERO-Integrated Data Analysis
 
+## Status
+
+Implementation priority 1. Complete and release this integration before making
+the remote DuckDB query service the next implementation focus. This ordering is
+a delivery sequence, not an architectural dependency: standalone
+OMERO.Analysis remains supported, and later query capabilities must work in
+both standalone and embedded modes.
+
+Implementation is in progress. The first OMERO.Analysis slice now includes the
+explicit `embedded=biomero` launch contract, same-origin iframe headers and
+message schema, embedded shell styling, conditional top-link registration, and
+center-panel routing through an explicitly prefixed BIOMERO parameter set.
+NL-BIOMERO propagates the opt-in flag with a safe `FALSE` default. The
+OMERO.biomero navigation, source selector, iframe host, and availability UI
+remain the next cross-repository slice.
+
 ## Summary
 
 Integrate OMERO.Analysis into the BIOMERO user interface behind a deployment
@@ -12,6 +28,12 @@ INTEGRATE_DATA_ANALYSIS=TRUE
 ```
 
 Values such as `true`, `True`, `TRUE`, and `1` should be accepted.
+
+Remote DuckDB querying is outside the scope of this plan and is not a
+prerequisite for embedded Data Analysis. This integration must not add query
+execution, database proxying, or remote-source state to OMERO.biomero. Future
+OMERO.Analysis tools, including remote database tools, must remain owned by
+OMERO.Analysis and operate unchanged inside the iframe.
 
 ## Mode Behavior
 
@@ -292,6 +314,27 @@ workspace state remain owned entirely by OMERO.Analysis.
   and Method execution.
 - Verify upgrades remove stale top-link registrations.
 
+## Completion gate
+
+Treat implementation priority 1 as complete when:
+
+- standalone and embedded launches resolve the same source to the same
+  Analysis workspace identity;
+- Dataset, Screen, Plate, Image, supported multi-selections, and saved
+  Workspace launches pass in both modes;
+- the iframe preserves the OMERO session and group context, Pyodide execution,
+  downloads, uploads, editors, and Method execution;
+- `INTEGRATE_DATA_ANALYSIS` reliably selects exactly one navigation path and a
+  missing Analysis installation produces an actionable error;
+- pinned OMERO.Analysis and OMERO.biomero releases are installed and verified
+  through NL-BIOMERO; and
+- browser smoke tests cover source selection, iframe launch, Workspace resume,
+  and standalone fallback.
+
+Meeting this gate allows the remote DuckDB query service to become the next
+implementation focus. It does not make remote querying dependent on
+`INTEGRATE_DATA_ANALYSIS=TRUE`.
+
 ## Implementation Order
 
 1. Define and test the embedded OMERO.Analysis launch contract.
@@ -302,6 +345,8 @@ workspace state remain owned entirely by OMERO.Analysis.
 6. Release OMERO.Analysis, then OMERO.biomero, then update NL-BIOMERO's pinned
    versions.
 7. Add deployment and administrator documentation.
+8. Verify the completion gate, then begin implementation priority 2 in
+   `remote-duckdb-query-service.md`.
 
 This approach preserves standalone OMERO.Analysis while making the integrated
 BIOMERO experience native and avoiding duplicated analysis or workspace logic.

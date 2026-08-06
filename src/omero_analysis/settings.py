@@ -1,3 +1,5 @@
+import os
+
 from django.conf import settings
 
 
@@ -6,6 +8,7 @@ DEFAULT_EXTENSIONS = (
     ".csv,.tsv,.json,.xlsx,.xls,.parquet,.npy,.npz,.duckdb,.sqlite,.sqlite3,"
     ".png,.svg,.pdf,.txt,.md"
 )
+TRUE_VALUES = {"1", "true"}
 
 
 def _setting(name, default):
@@ -20,6 +23,18 @@ def _setting(name, default):
         # A standalone Django process can have omero-web installed without the
         # OMERO deployment environment needed to import omeroweb.settings.
         return default
+
+
+def _boolean(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in TRUE_VALUES
+
+
+def integrated_data_analysis():
+    if hasattr(settings, "INTEGRATE_DATA_ANALYSIS"):
+        return _boolean(getattr(settings, "INTEGRATE_DATA_ANALYSIS"))
+    return _boolean(os.environ.get("INTEGRATE_DATA_ANALYSIS", "false"))
 
 
 def context_ttl_seconds():

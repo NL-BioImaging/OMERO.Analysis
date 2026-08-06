@@ -4,6 +4,7 @@
          data-object-id="{{ context.object_id }}"
          data-analysis-object-type="{% if context.workspace_summary %}{{ context.workspace_summary.source_type }}{% else %}{{ context.object_type }}{% endif %}"
          data-analysis-object-id="{% if context.workspace_summary %}{{ context.workspace_summary.source_id }}{% else %}{{ context.object_id }}{% endif %}"
+         data-integrated-data-analysis="{{ integrated_data_analysis|yesno:'true,false' }}"
          data-selection-ids="{% if context.selection_ids %}{{ context.selection_ids|join:',' }}{% endif %}">
   <header class="oa-panel-header">
     <div>

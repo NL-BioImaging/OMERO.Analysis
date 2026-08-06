@@ -34,6 +34,7 @@
        data-zarr-viewer-status-url="{% url 'omero_analysis_zarr_viewer_integration' %}"
        data-keepalive-url="{% url 'omero_analysis_session_keepalive' %}"
        data-keepalive-interval="{{ keepalive_interval }}"
+       data-embedded-host="{{ embedded_host }}"
        data-style-nonce="{{ style_nonce }}"
        data-runtime-base="{% url 'omero_analysis_runtime_asset' asset_path='ASSET' %}">
     <div class="boot-message">Starting OMERO Analysis…</div>

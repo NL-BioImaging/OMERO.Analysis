@@ -30,6 +30,7 @@ export interface OmeroContext {
 
 export interface Bootstrap {
   context: OmeroContext | null;
+  embeddedHost?: "biomero";
   tokenUrl: string;
   contextTemplate: string;
   attachmentsTemplate: string;

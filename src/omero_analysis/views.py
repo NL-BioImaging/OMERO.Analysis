@@ -51,6 +51,7 @@ from .services import (
 )
 from .tokens import make_context_token, validate_context_token
 from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
+from .settings import integrated_data_analysis
 from .workspace_sync import (
     SYNC_NAMESPACE,
     apply_sync,
@@ -67,12 +68,22 @@ WORKFLOW_SKILLS_CONSUMER = "omero-analysis"
 PANEL_OBJECT_TYPES = {"Image", "Dataset", "Plate", "Screen", "Project", "Well"}
 MULTI_SOURCE_TYPES = {"Image", "Plate"}
 MAX_PANEL_SELECTION = 100
+EMBEDDED_HOSTS = {"biomero"}
 RUNTIME_ROOT = (
     Path(__file__).resolve().parent
     / "static"
     / "omero_analysis"
     / "pyodide"
 )
+
+
+def _embedded_host(request):
+    values = request.GET.getlist("embedded")
+    if not values:
+        return ""
+    if len(values) != 1 or values[0] not in EMBEDDED_HOSTS:
+        raise ValueError("Unsupported embedded Analysis host")
+    return values[0]
 
 
 def api_errors(function):
@@ -230,6 +241,10 @@ def session_keepalive(request, conn=None, **kwargs):
 
 @login_required(setGroupContext=True)
 def analysis(request, conn=None, **kwargs):
+    try:
+        embedded_host = _embedded_host(request)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
     context = None
     object_type = request.GET.get("type")
     object_id = request.GET.get("id")
@@ -293,6 +308,7 @@ def analysis(request, conn=None, **kwargs):
                 0, int(getattr(settings, "PING_INTERVAL", 60000))
             ),
             "style_nonce": style_nonce,
+            "embedded_host": embedded_host,
         },
     )
     response["Content-Security-Policy"] = (
@@ -303,8 +319,10 @@ def analysis(request, conn=None, **kwargs):
         "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; "
         "worker-src blob:; "
         "frame-src 'self' blob:; "
-        "object-src 'none'; base-uri 'self'; form-action 'self'"
+        "object-src 'none'; base-uri 'self'; form-action 'self'; "
+        "frame-ancestors 'self'"
     )
+    response["X-Frame-Options"] = "SAMEORIGIN"
     response["Referrer-Policy"] = "same-origin"
     return response
 
@@ -479,7 +497,10 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
     return render(
         request,
         "omero_analysis/panel.html",
-        {"context": context},
+        {
+            "context": context,
+            "integrated_data_analysis": integrated_data_analysis(),
+        },
     )
 
 

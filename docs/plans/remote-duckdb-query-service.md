@@ -2,7 +2,14 @@
 
 ## Status
 
-Discussion proposal only. This plan is intentionally not implemented and should first be reviewed with the OMERO and BIOMERO developers.
+Discussion proposal and implementation priority 2. This plan is intentionally
+not implemented and should first be reviewed with the OMERO and BIOMERO
+developers. Make it the next implementation focus after the completion gate in
+`biomero-integrated-data-analysis.md` has passed.
+
+That ordering is a delivery sequence, not an architectural dependency. Remote
+querying must work in standalone OMERO.Analysis and when Analysis is embedded
+in BIOMERO, regardless of `INTEGRATE_DATA_ANALYSIS`.
 
 ## Summary
 
@@ -10,11 +17,56 @@ This is advisable and feasible. For newly selected DuckDB FileAnnotations of at 
 
 The browser Python sandbox stays network-disabled. Chat uses authenticated query tools, while Methods, Pipelines, and Notebooks receive prefetched CSV query results before local Python execution.
 
+The query core will be transport-neutral. OMERO.Analysis routes are the first
+adapter, but authorization, source resolution, SQL policy, execution, result
+limits, and provenance will not depend on Django views, HTTP, or MCP. This
+keeps an optional future MCP adapter possible without making a general-purpose
+MCP server part of the trusted execution boundary.
+
+Use the source/context contract and pinned OMERO.Analysis deployment established
+by `biomero-integrated-data-analysis.md`, but do not route queries through
+OMERO.biomero or its iframe host. The same OMERO.Analysis APIs, tools, Workspace
+metadata, and authorization checks apply in both launch modes.
+
+## Architecture and ownership
+
+```text
+OMERO.Analysis browser
+        | authenticated OMERO.Analysis API
+        v
+OMERO query broker
+  - OMERO authorization and source resolution
+  - attachment staging, cache identity, and provenance
+  - SQL validation, parameters, and result policy
+        | opaque cache/source identifier, never a caller-supplied path
+        v
+Disposable hardened DuckDB worker
+```
+
+- Keep the transport-neutral query core and OMERO integration in
+  OMERO.Analysis. NL-BIOMERO may deploy the worker or broker as a private
+  companion service when process separation or independent resource limits are
+  preferable.
+- Expose the core through the authenticated OMERO.Analysis API in version one.
+  An optional MCP adapter may later call the same broker, but must expose the
+  same bounded OMERO operations and must not accept arbitrary filesystem paths
+  or a generic unrestricted `execute_query` operation.
+- Keep authorization, cache resolution, SQL validation, result tokens, and
+  audit logging in the broker even when execution runs in a companion service.
+  The disposable worker receives only an already-authorized opaque source or
+  cache identifier and the validated query request.
+- Do not package or deploy executable query services through
+  BIOMERO.WorkflowSkills. That catalog distributes portable instructions and
+  capability requirements; it does not grant execution or OMERO access.
+
 ## Implementation changes
 
 ### Server-side query service
 
-- Add a configurable service for `.duckdb` FileAnnotations directly attached to the selected Image, Dataset, Plate, or Screen.
+- Add a configurable, transport-neutral query broker for `.duckdb`
+  FileAnnotations directly attached to the selected Image, Dataset, Plate, or
+  Screen. Keep transport adapters separate from the query-policy and execution
+  core.
 - Stream the attachment once into an atomic, read-only server cache keyed by OMERO group, OriginalFile ID, size, and source hash.
 - Reuse cached databases with locking, configurable capacity, TTL, and LRU cleanup.
 - Execute every query in a disposable subprocess with:
@@ -31,6 +83,10 @@ The browser Python sandbox stays network-disabled. Chat uses authenticated query
 ### APIs and interfaces
 
 Add context-token operations for `database_list`, `database_schema`, `database_query`, and `database_result_download`, with the existing user, session, group, selected-object, and direct-annotation checks.
+
+These operations form the stable broker contract. The OMERO.Analysis HTTP
+routes below are its version-one transport adapter. Any future MCP adapter must
+map to these operations rather than exposing the underlying DuckDB connection.
 
 Add:
 
@@ -53,7 +109,15 @@ Existing records without these optional fields remain local and require no Index
 ### Chat, Methods, Pipelines, and Notebooks
 
 - Add built-in Chat tools for inspecting a remote schema and executing a bounded query.
-- Add a bundled, versioned `query-omero-duckdb` skill that explains the tools and schema. It supplies guidance only; authorization and SQL validation remain server code.
+- Add an OMERO.Analysis-owned, versioned `query-omero-duckdb` skill that
+  explains the tools and remote-source behavior. It supplies guidance only;
+  authorization and SQL validation remain server code.
+- Document `omero-duckdb-query-v1` as a stable host capability in the
+  BIOMERO.WorkflowSkills contract. Update measurement skills to choose the
+  remote schema/query tools when this capability and a remote source are
+  present, while retaining their existing local read-only DuckDB path for
+  downloaded files. These are the only WorkflowSkills-related changes; the
+  executable service belongs to OMERO.Analysis and its NL-BIOMERO deployment.
 - Use the remote schema for measurement-skill matching without downloading the database.
 - Materialize successful query results as browser-local CSV artifacts and copy them into `/input/queries/` for local plotting and Python analysis.
 - Save remote SQL and typed parameters with a Method version. On rerun, execute the query against the currently bound compatible DuckDB before running Python.
@@ -97,6 +161,25 @@ Existing records without these optional fields remain local and require no Index
 - Test Notebook prefetch, no-auto-run behavior, and confirm the runtime makes no AI, skill, or network requests.
 - Test remote references through Workspace export, restore, synchronization, and rebinding.
 - Add a real-container smoke test using a DuckDB FileAnnotation larger than the configured threshold.
+
+## Implementation gates
+
+Implement this plan in the following gated order:
+
+1. Confirm the integrated-data-analysis completion gate and its pinned
+   OMERO.Analysis/NL-BIOMERO deployment baseline. Standalone mode must remain in
+   the test matrix.
+2. Stabilize and test the transport-neutral broker contract, SQL policy,
+   disposable worker, cache identity, authorization, and bounded result format.
+3. Add the OMERO.Analysis HTTP adapter and make the same remote tools available
+   in standalone and embedded Chat.
+4. Add query bindings and prefetched CSV results to Methods, Pipelines, and
+   Notebooks only after the basic schema/query flow is stable.
+5. Document `omero-duckdb-query-v1` in BIOMERO.WorkflowSkills and update
+   measurement skills only after the broker/tool contract is versioned and
+   stable.
+6. Enable the service in NL-BIOMERO only after security, resource-limit,
+   authorization, cache, and real-container smoke tests pass.
 
 ## Assumptions
 

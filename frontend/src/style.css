@@ -33,6 +33,14 @@ summary, dt, dd, li, th, td, figcaption { color: inherit; }
   height: 100vh; overflow: hidden;
 }
 .app-shell[data-theme="dark"] { background: #0b1117; color: #e5eef5; color-scheme: dark; }
+.app-shell[data-embedded-host="biomero"] {
+  grid-template-rows: 52px minmax(0, 1fr);
+}
+.app-shell[data-embedded-host="biomero"] .workspace-header {
+  height: 52px; padding-block: .4rem;
+}
+.app-shell[data-embedded-host="biomero"] .header-brand h1 { display: none; }
+.app-shell[data-embedded-host="biomero"] .header-brand p { margin: 0; }
 .boot-message {
   align-items: center; background: #0b1117; color: #dceaf2; display: flex;
   font-size: .9rem; font-weight: 600; justify-content: center; letter-spacing: .01em;

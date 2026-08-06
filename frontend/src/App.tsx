@@ -1,6 +1,7 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -253,6 +254,7 @@ import { capacityWarning } from "./storageCapacity";
 import { chatTranscriptMarkdown } from "./chatTranscript";
 import { manuallyNamedChat, shouldAutoTitleChat } from "./chatTitle";
 import { useSessionKeepalive } from "./useSessionKeepalive";
+import { postEmbeddedHostMessage } from "./embeddedBridge";
 
 const ArtifactEditor = lazy(() => import("./ArtifactEditor"));
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
@@ -605,7 +607,14 @@ export default function App() {
   const [syncError, setSyncError] = useState("");
   const [showLibrary, setShowLibrary] = useState(false);
 
-  useSessionKeepalive(bootstrap.keepaliveUrl, bootstrap.keepaliveInterval);
+  const notifyEmbeddedSessionExpired = useCallback(() => {
+    postEmbeddedHostMessage(bootstrap, "session-expired");
+  }, [bootstrap]);
+  useSessionKeepalive(
+    bootstrap.keepaliveUrl,
+    bootstrap.keepaliveInterval,
+    notifyEmbeddedSessionExpired
+  );
   const [libraryDatasets, setLibraryDatasets] = useState<LibraryDataset[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [selectedLibraryItems, setSelectedLibraryItems] = useState<Set<string>>(new Set());
@@ -654,6 +663,32 @@ export default function App() {
     useRef<NonNullable<ChatMessage["workflowSkills"]>>([]);
   workspaceRef.current = analysisWorkspace;
   workflowSkillCatalogRef.current = workflowSkillCatalog;
+
+  const embeddedReadySent = useRef(false);
+  useEffect(() => {
+    if (!analysisWorkspace || embeddedReadySent.current) return;
+    embeddedReadySent.current = true;
+    postEmbeddedHostMessage(bootstrap, "ready", {
+      workspace_id: analysisWorkspace.workspace.id,
+      object_type: bootstrap.context?.object_type || null,
+      object_id: bootstrap.context?.object_id || null,
+      title: bootstrap.context?.name || analysisWorkspace.workspace.name
+    });
+  }, [analysisWorkspace?.workspace.id, bootstrap]);
+  useEffect(() => {
+    if (!analysisWorkspace) return;
+    postEmbeddedHostMessage(bootstrap, "source-title-changed", {
+      title: bootstrap.context?.name || analysisWorkspace.workspace.name,
+      object_type: bootstrap.context?.object_type || null,
+      object_id: bootstrap.context?.object_id || null
+    });
+  }, [analysisWorkspace?.workspace.name, bootstrap]);
+  useEffect(() => {
+    if (!analysisWorkspace) return;
+    postEmbeddedHostMessage(bootstrap, "dirty-state-changed", {
+      dirty: Boolean(editorSession?.dirty)
+    });
+  }, [analysisWorkspace?.workspace.id, bootstrap, editorSession?.dirty]);
 
   function setActiveTab(tab: AppTab) {
     const url = new URL(window.location.href);
@@ -6760,7 +6795,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   };
   return (
     <BlueprintThemeProvider theme={theme}>
-    <main className="app-shell" data-theme={theme}>
+    <main className="app-shell" data-theme={theme}
+      data-embedded-host={bootstrap.embeddedHost}>
       {dialogs.element}
       {showHelp && <HelpWindow onClose={() => setShowHelp(false)} />}
       <header className="workspace-header">

@@ -8,8 +8,10 @@ const root = document.getElementById("root")!;
 const contextNode = document.getElementById("omero-analysis-context");
 const value = (name: string) => root.dataset[name] || "";
 const existing = window.OMERO_ANALYSIS;
+const embeddedHost = value("embeddedHost");
 window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   context: contextNode ? JSON.parse(contextNode.textContent || "null") : null,
+  embeddedHost: embeddedHost === "biomero" ? "biomero" : undefined,
   tokenUrl: value("tokenUrl"),
   contextTemplate: value("contextTemplate"),
   attachmentsTemplate: value("attachmentsTemplate"),
