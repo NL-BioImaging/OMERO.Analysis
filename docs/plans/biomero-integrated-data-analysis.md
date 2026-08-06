@@ -8,18 +8,45 @@ a delivery sequence, not an architectural dependency: standalone
 OMERO.Analysis remains supported, and later query capabilities must work in
 both standalone and embedded modes.
 
-Implementation is in progress. The first OMERO.Analysis slice now includes the
-explicit `embedded=biomero` launch contract, same-origin iframe headers and
-message schema, embedded shell styling, conditional top-link registration, and
-center-panel routing through an explicitly prefixed BIOMERO parameter set.
-NL-BIOMERO propagates the opt-in flag with a safe `FALSE` default. The
-OMERO.biomero navigation, source selector, iframe host, same-origin message
-validation, source-parameter whitelist, and missing-Analysis availability UI
-are now implemented on the matching `analysis_integration` branch. The
-NL-BIOMERO web image installs both integration branches for local validation.
-Remaining work includes resolving an AnalysisWorkspace Dataset back to its
-original source, deployment and administrator documentation, release pinning,
-and live container/browser validation of the completion gate.
+Implementation is complete on the three matching `analysis_integration`
+branches. OMERO.Analysis provides the embedded launch contract, same-origin
+iframe policy and message schema, saved-Workspace resolver, embedded shell,
+conditional navigation, center-panel routing, and version `0.11.0` package
+metadata. OMERO.biomero provides the route switch, source selector, managed
+Workspace resolution, iframe host, same-origin message validation, explicit
+parameter whitelist, missing-Analysis guidance, and race-safe asynchronous
+OMERO tree expansion. NL-BIOMERO provides the safe `FALSE` default, Compose and
+image wiring, administrator documentation, startup scripts, version checks,
+and branch-based local rebuild path requested for this integration phase.
+
+The development completion gate was verified on 2026-08-06. Public release
+publication remains a separate controlled release action: OMERO.Analysis
+`0.11.0` and the corresponding OMERO.biomero release must be tagged and
+published before NL-BIOMERO can replace the integration-branch installs with
+immutable released versions. Do not describe the branch-based image as a
+published release.
+
+### Implementation evidence
+
+- OMERO.Analysis: 72 Python tests, 196 frontend tests, type checking, production
+  build, isolated wheel verification, Pyodide/runtime format smoke tests, and
+  the application browser smoke suite passed.
+- OMERO.biomero: 125 Python tests and 19 frontend tests passed; its production
+  bundle was rebuilt and verified. A live-browser failure to retain children
+  from concurrent OMERO tree requests was fixed with latest-state merging and
+  a regression test.
+- NL-BIOMERO: Compose files parse, the web Dockerfile passes build checks, the
+  administrator documentation builds, and a real `nl-biomero-omeroweb` image
+  installs OMERO.Analysis `0.11.0` plus the OMERO.biomero integration branch.
+- Integrated-mode browser validation showed only the BIOMERO navigation path,
+  the Data Analysis source selector, managed Datasets under
+  `+AnalysisWorkspaces`, and the embedded OMERO.Analysis shell. The live legacy
+  managed Datasets correctly report that they have no synchronized restore
+  snapshot; resumable snapshot launches are covered by resolver and URL-contract
+  tests.
+- Standalone-mode browser validation showed the Analysis top link and no Data
+  Analysis button in BIOMERO. Authenticated HTTP validation returned status 200,
+  `X-Frame-Options: SAMEORIGIN`, and CSP `frame-ancestors 'self'`.
 
 ## Summary
 
@@ -339,6 +366,11 @@ Treat implementation priority 1 as complete when:
 Meeting this gate allows the remote DuckDB query service to become the next
 implementation focus. It does not make remote querying dependent on
 `INTEGRATE_DATA_ANALYSIS=TRUE`.
+
+Development status: **met on the integration branches**. Release status:
+**pending explicit public publication and immutable version pinning**. Until
+that release action is authorized and completed, local validation must keep
+using the `analysis_integration` branch installs documented above.
 
 ## Implementation Order
 
