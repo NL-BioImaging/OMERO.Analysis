@@ -114,6 +114,30 @@ def test_runtime_assets_reject_traversal():
         raise AssertionError("Traversal was not rejected")
 
 
+def test_runtime_assets_fall_back_to_collected_static(settings, monkeypatch, tmp_path):
+    monkeypatch.setattr(views, "RUNTIME_ROOT", tmp_path / "missing-package-runtime")
+    settings.STATIC_ROOT = str(tmp_path / "collected-static")
+    collected = (
+        tmp_path
+        / "collected-static"
+        / "omero_analysis"
+        / "pyodide"
+        / "pyodide.mjs"
+    )
+    collected.parent.mkdir(parents=True)
+    collected.write_text("export const runtime = true;", encoding="utf-8")
+
+    response = views.runtime_asset(
+        RequestFactory().get("/omero_analysis/runtime/pyodide.mjs"),
+        "pyodide.mjs",
+    )
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "text/javascript"
+    assert response["Access-Control-Allow-Origin"] == "*"
+    assert b"".join(response.streaming_content) == b"export const runtime = true;"
+
+
 def test_runtime_sandbox_has_an_isolated_boot_policy():
     request = RequestFactory().get("/omero_analysis/runtime-sandbox/")
     response = views.runtime_sandbox(request)

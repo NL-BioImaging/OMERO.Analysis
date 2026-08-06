@@ -192,9 +192,27 @@ def runtime_asset(request, asset_path, **kwargs):
     """Serve only vendored Pyodide files with CORS for the opaque sandbox."""
     candidate = (RUNTIME_ROOT / asset_path).resolve(strict=False)
     try:
-        candidate.relative_to(RUNTIME_ROOT.resolve())
+        relative = candidate.relative_to(RUNTIME_ROOT.resolve())
     except ValueError as exc:
         raise Http404 from exc
+    # Editable/source builds keep Pyodide beside this module. In a deployed
+    # OMERO.web image the large, generated runtime may instead exist only in
+    # STATIC_ROOT after collectstatic. Support both without exposing arbitrary
+    # collected static files through this public, CORS-enabled endpoint.
+    if not candidate.is_file():
+        static_root = str(getattr(settings, "STATIC_ROOT", "") or "").strip()
+        if static_root:
+            collected_root = (
+                Path(static_root)
+                / "omero_analysis"
+                / "pyodide"
+            ).resolve(strict=False)
+            collected_candidate = (collected_root / relative).resolve(strict=False)
+            try:
+                collected_candidate.relative_to(collected_root)
+            except ValueError as exc:
+                raise Http404 from exc
+            candidate = collected_candidate
     if not candidate.is_file():
         raise Http404
     content_types = {
