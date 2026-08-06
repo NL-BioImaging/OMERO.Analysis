@@ -13,8 +13,13 @@ explicit `embedded=biomero` launch contract, same-origin iframe headers and
 message schema, embedded shell styling, conditional top-link registration, and
 center-panel routing through an explicitly prefixed BIOMERO parameter set.
 NL-BIOMERO propagates the opt-in flag with a safe `FALSE` default. The
-OMERO.biomero navigation, source selector, iframe host, and availability UI
-remain the next cross-repository slice.
+OMERO.biomero navigation, source selector, iframe host, same-origin message
+validation, source-parameter whitelist, and missing-Analysis availability UI
+are now implemented on the matching `analysis_integration` branch. The
+NL-BIOMERO web image installs both integration branches for local validation.
+Remaining work includes resolving an AnalysisWorkspace Dataset back to its
+original source, deployment and administrator documentation, release pinning,
+and live container/browser validation of the completion gate.
 
 ## Summary
 
