@@ -59,6 +59,7 @@ from .workspace_sync import (
     library_datasets,
     plan_sync,
     remove_sync,
+    resolve_workspace_dataset,
     sync_status,
     validate_inventory,
 )
@@ -993,6 +994,13 @@ def workspace_library(request, object_type, object_id, conn=None, **kwargs):
         request, conn, "library_list", object_type, object_id
     )
     return JsonResponse({"datasets": library_datasets(conn, obj)})
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_dataset(request, dataset_id, conn=None, **kwargs):
+    return JsonResponse(resolve_workspace_dataset(conn, dataset_id))
 
 
 @require_GET

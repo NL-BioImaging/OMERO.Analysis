@@ -18,6 +18,7 @@ from omero_analysis.workspace_sync import (
     _validate_payload,
     _reconcile_result_attachments,
     plan_sync,
+    resolve_workspace_dataset,
     sync_status,
     validate_inventory,
 )
@@ -75,6 +76,99 @@ def test_inventory_validation_and_empty_plan_are_deterministic():
     assert plan["uploadBytes"] == 12
     assert plan["datasetName"] == "Screen-151 — 2DWellTestZarr"
     assert plan["planToken"]
+
+
+def test_workspace_dataset_resolution_returns_original_source_and_snapshot(monkeypatch):
+    dataset = FakeObject(object_id=303, name="Screen-152 — SolHunt")
+    source = FakeObject(object_id=152, name="SolHunt")
+
+    class Connection(FakeConnection):
+        def getObject(self, object_type, object_id):
+            return {
+                ("Dataset", 303): dataset,
+                ("Screen", 152): source,
+            }.get((object_type, int(object_id)))
+
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync._marker",
+        lambda _obj, role=None, match=None: (
+            None,
+            {"role": "dataset", "workspace_id": "workspace-1"},
+        ),
+    )
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync.library_datasets",
+        lambda _conn, _obj: [{
+            "datasetId": 303,
+            "datasetName": "Screen-152 — SolHunt",
+            "workspaceId": "workspace-1",
+            "workspaceName": "SolHunt analysis",
+            "sourceObjectType": "Screen",
+            "sourceObjectId": 152,
+            "sourceObjectName": "SolHunt",
+            "revision": 4,
+            "updatedAt": "2026-08-06T12:00:00+00:00",
+            "snapshot": {"annotationId": 901},
+        }],
+    )
+
+    result = resolve_workspace_dataset(Connection(dataset), 303)
+
+    assert result["managed"] is True
+    assert result["resumable"] is True
+    assert result["sourceObjectType"] == "Screen"
+    assert result["sourceObjectId"] == 152
+    assert result["workspaceAnnotationId"] == 901
+
+
+def test_workspace_dataset_resolution_keeps_ordinary_dataset_as_source(monkeypatch):
+    dataset = FakeObject(object_id=303)
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync._marker",
+        lambda _obj, role=None, match=None: (None, {}),
+    )
+
+    result = resolve_workspace_dataset(FakeConnection(dataset), 303)
+
+    assert result == {"managed": False, "resumable": False}
+
+
+def test_workspace_dataset_resolution_guides_when_snapshot_is_missing(monkeypatch):
+    dataset = FakeObject(object_id=303)
+    source = FakeObject(object_id=152)
+
+    class Connection(FakeConnection):
+        def getObject(self, object_type, object_id):
+            return {
+                ("Dataset", 303): dataset,
+                ("Screen", 152): source,
+            }.get((object_type, int(object_id)))
+
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync._marker",
+        lambda _obj, role=None, match=None: (None, {"role": "dataset"}),
+    )
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync.library_datasets",
+        lambda _conn, _obj: [{
+            "datasetId": 303,
+            "datasetName": "Workspace",
+            "workspaceId": "workspace-1",
+            "workspaceName": "Workspace",
+            "sourceObjectType": "Screen",
+            "sourceObjectId": 152,
+            "sourceObjectName": "Source",
+            "revision": 1,
+            "updatedAt": "",
+            "snapshot": None,
+        }],
+    )
+
+    result = resolve_workspace_dataset(Connection(dataset), 303)
+
+    assert result["managed"] is True
+    assert result["resumable"] is False
+    assert "restore snapshot" in result["error"]
 
 
 def test_template_input_is_a_supported_managed_file_kind():

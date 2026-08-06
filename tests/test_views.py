@@ -37,6 +37,32 @@ def test_unexpected_api_error_has_safe_request_id():
     assert b"sensitive detail" not in response.content
 
 
+def test_workspace_dataset_endpoint_returns_launch_resolution(monkeypatch):
+    monkeypatch.setattr(
+        views,
+        "resolve_workspace_dataset",
+        lambda _conn, dataset_id: {
+            "managed": True,
+            "resumable": True,
+            "datasetId": int(dataset_id),
+            "sourceObjectType": "Screen",
+            "sourceObjectId": 152,
+            "workspaceAnnotationId": 901,
+        },
+    )
+
+    response = views.workspace_dataset(
+        RequestFactory().get("/api/workspace-dataset/303/"),
+        dataset_id=303,
+        conn=object(),
+    )
+    body = json.loads(response.content)
+
+    assert response.status_code == 200
+    assert body["datasetId"] == 303
+    assert body["workspaceAnnotationId"] == 901
+
+
 def test_context_token_reports_permissions():
     obj = FakeObject(can_annotate=False)
     conn = FakeConnection(obj)

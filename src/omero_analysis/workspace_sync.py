@@ -17,6 +17,7 @@ from .errors import (
     AttachmentNotFound,
     FileTooLarge,
     InvalidObject,
+    ObjectNotFound,
     PermissionDenied,
     UnsupportedMedia,
 )
@@ -1078,6 +1079,94 @@ def library_datasets(conn, obj):
         })
     datasets.sort(key=lambda entry: (entry["datasetName"].lower(), entry["datasetId"]))
     return datasets
+
+
+def resolve_workspace_dataset(conn, dataset_id):
+    """Resolve a managed Analysis Dataset into its original launch context.
+
+    A Dataset is resumable only when it belongs to the current user's managed
+    ``+AnalysisWorkspaces`` Project, its original source is still readable in
+    the current group, and the synchronized restore snapshot is present.
+    Ordinary Datasets deliberately return ``managed=False`` so callers can use
+    them as normal Analysis sources.
+    """
+    try:
+        dataset_id = int(dataset_id)
+    except (TypeError, ValueError) as exc:
+        raise InvalidObject("The Analysis Workspace Dataset ID is invalid") from exc
+    if dataset_id <= 0:
+        raise InvalidObject("The Analysis Workspace Dataset ID is invalid")
+
+    dataset = conn.getObject("Dataset", dataset_id)
+    if dataset is None:
+        raise ObjectNotFound("The selected Dataset is unavailable")
+
+    _, values = _marker(dataset, "dataset")
+    if not values:
+        return {"managed": False, "resumable": False}
+
+    selected = next(
+        (
+            candidate
+            for candidate in library_datasets(conn, dataset)
+            if candidate["datasetId"] == dataset_id
+        ),
+        None,
+    )
+    if selected is None:
+        return {
+            "managed": True,
+            "resumable": False,
+            "error": (
+                "This Analysis Workspace does not belong to your current-group "
+                "managed library."
+            ),
+        }
+
+    source_type = str(selected.get("sourceObjectType") or "").capitalize()
+    source_id = int(selected.get("sourceObjectId") or 0)
+    if source_type not in {"Dataset", "Screen", "Plate", "Image"} or source_id <= 0:
+        return {
+            "managed": True,
+            "resumable": False,
+            "error": "This Analysis Workspace has invalid original-source metadata.",
+        }
+
+    source = conn.getObject(source_type, source_id)
+    if source is None or object_group_id(source) != object_group_id(dataset):
+        return {
+            "managed": True,
+            "resumable": False,
+            "error": (
+                "The original Analysis source is unavailable in the current OMERO group."
+            ),
+        }
+
+    snapshot = selected.get("snapshot") or {}
+    annotation_id = int(snapshot.get("annotationId") or 0)
+    if annotation_id <= 0:
+        return {
+            "managed": True,
+            "resumable": False,
+            "error": "This Analysis Workspace has no synchronized restore snapshot.",
+        }
+
+    return {
+        "managed": True,
+        "resumable": True,
+        "datasetId": dataset_id,
+        "datasetName": selected["datasetName"],
+        "workspaceId": selected["workspaceId"],
+        "workspaceName": selected["workspaceName"],
+        "workspaceAnnotationId": annotation_id,
+        "sourceObjectType": source_type,
+        "sourceObjectId": source_id,
+        "sourceObjectName": str(
+            selected.get("sourceObjectName") or _plain(source.getName()) or ""
+        ),
+        "revision": selected["revision"],
+        "updatedAt": selected["updatedAt"],
+    }
 
 
 def library_annotation(conn, obj, annotation_id):

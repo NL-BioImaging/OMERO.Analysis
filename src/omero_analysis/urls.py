@@ -110,6 +110,11 @@ urlpatterns = [
         name="omero_analysis_workspace_library",
     ),
     re_path(
+        r"^api/workspace-dataset/(?P<dataset_id>\d+)/$",
+        views.workspace_dataset,
+        name="omero_analysis_workspace_dataset",
+    ),
+    re_path(
         r"^api/workspace-library/item/(?P<annotation_id>\d+)/download/$",
         views.workspace_library_download,
         name="omero_analysis_workspace_library_download",
