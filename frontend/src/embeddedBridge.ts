@@ -16,6 +16,22 @@ export interface EmbeddedHostMessage {
   payload: Record<string, unknown>;
 }
 
+export function biomeroThemeFromMessage(
+  event: MessageEvent,
+  expectedSource: Window,
+  expectedOrigin: string
+): "light" | "dark" | null {
+  if (
+    event.origin !== expectedOrigin ||
+    event.source !== expectedSource ||
+    event.data?.schema !== EMBEDDED_MESSAGE_SCHEMA ||
+    event.data?.source !== "omero-biomero" ||
+    event.data?.type !== "theme-changed"
+  ) return null;
+  const theme = event.data?.payload?.theme;
+  return theme === "light" || theme === "dark" ? theme : null;
+}
+
 export function embeddedHostMessage(
   bootstrap: Pick<Bootstrap, "embeddedHost">,
   type: EmbeddedMessageType,

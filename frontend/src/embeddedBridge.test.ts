@@ -1,5 +1,6 @@
 import {
   EMBEDDED_MESSAGE_SCHEMA,
+  biomeroThemeFromMessage,
   embeddedHostMessage
 } from "./embeddedBridge";
 
@@ -19,5 +20,21 @@ describe("BIOMERO embedded host bridge", () => {
       type: "dirty-state-changed",
       payload: { dirty: true }
     });
+  });
+
+  it("accepts only same-origin theme messages from the BIOMERO parent", () => {
+    const parent = {} as Window;
+    const event = {
+      origin: "http://localhost",
+      source: parent,
+      data: {
+        schema: EMBEDDED_MESSAGE_SCHEMA,
+        source: "omero-biomero",
+        type: "theme-changed",
+        payload: { theme: "dark" }
+      }
+    } as MessageEvent;
+    expect(biomeroThemeFromMessage(event, parent, "http://localhost")).toBe("dark");
+    expect(biomeroThemeFromMessage(event, {} as Window, "http://localhost")).toBeNull();
   });
 });

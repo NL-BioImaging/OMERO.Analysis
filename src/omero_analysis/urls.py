@@ -24,6 +24,11 @@ urlpatterns = [
         views.panel,
         name="omero_analysis_panel",
     ),
+    re_path(
+        r"^api/launch-context/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
+        views.launch_context,
+        name="omero_analysis_launch_context",
+    ),
     re_path(r"^api/context-token/$", views.context_token, name="omero_analysis_token"),
     re_path(
         r"^api/context/(?P<object_type>\w+)/(?P<object_id>\d+)/$",

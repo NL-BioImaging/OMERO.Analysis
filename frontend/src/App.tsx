@@ -254,7 +254,7 @@ import { capacityWarning } from "./storageCapacity";
 import { chatTranscriptMarkdown } from "./chatTranscript";
 import { manuallyNamedChat, shouldAutoTitleChat } from "./chatTitle";
 import { useSessionKeepalive } from "./useSessionKeepalive";
-import { postEmbeddedHostMessage } from "./embeddedBridge";
+import { biomeroThemeFromMessage, postEmbeddedHostMessage } from "./embeddedBridge";
 
 const ArtifactEditor = lazy(() => import("./ArtifactEditor"));
 const supported = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i;
@@ -562,7 +562,7 @@ export default function App() {
   const [editorEnabled, setEditorEnabled] = useState(false);
   const [syncPreferencesLoaded, setSyncPreferencesLoaded] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -689,6 +689,15 @@ export default function App() {
       dirty: Boolean(editorSession?.dirty)
     });
   }, [analysisWorkspace?.workspace.id, bootstrap, editorSession?.dirty]);
+  useEffect(() => {
+    if (bootstrap.embeddedHost !== "biomero" || window.parent === window) return undefined;
+    const onMessage = (event: MessageEvent) => {
+      const next = biomeroThemeFromMessage(event, window.parent, window.location.origin);
+      if (next) setTheme(next);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [bootstrap.embeddedHost]);
 
   function setActiveTab(tab: AppTab) {
     const url = new URL(window.location.href);
@@ -1061,7 +1070,9 @@ export default function App() {
       setWorkspaceProgress({ percent: 15, message: "Loading the current Workspace record…" });
       let baseWorkspace = await loadOrCreateWorkspace(bootstrap.context);
       if (!alive) return;
-      if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
+      if (!bootstrap.embeddedHost && (savedTheme === "dark" || savedTheme === "light")) {
+        setTheme(savedTheme);
+      }
       if (savedProfiles?.profiles?.length) {
         const active = savedProfiles.profiles.find(
           (profile) => profile.id === savedProfiles.activeProfileId
@@ -1332,7 +1343,8 @@ export default function App() {
       }
       setCustomSkills(payload.skills);
       await setValue(customSkillsKey, payload.skills);
-      if (payload.analysis.theme === "dark" || payload.analysis.theme === "light") {
+      if (!bootstrap.embeddedHost &&
+          (payload.analysis.theme === "dark" || payload.analysis.theme === "light")) {
         setTheme(payload.analysis.theme);
         await setValue(uiThemeKey, payload.analysis.theme);
       }
@@ -6825,14 +6837,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             Inspector
             <Icon name="chevron" className={inspectorVisible ? "points-right" : "points-left"} />
           </Button>
-          <Button
+          {!bootstrap.embeddedHost && <Button
             className="theme-toggle"
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
             title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
             onClick={toggleTheme}
           >
             <Icon name={theme === "dark" ? "sun" : "moon"} />
-          </Button>
+          </Button>}
           <Button
             className={activeTab === "settings" ? "active" : ""}
             onClick={() => void navigateFromEditor("settings")}

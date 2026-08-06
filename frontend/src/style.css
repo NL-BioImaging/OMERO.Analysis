@@ -53,7 +53,7 @@ button {
 }
 button:hover:not(:disabled) { background: #21445b; }
 button:disabled { opacity: .45; cursor: not-allowed; }
-header {
+.workspace-header {
   height: 72px; display: flex; align-items: center; justify-content: space-between;
   padding: .7rem 1.2rem; border-bottom: 1px solid #263947; background: #101a22;
 }
@@ -65,8 +65,8 @@ header {
 .header-brand h1 { grid-column: 1; grid-row: 1; }
 .header-brand p { grid-column: 1; grid-row: 2; }
 h1, h2, p { margin-top: 0; }
-header h1 { margin: 0; font-size: 1.1rem; }
-header p { margin: .2rem 0 0; color: #9db2c1; font-size: .85rem; }
+.workspace-header h1 { margin: 0; font-size: 1.1rem; }
+.workspace-header p { margin: .2rem 0 0; color: #9db2c1; font-size: .85rem; }
 .header-actions { display: flex; align-items: center; gap: .5rem; }
 .header-actions button {
   font-size: var(--control-font-size); height: var(--control-height);
@@ -1684,6 +1684,16 @@ th { position: sticky; top: 0; background: #183040; }
 .app-shell[data-theme="light"] .run-steps li,
 .app-shell[data-theme="light"] .run-bindings {
   background: var(--biomero-card); border-color: var(--line); color: var(--biomero-text);
+}
+.app-shell[data-theme="light"] .analysis-home-header,
+.app-shell[data-theme="light"] .analysis-home-group > header {
+  background: transparent;
+  border-color: transparent;
+  color: var(--biomero-text);
+}
+.app-shell[data-theme="light"] .analysis-home-header .eyebrow,
+.app-shell[data-theme="light"] .analysis-home-group > header h3 {
+  color: var(--biomero-blue);
 }
 .app-shell[data-theme="light"] .run-history { background: #f3f5f7; border-color: var(--line); }
 .app-shell[data-theme="light"] .run-history > button.active { background: #e3eef9; border-color: #8eb5de; }

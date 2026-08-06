@@ -133,7 +133,7 @@ def test_workspace_dataset_resolution_keeps_ordinary_dataset_as_source(monkeypat
     assert result == {"managed": False, "resumable": False}
 
 
-def test_workspace_dataset_resolution_guides_when_snapshot_is_missing(monkeypatch):
+def test_workspace_dataset_resolution_matches_middle_panel_without_snapshot(monkeypatch):
     dataset = FakeObject(object_id=303)
     source = FakeObject(object_id=152)
 
@@ -167,8 +167,10 @@ def test_workspace_dataset_resolution_guides_when_snapshot_is_missing(monkeypatc
     result = resolve_workspace_dataset(Connection(dataset), 303)
 
     assert result["managed"] is True
-    assert result["resumable"] is False
-    assert "restore snapshot" in result["error"]
+    assert result["resumable"] is True
+    assert result["workspaceAnnotationId"] is None
+    assert result["sourceObjectType"] == "Screen"
+    assert result["sourceObjectId"] == 152
 
 
 def test_template_input_is_a_supported_managed_file_kind():

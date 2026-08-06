@@ -288,11 +288,23 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
             "source_object_name": "SolHunt",
         } if namespace == views.SYNC_NAMESPACE else {},
     ))
-    monkeypatch.setattr(views, "library_datasets", lambda _conn, _obj: [])
+    monkeypatch.setattr(views, "library_datasets", lambda _conn, _obj: [{
+        "workspaceId": "workspace-1",
+        "workspaceName": "SolHunt",
+        "datasetName": "Screen-152 — SolHunt",
+        "sourceObjectType": "Screen",
+        "sourceObjectId": 152,
+        "sourceObjectName": "SolHunt",
+        "revision": 18,
+        "updatedAt": "2026-08-06T12:00:00Z",
+        "snapshot": {"annotationId": 1171},
+        "items": [],
+    }])
     workspace_context = views._configure_panel_context(None, obj, dict(base))
     assert workspace_context["panel_kind"] == "workspace"
     assert workspace_context["workspace_summary"]["can_resume"] is True
     assert workspace_context["workspace_summary"]["source_id"] == 152
+    assert workspace_context["workspace_summary"]["snapshot_annotation_id"] == 1171
 
     monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
         None,

@@ -1084,9 +1084,11 @@ def library_datasets(conn, obj):
 def resolve_workspace_dataset(conn, dataset_id):
     """Resolve a managed Analysis Dataset into its original launch context.
 
-    A Dataset is resumable only when it belongs to the current user's managed
-    ``+AnalysisWorkspaces`` Project, its original source is still readable in
-    the current group, and the synchronized restore snapshot is present.
+    A Dataset is resumable when it belongs to the current user's managed
+    ``+AnalysisWorkspaces`` Project and its original source is still readable
+    in the current group. A synchronized browser snapshot is optional: this is
+    the same contract used by the OMERO.web middle-pane launcher, which can
+    reopen the source and its reusable library even without a full snapshot.
     Ordinary Datasets deliberately return ``managed=False`` so callers can use
     them as normal Analysis sources.
     """
@@ -1144,13 +1146,6 @@ def resolve_workspace_dataset(conn, dataset_id):
 
     snapshot = selected.get("snapshot") or {}
     annotation_id = int(snapshot.get("annotationId") or 0)
-    if annotation_id <= 0:
-        return {
-            "managed": True,
-            "resumable": False,
-            "error": "This Analysis Workspace has no synchronized restore snapshot.",
-        }
-
     return {
         "managed": True,
         "resumable": True,
@@ -1158,7 +1153,7 @@ def resolve_workspace_dataset(conn, dataset_id):
         "datasetName": selected["datasetName"],
         "workspaceId": selected["workspaceId"],
         "workspaceName": selected["workspaceName"],
-        "workspaceAnnotationId": annotation_id,
+        "workspaceAnnotationId": annotation_id or None,
         "sourceObjectType": source_type,
         "sourceObjectId": source_id,
         "sourceObjectName": str(

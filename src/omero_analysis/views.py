@@ -41,6 +41,7 @@ from .services import (
     checked_pipeline_download,
     get_context_object,
     get_direct_attachment,
+    get_scoped_attachment,
     list_attachment_dicts,
     object_hierarchy,
     object_context,
@@ -258,7 +259,7 @@ def analysis(request, conn=None, **kwargs):
             selected = []
             seen = set()
             for value in request.GET.getlist("data_annotation"):
-                _, info = get_direct_attachment(obj, value)
+                _, info = get_scoped_attachment(obj, value)
                 if info.annotation_id not in seen:
                     selected.append(info.to_dict())
                     seen.add(info.annotation_id)
@@ -383,6 +384,7 @@ def _workspace_panel_summary(conn, obj, values):
     except (TypeError, ValueError):
         source_id = 0
     items = list((selected or {}).get("items") or [])
+    snapshot = (selected or {}).get("snapshot") or {}
     counts = {
         kind: len([item for item in items if item.get("kind") == kind])
         for kind in ("method", "pipeline", "notebook")
@@ -403,6 +405,7 @@ def _workspace_panel_summary(conn, obj, values):
         "revision": int((selected or {}).get("revision") or 0),
         "updated_at": str((selected or {}).get("updatedAt") or ""),
         "has_snapshot": bool((selected or {}).get("snapshot")),
+        "snapshot_annotation_id": int(snapshot.get("annotationId") or 0) or None,
         "counts": counts,
         "can_resume": source_type in {"Image", "Dataset", "Plate", "Screen"}
         and source_id > 0,
@@ -478,8 +481,7 @@ def _configure_panel_context(conn, obj, context):
     return context
 
 
-@login_required(setGroupContext=True)
-def panel(request, object_type, object_id, conn=None, **kwargs):
+def _launch_context(request, conn, object_type, object_id):
     object_type, object_id, obj = _panel_context_object(
         conn, object_type, object_id
     )
@@ -495,6 +497,22 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
             "selection_count": len(selected_objects),
         })
     _configure_panel_context(conn, obj, context)
+    return context
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def launch_context(request, object_type, object_id, conn=None, **kwargs):
+    """Expose the same launch contract used by the OMERO.web middle pane."""
+    return JsonResponse(_launch_context(
+        request, conn, object_type, object_id
+    ))
+
+
+@login_required(setGroupContext=True)
+def panel(request, object_type, object_id, conn=None, **kwargs):
+    context = _launch_context(request, conn, object_type, object_id)
     return render(
         request,
         "omero_analysis/panel.html",
@@ -716,7 +734,8 @@ def context(request, object_type, object_id, conn=None, **kwargs):
 def attachments(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, "list", object_type, object_id, obj)
-    return JsonResponse({"attachments": list_attachment_dicts(obj)})
+    context = object_context(object_type, object_id, obj, conn)
+    return JsonResponse({"attachments": context["supported_attachments"]})
 
 
 @require_GET

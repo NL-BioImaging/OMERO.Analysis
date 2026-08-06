@@ -95,6 +95,11 @@
                   <strong>{{ attachment.name }}</strong>
                   <small>{{ attachment.mimetype }} · {{ attachment.size }} bytes
                     <span class="oa-annotation-id">Annotation {{ attachment.annotation_id }}</span>
+                    {% if not attachment.direct %}
+                      <span class="oa-annotation-id">
+                        from {{ attachment.object_type }} {{ attachment.object_id }}{% if attachment.object_name %} — {{ attachment.object_name }}{% endif %}
+                      </span>
+                    {% endif %}
                   </small>
                 </span>
                 <span class="oa-checkmark" aria-hidden="true">&#10003;</span>

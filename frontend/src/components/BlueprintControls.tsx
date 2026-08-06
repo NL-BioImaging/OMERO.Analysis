@@ -6,6 +6,7 @@ import {
 import {
   createContext,
   useContext,
+  useEffect,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type PropsWithChildren,
@@ -14,12 +15,16 @@ import {
 
 export type UiTheme = "dark" | "light";
 
-const BlueprintThemeContext = createContext<UiTheme>("dark");
+const BlueprintThemeContext = createContext<UiTheme>("light");
 
 export function BlueprintThemeProvider({
   theme,
   children
 }: PropsWithChildren<{ theme: UiTheme }>) {
+  useEffect(() => {
+    document.body.classList.toggle(Classes.DARK, theme === "dark");
+    return () => document.body.classList.remove(Classes.DARK);
+  }, [theme]);
   return (
     <BlueprintThemeContext.Provider value={theme}>
       {children}
@@ -27,14 +32,8 @@ export function BlueprintThemeProvider({
   );
 }
 
-/**
- * Uses Blueprint's real Button component in the BIOMERO-style light theme.
- * Dark mode deliberately keeps the existing native element and CSS so its
- * established layout and presentation remain unchanged.
- */
 export function Button(props: ButtonHTMLAttributes<HTMLButtonElement>) {
-  const theme = useContext(BlueprintThemeContext);
-  if (theme === "dark") return <button {...props} />;
+  useContext(BlueprintThemeContext);
   return <BlueprintButton {...props as BlueprintButtonProps} />;
 }
 
@@ -46,10 +45,8 @@ export function Input({
   className,
   ...props
 }: InputHTMLAttributes<HTMLInputElement>) {
-  const theme = useContext(BlueprintThemeContext);
-  const classes = theme === "light"
-    ? `${Classes.INPUT}${className ? ` ${className}` : ""}`
-    : className;
+  useContext(BlueprintThemeContext);
+  const classes = `${Classes.INPUT}${className ? ` ${className}` : ""}`;
   return <input className={classes} {...props} />;
 }
 
@@ -57,9 +54,7 @@ export function TextArea({
   className,
   ...props
 }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const theme = useContext(BlueprintThemeContext);
-  const classes = theme === "light"
-    ? `${Classes.INPUT}${className ? ` ${className}` : ""}`
-    : className;
+  useContext(BlueprintThemeContext);
+  const classes = `${Classes.INPUT}${className ? ` ${className}` : ""}`;
   return <textarea className={classes} {...props} />;
 }
