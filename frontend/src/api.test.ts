@@ -39,6 +39,7 @@ const bootstrap: Bootstrap = {
   workspaceLibraryDownloadTemplate: "/workspace-library/item/1/download/",
   analysisSettingsTemplate: "/settings/TYPE/1/",
   workflowSkillsUrl: "/workflow-skills/",
+  dataQueryCapabilitiesUrl: "/data-query/capabilities/",
   zarrViewerStatusUrl: "/integrations/zarr-viewer/",
   keepaliveUrl: "/webclient/keepalive_ping/",
   keepaliveInterval: 60000,
@@ -183,7 +184,10 @@ describe("BIOMERO measurement-skill adapter", () => {
       .toBe("analyze-example");
     expect((await bridge.loadWorkflowSkill("example", "analyze-example")).files[0].path)
       .toBe("SKILL.md");
+    expect((await bridge.loadWorkflowSkill("analyze-example", "analyze-example")).files[0].path)
+      .toBe("SKILL.md");
     expect(requests).toContain("/workflow-skills/example/analyze-example/");
+    expect(requests).not.toContain("/workflow-skills/analyze-example/analyze-example/");
     expect(requests).not.toContain("/stale-cache/example/analyze-example/");
     vi.unstubAllGlobals();
   });
@@ -218,6 +222,23 @@ describe("BIOMERO measurement-skill adapter", () => {
     const bridge = new OmeroBridge(bootstrap);
     expect((await bridge.listWorkflowSkills()).workflows).toEqual([]);
     expect((await bridge.zarrViewerStatus()).version).toBe("0.3.0");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("remote data-query policy", () => {
+  it("validates and returns the server-owned threshold", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      available: true,
+      ready: true,
+      capability: "omero-data-query-v1",
+      formats: ["duckdb", "sqlite", "csv"],
+      threshold_bytes: 104857600,
+      result_ttl_seconds: 600
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    const capabilities = await new OmeroBridge(bootstrap).dataQueryCapabilities();
+    expect(capabilities.threshold_bytes).toBe(104857600);
+    expect(capabilities.ready).toBe(true);
     vi.unstubAllGlobals();
   });
 });

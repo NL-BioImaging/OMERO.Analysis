@@ -69,6 +69,18 @@ export interface Bootstrap {
   runtimeBase: string;
 }
 
+export interface DataQueryCapabilities {
+  available: boolean;
+  ready: boolean;
+  capability: "omero-data-query-v1";
+  formats: Array<"duckdb" | "sqlite" | "csv">;
+  threshold_bytes: number;
+  result_ttl_seconds: number;
+  limits?: Record<string, unknown>;
+  parameter_style?: string;
+  csv_table?: string;
+}
+
 export interface WorkflowSkillMatch {
   extensions: string[];
   filename_globs: string[];
@@ -346,7 +358,7 @@ export interface ExecutionRecord {
   model: string;
   modelPayload?: ModelPayload;
   workflowSkills?: ChatMessage["workflowSkills"];
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   purpose?: ExecutionPurpose;
   evidenceId?: string;
   durationMs?: number;
@@ -418,7 +430,7 @@ export interface MethodRecord {
   parameters?: ParameterDefinition[];
   requiredCapabilities?: string[];
   workspaceBindings?: Record<string, Record<string, string>>;
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   libraryOrigin?: LibraryOrigin;
   deletedAt?: string;
   createdAt: string;
@@ -441,7 +453,7 @@ export interface PipelineRecord {
   description: string;
   version: number;
   steps: PipelineStep[];
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
@@ -781,7 +793,7 @@ export interface NotebookRecord {
   sourceAnnotationId?: number;
   attachmentIds: number[];
   selectedDataFileIds: string[];
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
@@ -802,6 +814,32 @@ export interface RemoteQueryBindingV1 {
   }>;
   outputCsvName: string;
 }
+
+/**
+ * A portable data-query recipe. The preferred source identifies the source
+ * used while authoring, but is never required when the Method is copied to a
+ * different OMERO workspace. At run time Analysis rebinds this recipe to a
+ * compatible, currently-authorized local or remote OMERO source with the same
+ * normalized schema.
+ */
+export interface RemoteQueryBindingV2 {
+  version: 2;
+  bindingId: string;
+  capability: "omero-data-query-v1";
+  format: "duckdb" | "sqlite" | "csv";
+  sourceName: string;
+  preferredAnnotationId?: number;
+  preferredFileId?: number;
+  schemaDigest: string;
+  sql: string;
+  parameters: Record<string, {
+    type: "null" | "boolean" | "integer" | "float" | "decimal" | "string" | "date" | "time" | "timestamp";
+    value: unknown;
+  }>;
+  outputCsvName: string;
+}
+
+export type RemoteQueryBinding = RemoteQueryBindingV1 | RemoteQueryBindingV2;
 
 export interface LibraryOrigin {
   projectId: number;

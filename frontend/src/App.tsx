@@ -30,13 +30,18 @@ import {
   TOOLS,
   ZARR_VIEWER_TOOLS
 } from "./constants";
-import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
+import {
+  PythonRuntime,
+  RUNTIME_VERSION,
+  type RemoteQueryRuntimeResult
+} from "./runtime";
 import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
 import type {
   ArtifactEditorSession,
   EditorOriginTab
 } from "./ArtifactEditor";
 import {
+  ArtifactBindingError,
   bindNotebookInputsStrict,
   bindPipelineInputsStrict,
   bindPipelineStepCodeStrict,
@@ -119,9 +124,21 @@ import type {
   AiProfileStore,
   CustomSkill,
   AnalysisSettingsStatus,
+  DataQueryCapabilities,
   AnalysisRunRecord,
-  RemoteQueryBindingV1
+  RemoteQueryBinding,
+  RemoteQueryBindingV2
 } from "./types";
+import {
+  bindRemoteQueryCode,
+  dataQueryBindingCandidates,
+  dataQuerySourceFormat,
+  isOmeroDataQuerySource,
+  remoteBindingFormat,
+  remoteBindingId,
+  remoteBindingPreferredAnnotationId,
+  remoteBindingPreferredFileId
+} from "./remoteQueryBindings";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
 import { AiActivityCard } from "./components/AiActivityCard";
@@ -332,18 +349,22 @@ function inputContractFromCode(code: string): InputContract {
 
 function listFiles(files: WorkspaceFile[]): string {
   return JSON.stringify(
-    files.filter((file) => !file.deletedAt && file.role !== "chat-attachment").map((file) => ({
-      path: file.dataQueryMode === "remote"
-        ? null
-        : file.source === "result" ? `/output/${file.name}` : `/input/${file.name}`,
-      logical_path: file.logicalPath,
-      sha256: file.sha256,
-      size: file.size,
-      type: file.type,
-      state: file.state,
-      data_query_mode: file.dataQueryMode,
-      annotation_id: file.dataQueryMode === "remote" ? file.annotationId : undefined
-    }))
+    files.filter((file) => !file.deletedAt && file.role !== "chat-attachment").map((file) => {
+      const portableDataSource = isOmeroDataQuerySource(file);
+      return {
+        path: portableDataSource || file.dataQueryMode === "remote"
+          ? null
+          : file.source === "result" ? `/output/${file.name}` : `/input/${file.name}`,
+        logical_path: file.logicalPath,
+        sha256: file.sha256,
+        size: file.size,
+        type: file.type,
+        state: file.state,
+        data_query_mode: file.dataQueryMode,
+        data_query_capability: portableDataSource ? "omero-data-query-v1" : undefined,
+        annotation_id: portableDataSource ? file.annotationId : undefined
+      };
+    })
   );
 }
 
@@ -382,8 +403,8 @@ function toolActivityLabel(name: string): string {
     reset_python: "Resetting local Python",
     list_saved_methods: "Checking saved Methods",
     read_saved_method: "Reading a saved Method",
-    inspect_remote_schema: "Inspecting a remote data schema",
-    query_remote_data: "Querying remote data",
+    inspect_data_schema: "Inspecting a data schema",
+    query_data: "Querying data",
     list_saved_pipelines: "Checking saved Pipelines",
     open_zarr_view: "Preparing an OME-Zarr view",
     render_zarr_roi: "Rendering an OME-Zarr region",
@@ -551,6 +572,8 @@ export default function App() {
   const [zarrViewerWarning, setZarrViewerWarning] = useState("");
   const [zarrSkillCatalog, setZarrSkillCatalog] =
     useState<AnalysisSkillProviderCatalog | null>(null);
+  const [dataQueryCapabilities, setDataQueryCapabilities] =
+    useState<DataQueryCapabilities | null>(null);
   const zarrCapabilities = useRef(new Map<string, ZarrViewerCapability>());
   const [visibleZarrSources, setVisibleZarrSources] = useState<VisibleZarrSource[]>([]);
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
@@ -671,7 +694,10 @@ export default function App() {
   const turnOutputNames = useRef(new Set<string>());
   const turnWorkflowSkills =
     useRef<NonNullable<ChatMessage["workflowSkills"]>>([]);
-  const turnRemoteQueryBindings = useRef<RemoteQueryBindingV1[]>([]);
+  const turnRemoteQueryBindings = useRef<RemoteQueryBinding[]>([]);
+  const turnRemoteQueryResults = useRef<RemoteQueryRuntimeResult[]>([]);
+  const activeRemoteQueryDigests = useRef<string[]>([]);
+  const activeRemoteQuerySources = useRef<Record<string, string>>({});
   workspaceRef.current = analysisWorkspace;
   workflowSkillCatalogRef.current = workflowSkillCatalog;
 
@@ -1130,7 +1156,7 @@ export default function App() {
         }
       }
       setWorkspaceProgress({ percent: 34, message: "Reading OMERO data and viewer capabilities…" });
-      const [loadedHierarchy, viewerStatus] = await Promise.all([
+      const [loadedHierarchy, viewerStatus, queryCapabilities] = await Promise.all([
         bridge.hierarchy(),
         bridge.zarrViewerStatus().catch((error) => ({
           schema_version: 1 as const,
@@ -1140,10 +1166,12 @@ export default function App() {
           version: null,
           minimum_version: "0.4.0",
           reason: "not-installed" as const
-        }))
+        })),
+        bridge.dataQueryCapabilities().catch(() => null)
       ]);
       setHierarchy(loadedHierarchy);
       setZarrViewerStatus(viewerStatus);
+      setDataQueryCapabilities(queryCapabilities);
       if (viewerStatus.available) {
         setZarrSkillCatalog(
           await bridge.listZarrViewerSkills().catch(() => null)
@@ -1305,7 +1333,9 @@ export default function App() {
         setActiveNotebookId(initial.notebooks[0].id);
       }
       setWorkspaceProgress({ percent: 82, message: "Preparing current Workspace inputs…" });
-      const prepared = await prepareInputs(initial);
+      const prepared = await removePersistedRemoteQueryInputs(
+        await migratePersistedRemoteMethods(await prepareInputs(initial))
+      );
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
@@ -1343,7 +1373,10 @@ export default function App() {
     void bridge.analysisSettings().then(async (remote) => {
       setSettingsSync(remote);
       const payload = remote.payload;
-      if (!remote.synced || !payload) return;
+      if (!remote.synced || !payload) {
+        setSettingsRestoreComplete(true);
+        return;
+      }
       if (payload.ai.profiles.length) {
         const active = payload.ai.profiles.find(
           (profile) => profile.id === payload.ai.activeProfileId
@@ -1378,11 +1411,23 @@ export default function App() {
         setWorkspace(updated);
         await commitWorkspaceRecord(updated.workspace);
       }
-      setSettingsSyncMessage("Settings restored from ~AnalysisSettings");
-    }).catch((error) => {
-      setSettingsSyncMessage(`Settings could not be restored: ${String(error)}`);
-    }).finally(() => {
+      const activeProfile = payload.ai.profiles.find(
+        (profile) => profile.id === payload.ai.activeProfileId
+      ) || payload.ai.profiles[0];
+      const activeProviderNeedsKey = activeProfile && (
+        activeProfile.settings.protocol === "anthropic" ||
+        activeProfile.settings.authMode !== "none"
+      );
+      setSettingsSyncMessage(
+        activeProviderNeedsKey && !activeProfile?.settings.apiKey
+          ? "Settings restored, but the active AI profile has no stored API key"
+          : "Settings restored from ~AnalysisSettings"
+      );
       setSettingsRestoreComplete(true);
+    }).catch((error) => {
+      setSettingsSyncMessage(
+        `Settings could not be restored; automatic saving is paused to protect stored credentials: ${String(error)}`
+      );
     });
   }, [
     analysisWorkspace?.workspace.id,
@@ -1562,6 +1607,88 @@ export default function App() {
     return next;
   }
 
+  function localFallbackSource(
+    error: unknown,
+    current: AnalysisWorkspace
+  ): WorkspaceFile | null {
+    if (!(error instanceof ArtifactBindingError) || !error.referencedName) return null;
+    const suffix = error.referencedName.toLowerCase().match(/(\.[^.\\/]+)$/)?.[1] || "";
+    if (!suffix) return null;
+    const candidates = current.files.filter((file) =>
+      file.dataQueryMode === "remote" && file.state === "ready" &&
+      file.name.toLowerCase().endsWith(suffix) && file.annotationId
+    ).filter((file) => bootstrap.context?.selected_attachments.find(
+      (attachment) => attachment.annotation_id === file.annotationId
+    )?.allowed_modes?.includes("local"));
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  async function offerLocalFallback(
+    error: unknown,
+    current: AnalysisWorkspace,
+    artifactName: string
+  ): Promise<AnalysisWorkspace | null> {
+    const source = localFallbackSource(error, current);
+    if (!source) return null;
+    const capacityError = capacityWarning(
+      workspaceBytes(current), source.size, await storageEstimate(), MAX_WORKSPACE_BYTES
+    );
+    if (capacityError) {
+      await dialogs.alert(
+        "Local data required",
+        `${artifactName} opens a DuckDB or SQLite file directly and cannot use this remote-only ` +
+        `binding. ${capacityError}`
+      );
+      return null;
+    }
+    const confirmed = await dialogs.confirm(
+      "Download database for this legacy analysis?",
+      `${artifactName} opens its database path directly and has no remote query binding. ` +
+      `Download ${source.name} (${bytesLabel(source.size)}) into browser storage and continue ` +
+      `locally? The worker cache remains available for remote-bound analyses.`,
+      "Download and continue"
+    );
+    if (!confirmed) return null;
+    setStatus(`Downloading ${source.name} for local analysis…`);
+    setRuntimeProgress({ percent: 5, message: `Downloading ${source.name}…` });
+    const attachment: Attachment = {
+      annotation_id: source.annotationId!,
+      file_id: source.fileId || 0,
+      name: source.name,
+      mimetype: source.type,
+      size: source.size,
+      kind: "attachment",
+      supported: true
+    };
+    const data = await bridge.download(attachment);
+    const digest = await sha256(data);
+    if (source.sha256 && source.sha256 !== digest) {
+      throw new Error(`OMERO input ${source.name} no longer matches the Workspace hash`);
+    }
+    const completed: WorkspaceFile = {
+      ...source,
+      data,
+      size: data.byteLength,
+      sha256: digest,
+      dataQueryMode: "local",
+      remoteSchemaDigest: undefined,
+      state: "ready",
+      error: undefined
+    };
+    const next = {
+      ...current,
+      files: current.files.map((file) => file.id === source.id ? completed : file)
+    };
+    await saveFile(completed);
+    workspaceRef.current = next;
+    setWorkspace(next);
+    await syncRuntimeIfStarted(
+      next.files,
+      `${source.name} downloaded; continuing ${artifactName} locally`
+    );
+    return next;
+  }
+
   function reportRuntime(progress: RuntimeProgress) {
     setRuntimeProgress(progress);
     setStatus(progress.message);
@@ -1612,34 +1739,108 @@ export default function App() {
     return discovered;
   }
 
+  function portableRemoteQueryBindings(
+    bindings: RemoteQueryBinding[],
+    current: AnalysisWorkspace
+  ): RemoteQueryBindingV2[] {
+    return bindings.map((binding) => {
+      if (binding.version === 2) return binding;
+      const source = current.files.find((file) =>
+        file.annotationId === binding.annotationId &&
+        (!binding.fileId || file.fileId === binding.fileId)
+      );
+      return {
+        version: 2,
+        bindingId: remoteBindingId(binding),
+        capability: binding.capability,
+        format: binding.format,
+        sourceName: source?.name || `${binding.format}-source`,
+        preferredAnnotationId: binding.annotationId,
+        preferredFileId: binding.fileId || undefined,
+        schemaDigest: binding.schemaDigest,
+        sql: binding.sql,
+        parameters: binding.parameters,
+        outputCsvName: binding.outputCsvName
+      };
+    });
+  }
+
+  async function resolveRemoteBindingSource(
+    binding: RemoteQueryBinding,
+    current: AnalysisWorkspace
+  ): Promise<{ source: WorkspaceFile; schema: Record<string, any> }> {
+    const candidates = dataQueryBindingCandidates(binding, current.files);
+    if (!candidates.length) {
+      throw new Error(
+        `No authorized ${remoteBindingFormat(binding)} source is attached to this Workspace`
+      );
+    }
+    const preferredAnnotationId = remoteBindingPreferredAnnotationId(binding);
+    const preferredFileId = remoteBindingPreferredFileId(binding);
+    const preferred = candidates.find((file) =>
+      file.annotationId === preferredAnnotationId &&
+      (!preferredFileId || file.fileId === preferredFileId)
+    );
+    const ordered = preferred
+      ? [preferred, ...candidates.filter((file) => file.id !== preferred.id)]
+      : candidates;
+    const compatible: Array<{ source: WorkspaceFile; schema: Record<string, any> }> = [];
+    for (const source of ordered) {
+      const schema = await bridge.remoteSchema(source.annotationId!);
+      if (String(schema.schema_digest || "") === binding.schemaDigest) {
+        compatible.push({ source, schema });
+      }
+    }
+    if (!compatible.length) {
+      throw new Error(
+        `No ${remoteBindingFormat(binding)} source has the schema required by this Method`
+      );
+    }
+    if (preferred) {
+      const exact = compatible.find((item) => item.source.id === preferred.id);
+      if (exact) return exact;
+    }
+    if (compatible.length === 1) return compatible[0];
+    const selected = await dialogs.choose(
+      "Bind the database",
+      compatible.map(({ source }) => ({
+        value: source.id,
+        label: source.name,
+        description: `OMERO annotation ${source.annotationId}`
+      })),
+      "Choose the current plate data source for this reusable query. Local and remote sources are both supported."
+    );
+    if (!selected) throw new Error("Remote data rebinding was cancelled");
+    return compatible.find(({ source }) => source.id === selected) || compatible[0];
+  }
+
   async function materializeRemoteQueryBindings(
-    bindings: RemoteQueryBindingV1[],
+    bindings: RemoteQueryBinding[],
     current: AnalysisWorkspace
   ): Promise<AnalysisWorkspace> {
-    if (!bindings.length) return current;
-    const prepared: WorkspaceFile[] = [];
-    for (const binding of bindings) {
+    const unique = Array.from(new Map(
+      bindings.map((binding) => [remoteBindingId(binding), binding])
+    ).values());
+    if (!unique.length) {
+      activeRemoteQueryDigests.current = [];
+      activeRemoteQuerySources.current = {};
+      if (runtimeStarted.current) await runtime.syncRemoteQueries([]);
+      return current;
+    }
+    const prepared: RemoteQueryRuntimeResult[] = [];
+    const resolvedSources: Record<string, string> = {};
+    for (const binding of unique) {
       if (
-        binding.version !== 1 || binding.capability !== "omero-data-query-v1" ||
-        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.csv$/i.test(binding.outputCsvName)
+        ![1, 2].includes(binding.version) || binding.capability !== "omero-data-query-v1" ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.csv$/i.test(binding.outputCsvName) ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(remoteBindingId(binding))
       ) {
         throw new Error("Invalid remote query binding");
       }
-      const source = current.files.find((file) =>
-        file.annotationId === binding.annotationId && file.fileId === binding.fileId &&
-        file.dataQueryMode === "remote" && file.state === "ready"
-      );
-      if (!source) throw new Error("The remote query source is no longer authorized");
-      const schema = await bridge.remoteSchema(binding.annotationId);
-      if (String(schema.schema_digest || "") !== binding.schemaDigest) {
-        throw new Error(`Schema changed for ${source.name}`);
-      }
+      const { source } = await resolveRemoteBindingSource(binding, current);
       const result = await bridge.remoteQuery(
-        binding.annotationId, binding.sql, binding.parameters
+        source.annotationId!, binding.sql, binding.parameters
       );
-      if (String(result.source_sha256 || "") !== binding.sourceDigest) {
-        throw new Error(`Source content changed for ${source.name}`);
-      }
       if (typeof result.result_token !== "string") {
         throw new Error("Remote query did not return a result token");
       }
@@ -1647,35 +1848,87 @@ export default function App() {
       if (data.byteLength !== Number(result.byte_count)) {
         throw new Error("Remote query result size changed during download");
       }
-      const digest = await sha256(data);
       prepared.push({
-        id: id(),
-        workspaceId: current.workspace.id,
+        bindingId: remoteBindingId(binding),
         name: binding.outputCsvName,
-        logicalPath: `${current.workspace.rootPath}/inputs/${binding.outputCsvName}`,
-        type: "text/csv",
-        size: data.byteLength,
-        sha256: digest,
-        source: "local",
-        state: "ready",
         data,
-        createdAt: now()
+        sourceDigest: String(result.source_sha256 || await sha256(data))
       });
+      resolvedSources[`query:${remoteBindingId(binding)}`] = source.name;
     }
-    const replacedNames = new Set(prepared.map((file) => file.name.toLowerCase()));
-    const next = {
-      ...current,
-      files: [
-        ...current.files.filter((file) =>
-          !replacedNames.has(file.name.toLowerCase()) || file.dataQueryMode === "remote"
-        ),
-        ...prepared
-      ]
-    };
-    await Promise.all(prepared.map(saveFile));
-    workspaceRef.current = next;
-    setWorkspace(next);
-    return next;
+    await ensureRuntime(current.files);
+    await runtime.syncRemoteQueries(prepared);
+    activeRemoteQueryDigests.current = prepared.map((item) => item.sourceDigest).sort();
+    activeRemoteQuerySources.current = resolvedSources;
+    return current;
+  }
+
+  async function removePersistedRemoteQueryInputs(
+    current: AnalysisWorkspace
+  ): Promise<AnalysisWorkspace> {
+    const queryNames = new Set([
+      ...current.methods.flatMap((item) => item.remoteQueryBindings || []),
+      ...current.pipelines.flatMap((item) => item.remoteQueryBindings || []),
+      ...current.notebooks.flatMap((item) => item.remoteQueryBindings || []),
+      ...current.executions.flatMap((item) => item.remoteQueryBindings || [])
+    ].map((binding) => binding.outputCsvName.toLowerCase()));
+    if (!queryNames.size) return current;
+    const stale = current.files.filter((file) =>
+      file.source === "local" && file.role !== "chat-attachment" &&
+      queryNames.has(file.name.toLowerCase()) &&
+      file.logicalPath.toLowerCase().includes("/inputs/")
+    );
+    if (!stale.length) return current;
+    await Promise.all(stale.map((file) => deleteStoredFile(file.id)));
+    const staleIds = new Set(stale.map((file) => file.id));
+    return { ...current, files: current.files.filter((file) => !staleIds.has(file.id)) };
+  }
+
+  async function migratePersistedRemoteMethods(
+    current: AnalysisWorkspace
+  ): Promise<AnalysisWorkspace> {
+    const migrated: MethodRecord[] = [];
+    for (const method of current.methods) {
+      const bindings = method.remoteQueryBindings || [];
+      if (!bindings.some((binding) => binding.version === 1)) {
+        migrated.push(method);
+        continue;
+      }
+      const portableBindings = portableRemoteQueryBindings(bindings, current);
+      const currentVersion = method.versions.find(
+        (version) => version.version === method.currentVersion
+      );
+      if (!currentVersion) {
+        migrated.push({ ...method, remoteQueryBindings: portableBindings });
+        continue;
+      }
+      const portableCode = bindRemoteQueryCode(currentVersion.code, portableBindings);
+      const codeChanged = portableCode !== currentVersion.code;
+      const nextVersion = codeChanged ? method.currentVersion + 1 : method.currentVersion;
+      const updated: MethodRecord = {
+        ...method,
+        remoteQueryBindings: portableBindings,
+        requiredCapabilities: Array.from(new Set([
+          ...(method.requiredCapabilities || []),
+          "omero-data-query-v1"
+        ])),
+        inputContract: inputContractFromCode(portableCode),
+        currentVersion: nextVersion,
+        versions: codeChanged
+          ? [...method.versions, {
+            ...currentVersion,
+            version: nextVersion,
+            code: portableCode,
+            codeHash: await sha256(portableCode),
+            createdAt: now()
+          }]
+          : method.versions,
+        updatedAt: now()
+      };
+      await saveMethod(updated);
+      migrated.push(updated);
+    }
+    return { ...current, methods: migrated };
   }
 
   async function syncRuntimeIfStarted(files: WorkspaceFile[], finalStatus: string) {
@@ -3778,7 +4031,10 @@ export default function App() {
     const owner = executionOwner(executionContext);
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
-    const inputHashes = workspaceInputHashes(current);
+    const inputHashes = [
+      ...workspaceInputHashes(current),
+      ...activeRemoteQueryDigests.current
+    ].sort();
     const skillHashes = turnWorkflowSkills.current
       .map((skill) => skill.sha256)
       .sort();
@@ -4189,21 +4445,22 @@ export default function App() {
       }
     }
     if (
-      call.function.name === "inspect_remote_schema" ||
-      call.function.name === "query_remote_data"
+      call.function.name === "inspect_data_schema" ||
+      call.function.name === "query_data"
     ) {
       try {
         const annotationId = Number(args.annotation_id);
         const source = current.files.find((file) =>
-          file.annotationId === annotationId && file.dataQueryMode === "remote" &&
+          file.annotationId === annotationId && isOmeroDataQuerySource(file) &&
           file.state === "ready" && !file.deletedAt
         );
-        if (!source) return toolErrorText("Remote query source is unavailable");
+        if (!source) return toolErrorText("Data query source is unavailable");
         const schema = await bridge.remoteSchema(annotationId);
-        if (call.function.name === "inspect_remote_schema") {
+        if (call.function.name === "inspect_data_schema") {
           return JSON.stringify({
             annotation_id: annotationId,
             name: source.name,
+            execution_mode: source.dataQueryMode || "local",
             format: schema.format,
             schema_digest: schema.schema_digest,
             tables: schema.tables
@@ -4218,6 +4475,7 @@ export default function App() {
           args.parameters as Record<string, { type: string; value: unknown }>
         );
         const summary = {
+          execution_mode: source.dataQueryMode || "local",
           columns: result.columns,
           row_count: result.row_count,
           byte_count: result.byte_count,
@@ -4234,39 +4492,58 @@ export default function App() {
           ? args.output_csv_name : `remote-query-${annotationId}.csv`;
         const outputCsvName = `${slug(requested.replace(/\.csv$/i, ""))}.csv`;
         const data = await bridge.downloadRemoteResult(String(result.result_token || ""));
-        const output: WorkspaceFile = {
-          id: id(),
-          workspaceId: current.workspace.id,
-          chatId,
-          name: outputCsvName,
-          logicalPath: `${current.workspace.rootPath}/inputs/${outputCsvName}`,
-          type: "text/csv",
-          size: data.byteLength,
-          sha256: await sha256(data),
-          source: "local",
-          state: "ready",
-          data,
-          createdAt: now()
-        };
-        const format = source.name.toLowerCase().endsWith(".duckdb")
-          ? "duckdb" : source.name.toLowerCase().endsWith(".csv") ? "csv" : "sqlite";
-        turnRemoteQueryBindings.current = [...turnRemoteQueryBindings.current, {
-          version: 1,
+        if (data.byteLength !== Number(result.byte_count)) {
+          throw new Error("Remote query result size changed during download");
+        }
+        const format = dataQuerySourceFormat(source);
+        if (!format) throw new Error("Unsupported data query source format");
+        const bindingId = slug(outputCsvName.replace(/\.csv$/i, ""));
+        const binding: RemoteQueryBindingV2 = {
+          version: 2,
+          bindingId,
           capability: "omero-data-query-v1",
-          annotationId,
-          fileId: source.fileId || 0,
           format,
-          sourceDigest: String(result.source_sha256 || ""),
+          sourceName: source.name,
+          preferredAnnotationId: annotationId,
+          preferredFileId: source.fileId || undefined,
           schemaDigest: String(schema.schema_digest || ""),
           sql: args.sql,
-          parameters: args.parameters as RemoteQueryBindingV1["parameters"],
+          parameters: args.parameters as RemoteQueryBindingV2["parameters"],
           outputCsvName
-        }];
-        const updated = { ...current, files: [...current.files, output] };
-        workspaceRef.current = updated;
-        setWorkspace(updated);
-        await saveFile(output);
-        return JSON.stringify({ ...summary, complete_csv_path: output.logicalPath });
+        };
+        const runtimeResult: RemoteQueryRuntimeResult = {
+          bindingId,
+          name: outputCsvName,
+          data,
+          sourceDigest: String(result.source_sha256 || await sha256(data))
+        };
+        turnRemoteQueryBindings.current = [
+          ...turnRemoteQueryBindings.current.filter(
+            (item) => remoteBindingId(item) !== bindingId
+          ),
+          binding
+        ];
+        turnRemoteQueryResults.current = [
+          ...turnRemoteQueryResults.current.filter((item) => item.bindingId !== bindingId),
+          runtimeResult
+        ];
+        activeRemoteQueryDigests.current = turnRemoteQueryResults.current
+          .map((item) => item.sourceDigest).sort();
+        activeRemoteQuerySources.current = {
+          ...activeRemoteQuerySources.current,
+          [`query:${bindingId}`]: source.name
+        };
+        await runtime.syncRemoteQueries(turnRemoteQueryResults.current);
+        return JSON.stringify({
+          ...summary,
+          data_binding_id: bindingId,
+          python_loader: [
+            "import pandas as pd",
+            "from omero_analysis_remote import query_csv as remote_query_csv",
+            `data = pd.read_csv(remote_query_csv(${JSON.stringify(bindingId)}))`
+          ].join("\n"),
+          reusable: true
+        });
       } catch (error) {
         return toolErrorText(error);
       }
@@ -4322,7 +4599,12 @@ export default function App() {
       if (!method) return toolErrorText("Saved method was not found");
       const version = method.versions.find((item) => item.version === method.currentVersion);
       return version
-        ? JSON.stringify({ id: method.id, name: method.name, version: version.version, code: version.code })
+        ? JSON.stringify({
+          id: method.id,
+          name: method.name,
+          version: version.version,
+          code: bindRemoteQueryCode(version.code, method.remoteQueryBindings || [])
+        })
         : toolErrorText("Saved method has no readable current version");
     }
     if (call.function.name === "list_saved_pipelines") {
@@ -4405,6 +4687,7 @@ export default function App() {
     try {
       activeProfiles = await ensureProfiles(current.files);
       await runtime.beginTurn();
+      await runtime.syncRemoteQueries([]);
     } catch (error) {
       finishAiActivityEntry(
         chat.id,
@@ -4425,6 +4708,9 @@ export default function App() {
     }
     turnWorkflowSkills.current = [];
     turnRemoteQueryBindings.current = [];
+    turnRemoteQueryResults.current = [];
+    activeRemoteQueryDigests.current = [];
+    activeRemoteQuerySources.current = {};
     const activeSkillPackages: WorkflowSkillPackage[] = [];
     let activeSkillWarning = "";
     const visualIntent =
@@ -4916,9 +5202,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const scriptCode = Array.from(new Set(related.map((item) => item.code))).join(
       "\n\n# Continued analysis / automatic repair\n"
     ) || execution.code;
+    const remoteQueryBindings = portableRemoteQueryBindings(Array.from(new Map(
+      related.flatMap((item) => item.remoteQueryBindings || [])
+        .map((binding) => [remoteBindingId(binding), binding])
+    ).values()), current);
+    const portableScriptCode = bindRemoteQueryCode(scriptCode, remoteQueryBindings);
     const assistantSummary = assistantSummaryForPrompt(chat, execution.promptId);
     const documentedScriptCode = withAssistantSummaryComments(
-      scriptCode,
+      portableScriptCode,
       assistantSummary
     );
     const scriptHash = await sha256(documentedScriptCode);
@@ -4947,16 +5238,16 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const existing = current.methods.find((method) =>
       !method.deletedAt && method.name.toLowerCase() === safeName.toLowerCase()
     );
-    const requiredCapabilities = current.artifacts.some((artifact) =>
+    const zarrRequired = current.artifacts.some((artifact) =>
       artifact.chatId === execution.chatId &&
       artifact.promptId === execution.promptId &&
       Boolean(artifact.viewer)
     ) || /(?:store_uuid|render_panels|zarrviewer|ome[-_.]?zarr)/i.test(scriptCode)
-      ? ["zarrviewer"]
-      : [];
-    const remoteQueryBindings = related.flatMap(
-      (item) => item.remoteQueryBindings || []
-    );
+      ? ["zarrviewer"] : [];
+    const requiredCapabilities = [
+      ...zarrRequired,
+      ...(remoteQueryBindings.length ? ["omero-data-query-v1"] : [])
+    ];
     const method: MethodRecord = existing
       ? {
         ...existing,
@@ -4980,7 +5271,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         description,
         requiredCapabilities,
         remoteQueryBindings,
-        inputContract: inputContractFromCode(scriptCode),
+        inputContract: inputContractFromCode(portableScriptCode),
         parameters: [],
         currentVersion: 1,
         versions: [{
@@ -4993,7 +5284,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         createdAt: now(),
         updatedAt: now()
       };
-    method.inputContract = inputContractFromCode(scriptCode);
+    method.inputContract = inputContractFromCode(portableScriptCode);
     const latest = workspaceRef.current;
     if (latest) {
       const updated = {
@@ -5183,12 +5474,24 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       current = await materializeRemoteQueryBindings(
         method.remoteQueryBindings || [], current
       );
-      bound = bindMethodInputs(version.code, current.files);
+      const remoteBoundCode = bindRemoteQueryCode(
+        version.code,
+        method.remoteQueryBindings || []
+      );
+      try {
+        bound = bindMethodInputs(remoteBoundCode, current.files);
+      } catch (error) {
+        const local = await offerLocalFallback(error, current, method.name);
+        if (!local) throw error;
+        current = local;
+        bound = bindMethodInputs(remoteBoundCode, current.files);
+      }
       run = {
         ...run,
-        resolvedBindings: Object.fromEntries(
-          bound.bindings.map((binding) => [binding.from, binding.to])
-        )
+        resolvedBindings: {
+          ...activeRemoteQuerySources.current,
+          ...Object.fromEntries(bound.bindings.map((binding) => [binding.from, binding.to]))
+        }
       };
       upsertRun(run);
     } catch (error) {
@@ -5522,6 +5825,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       current = await materializeRemoteQueryBindings(
         [...(pipeline.remoteQueryBindings || []), ...methodBindings], current
       );
+      run = { ...run, resolvedBindings: { ...activeRemoteQuerySources.current } };
+      upsertRun(run);
       await ensureRuntime(current.files);
       let availableInputs = current.files.filter(
         (file) => file.source !== "result" && file.role !== "chat-attachment" &&
@@ -5545,7 +5850,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         await runtime.beginTurn();
         turnOutputNames.current.clear();
         const bound = bindPipelineStepCodeStrict(
-          version.code,
+          bindRemoteQueryCode(version.code, method.remoteQueryBindings || []),
           availableInputs,
           step.inputBindings || {}
         );
@@ -6322,7 +6627,11 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       const method = current.methods.find((item) => item.id === artifactId && !item.deletedAt);
       const version = method?.versions.find((item) => item.version === method.currentVersion);
       if (!method || !version) throw new Error("Method is unavailable");
-      const rebound = bindPythonInputsStrict(version.code, current.files);
+      const portableCode = bindRemoteQueryCode(
+        version.code,
+        method.remoteQueryBindings || []
+      );
+      const rebound = bindPythonInputsStrict(portableCode, current.files);
       return {
         kind,
         id: method.id,
@@ -6387,7 +6696,22 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const originTab = requestedOrigin ||
       (activeTab === "editor" ? editorSession?.originTab || "home" : activeTab);
     try {
-      const prepared = preparedEditorSession(kind, artifactId, originTab);
+      let prepared;
+      try {
+        prepared = preparedEditorSession(kind, artifactId, originTab);
+      } catch (error) {
+        const current = workspaceRef.current;
+        const artifactName = kind === "method"
+          ? current?.methods.find((item) => item.id === artifactId)?.name
+          : kind === "pipeline"
+            ? current?.pipelines.find((item) => item.id === artifactId)?.name
+            : current?.notebooks.find((item) => item.id === artifactId)?.name;
+        const local = current && artifactName
+          ? await offerLocalFallback(error, current, artifactName)
+          : null;
+        if (!local) throw error;
+        prepared = preparedEditorSession(kind, artifactId, originTab);
+      }
       setEditorSession(prepared);
       setInspectorSelection({ kind, id: artifactId });
       editorRoute(kind, artifactId);
@@ -6435,15 +6759,24 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         const source = current.methods.find((item) => item.id === session.id && !item.deletedAt);
         if (!source) throw new Error("Method is unavailable");
         const rebound = bindPythonInputsStrict(session.draftCode, current.files);
+        const portableBindings = portableRemoteQueryBindings(
+          source.remoteQueryBindings || [],
+          current
+        );
         const nextVersion = source.currentVersion + 1;
         const updated: MethodRecord = {
           ...source,
+          remoteQueryBindings: portableBindings,
           currentVersion: nextVersion,
           inputContract: inputContractFromCode(rebound.code),
-          requiredCapabilities: methodUsesZarrViewer(
-            { ...source, requiredCapabilities: [] },
-            rebound.code
-          ) ? ["zarrviewer"] : [],
+          requiredCapabilities: [
+            ...(methodUsesZarrViewer(
+              { ...source, requiredCapabilities: [] },
+              rebound.code
+            ) ? ["zarrviewer"] : []),
+            ...(portableBindings.length
+              ? ["omero-data-query-v1"] : [])
+          ],
           versions: [...source.versions, {
             version: nextVersion,
             code: rebound.code,
@@ -8020,6 +8353,26 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                     </small>
                   </span>
                 </label>
+                <div className="data-query-policy" role="status">
+                  <strong>Remote data queries</strong>
+                  <small>
+                    {dataQueryCapabilities
+                      ? dataQueryCapabilities.threshold_bytes === 0
+                        ? "All OMERO DuckDB, SQLite, and CSV attachments must use the remote query service."
+                        : `OMERO DuckDB, SQLite, and CSV attachments at or above ${bytesLabel(dataQueryCapabilities.threshold_bytes)} default to remote queries; smaller attachments default to local analysis.`
+                      : "Remote query policy could not be loaded."}
+                  </small>
+                  {dataQueryCapabilities && (
+                    <small>
+                      Worker: {dataQueryCapabilities.ready ? "ready" : "unavailable"}
+                      {` · Result access: ${dataQueryCapabilities.result_ttl_seconds} seconds`}
+                    </small>
+                  )}
+                  <small>
+                    Saved database Methods use a portable query binding, so the same Method can
+                    rebind between compatible local and remote OMERO sources regardless of size.
+                  </small>
+                </div>
               </div>
             </details>
 

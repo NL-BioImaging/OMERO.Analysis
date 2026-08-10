@@ -106,11 +106,14 @@ class DataQueryBroker:
         return bool(self.url and self.token)
 
     def capabilities(self) -> dict[str, Any]:
+        threshold = remote_query_threshold_bytes()
         unavailable = {
             "available": bool(self.configured),
             "ready": False,
             "capability": CAPABILITY,
             "formats": ["duckdb", "sqlite", "csv"],
+            "threshold_bytes": threshold,
+            "result_ttl_seconds": data_query_result_ttl_seconds(),
         }
         if not self.configured:
             return unavailable
@@ -128,6 +131,8 @@ class DataQueryBroker:
             "limits": payload.get("limits", {}),
             "parameter_style": payload.get("parameter_style", "$name"),
             "csv_table": payload.get("csv_table", "data"),
+            "threshold_bytes": threshold,
+            "result_ttl_seconds": data_query_result_ttl_seconds(),
         }
 
     def schema(

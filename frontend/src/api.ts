@@ -15,6 +15,7 @@ import type {
   SyncStatus,
   AnalysisSettingsBundle,
   AnalysisSettingsStatus,
+  DataQueryCapabilities,
   ZarrViewerIntegrationStatus
 } from "./types";
 import { zarrViewerStatusFrom } from "./zarrViewer";
@@ -380,6 +381,30 @@ export class OmeroBridge {
     return workflowSkillCatalogFrom(await readJson(response));
   }
 
+  async dataQueryCapabilities(): Promise<DataQueryCapabilities> {
+    if (!this.bootstrap.dataQueryCapabilitiesUrl) {
+      throw new Error("Remote data-query capabilities are unavailable");
+    }
+    const body = record(
+      await readJson(await fetch(this.bootstrap.dataQueryCapabilitiesUrl, {
+        credentials: "same-origin"
+      })),
+      "remote data-query capabilities"
+    );
+    if (
+      body.capability !== "omero-data-query-v1" ||
+      typeof body.available !== "boolean" ||
+      typeof body.ready !== "boolean" ||
+      !Array.isArray(body.formats) ||
+      !body.formats.every((item) => ["duckdb", "sqlite", "csv"].includes(String(item))) ||
+      !Number.isSafeInteger(body.threshold_bytes) || body.threshold_bytes < 0 ||
+      !Number.isSafeInteger(body.result_ttl_seconds) || body.result_ttl_seconds < 1
+    ) {
+      throw new Error("OMERO returned invalid remote data-query capabilities");
+    }
+    return body as unknown as DataQueryCapabilities;
+  }
+
   async remoteSchema(annotationId: number): Promise<Record<string, any>> {
     const url = (this.bootstrap.dataSourceSchemaTemplate || "").replace(
       "/1/schema/",
@@ -529,15 +554,22 @@ export class OmeroBridge {
     skillName: string
   ): Promise<WorkflowSkillPackage> {
     const catalog = await this.listWorkflowSkills();
-    const skill = catalog.workflows
-      .flatMap((entry) => entry.skills)
-      .find((item) =>
-        (item.source_key || item.workflow_key) === workflowKey && item.name === skillName
-      );
-    if (!skill) throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
+    const candidates = catalog.workflows.flatMap((entry) =>
+      entry.skills.map((skill) => ({ entry, skill }))
+    );
+    const exact = candidates.find(({ entry, skill }) =>
+      (skill.source_key || entry.source.source_key || skill.workflow_key ||
+        entry.source.workflow_key) === workflowKey && skill.name === skillName
+    );
+    const named = candidates.filter(({ skill }) => skill.name === skillName);
+    const resolved = exact || (named.length === 1 ? named[0] : undefined);
+    if (!resolved) {
+      throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
+    }
+    const canonicalWorkflowKey = resolved.entry.source.workflow_key;
     const catalogUrl = this.bootstrap.workflowSkillsUrl.replace(/\/?$/, "/");
     const packageUrl =
-      `${catalogUrl}${encodeURIComponent(workflowKey)}/${encodeURIComponent(skillName)}/`;
+      `${catalogUrl}${encodeURIComponent(canonicalWorkflowKey)}/${encodeURIComponent(skillName)}/`;
     const response = await fetch(packageUrl, { credentials: "same-origin" });
     return workflowSkillPackageFrom(await readJson(response));
   }

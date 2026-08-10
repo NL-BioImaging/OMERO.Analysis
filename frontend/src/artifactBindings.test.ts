@@ -70,6 +70,16 @@ describe("strict artifact input binding", () => {
       .toThrow(/ambiguous/);
   });
 
+  it("identifies a missing input so the UI can offer an explicit local fallback", () => {
+    try {
+      bindPythonInputsStrict('p = "/input/legacy.duckdb"', []);
+      throw new Error("Expected binding to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ArtifactBindingError);
+      expect((error as ArtifactBindingError).referencedName).toBe("legacy.duckdb");
+    }
+  });
+
   it("replaces one managed Notebook binding cell and strictly rebinds code cells", () => {
     const document: NotebookDocument = {
       nbformat: 4,

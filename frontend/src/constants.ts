@@ -13,9 +13,15 @@ code used only for your reasoning. Set purpose="analysis" for user-requested cal
 plots, or code that may be worth saving and rerunning. Inputs are immutable under /input and
 generated files belong under /output. Use the exact paths returned by list_workspace_files.
 Repair recoverable tool errors without waiting for the user to ask.
-For remote DuckDB, SQLite, or CSV sources, use inspect_remote_schema and query_remote_data;
-never try to open their logical paths with browser Python. Inspection queries return previews.
-Analysis queries materialize a complete bounded CSV under /input for reusable Python code.
+For every OMERO-backed DuckDB, SQLite, or CSV source, use inspect_data_schema and query_data,
+whether its current data_query_mode is local or remote. Never open its logical path with browser
+Python. Inspection queries return previews. Analysis queries create a portable data binding and
+return an exact python_loader snippet. Use that snippet to load the bounded result; never invent
+an /input path for a query result. The host keeps the query result transient, outside the Workspace input collection.
+Saved Methods retain SQL and schema requirements and rebind to an
+authorized compatible local or remote source on every run. The size threshold chooses the
+source's default transfer mode; it must never change the Method contract. Browser-local uploads
+without an OMERO annotation remain ordinary /input files.
 
 For a database plus CSV or Excel template, first inspect sheet names, columns, dtypes, and a few
 mapping values; never guess Well, Row, or Column fields. Then analyze the observed schema directly.
@@ -52,11 +58,13 @@ useful next steps; say that none are needed when that is genuinely the case. Reu
 contains one complete, reusable Python Method in a fenced python code block. Keep the first three sections
 concise and never replace them with source-code comments or a description of the code.
 
-The Method must use exact /input paths, write reusable artifacts to /output, open databases
-read-only, and include the validated calculation—not merely describe a plot or report generated
-during validation. Local tables, plots, and files are validation evidence; they are not a
-substitute for the Method script. If you initially omit either the explanatory sections or the
-complete script, correct yourself and return the complete four-section response before finishing.
+The Method must use exact /input paths for ordinary non-database local inputs and the exact
+remote_query_csv loader returned by query_data for OMERO database data. It must write reusable artifacts to
+/output, open any ordinary browser-local databases read-only, and include the validated calculation—not merely
+describe a plot or report generated during validation. Local tables, plots, and files are
+validation evidence; they are not a substitute for the Method script. If you initially omit
+either the explanatory sections or the complete script, correct yourself and return the complete
+four-section response before finishing.
 
 Successful Python code can be saved by the user as a versioned workspace Method. Use
 list_saved_methods to discover reusable Methods and read_saved_method when its code is needed for
@@ -113,8 +121,14 @@ export const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          workflow_key: { type: "string" },
-          skill_name: { type: "string" },
+          workflow_key: {
+            type: "string",
+            description: "Use the exact workflow_key returned by discover_skills; do not copy skill_name here."
+          },
+          skill_name: {
+            type: "string",
+            description: "Use the exact name returned by discover_skills."
+          },
           resource: { type: "string" }
         },
         required: ["workflow_key", "skill_name"],
@@ -159,8 +173,8 @@ export const TOOLS = [
   {
     type: "function",
     function: {
-      name: "inspect_remote_schema",
-      description: "Inspect the normalized schema of one remote DuckDB, SQLite, or CSV source without downloading it.",
+      name: "inspect_data_schema",
+      description: "Inspect the normalized schema of one OMERO DuckDB, SQLite, or CSV source. The source may currently be local or remote.",
       parameters: {
         type: "object",
         properties: { annotation_id: { type: "integer", minimum: 1 } },
@@ -172,8 +186,8 @@ export const TOOLS = [
   {
     type: "function",
     function: {
-      name: "query_remote_data",
-      description: "Run one bounded parameterized read-only query. Analysis purpose downloads the complete CSV into the Workspace.",
+      name: "query_data",
+      description: "Run one bounded parameterized read-only query against an OMERO source in either local or remote mode. Analysis purpose creates a portable broker-managed binding and returns the exact Python loader; the CSV remains transient and is not a Workspace input.",
       parameters: {
         type: "object",
         properties: {

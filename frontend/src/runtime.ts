@@ -6,6 +6,13 @@ interface Pending {
   timer: number;
 }
 
+export interface RemoteQueryRuntimeResult {
+  bindingId: string;
+  name: string;
+  data: ArrayBuffer;
+  sourceDigest: string;
+}
+
 const PACKAGES = [
   "micropip",
   "numpy",
@@ -54,6 +61,7 @@ async function boot() {
   pyodide.FS.mkdirTree("/input");
   pyodide.FS.mkdirTree("/output");
   pyodide.FS.mkdirTree("/selected_measurements");
+  pyodide.FS.mkdirTree("/remote-query");
   pyodide.FS.mkdirTree("/.omero");
   await pyodide.runPythonAsync(\`
 import sys as _oa_sys, types as _oa_types
@@ -70,6 +78,20 @@ async def _oa_piplite_install(package, *args, **kwargs):
 _oa_piplite = _oa_types.ModuleType("piplite")
 _oa_piplite.install = _oa_piplite_install
 _oa_sys.modules["piplite"] = _oa_piplite
+
+def _oa_remote_query_csv(binding_id):
+    import pathlib
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(binding_id))
+    path = pathlib.Path("/remote-query") / (safe + ".csv")
+    if not path.is_file():
+        raise RuntimeError(
+            "Remote query binding is not materialized for this run: " + str(binding_id)
+        )
+    return str(path)
+
+_oa_remote = _oa_types.ModuleType("omero_analysis_remote")
+_oa_remote.query_csv = _oa_remote_query_csv
+_oa_sys.modules["omero_analysis_remote"] = _oa_remote
 \`);
   // Package assets are loaded. Generated Python must not use the browser as a
   // network client, even to the public plugin origin.
@@ -239,6 +261,17 @@ for _oa_name in list(globals()):
       removeTree("/selected_measurements");
       inputSecrets.clear();
       send(message.id, "clear_inputs", true);
+    } else if (message.type === "clear_remote_queries") {
+      removeTree("/remote-query");
+      send(message.id, "clear_remote_queries", true);
+    } else if (message.type === "remote_query_file") {
+      const bindingId = String(message.value.bindingId || "");
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(bindingId)) {
+        throw new Error("Invalid remote query binding id");
+      }
+      const bytes = new Uint8Array(message.value.data);
+      pyodide.FS.writeFile("/remote-query/" + bindingId + ".csv", bytes);
+      send(message.id, "remote_query_file", bindingId);
     } else if (message.type === "file") {
       const safe = String(message.value.name).replace(/[^A-Za-z0-9._ -]/g, "_");
       const bytes = new Uint8Array(message.value.data);
@@ -574,6 +607,20 @@ except Exception:
       await this.request("file", { name: file.name, data }, 30_000, [data]);
     }
     this.report({ percent: 100, message: "Browser Python is ready" });
+  }
+
+  async syncRemoteQueries(results: RemoteQueryRuntimeResult[]): Promise<void> {
+    if (!this.readyPromise) await this.start(this.inputs, this.onProgress || undefined);
+    await this.readyPromise;
+    await this.request("clear_remote_queries", true, 30_000);
+    for (const result of results) {
+      const data = result.data.slice(0);
+      await this.request("remote_query_file", {
+        bindingId: result.bindingId,
+        name: result.name,
+        data
+      }, 30_000, [data]);
+    }
   }
 
   async profileInputs(): Promise<import("./types").DataProfile[]> {

@@ -44,6 +44,17 @@ def test_supported_formats_and_threshold_policy(settings):
         source_format("generic.parquet")
 
 
+def test_capabilities_expose_server_owned_query_policy(settings):
+    settings.OMERO_ANALYSIS_DATA_QUERY_WORKER_URL = ""
+    settings.OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN = ""
+    settings.OMERO_ANALYSIS_REMOTE_QUERY_THRESHOLD_BYTES = 104857600
+    settings.OMERO_ANALYSIS_DATA_QUERY_RESULT_TTL_SECONDS = 600
+    capabilities = DataQueryBroker().capabilities()
+    assert capabilities["ready"] is False
+    assert capabilities["threshold_bytes"] == 104857600
+    assert capabilities["result_ttl_seconds"] == 600
+
+
 def test_chunk_reader_is_bounded_and_reports_remaining_length():
     reader = ChunkReader(iter([b"abc", b"def"]), 6)
     assert reader.len == 6

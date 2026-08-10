@@ -21,7 +21,7 @@ interface BindingCandidate {
 }
 
 export class ArtifactBindingError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly referencedName?: string) {
     super(message);
     this.name = "ArtifactBindingError";
   }
@@ -67,7 +67,8 @@ function resolveCandidate(
   if (compatible.length === 1) return compatible[0];
   if (!compatible.length) {
     throw new ArtifactBindingError(
-      `Input ${basename} has no ready compatible Workspace file.`
+      `Input ${basename} has no ready compatible Workspace file.`,
+      basename
     );
   }
   throw new ArtifactBindingError(

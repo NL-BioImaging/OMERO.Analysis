@@ -1274,6 +1274,11 @@ th { position: sticky; top: 0; background: #183040; }
 .settings-check input { margin-top: .2rem; }
 .settings-check span { display: grid; gap: .25rem; }
 .settings-check.inline { align-items: center; display: flex; }
+.data-query-policy {
+  background: #0f1b23; border: 1px solid #365266; border-radius: 8px;
+  display: grid; gap: .3rem; margin-top: .8rem; padding: .75rem .85rem;
+}
+.data-query-policy small { color: #9db2c1; font-size: .76rem; line-height: 1.45; }
 .secondary-action { justify-self: start; }
 .ai-profile-toolbar {
   align-items: end;
@@ -2010,6 +2015,7 @@ th { position: sticky; top: 0; background: #183040; }
 .app-shell[data-theme="light"] .artifact-help,
 .app-shell[data-theme="light"] .settings-form label small,
 .app-shell[data-theme="light"] .settings-check small,
+.app-shell[data-theme="light"] .data-query-policy small,
 .app-shell[data-theme="light"] .notebook-status,
 .app-shell[data-theme="light"] .welcome {
   color: var(--muted);

@@ -16,16 +16,20 @@ describe("generic AI provider", () => {
       "load_skill",
       "list_workspace_files",
       "request_user_choice",
-      "inspect_remote_schema",
-      "query_remote_data",
+      "inspect_data_schema",
+      "query_data",
       "run_python",
       "reset_python",
       "list_saved_methods",
       "read_saved_method",
       "list_saved_pipelines"
     ]);
-    expect(SYSTEM_PROMPT).toContain("For remote DuckDB, SQLite, or CSV sources");
-    expect(SYSTEM_PROMPT).toContain("complete bounded CSV");
+    expect(SYSTEM_PROMPT).toContain("For every OMERO-backed DuckDB, SQLite, or CSV source");
+    expect(SYSTEM_PROMPT).toContain("portable data binding");
+    expect(SYSTEM_PROMPT).toContain("authorized compatible local or remote source");
+    expect(SYSTEM_PROMPT).toContain("size threshold");
+    expect(SYSTEM_PROMPT).toContain("outside the Workspace input collection");
+    expect(SYSTEM_PROMPT).toContain("remote_query_csv");
     expect(SYSTEM_PROMPT).toContain("Do not execute saved Methods or Pipelines from Chat");
   });
 

@@ -27,6 +27,10 @@ describe("Python sandbox", () => {
     expect(worker).toContain("Network access is disabled in Analysis Python");
     expect(worker).toContain("globalThis.fetch = denyNetwork");
     expect(worker).toContain('message.type === "clear_inputs"');
+    expect(worker).toContain('message.type === "clear_remote_queries"');
+    expect(worker).toContain('message.type === "remote_query_file"');
+    expect(worker).toContain('ModuleType("omero_analysis_remote")');
+    expect(worker).toContain('Path("/remote-query")');
     expect(worker).toContain('message.type === "profile"');
   });
 });
