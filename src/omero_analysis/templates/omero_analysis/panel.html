@@ -4,6 +4,7 @@
          data-object-id="{{ context.object_id }}"
          data-analysis-object-type="{% if context.workspace_summary %}{{ context.workspace_summary.source_type }}{% else %}{{ context.object_type }}{% endif %}"
          data-analysis-object-id="{% if context.workspace_summary %}{{ context.workspace_summary.source_id }}{% else %}{{ context.object_id }}{% endif %}"
+         data-integrated-data-analysis="{{ integrated_data_analysis|yesno:'true,false' }}"
          data-selection-ids="{% if context.selection_ids %}{{ context.selection_ids|join:',' }}{% endif %}">
   <header class="oa-panel-header">
     <div>
@@ -94,6 +95,11 @@
                   <strong>{{ attachment.name }}</strong>
                   <small>{{ attachment.mimetype }} · {{ attachment.size }} bytes
                     <span class="oa-annotation-id">Annotation {{ attachment.annotation_id }}</span>
+                    {% if not attachment.direct %}
+                      <span class="oa-annotation-id">
+                        from {{ attachment.object_type }} {{ attachment.object_id }}{% if attachment.object_name %} — {{ attachment.object_name }}{% endif %}
+                      </span>
+                    {% endif %}
                   </small>
                 </span>
                 <span class="oa-checkmark" aria-hidden="true">&#10003;</span>

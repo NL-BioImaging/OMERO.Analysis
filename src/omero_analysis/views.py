@@ -31,6 +31,14 @@ except ImportError:
         return decorator
 
 from .errors import AnalysisError
+from .data_query import (
+    DataQueryBroker,
+    make_result_token,
+    opaque_references,
+    query_policy,
+    result_token_claims,
+    validate_result_token,
+)
 from .integrations import zarr_viewer_status
 from .managed_omero import marker as managed_marker, plain as managed_plain
 from .services import (
@@ -41,6 +49,7 @@ from .services import (
     checked_pipeline_download,
     get_context_object,
     get_direct_attachment,
+    get_scoped_attachment,
     list_attachment_dicts,
     object_hierarchy,
     object_context,
@@ -51,6 +60,7 @@ from .services import (
 )
 from .tokens import make_context_token, validate_context_token
 from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
+from .settings import integrated_data_analysis
 from .workspace_sync import (
     SYNC_NAMESPACE,
     apply_sync,
@@ -58,6 +68,7 @@ from .workspace_sync import (
     library_datasets,
     plan_sync,
     remove_sync,
+    resolve_workspace_dataset,
     sync_status,
     validate_inventory,
 )
@@ -67,12 +78,22 @@ WORKFLOW_SKILLS_CONSUMER = "omero-analysis"
 PANEL_OBJECT_TYPES = {"Image", "Dataset", "Plate", "Screen", "Project", "Well"}
 MULTI_SOURCE_TYPES = {"Image", "Plate"}
 MAX_PANEL_SELECTION = 100
+EMBEDDED_HOSTS = {"biomero"}
 RUNTIME_ROOT = (
     Path(__file__).resolve().parent
     / "static"
     / "omero_analysis"
     / "pyodide"
 )
+
+
+def _embedded_host(request):
+    values = request.GET.getlist("embedded")
+    if not values:
+        return ""
+    if len(values) != 1 or values[0] not in EMBEDDED_HOSTS:
+        raise ValueError("Unsupported embedded Analysis host")
+    return values[0]
 
 
 def api_errors(function):
@@ -179,9 +200,27 @@ def runtime_asset(request, asset_path, **kwargs):
     """Serve only vendored Pyodide files with CORS for the opaque sandbox."""
     candidate = (RUNTIME_ROOT / asset_path).resolve(strict=False)
     try:
-        candidate.relative_to(RUNTIME_ROOT.resolve())
+        relative = candidate.relative_to(RUNTIME_ROOT.resolve())
     except ValueError as exc:
         raise Http404 from exc
+    # Editable/source builds keep Pyodide beside this module. In a deployed
+    # OMERO.web image the large, generated runtime may instead exist only in
+    # STATIC_ROOT after collectstatic. Support both without exposing arbitrary
+    # collected static files through this public, CORS-enabled endpoint.
+    if not candidate.is_file():
+        static_root = str(getattr(settings, "STATIC_ROOT", "") or "").strip()
+        if static_root:
+            collected_root = (
+                Path(static_root)
+                / "omero_analysis"
+                / "pyodide"
+            ).resolve(strict=False)
+            collected_candidate = (collected_root / relative).resolve(strict=False)
+            try:
+                collected_candidate.relative_to(collected_root)
+            except ValueError as exc:
+                raise Http404 from exc
+            candidate = collected_candidate
     if not candidate.is_file():
         raise Http404
     content_types = {
@@ -230,6 +269,10 @@ def session_keepalive(request, conn=None, **kwargs):
 
 @login_required(setGroupContext=True)
 def analysis(request, conn=None, **kwargs):
+    try:
+        embedded_host = _embedded_host(request)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
     context = None
     object_type = request.GET.get("type")
     object_id = request.GET.get("id")
@@ -242,7 +285,7 @@ def analysis(request, conn=None, **kwargs):
             selected = []
             seen = set()
             for value in request.GET.getlist("data_annotation"):
-                _, info = get_direct_attachment(obj, value)
+                _, info = get_scoped_attachment(obj, value)
                 if info.annotation_id not in seen:
                     selected.append(info.to_dict())
                     seen.add(info.annotation_id)
@@ -263,6 +306,8 @@ def analysis(request, conn=None, **kwargs):
                 "selected_workspace_snapshot": selected_workspace_snapshot,
                 "selected_notebook": None,
             }
+            _apply_data_query_presentation(context)
+            context["data_bindings"] = _parse_data_bindings(request, context)
             if len(selected_objects) > 1:
                 context.update({
                     "name": (
@@ -281,7 +326,7 @@ def analysis(request, conn=None, **kwargs):
                         "The selected FileAnnotation is not an Analysis notebook"
                     )
                 context["selected_notebook"] = notebook_info.to_dict()
-        except AnalysisError as exc:
+        except (AnalysisError, ValueError) as exc:
             return HttpResponseBadRequest(str(exc))
     style_nonce = secrets.token_urlsafe(18)
     response = render(
@@ -293,6 +338,7 @@ def analysis(request, conn=None, **kwargs):
                 0, int(getattr(settings, "PING_INTERVAL", 60000))
             ),
             "style_nonce": style_nonce,
+            "embedded_host": embedded_host,
         },
     )
     response["Content-Security-Policy"] = (
@@ -303,8 +349,10 @@ def analysis(request, conn=None, **kwargs):
         "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; "
         "worker-src blob:; "
         "frame-src 'self' blob:; "
-        "object-src 'none'; base-uri 'self'; form-action 'self'"
+        "object-src 'none'; base-uri 'self'; form-action 'self'; "
+        "frame-ancestors 'self'"
     )
+    response["X-Frame-Options"] = "SAMEORIGIN"
     response["Referrer-Policy"] = "same-origin"
     return response
 
@@ -364,6 +412,7 @@ def _workspace_panel_summary(conn, obj, values):
     except (TypeError, ValueError):
         source_id = 0
     items = list((selected or {}).get("items") or [])
+    snapshot = (selected or {}).get("snapshot") or {}
     counts = {
         kind: len([item for item in items if item.get("kind") == kind])
         for kind in ("method", "pipeline", "notebook")
@@ -384,6 +433,7 @@ def _workspace_panel_summary(conn, obj, values):
         "revision": int((selected or {}).get("revision") or 0),
         "updated_at": str((selected or {}).get("updatedAt") or ""),
         "has_snapshot": bool((selected or {}).get("snapshot")),
+        "snapshot_annotation_id": int(snapshot.get("annotationId") or 0) or None,
         "counts": counts,
         "can_resume": source_type in {"Image", "Dataset", "Plate", "Screen"}
         and source_id > 0,
@@ -459,8 +509,7 @@ def _configure_panel_context(conn, obj, context):
     return context
 
 
-@login_required(setGroupContext=True)
-def panel(request, object_type, object_id, conn=None, **kwargs):
+def _launch_context(request, conn, object_type, object_id):
     object_type, object_id, obj = _panel_context_object(
         conn, object_type, object_id
     )
@@ -476,10 +525,65 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
             "selection_count": len(selected_objects),
         })
     _configure_panel_context(conn, obj, context)
+    _apply_data_query_presentation(context)
+    return context
+
+
+def _apply_data_query_presentation(context):
+    capabilities = DataQueryBroker().capabilities()
+    ready = bool(capabilities.get("ready"))
+    context["data_query"] = capabilities
+    for key in ("attachments", "supported_attachments", "selected_attachments"):
+        values = context.get(key) or []
+        for item in values:
+            policy = query_policy(type("Info", (), item)(), ready)
+            if policy:
+                item.update(policy)
+
+
+def _parse_data_bindings(request, context):
+    selected = {
+        int(item["annotation_id"]): item
+        for item in context.get("selected_attachments") or []
+    }
+    bindings = {}
+    for raw in request.GET.getlist("data_binding"):
+        annotation, separator, mode = raw.partition(":")
+        try:
+            annotation_id = int(annotation)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid data_binding annotation ID") from exc
+        if not separator or mode not in {"local", "remote"}:
+            raise ValueError("Invalid data_binding mode")
+        if annotation_id in bindings:
+            raise ValueError("Duplicate data_binding")
+        item = selected.get(annotation_id)
+        if item is None or mode not in item.get("allowed_modes", []):
+            raise ValueError("data_binding is not allowed for the selected attachment")
+        bindings[annotation_id] = mode
+    return {str(key): value for key, value in bindings.items()}
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def launch_context(request, object_type, object_id, conn=None, **kwargs):
+    """Expose the same launch contract used by the OMERO.web middle pane."""
+    return JsonResponse(_launch_context(
+        request, conn, object_type, object_id
+    ))
+
+
+@login_required(setGroupContext=True)
+def panel(request, object_type, object_id, conn=None, **kwargs):
+    context = _launch_context(request, conn, object_type, object_id)
     return render(
         request,
         "omero_analysis/panel.html",
-        {"context": context},
+        {
+            "context": context,
+            "integrated_data_analysis": integrated_data_analysis(),
+        },
     )
 
 
@@ -651,6 +755,7 @@ def context_token(request, conn=None, **kwargs):
         "library_list",
         "library_download",
         "settings_read",
+        "data_query",
     ]
     if can_annotate(obj):
         operations.extend(
@@ -679,6 +784,99 @@ def context_token(request, conn=None, **kwargs):
     )
 
 
+def _data_query_attachment(request, conn, annotation_id):
+    claims = validate_context_token(request, conn, "data_query")
+    _, _, obj = get_context_object(
+        conn, claims["object_type"], claims["object_id"]
+    )
+    validate_context_token(
+        request,
+        conn,
+        "data_query",
+        claims["object_type"],
+        claims["object_id"],
+        obj,
+    )
+    annotation, info = get_scoped_attachment(obj, annotation_id)
+    scope, source_ref = opaque_references(request, conn, claims, info)
+    return claims, obj, annotation, info, scope, source_ref
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def data_query_capabilities(request, conn=None, **kwargs):
+    return JsonResponse(DataQueryBroker().capabilities())
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def data_source_schema(request, annotation_id, conn=None, **kwargs):
+    _, _, annotation, info, scope, source_ref = _data_query_attachment(
+        request, conn, annotation_id
+    )
+    return JsonResponse(
+        DataQueryBroker().schema(annotation, info, scope, source_ref)
+    )
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def data_source_query(request, annotation_id, conn=None, **kwargs):
+    claims, _, annotation, info, scope, source_ref = _data_query_attachment(
+        request, conn, annotation_id
+    )
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Remote query request must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        from .errors import InvalidObject
+
+        raise InvalidObject("Remote query request must be a JSON object")
+    result, result_id = DataQueryBroker().query(
+        annotation, info, scope, source_ref, payload
+    )
+    result["result_token"] = make_result_token(
+        request, conn, claims, info, result_id
+    )
+    return JsonResponse(result)
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def data_query_result_download(request, result_token, conn=None, **kwargs):
+    claims = result_token_claims(result_token)
+    _, _, obj = get_context_object(
+        conn, claims.get("object_type"), claims.get("object_id")
+    )
+    _, info = get_scoped_attachment(obj, claims.get("annotation_id"))
+    validated = validate_result_token(request, conn, result_token, obj, info)
+    worker_response = DataQueryBroker().download(validated["result_id"])
+
+    def chunks():
+        try:
+            yield from worker_response.iter_content(chunk_size=1024 * 1024)
+        finally:
+            worker_response.close()
+
+    response = ConnCleaningHttpResponse(
+        chunks(), content_type="text/csv; charset=utf-8"
+    )
+    response.conn = conn
+    if worker_response.headers.get("Content-Length"):
+        response["Content-Length"] = worker_response.headers["Content-Length"]
+    response["Content-Disposition"] = "attachment; filename=data-query-result.csv"
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @require_GET
 @login_required(setGroupContext=True)
 @api_errors
@@ -694,7 +892,8 @@ def context(request, object_type, object_id, conn=None, **kwargs):
 def attachments(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, "list", object_type, object_id, obj)
-    return JsonResponse({"attachments": list_attachment_dicts(obj)})
+    context = object_context(object_type, object_id, obj, conn)
+    return JsonResponse({"attachments": context["supported_attachments"]})
 
 
 @require_GET
@@ -972,6 +1171,13 @@ def workspace_library(request, object_type, object_id, conn=None, **kwargs):
         request, conn, "library_list", object_type, object_id
     )
     return JsonResponse({"datasets": library_datasets(conn, obj)})
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_dataset(request, dataset_id, conn=None, **kwargs):
+    return JsonResponse(resolve_workspace_dataset(conn, dataset_id))
 
 
 @require_GET

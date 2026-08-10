@@ -16,6 +16,7 @@ $ContainerPython = "/opt/omero/web/venv3/bin/python"
 $ContainerOmero = "/opt/omero/web/venv3/bin/omero"
 $ContainerConfig = "/opt/omero/web/config/90-omero-analysis.omero"
 $ContainerCleanup = "/startup/49-omero-analysis-cleanup.py"
+$ContainerNavigation = "/startup/51-omero-analysis-navigation.py"
 $ContainerStatic = "/opt/omero/web/OMERO.web/var/static/omero_analysis"
 $PackageName = "omero-analysis"
 $JupyterConfig = "/opt/omero/web/config/90-omero-jupyterlite.omero"
@@ -136,6 +137,8 @@ switch ($Action) {
         if ($LASTEXITCODE -ne 0) { throw "Offline plugin installation failed." }
         docker cp (Join-Path $RepoRoot "docker\49-omero-analysis-cleanup.py") "${Container}:$ContainerCleanup"
         docker exec --user root $Container chmod 0755 $ContainerCleanup
+        docker cp (Join-Path $RepoRoot "docker\51-omero-analysis-navigation.py") "${Container}:$ContainerNavigation"
+        docker exec --user root $Container chmod 0755 $ContainerNavigation
         docker cp (Join-Path $RepoRoot "docker\90-omero-analysis.omero") "${Container}:$ContainerConfig"
         docker exec --user root $Container chmod 0644 $ContainerConfig
         docker exec --user root $Container rm -rf $ContainerStatic
@@ -145,6 +148,7 @@ switch ($Action) {
     }
     "remove" {
         docker exec --user root $Container rm -f $ContainerConfig
+        docker exec --user root $Container rm -f $ContainerNavigation
         docker exec --user root $Container $ContainerPython -m pip uninstall -y $PackageName
         docker exec --user root $Container rm -rf $ContainerStatic
         Restart-Web $false

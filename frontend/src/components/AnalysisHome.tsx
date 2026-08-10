@@ -1,4 +1,5 @@
 import type { MethodRecord, NotebookRecord, PipelineRecord } from "../types";
+import { Card, Elevation, HTMLSelect } from "@blueprintjs/core";
 import { ActionIcon } from "./ActionIcon";
 import { Button } from "./BlueprintControls";
 
@@ -69,69 +70,69 @@ export function AnalysisHome({
       <section className="analysis-home-group" aria-labelledby="run-analysis-title">
         <header><h3 id="run-analysis-title">Run a saved analysis</h3></header>
         <div className="analysis-home-grid">
-          <article className="analysis-start-card">
+          <Card className="analysis-start-card" elevation={Elevation.ONE}>
             <ActionIcon name="run" />
             <h3>Run a Method</h3>
             <p>Execute the current saved version with inputs from this Workspace.</p>
             <div className="analysis-card-controls">
-              <select aria-label="Method to run" value={methodId || methods[0]?.id || ""}
+              <HTMLSelect fill aria-label="Method to run" value={methodId || methods[0]?.id || ""}
                 onChange={(event) => onMethodIdChange(event.target.value)} disabled={!methods.length}>
                 {methods.map((method) => (
                   <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>
                 ))}
-              </select>
+              </HTMLSelect>
               <Button disabled={!selectedMethod || busy}
                 onClick={() => selectedMethod && onRunMethod(selectedMethod)}>
                 <ActionIcon name="run" />Run Method
               </Button>
               {!methods.length && <small>Create or import a Method first.</small>}
             </div>
-          </article>
+          </Card>
 
-          <article className="analysis-start-card">
+          <Card className="analysis-start-card" elevation={Elevation.ONE}>
             <ActionIcon name="pipeline" />
             <h3>Run a Pipeline</h3>
             <p>Run an ordered collection of pinned Method versions.</p>
             <div className="analysis-card-controls">
-              <select aria-label="Pipeline to run" value={pipelineId || pipelines[0]?.id || ""}
+              <HTMLSelect fill aria-label="Pipeline to run" value={pipelineId || pipelines[0]?.id || ""}
                 onChange={(event) => onPipelineIdChange(event.target.value)} disabled={!pipelines.length}>
                 {pipelines.map((pipeline) => (
                   <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>
                 ))}
-              </select>
+              </HTMLSelect>
               <Button disabled={!selectedPipeline || busy}
                 onClick={() => selectedPipeline && onRunPipeline(selectedPipeline)}>
                 <ActionIcon name="run" />Run Pipeline
               </Button>
               {!pipelines.length && <small>Create a Pipeline from saved Methods first.</small>}
             </div>
-          </article>
+          </Card>
 
-          <article className="analysis-start-card">
+          <Card className="analysis-start-card" elevation={Elevation.ONE}>
             <ActionIcon name="notebook" />
             <h3>Run a Notebook</h3>
             <p>Reattach current inputs, reset stale outputs, and run all cells.</p>
             <div className="analysis-card-controls">
-              <select aria-label="Notebook to run" value={notebookId || notebooks[0]?.id || ""}
+              <HTMLSelect fill aria-label="Notebook to run" value={notebookId || notebooks[0]?.id || ""}
                 onChange={(event) => onNotebookIdChange(event.target.value)} disabled={!notebooks.length}>
                 {notebooks.map((notebook) => (
                   <option key={notebook.id} value={notebook.id}>{notebook.name}</option>
                 ))}
-              </select>
+              </HTMLSelect>
               <Button disabled={!selectedNotebook}
                 onClick={() => selectedNotebook && onRunNotebook(selectedNotebook)}>
                 <ActionIcon name="run" />Run Notebook
               </Button>
               {!notebooks.length && <small>Create, upload, or import a Notebook first.</small>}
             </div>
-          </article>
+          </Card>
         </div>
       </section>
 
       <section className="analysis-home-group" aria-labelledby="create-analysis-title">
         <header><h3 id="create-analysis-title">Create a reusable analysis</h3></header>
         <div className="analysis-home-grid">
-          <article className="analysis-start-card method-assistant-card">
+          <Card className="analysis-start-card method-assistant-card" elevation={Elevation.ONE}>
             <ActionIcon name="chat" />
             <h3>Create a Method</h3>
             <p>Develop a validated Method with the Assistant, or start from an input-ready template.</p>
@@ -149,9 +150,9 @@ export function AnalysisHome({
               {!providerReady && <small>Configure an AI provider before using the Assistant.</small>}
               {!editorEnabled && <small>Enable the artifact editor to create a Method directly.</small>}
             </div>
-          </article>
+          </Card>
 
-          <article className="analysis-start-card create-pipeline-card">
+          <Card className="analysis-start-card create-pipeline-card" elevation={Elevation.ONE}>
             <ActionIcon name="pipeline" />
             <h3>Create a Pipeline</h3>
             <p>Select saved Methods and arrange them into an ordered reusable Pipeline.</p>
@@ -161,21 +162,21 @@ export function AnalysisHome({
               </Button>
               {methods.length < 2 && <small>Create or import at least two Methods to complete a Pipeline.</small>}
             </div>
-          </article>
+          </Card>
 
-          <article className="analysis-start-card create-notebook-card">
+          <Card className="analysis-start-card create-notebook-card" elevation={Elevation.ONE}>
             <ActionIcon name="notebook" />
             <h3>Create a Notebook</h3>
             <p>Convert a saved Pipeline, or start with current Workspace inputs attached.</p>
             <div className="analysis-card-controls">
-              <select aria-label="Pipeline to convert to Notebook"
+              <HTMLSelect fill aria-label="Pipeline to convert to Notebook"
                 value={notebookPipelineId || pipelines[0]?.id || ""}
                 onChange={(event) => onNotebookPipelineIdChange(event.target.value)}
                 disabled={!pipelines.length}>
                 {pipelines.map((pipeline) => (
                   <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>
                 ))}
-              </select>
+              </HTMLSelect>
               <div className="analysis-card-actions">
                 <Button aria-label="Create Notebook from Pipeline" disabled={!notebookPipeline}
                   onClick={() => notebookPipeline && onPipelineToNotebook(notebookPipeline)}>
@@ -189,7 +190,7 @@ export function AnalysisHome({
               </div>
               {!editorEnabled && <small>Enable the artifact editor to create a new Notebook directly.</small>}
             </div>
-          </article>
+          </Card>
         </div>
       </section>
     </section>

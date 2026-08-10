@@ -16,12 +16,16 @@ describe("generic AI provider", () => {
       "load_skill",
       "list_workspace_files",
       "request_user_choice",
+      "inspect_remote_schema",
+      "query_remote_data",
       "run_python",
       "reset_python",
       "list_saved_methods",
       "read_saved_method",
       "list_saved_pipelines"
     ]);
+    expect(SYSTEM_PROMPT).toContain("For remote DuckDB, SQLite, or CSV sources");
+    expect(SYSTEM_PROMPT).toContain("complete bounded CSV");
     expect(SYSTEM_PROMPT).toContain("Do not execute saved Methods or Pipelines from Chat");
   });
 

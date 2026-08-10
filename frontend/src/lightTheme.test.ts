@@ -29,6 +29,8 @@ describe("BIOMERO-inspired light theme", () => {
   });
 
   it("overrides dark-theme explorer and Markdown text colors", () => {
+    expect(lightTheme).toContain('.panel-visibility-toggle[aria-pressed="true"]');
+    expect(lightTheme).toContain('.panel-visibility-toggle[aria-pressed="false"]');
     expect(lightTheme).toContain('.app-shell[data-theme="light"] .browser-folder > summary');
     expect(lightTheme).toContain('.app-shell[data-theme="light"] .artifact-markdown-preview');
     expect(lightTheme).toContain('.app-shell[data-theme="light"] .artifact-markdown-preview code');

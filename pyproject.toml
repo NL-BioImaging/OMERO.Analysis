@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omero-analysis"
-version = "0.10.0"
+version = "0.12.0"
 description = "Browser-local reusable Methods, Pipelines, Notebooks, and a Method-authoring Assistant for OMERO.web"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,11 +25,13 @@ dependencies = [
   "numpy>=1.24,<3",
   "Pillow>=10,<13",
   "cryptography>=42,<50",
+  "requests>=2.31,<3",
+  "requests-toolbelt>=1,<2",
 ]
 
 [project.optional-dependencies]
 biomero-skills = [
-  "biomero-workflow-skills>=0.3,<0.4",
+  "biomero-workflow-skills>=0.4,<0.5",
 ]
 test = [
   "Django>=3.2,<6",

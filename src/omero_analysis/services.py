@@ -137,6 +137,10 @@ class AttachmentInfo:
     namespace: str | None
     kind: str
     supported: bool
+    object_type: str | None = None
+    object_id: int | None = None
+    object_name: str | None = None
+    direct: bool = True
 
     def to_dict(self):
         return asdict(self)
@@ -152,7 +156,7 @@ def safe_filename(name):
     return name
 
 
-def attachment_info(annotation):
+def attachment_info(annotation, obj=None, direct=True):
     original = annotation.getFile()
     name = safe_filename(_plain(original.getName()))
     namespace = _plain(annotation.getNs()) if hasattr(annotation, "getNs") else None
@@ -180,7 +184,24 @@ def attachment_info(annotation):
         size=int(_plain(original.getSize()) or 0),
         namespace=namespace,
         kind=kind,
-        supported=kind == "attachment" and extension in INPUT_EXTENSIONS,
+        # Analysis result tables and databases are valid inputs for a later
+        # analysis. Preserve their provenance kind without hiding them from
+        # the input picker.
+        supported=kind in {"attachment", "result"} and extension in INPUT_EXTENSIONS,
+        object_type=_object_type(obj) if obj is not None else None,
+        object_id=(
+            int(obj.getId())
+            if obj is not None and callable(getattr(obj, "getId", None))
+            else int(getattr(obj, "object_id"))
+            if obj is not None and getattr(obj, "object_id", None) is not None
+            else None
+        ),
+        object_name=(
+            str(_plain(obj.getName()))
+            if obj is not None and callable(getattr(obj, "getName", None))
+            else None
+        ),
+        direct=direct,
     )
 
 
@@ -188,13 +209,63 @@ def direct_file_annotations(obj):
     values = []
     for annotation in obj.listAnnotations():
         if _is_file_annotation(annotation):
-            values.append((annotation, attachment_info(annotation)))
+            values.append((annotation, attachment_info(annotation, obj=obj)))
     values.sort(key=lambda pair: (pair[1].name.lower(), pair[1].annotation_id))
     return values
 
 
 def list_attachment_dicts(obj):
     return [info.to_dict() for _, info in direct_file_annotations(obj)]
+
+
+def attachment_scope_objects(obj):
+    """Yield the selected object and immediate readable data children.
+
+    Dataset children are Images and Screen children are Plates. This mirrors
+    the OMERO.web hierarchy without recursively walking every WellSample in a
+    high-content Plate.
+    """
+    yield obj, True
+    if _object_type(obj) not in {"Dataset", "Screen"}:
+        return
+    children = getattr(obj, "listChildren", None)
+    if not callable(children):
+        return
+    try:
+        for child in children():
+            if _object_type(child) in SUPPORTED_OBJECT_TYPES:
+                yield child, False
+    except (AttributeError, TypeError, NotImplementedError):
+        return
+
+
+def scoped_file_annotations(obj):
+    values = []
+    seen = set()
+    for target, direct in attachment_scope_objects(obj):
+        for annotation, _ in direct_file_annotations(target):
+            info = attachment_info(annotation, obj=target, direct=direct)
+            if info.annotation_id in seen:
+                continue
+            seen.add(info.annotation_id)
+            values.append((annotation, info))
+    values.sort(key=lambda pair: (
+        not pair[1].direct,
+        (pair[1].object_name or "").lower(),
+        pair[1].name.lower(),
+        pair[1].annotation_id,
+    ))
+    return values
+
+
+def get_scoped_attachment(obj, annotation_id):
+    annotation_id = canonical_object_id(annotation_id)
+    for annotation, info in scoped_file_annotations(obj):
+        if info.annotation_id == annotation_id:
+            return annotation, info
+    raise AttachmentNotFound(
+        "The FileAnnotation is not linked to the selected object or an immediate child"
+    )
 
 
 def get_direct_attachment(obj, annotation_id):
@@ -213,6 +284,9 @@ def object_context(object_type, object_id, obj, conn=None):
     except (AttributeError, TypeError, ValueError):
         user_id = 0
     attachments = list_attachment_dicts(obj)
+    scoped_attachments = [
+        info.to_dict() for _, info in scoped_file_annotations(obj)
+    ]
     return {
         "object_type": object_type,
         "object_id": int(object_id),
@@ -232,7 +306,7 @@ def object_context(object_type, object_id, obj, conn=None):
             attachment for attachment in attachments if attachment["kind"] == "notebook"
         ],
         "supported_attachments": [
-            attachment for attachment in attachments if attachment["supported"]
+            attachment for attachment in scoped_attachments if attachment["supported"]
         ],
     }
 
@@ -309,7 +383,7 @@ def object_hierarchy(object_type, object_id, obj):
 
 
 def checked_download(obj, annotation_id):
-    annotation, info = get_direct_attachment(obj, annotation_id)
+    annotation, info = get_scoped_attachment(obj, annotation_id)
     if not info.supported:
         raise UnsupportedMedia(f"{info.name} is not a supported analysis input")
     if info.size > max_download_bytes():

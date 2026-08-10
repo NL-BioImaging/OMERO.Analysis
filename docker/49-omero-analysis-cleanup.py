@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove the current Analysis entry before declarative config is reloaded."""
+"""Remove exact Analysis UI entries before declarative config is reloaded."""
 
 from subprocess import DEVNULL, run
 
@@ -11,13 +11,23 @@ REGISTERED_ENTRIES = (
         '["Analysis", "omero_analysis/center_plugin.js.html", '
         '"omero_analysis_panel"]',
     ),
+    (
+        "omero.web.ui.top_links",
+        '["Analysis", "omero_analysis_index", '
+        '{"title": "Open browser-local Analysis", "target": "new"}]',
+    ),
 )
 
 
-for key, value in REGISTERED_ENTRIES:
-    run(
-        [OMERO, "config", "remove", "--", key, value],
-        stdout=DEVNULL,
-        stderr=DEVNULL,
-        check=False,
-    )
+def main():
+    for key, value in REGISTERED_ENTRIES:
+        run(
+            [OMERO, "config", "remove", "--", key, value],
+            stdout=DEVNULL,
+            stderr=DEVNULL,
+            check=False,
+        )
+
+
+if __name__ == "__main__":
+    main()

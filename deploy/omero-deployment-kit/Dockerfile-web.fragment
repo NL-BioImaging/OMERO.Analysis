@@ -2,8 +2,10 @@
 USER root
 COPY omero_analysis-*.whl /tmp/
 COPY 49-omero-analysis-cleanup.py /startup/49-omero-analysis-cleanup.py
+COPY 51-omero-analysis-navigation.py /startup/51-omero-analysis-navigation.py
 RUN /opt/omero/web/venv3/bin/python -m pip install --no-deps \
         /tmp/omero_analysis-*.whl \
     && rm -f /tmp/omero_analysis-*.whl \
-    && chmod 0755 /startup/49-omero-analysis-cleanup.py
+    && chmod 0755 /startup/49-omero-analysis-cleanup.py \
+    && chmod 0755 /startup/51-omero-analysis-navigation.py
 USER omero-web

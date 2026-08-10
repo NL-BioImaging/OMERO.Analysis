@@ -380,6 +380,43 @@ export class OmeroBridge {
     return workflowSkillCatalogFrom(await readJson(response));
   }
 
+  async remoteSchema(annotationId: number): Promise<Record<string, any>> {
+    const url = (this.bootstrap.dataSourceSchemaTemplate || "").replace(
+      "/1/schema/",
+      `/${annotationId}/schema/`
+    );
+    return await readJson(await this.authorizedFetch(url));
+  }
+
+  async remoteQuery(
+    annotationId: number,
+    sql: string,
+    parameters: Record<string, { type: string; value: unknown }>
+  ): Promise<Record<string, any>> {
+    const url = (this.bootstrap.dataSourceQueryTemplate || "").replace(
+      "/1/query/",
+      `/${annotationId}/query/`
+    );
+    return await readJson(await this.authorizedFetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken()
+      },
+      body: JSON.stringify({ sql, parameters })
+    }));
+  }
+
+  async downloadRemoteResult(resultToken: string): Promise<ArrayBuffer> {
+    const url = (this.bootstrap.dataQueryResultDownloadTemplate || "").replace(
+      "TOKEN",
+      encodeURIComponent(resultToken)
+    );
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
+    return response.arrayBuffer();
+  }
+
   async zarrViewerStatus(): Promise<ZarrViewerIntegrationStatus> {
     const response = await fetch(this.bootstrap.zarrViewerStatusUrl, {
       credentials: "same-origin"
@@ -602,7 +639,10 @@ function hierarchyFrom(value: unknown): OmeroHierarchy {
 function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
   const body = record(value, "workflow skill catalog");
   if (
-    body.schema !== "nl.bioimaging.biomero-workflow-skills.v1" ||
+    ![
+      "nl.bioimaging.biomero-workflow-skills.v1",
+      "nl.bioimaging.biomero-workflow-skills.v2"
+    ].includes(String(body.schema)) ||
     body.consumer !== "omero-analysis" ||
     !Array.isArray(body.workflows) ||
     !Array.isArray(body.diagnostics)
@@ -637,6 +677,10 @@ function workflowSkillCatalogFrom(value: unknown): WorkflowSkillCatalog {
           Array.isArray(skill.required_capabilities) &&
           skill.required_capabilities.every((item: unknown) => typeof item === "string")
         )) ||
+        !(skill.preferred_capabilities == null || (
+          Array.isArray(skill.preferred_capabilities) &&
+          skill.preferred_capabilities.every((item: unknown) => typeof item === "string")
+        )) ||
         !skill.match ||
         typeof skill.match !== "object"
       ) {
@@ -654,7 +698,7 @@ function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
     throw new Error("Application skills are served by their owning application provider");
   }
   workflowSkillCatalogFrom({
-    schema: "nl.bioimaging.biomero-workflow-skills.v1",
+    schema: "nl.bioimaging.biomero-workflow-skills.v2",
     consumer: "omero-analysis",
     workflows: [{
       source: body.source,

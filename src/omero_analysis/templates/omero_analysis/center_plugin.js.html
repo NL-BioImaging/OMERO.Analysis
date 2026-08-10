@@ -7,6 +7,7 @@ $(function () {
   panel.addClass("omero-analysis-center");
   var panelPattern = "{% url 'omero_analysis_panel' 'Image' 1 %}";
   var analysisBase = "{% url 'omero_analysis_index' %}";
+  var biomeroBase = "/omero_biomero/biomero/";
   var tokenUrl = "{% url 'omero_analysis_token' %}";
   var attachmentUploadPattern = "{% url 'omero_analysis_upload' 'Image' 1 %}";
   var typeMap = {
@@ -141,6 +142,29 @@ $(function () {
       url += "&open_library=1";
       libraryIds.forEach(function (annotationId) {
         url += "&library_item=" + encodeURIComponent(annotationId);
+      });
+    }
+    return url;
+  }
+
+  function biomeroAnalysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds, selectionIds) {
+    var url = biomeroBase + "?tab=data-analysis" +
+      "&analysis_type=" + encodeURIComponent(type) +
+      "&analysis_id=" + encodeURIComponent(id);
+    (selectionIds || []).forEach(function (selectionId) {
+      url += "&analysis_selection_id=" + encodeURIComponent(selectionId);
+    });
+    if (workspaceAnnotationId) {
+      url += "&analysis_workspace_annotation=" + encodeURIComponent(workspaceAnnotationId);
+    } else {
+      annotationIds.forEach(function (annotationId) {
+        url += "&analysis_data_annotation=" + encodeURIComponent(annotationId);
+      });
+    }
+    if (libraryIds.length) {
+      url += "&analysis_open_library=1";
+      libraryIds.forEach(function (annotationId) {
+        url += "&analysis_library_item=" + encodeURIComponent(annotationId);
       });
     }
     return url;
@@ -298,15 +322,20 @@ $(function () {
   panel.on("click", ".oa-open-analysis", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (!root) return;
+    var launchArguments = [
+      root.dataset.analysisObjectType || root.dataset.objectType,
+      root.dataset.analysisObjectId || root.dataset.objectId,
+      selectedAnnotationIds(root),
+      selectedWorkspaceId(root),
+      selectedLibraryIds(root),
+      selectedSourceIds(root)
+    ];
+    if (root.dataset.integratedDataAnalysis === "true") {
+      window.location.assign(biomeroAnalysisUrl.apply(null, launchArguments));
+      return;
+    }
     window.open(
-      analysisUrl(
-        root.dataset.analysisObjectType || root.dataset.objectType,
-        root.dataset.analysisObjectId || root.dataset.objectId,
-        selectedAnnotationIds(root),
-        selectedWorkspaceId(root),
-        selectedLibraryIds(root),
-        selectedSourceIds(root)
-      ),
+      analysisUrl.apply(null, launchArguments),
       "_blank",
       "noopener"
     );

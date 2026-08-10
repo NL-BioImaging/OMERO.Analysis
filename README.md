@@ -83,6 +83,23 @@ The standalone `omero-jupyterlite` package is deprecated and is explicitly
 removed by the Analysis deployment image and update script. Existing OMERO
 FileAnnotations are preserved.
 
+### BIOMERO-integrated mode
+
+Set `INTEGRATE_DATA_ANALYSIS=TRUE` in a deployment that installs compatible
+OMERO.Analysis and OMERO.biomero releases. OMERO.Analysis then keeps its center
+panel but removes its redundant OMERO top link; BIOMERO shows **Data Analysis**
+beside Import and Analyze and hosts Analysis in a same-origin iframe. `false`
+or an absent setting retains the standalone Analysis top link and new-tab
+launch behavior.
+
+Embedded launches use `embedded=biomero` and the same Dataset, Screen, Plate,
+Image, multi-selection, attachment, and saved-Workspace parameters as the
+standalone route. A managed Dataset selected below `+AnalysisWorkspaces` is
+resolved by `/omero_analysis/api/workspace-dataset/<dataset_id>/`; only the
+current user's current-group library, readable original source, and validated
+synchronized snapshot can be resumed. The host never supplies an arbitrary
+iframe target.
+
 ## AnalysisWorkspaces library
 
 Automatic synchronization creates a private, managed `+AnalysisWorkspaces` Project for
@@ -119,6 +136,14 @@ Default synchronization limits can be overridden with OMERO.web settings:
 - `omero.web.analysis.max_upload_bytes`: 256 MiB per item
 - `omero.web.analysis.max_sync_changed_bytes`: 512 MiB per synchronization
 - `omero.web.analysis.max_png_pixels`: 100 megapixels
+- `omero.web.analysis.remote_query_threshold_bytes`: 104,857,600 (100 MiB;
+  set to `0` to force every supported OMERO attachment remote)
+- `omero.web.analysis.data_query_result_ttl_seconds`: 600
+
+Remote DuckDB, SQLite, and CSV queries additionally require the secret-only
+`OMERO_ANALYSIS_DATA_QUERY_WORKER_URL` and
+`OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN` environment/Django settings. These
+values are never returned to the browser or stored in OMERO configuration.
 
 The default attachment download transport limit is 2 GiB. Analysis also checks
 the browser Workspace ceiling and available storage before downloading; the
@@ -204,6 +229,8 @@ GET      /omero_analysis/api/pipeline-template/<annotation_id>/download/
 
 GET  /omero_analysis/api/notebook/<annotation_id>/download/
 POST /omero_analysis/api/notebooks/<object_type>/<object_id>/upload/
+
+GET  /omero_analysis/api/workspace-dataset/<dataset_id>/
 
 GET    /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/
 POST   /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/plan/

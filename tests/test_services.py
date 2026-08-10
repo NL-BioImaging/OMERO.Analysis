@@ -21,6 +21,7 @@ from omero_analysis.services import (
     checked_download,
     direct_file_annotations,
     get_direct_attachment,
+    get_scoped_attachment,
     list_attachment_dicts,
     object_context,
     object_hierarchy,
@@ -70,6 +71,31 @@ def test_only_direct_file_annotations_are_listed_and_marked_supported():
     assert [value["annotation_id"] for value in values] == [1, 2]
     assert values[0]["supported"] is True
     assert values[1]["supported"] is False
+
+
+def test_result_database_and_immediate_child_attachments_are_selectable():
+    result = FakeAnnotation(
+        7,
+        "measurements.duckdb",
+        namespace=RESULT_NAMESPACE,
+    )
+    child = FakeObject(object_id=3, name="Child image", annotations=[result])
+    child.OMERO_CLASS = "Image"
+    child.getId = lambda: 3
+    dataset = FakeObject(object_id=2, name="Parent dataset")
+    dataset.OMERO_CLASS = "Dataset"
+    dataset.getId = lambda: 2
+    dataset.listChildren = lambda: [child]
+
+    context = object_context("Dataset", 2, dataset)
+
+    assert context["attachments"] == []
+    assert context["supported_attachments"][0]["annotation_id"] == 7
+    assert context["supported_attachments"][0]["kind"] == "result"
+    assert context["supported_attachments"][0]["direct"] is False
+    assert context["supported_attachments"][0]["object_type"] == "Image"
+    _, info = get_scoped_attachment(dataset, 7)
+    assert info.object_name == "Child image"
 
 
 def test_attachment_must_be_directly_linked():

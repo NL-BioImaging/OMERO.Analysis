@@ -5,6 +5,7 @@ USER root
 
 COPY dist/wheelhouse/ /tmp/omero-plugin-wheelhouse/
 COPY docker/49-omero-analysis-cleanup.py /startup/49-omero-analysis-cleanup.py
+COPY docker/51-omero-analysis-navigation.py /startup/51-omero-analysis-navigation.py
 COPY docker/90-omero-analysis.omero /opt/omero/web/config/90-omero-analysis.omero
 
 RUN set -eu; \
@@ -24,6 +25,7 @@ RUN set -eu; \
         ${viewer_wheel:+$viewer_wheel} \
     && rm -rf /tmp/omero-plugin-wheelhouse \
     && chmod 0755 /startup/49-omero-analysis-cleanup.py \
+    && chmod 0755 /startup/51-omero-analysis-navigation.py \
     && chmod 0644 /opt/omero/web/config/90-omero-analysis.omero
 
 USER omero-web

@@ -231,12 +231,17 @@ try {
   const chatTab = page.getByRole("button", { name: "Assistant", exact: true });
   await chatTab.focus();
   await page.keyboard.press("Enter");
-  const themeToggle = page.getByRole("button", { name: "Switch to light theme" });
-  await themeToggle.click();
-  if (await page.locator(".app-shell").getAttribute("data-theme") !== "light") {
-    throw new Error("Light theme did not activate");
+  const shell = page.locator(".app-shell");
+  const initialTheme = await shell.getAttribute("data-theme");
+  if (initialTheme !== "dark" && initialTheme !== "light") {
+    throw new Error(`Unexpected initial theme: ${initialTheme}`);
   }
-  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  const alternateTheme = initialTheme === "dark" ? "light" : "dark";
+  await page.getByRole("button", { name: `Switch to ${alternateTheme} theme` }).click();
+  if (await shell.getAttribute("data-theme") !== alternateTheme) {
+    throw new Error(`${alternateTheme} theme did not activate`);
+  }
+  await page.getByRole("button", { name: `Switch to ${initialTheme} theme` }).click();
 
   await page.locator('.file-browser-toolbar input[type="file"]').setInputFiles({
     name: "smoke.csv", mimeType: "text/csv", buffer: Buffer.from("group,value\na,1\nb,2\n")

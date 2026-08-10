@@ -1,6 +1,16 @@
 from pathlib import Path
+import importlib.util
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_script(name):
+    path = ROOT / "docker" / name
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_center_panel_supports_expected_omero_objects():
@@ -17,6 +27,10 @@ def test_center_panel_supports_expected_omero_objects():
     assert "workspace_annotation=" in source
     assert "library_item=" in source
     assert "open_library=1" in source
+    assert "analysis_workspace_annotation=" in source
+    assert "analysis_data_annotation=" in source
+    assert "analysis_library_item=" in source
+    assert "window.location.assign" in source
     assert "oa-workspace-snapshot" in source
     assert "omeroweb_center_plugin" in source
     assert "load_plugin_content" in source
@@ -41,14 +55,76 @@ def test_center_panel_supports_expected_omero_objects():
     assert 'context.panel_kind == "settings"' in panel
     assert "Open selection in Analysis" in panel
     assert "Resume" in panel
+    assert "data-integrated-data-analysis" in panel
 
     deployment = (ROOT / "docker/90-omero-analysis.omero").read_text(
         encoding="utf-8"
     )
     assert deployment.count("omero.web.ui.center_plugins") == 1
     assert '["Analysis", "omero_analysis/center_plugin.js.html", "omero_analysis_panel"]' in deployment
+    assert "omero.web.ui.top_links" not in deployment
     assert "Analysis Chat" not in deployment
     assert "Analysis Notebook" not in deployment
+
+    cleanup = load_script("49-omero-analysis-cleanup.py")
+    assert cleanup.REGISTERED_ENTRIES == (
+        (
+            "omero.web.ui.center_plugins",
+            '["Analysis", "omero_analysis/center_plugin.js.html", '
+            '"omero_analysis_panel"]',
+        ),
+        (
+            "omero.web.ui.top_links",
+            '["Analysis", "omero_analysis_index", '
+            '{"title": "Open browser-local Analysis", "target": "new"}]',
+        ),
+    )
+
+
+def test_analysis_navigation_registration_uses_the_shared_boolean_contract():
+    navigation = load_script("51-omero-analysis-navigation.py")
+    assert navigation.OMERO_PYTHON == "/opt/omero/web/venv3/bin/python"
+    for value in ("true", "True", "TRUE", "1", " true "):
+        assert navigation.integrated_data_analysis(value) is True
+    for value in ("", "0", "false", "FALSE", "yes", None):
+        if value is None:
+            continue
+        assert navigation.integrated_data_analysis(value) is False
+
+
+def test_analysis_navigation_registration_is_conditional_and_idempotent(monkeypatch):
+    navigation = load_script("51-omero-analysis-navigation.py")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(navigation, "run", fake_run)
+    monkeypatch.setenv("INTEGRATE_DATA_ANALYSIS", "TRUE")
+    navigation.main()
+    assert calls[0][0][0] == navigation.OMERO_PYTHON
+    assert calls[1][0] == [
+        navigation.OMERO,
+        "config",
+        "remove",
+        "--",
+        navigation.TOP_LINK_KEY,
+        navigation.TOP_LINK_VALUE,
+    ]
+    assert len(calls) == 2
+
+    calls.clear()
+    monkeypatch.setenv("INTEGRATE_DATA_ANALYSIS", "FALSE")
+    navigation.main()
+    assert calls[2][0] == [
+        navigation.OMERO,
+        "config",
+        "append",
+        "--",
+        navigation.TOP_LINK_KEY,
+        navigation.TOP_LINK_VALUE,
+    ]
 
 
 def test_analysis_shell_includes_notebook_runtime_contract():
@@ -61,6 +137,7 @@ def test_analysis_shell_includes_notebook_runtime_contract():
     assert "JupyterLab" not in source
     assert "data-notebook-download-template" in source
     assert "data-notebook-upload-template" in source
+    assert "data-embedded-host" in source
     assert "{% load analysis_assets %}" in source
     assert "{% analysis_static 'omero_analysis/app.js' %}" in source
     assert "?v=0.10.0" not in source
