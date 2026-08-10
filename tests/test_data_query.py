@@ -53,7 +53,7 @@ def test_chunk_reader_is_bounded_and_reports_remaining_length():
     assert reader.read() == b""
 
 
-def test_opaque_references_and_encrypted_result_token_are_context_bound():
+def test_opaque_references_and_encrypted_result_token_are_context_bound(monkeypatch):
     annotation = FakeAnnotation(11, "measurements.duckdb", b"database")
     obj = FakeObject(annotations=[annotation])
     conn = FakeConnection(obj)
@@ -77,6 +77,11 @@ def test_opaque_references_and_encrypted_result_token_are_context_bound():
     other = SimpleNamespace(**{**info.__dict__, "file_id": 999})
     with pytest.raises(InvalidToken):
         validate_result_token(request, conn, token, obj, other)
+    monkeypatch.setattr(
+        "omero_analysis.data_query.data_query_result_ttl_seconds", lambda: -1
+    )
+    with pytest.raises(InvalidToken):
+        validate_result_token(request, conn, token, obj, info)
 
 
 class Response:
