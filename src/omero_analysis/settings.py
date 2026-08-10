@@ -15,6 +15,8 @@ def _setting(name, default):
     django_name = f"OMERO_ANALYSIS_{name.upper()}"
     if hasattr(settings, django_name):
         return getattr(settings, django_name)
+    if django_name in os.environ:
+        return os.environ[django_name]
     try:
         from omeroweb.settings import omero_settings
 
@@ -76,3 +78,26 @@ def allowed_result_extensions():
     else:
         values = value
     return {str(item).strip().lower() for item in values if str(item).strip()}
+
+
+def data_query_worker_url():
+    return str(
+        getattr(settings, "OMERO_ANALYSIS_DATA_QUERY_WORKER_URL", "")
+        or os.environ.get("OMERO_ANALYSIS_DATA_QUERY_WORKER_URL", "")
+    ).strip().rstrip("/")
+
+
+def data_query_worker_token():
+    # Deliberately environment/Django-secret only: never read from OMERO config.
+    return str(
+        getattr(settings, "OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN", "")
+        or os.environ.get("OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN", "")
+    ).strip()
+
+
+def remote_query_threshold_bytes():
+    return max(0, int(_setting("remote_query_threshold_bytes", 104857600)))
+
+
+def data_query_result_ttl_seconds():
+    return max(1, int(_setting("data_query_result_ttl_seconds", 600)))

@@ -13,6 +13,9 @@ code used only for your reasoning. Set purpose="analysis" for user-requested cal
 plots, or code that may be worth saving and rerunning. Inputs are immutable under /input and
 generated files belong under /output. Use the exact paths returned by list_workspace_files.
 Repair recoverable tool errors without waiting for the user to ask.
+For remote DuckDB, SQLite, or CSV sources, use inspect_remote_schema and query_remote_data;
+never try to open their logical paths with browser Python. Inspection queries return previews.
+Analysis queries materialize a complete bounded CSV under /input for reusable Python code.
 
 For a database plus CSV or Excel template, first inspect sheet names, columns, dtypes, and a few
 mapping values; never guess Well, Row, or Column fields. Then analyze the observed schema directly.
@@ -149,6 +152,52 @@ export const TOOLS = [
           }
         },
         required: ["question", "choices"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "inspect_remote_schema",
+      description: "Inspect the normalized schema of one remote DuckDB, SQLite, or CSV source without downloading it.",
+      parameters: {
+        type: "object",
+        properties: { annotation_id: { type: "integer", minimum: 1 } },
+        required: ["annotation_id"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_remote_data",
+      description: "Run one bounded parameterized read-only query. Analysis purpose downloads the complete CSV into the Workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          annotation_id: { type: "integer", minimum: 1 },
+          sql: { type: "string" },
+          parameters: {
+            type: "object",
+            additionalProperties: {
+              type: "object",
+              properties: {
+                type: {
+                  type: "string",
+                  enum: ["null", "boolean", "integer", "float", "decimal", "string", "date", "time", "timestamp"]
+                },
+                value: {}
+              },
+              required: ["type", "value"],
+              additionalProperties: false
+            }
+          },
+          purpose: { type: "string", enum: ["inspection", "analysis"] },
+          output_csv_name: { type: "string" }
+        },
+        required: ["annotation_id", "sql", "parameters", "purpose"],
         additionalProperties: false
       }
     }

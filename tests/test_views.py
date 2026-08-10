@@ -87,6 +87,7 @@ def test_context_token_reports_permissions():
         "library_list",
         "library_download",
         "settings_read",
+        "data_query",
     ]
 
 

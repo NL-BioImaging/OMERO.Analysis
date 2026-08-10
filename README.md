@@ -136,6 +136,14 @@ Default synchronization limits can be overridden with OMERO.web settings:
 - `omero.web.analysis.max_upload_bytes`: 256 MiB per item
 - `omero.web.analysis.max_sync_changed_bytes`: 512 MiB per synchronization
 - `omero.web.analysis.max_png_pixels`: 100 megapixels
+- `omero.web.analysis.remote_query_threshold_bytes`: 104,857,600 (100 MiB;
+  set to `0` to force every supported OMERO attachment remote)
+- `omero.web.analysis.data_query_result_ttl_seconds`: 600
+
+Remote DuckDB, SQLite, and CSV queries additionally require the secret-only
+`OMERO_ANALYSIS_DATA_QUERY_WORKER_URL` and
+`OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN` environment/Django settings. These
+values are never returned to the browser or stored in OMERO configuration.
 
 The default attachment download transport limit is 2 GiB. Analysis also checks
 the browser Workspace ceiling and available storage before downloading; the

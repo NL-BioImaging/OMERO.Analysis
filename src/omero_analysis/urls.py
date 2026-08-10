@@ -31,6 +31,26 @@ urlpatterns = [
     ),
     re_path(r"^api/context-token/$", views.context_token, name="omero_analysis_token"),
     re_path(
+        r"^api/data-query/capabilities/$",
+        views.data_query_capabilities,
+        name="omero_analysis_data_query_capabilities",
+    ),
+    re_path(
+        r"^api/data-source/(?P<annotation_id>\d+)/schema/$",
+        views.data_source_schema,
+        name="omero_analysis_data_source_schema",
+    ),
+    re_path(
+        r"^api/data-source/(?P<annotation_id>\d+)/query/$",
+        views.data_source_query,
+        name="omero_analysis_data_source_query",
+    ),
+    re_path(
+        r"^api/data-query-result/(?P<result_token>[A-Za-z0-9_=-]+)/download/$",
+        views.data_query_result_download,
+        name="omero_analysis_data_query_result_download",
+    ),
+    re_path(
         r"^api/context/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.context,
         name="omero_analysis_context",

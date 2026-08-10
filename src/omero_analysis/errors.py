@@ -35,3 +35,12 @@ class UnsupportedMedia(AnalysisError):
     code = "unsupported_media"
     status = 415
 
+
+class RemoteQueryUnavailable(AnalysisError):
+    code = "remote_query_unavailable"
+    status = 503
+
+
+class RemoteQueryFailed(AnalysisError):
+    code = "remote_query_failed"
+    status = 502

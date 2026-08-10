@@ -11,6 +11,11 @@ export interface Attachment {
   namespace?: string | null;
   kind: "attachment" | "result" | "workspace" | "pipeline" | "notebook";
   supported: boolean;
+  query_format?: "duckdb" | "sqlite" | "csv";
+  default_mode?: "local" | "remote";
+  allowed_modes?: Array<"local" | "remote">;
+  threshold_reason?: string;
+  worker_ready?: boolean;
 }
 
 export interface OmeroContext {
@@ -26,6 +31,7 @@ export interface OmeroContext {
   selected_notebook?: Attachment | null;
   notebooks?: Attachment[];
   selected_objects?: HierarchyItem[];
+  data_bindings?: Record<string, "local" | "remote">;
 }
 
 export interface Bootstrap {
@@ -52,6 +58,10 @@ export interface Bootstrap {
   workspaceLibraryDownloadTemplate: string;
   analysisSettingsTemplate: string;
   workflowSkillsUrl: string;
+  dataQueryCapabilitiesUrl?: string;
+  dataSourceSchemaTemplate?: string;
+  dataSourceQueryTemplate?: string;
+  dataQueryResultDownloadTemplate?: string;
   zarrViewerStatusUrl: string;
   keepaliveUrl: string;
   keepaliveInterval: number;
@@ -79,6 +89,7 @@ export interface WorkflowSkillSummary {
   package_url: string;
   required_resources?: string[];
   required_capabilities?: string[];
+  preferred_capabilities?: string[];
   match: WorkflowSkillMatch;
 }
 
@@ -91,6 +102,11 @@ export interface WorkflowSkillSource {
   resolved_commit: string;
   skills_path: string;
   ref_kind: string;
+  plugin_identity?: string;
+  plugin_version?: string;
+  plugin_path?: string;
+  plugin_sha256?: string;
+  format?: "agent-plugin-v1" | "legacy-agent-skills";
 }
 
 export interface WorkflowSkillEntry {
@@ -102,7 +118,7 @@ export interface WorkflowSkillEntry {
 }
 
 export interface WorkflowSkillCatalog {
-  schema: "nl.bioimaging.biomero-workflow-skills.v1";
+  schema: "nl.bioimaging.biomero-workflow-skills.v1" | "nl.bioimaging.biomero-workflow-skills.v2";
   generated_at: string;
   consumer: string;
   config_hash: string;
@@ -238,6 +254,8 @@ export interface WorkspaceFile {
   error?: string;
   annotationId?: number;
   fileId?: number;
+  dataQueryMode?: "local" | "remote";
+  remoteSchemaDigest?: string;
   viewer?: ZarrViewerProvenance;
   deletedAt?: string;
   createdAt: string;
@@ -328,6 +346,7 @@ export interface ExecutionRecord {
   model: string;
   modelPayload?: ModelPayload;
   workflowSkills?: ChatMessage["workflowSkills"];
+  remoteQueryBindings?: RemoteQueryBindingV1[];
   purpose?: ExecutionPurpose;
   evidenceId?: string;
   durationMs?: number;
@@ -399,6 +418,7 @@ export interface MethodRecord {
   parameters?: ParameterDefinition[];
   requiredCapabilities?: string[];
   workspaceBindings?: Record<string, Record<string, string>>;
+  remoteQueryBindings?: RemoteQueryBindingV1[];
   libraryOrigin?: LibraryOrigin;
   deletedAt?: string;
   createdAt: string;
@@ -421,6 +441,7 @@ export interface PipelineRecord {
   description: string;
   version: number;
   steps: PipelineStep[];
+  remoteQueryBindings?: RemoteQueryBindingV1[];
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
@@ -760,9 +781,26 @@ export interface NotebookRecord {
   sourceAnnotationId?: number;
   attachmentIds: number[];
   selectedDataFileIds: string[];
+  remoteQueryBindings?: RemoteQueryBindingV1[];
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RemoteQueryBindingV1 {
+  version: 1;
+  capability: "omero-data-query-v1";
+  annotationId: number;
+  fileId: number;
+  format: "duckdb" | "sqlite" | "csv";
+  sourceDigest: string;
+  schemaDigest: string;
+  sql: string;
+  parameters: Record<string, {
+    type: "null" | "boolean" | "integer" | "float" | "decimal" | "string" | "date" | "time" | "timestamp";
+    value: unknown;
+  }>;
+  outputCsvName: string;
 }
 
 export interface LibraryOrigin {

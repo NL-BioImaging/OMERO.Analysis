@@ -31,6 +31,14 @@ except ImportError:
         return decorator
 
 from .errors import AnalysisError
+from .data_query import (
+    DataQueryBroker,
+    make_result_token,
+    opaque_references,
+    query_policy,
+    result_token_claims,
+    validate_result_token,
+)
 from .integrations import zarr_viewer_status
 from .managed_omero import marker as managed_marker, plain as managed_plain
 from .services import (
@@ -298,6 +306,8 @@ def analysis(request, conn=None, **kwargs):
                 "selected_workspace_snapshot": selected_workspace_snapshot,
                 "selected_notebook": None,
             }
+            _apply_data_query_presentation(context)
+            context["data_bindings"] = _parse_data_bindings(request, context)
             if len(selected_objects) > 1:
                 context.update({
                     "name": (
@@ -316,7 +326,7 @@ def analysis(request, conn=None, **kwargs):
                         "The selected FileAnnotation is not an Analysis notebook"
                     )
                 context["selected_notebook"] = notebook_info.to_dict()
-        except AnalysisError as exc:
+        except (AnalysisError, ValueError) as exc:
             return HttpResponseBadRequest(str(exc))
     style_nonce = secrets.token_urlsafe(18)
     response = render(
@@ -515,7 +525,43 @@ def _launch_context(request, conn, object_type, object_id):
             "selection_count": len(selected_objects),
         })
     _configure_panel_context(conn, obj, context)
+    _apply_data_query_presentation(context)
     return context
+
+
+def _apply_data_query_presentation(context):
+    capabilities = DataQueryBroker().capabilities()
+    ready = bool(capabilities.get("ready"))
+    context["data_query"] = capabilities
+    for key in ("attachments", "supported_attachments", "selected_attachments"):
+        values = context.get(key) or []
+        for item in values:
+            policy = query_policy(type("Info", (), item)(), ready)
+            if policy:
+                item.update(policy)
+
+
+def _parse_data_bindings(request, context):
+    selected = {
+        int(item["annotation_id"]): item
+        for item in context.get("selected_attachments") or []
+    }
+    bindings = {}
+    for raw in request.GET.getlist("data_binding"):
+        annotation, separator, mode = raw.partition(":")
+        try:
+            annotation_id = int(annotation)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid data_binding annotation ID") from exc
+        if not separator or mode not in {"local", "remote"}:
+            raise ValueError("Invalid data_binding mode")
+        if annotation_id in bindings:
+            raise ValueError("Duplicate data_binding")
+        item = selected.get(annotation_id)
+        if item is None or mode not in item.get("allowed_modes", []):
+            raise ValueError("data_binding is not allowed for the selected attachment")
+        bindings[annotation_id] = mode
+    return {str(key): value for key, value in bindings.items()}
 
 
 @require_GET
@@ -709,6 +755,7 @@ def context_token(request, conn=None, **kwargs):
         "library_list",
         "library_download",
         "settings_read",
+        "data_query",
     ]
     if can_annotate(obj):
         operations.extend(
@@ -735,6 +782,99 @@ def context_token(request, conn=None, **kwargs):
             "operations": operations,
         }
     )
+
+
+def _data_query_attachment(request, conn, annotation_id):
+    claims = validate_context_token(request, conn, "data_query")
+    _, _, obj = get_context_object(
+        conn, claims["object_type"], claims["object_id"]
+    )
+    validate_context_token(
+        request,
+        conn,
+        "data_query",
+        claims["object_type"],
+        claims["object_id"],
+        obj,
+    )
+    annotation, info = get_scoped_attachment(obj, annotation_id)
+    scope, source_ref = opaque_references(request, conn, claims, info)
+    return claims, obj, annotation, info, scope, source_ref
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def data_query_capabilities(request, conn=None, **kwargs):
+    return JsonResponse(DataQueryBroker().capabilities())
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def data_source_schema(request, annotation_id, conn=None, **kwargs):
+    _, _, annotation, info, scope, source_ref = _data_query_attachment(
+        request, conn, annotation_id
+    )
+    return JsonResponse(
+        DataQueryBroker().schema(annotation, info, scope, source_ref)
+    )
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def data_source_query(request, annotation_id, conn=None, **kwargs):
+    claims, _, annotation, info, scope, source_ref = _data_query_attachment(
+        request, conn, annotation_id
+    )
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Remote query request must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        from .errors import InvalidObject
+
+        raise InvalidObject("Remote query request must be a JSON object")
+    result, result_id = DataQueryBroker().query(
+        annotation, info, scope, source_ref, payload
+    )
+    result["result_token"] = make_result_token(
+        request, conn, claims, info, result_id
+    )
+    return JsonResponse(result)
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def data_query_result_download(request, result_token, conn=None, **kwargs):
+    claims = result_token_claims(result_token)
+    _, _, obj = get_context_object(
+        conn, claims.get("object_type"), claims.get("object_id")
+    )
+    _, info = get_scoped_attachment(obj, claims.get("annotation_id"))
+    validated = validate_result_token(request, conn, result_token, obj, info)
+    worker_response = DataQueryBroker().download(validated["result_id"])
+
+    def chunks():
+        try:
+            yield from worker_response.iter_content(chunk_size=1024 * 1024)
+        finally:
+            worker_response.close()
+
+    response = ConnCleaningHttpResponse(
+        chunks(), content_type="text/csv; charset=utf-8"
+    )
+    response.conn = conn
+    if worker_response.headers.get("Content-Length"):
+        response["Content-Length"] = worker_response.headers["Content-Length"]
+    response["Content-Disposition"] = "attachment; filename=data-query-result.csv"
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @require_GET
