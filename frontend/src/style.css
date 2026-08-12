@@ -1498,6 +1498,62 @@ th { position: sticky; top: 0; background: #183040; }
   display: flex; font-size: .72rem; margin: 0; min-height: 32px; padding: .35rem .8rem;
 }
 
+.notebook-portability-warning {
+  margin: .5rem 1rem;
+  padding: .65rem .8rem;
+  border: 1px solid #b27b35;
+  border-radius: 6px;
+  background: rgba(178, 123, 53, .12);
+  color: #f0c887;
+}
+
+.notebook-parameters {
+  margin: .75rem 1rem;
+  padding: .85rem;
+  border: 1px solid #334a5c;
+  border-radius: 7px;
+  background: #12212b;
+}
+
+.notebook-parameters > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.notebook-parameters small,
+.notebook-parameter small {
+  color: #9db2c1;
+}
+
+.notebook-parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: .7rem;
+  margin-top: .75rem;
+}
+
+.notebook-parameter {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.notebook-parameter.boolean {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.notebook-parameter input:not([type="checkbox"]),
+.notebook-parameter select {
+  min-height: 34px;
+  border: 1px solid #456071;
+  border-radius: 4px;
+  padding: .35rem .5rem;
+  background: #0b171f;
+  color: inherit;
+}
+
 .notebook-cells {
   display: grid;
   gap: .8rem;

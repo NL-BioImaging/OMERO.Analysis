@@ -175,7 +175,8 @@ OMERO FileAnnotation.
 
 With the artifact editor enabled, **Edit** opens a structured cell editor after
 strictly reattaching current inputs. The generated input-binding cell is
-read-only. Saving edited content clears stored execution counts and outputs so
+read-only for legacy notebooks. Portable notebooks instead retain their visible
+tagged protocol cell as the first cell. Saving edited content clears stored execution counts and outputs so
 stale results are not presented as current. Code cells use Python and embedded
 SQL syntax highlighting. Markdown cells render formatted text when run or
 previewed. Raw text cells preserve text exactly and are neither executed nor
@@ -185,14 +186,27 @@ Notebook** uses the same creation path, or converts a selected Pipeline. A new
 Notebook already contains the read-only OMERO.Analysis input-binding cell, an
 editable code cell, and references to all ready Workspace inputs.
 
+An uploaded portable notebook uses the
+`nl.bioimaging.omero-analysis-notebook.v1` contract. Analysis validates and
+sanitizes it, binds query sources and supporting files separately, and shows a
+native parameter form above the cells. The same `await ctx.query(...)` code can
+run against a compatible small Local or large Remote DuckDB, SQLite, SQLite3,
+or CSV attachment. Query transport files are transient and never appear in
+Workspace Input. Generated files under `ctx.results` appear below the
+Notebook's results folder. See [the developer guide](portable-notebooks.md).
+
 Use **Reattach input data** after the Workspace inputs change. Analysis
 synchronizes the ready local inputs under `/input`, adds or updates one visible
 first code cell named **OMERO.Analysis input bindings**, and updates
 unambiguous `/input/...` filenames in the remaining code cells. Reattaching
-the same inputs updates that binding cell instead of creating duplicates.
+the same inputs updates that binding cell instead of creating duplicates. For
+a portable notebook, Reattach preserves the protocol cell and rebinds logical
+input IDs instead.
 
 Notebook execution does not load AI providers, Assistant skills, JupyterLab,
-widgets, shell commands, or network package downloads.
+widget JavaScript, shell commands, or network package downloads. Developers may
+use `ctx.display_parameters()` for optional ipywidgets offline; Analysis always
+uses its native form.
 
 ## Workspace synchronization
 

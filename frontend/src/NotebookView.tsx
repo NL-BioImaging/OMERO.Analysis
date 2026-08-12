@@ -3,6 +3,7 @@ import { PythonRuntime } from "./runtime";
 import { MarkdownPreview, PythonPreview } from "./components/WorkspacePanels";
 import { ActionIcon } from "./components/ActionIcon";
 import { Button } from "./components/BlueprintControls";
+import { parameterDefaults, parseNotebookProtocol } from "./notebookProtocol";
 import type {
   NotebookCell,
   NotebookDocument,
@@ -303,6 +304,7 @@ interface Props {
   runRequest: { id: string; nonce: number } | null;
   workspaceActions: ReactNode;
   onBeforeRun: () => Promise<void>;
+  onPrepareProtocol?: (record: NotebookRecord) => Promise<NotebookRecord>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
   onSelect?: (id: string) => void;
@@ -312,7 +314,7 @@ interface Props {
 export default function NotebookView(props: Props) {
   const {
     notebook, notebooks = notebook ? [notebook] : [], inputs, runtime, runRequest, workspaceActions,
-    onBeforeRun, onChange, onFiles, onSelect, onEdit
+    onBeforeRun, onPrepareProtocol, onChange, onFiles, onSelect, onEdit
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
@@ -342,12 +344,24 @@ export default function NotebookView(props: Props) {
               : candidate
           )
         },
+        protocolRuns: base.protocolRuns?.map((run, runIndex, runs) =>
+          runIndex === runs.length - 1 && run.status === "running"
+            ? {
+                ...run,
+                outputs: [
+                  ...run.outputs,
+                  ...result.files.map((file) => ({ name: file.name, size: file.data.byteLength }))
+                ]
+              }
+            : run
+        ),
         updatedAt: new Date().toISOString()
       };
       await onFiles(changed, result.files);
       await onChange(changed);
       return changed;
     } catch (error) {
+      const message = String(error instanceof Error ? error.message : error);
       const failed: NotebookRecord = {
         ...base,
         document: {
@@ -358,10 +372,15 @@ export default function NotebookView(props: Props) {
               : candidate
           )
         },
+        protocolRuns: base.protocolRuns?.map((run, runIndex, runs) =>
+          runIndex === runs.length - 1 && run.status === "running"
+            ? { ...run, status: "failed", error: message, completedAt: new Date().toISOString() }
+            : run
+        ),
         updatedAt: new Date().toISOString()
       };
       await onChange(failed);
-      setStatus(`Stopped at cell ${index + 1}: ${String(error)}`);
+      setStatus(`Stopped at cell ${index + 1}: ${message}`);
       return null;
     }
   }
@@ -377,9 +396,12 @@ export default function NotebookView(props: Props) {
       (file) => file.source !== "result" && file.state === "ready" &&
         !file.deletedAt && Boolean(file.data)
     );
+    const protocol = parseNotebookProtocol(record.document);
     const changed = {
       ...record,
-      document: reattachNotebookDocument(record.document, readyInputs),
+      document: protocol
+        ? record.document
+        : reattachNotebookDocument(record.document, readyInputs),
       selectedDataFileIds: readyInputs.map((file) => file.id),
       updatedAt: new Date().toISOString()
     };
@@ -396,6 +418,26 @@ export default function NotebookView(props: Props) {
       await onBeforeRun();
       await runtime.reset();
       let working: NotebookRecord | null = await attachInputs(notebook, false);
+      if (onPrepareProtocol) working = await onPrepareProtocol(working);
+      if (parseNotebookProtocol(working.document)) {
+        const run = {
+          startedAt: new Date().toISOString(),
+          parameters: {
+            ...parameterDefaults(parseNotebookProtocol(working.document)!),
+            ...(working.parameterValues || {})
+          },
+          sources: (working.protocolBindings || []).map((binding) => ({
+            inputId: binding.inputId,
+            name: binding.name,
+            schemaDigest: binding.schemaDigest,
+            sourceDigest: binding.sourceDigest
+          })),
+          outputs: [],
+          status: "running" as const
+        };
+        working = { ...working, protocolRuns: [...(working.protocolRuns || []), run] };
+        await onChange(working);
+      }
       let count = 1;
       for (let index = 0; working && index < working.document.cells.length; index += 1) {
         if (working.document.cells[index].cell_type !== "code") continue;
@@ -403,12 +445,40 @@ export default function NotebookView(props: Props) {
         working = await executeCell(index, count++, working);
         if (!working) break;
       }
+      if (working && working.protocolRuns?.at(-1)?.status === "running") {
+        working = {
+          ...working,
+          protocolRuns: working.protocolRuns.map((run, index, runs) =>
+            index === runs.length - 1
+              ? { ...run, status: "success" as const, completedAt: new Date().toISOString() }
+              : run
+          ),
+          updatedAt: new Date().toISOString()
+        };
+        await onChange(working);
+      }
       setStatus((value) => value.startsWith("Stopped") ? value : "Notebook run completed.");
     } catch (error) {
       setStatus(`Notebook could not start: ${String(error)}`);
     } finally {
       setRunning(false);
     }
+  }
+
+  async function updateParameter(name: string, value: boolean | number | string | null) {
+    if (!notebook) return;
+    await onChange({
+      ...notebook,
+      parameterValues: { ...(notebook.parameterValues || {}), [name]: value },
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  let protocol = null;
+  try {
+    protocol = notebook ? parseNotebookProtocol(notebook.document) : null;
+  } catch {
+    protocol = null;
   }
 
   async function stopReset() {
@@ -469,6 +539,61 @@ export default function NotebookView(props: Props) {
         </div>
       </div>
       <p className="notebook-status" role="status">{status}</p>
+      {notebook?.portabilityWarning && (
+        <p className="notebook-portability-warning" role="status">{notebook.portabilityWarning}</p>
+      )}
+      {notebook && protocol && protocol.parameters.length > 0 && (
+        <section className="notebook-parameters" aria-label="Notebook parameters">
+          <div>
+            <strong>Notebook parameters</strong>
+            <small>Values are stored with this Notebook and captured in every run.</small>
+          </div>
+          <div className="notebook-parameter-grid">
+            {protocol.parameters.map((parameter) => {
+              const value = notebook.parameterValues?.[parameter.name] ?? parameter.default ?? null;
+              const choices = parameter.choices || notebook.parameterChoices?.[parameter.name] || [];
+              const choiceLabels = notebook.parameterChoiceLabels?.[parameter.name] || [];
+              const label = parameter.label || parameter.name;
+              if (parameter.type === "boolean") return (
+                <label key={parameter.name} className="notebook-parameter boolean">
+                  <input type="checkbox" checked={Boolean(value)} disabled={running}
+                    onChange={(event) => void updateParameter(parameter.name, event.target.checked)} />
+                  <span><strong>{label}</strong>{parameter.help && <small>{parameter.help}</small>}</span>
+                </label>
+              );
+              if (parameter.type === "choice") return (
+                <label key={parameter.name} className="notebook-parameter">
+                  <span>{label}</span>
+                  <select value={String(choices.findIndex((choice) => Object.is(choice, value)))} disabled={running || choices.length === 0}
+                    onChange={(event) => void updateParameter(parameter.name, choices[Number(event.target.value)] ?? null)}>
+                    {choices.length === 0 && <option value="">Choices load from the bound database at run time</option>}
+                    {choices.map((choice, index) => <option key={`${typeof choice}:${String(choice)}`} value={String(index)}>{choiceLabels[index] || String(choice)}</option>)}
+                  </select>
+                  {parameter.help && <small>{parameter.help}</small>}
+                </label>
+              );
+              return (
+                <label key={parameter.name} className="notebook-parameter">
+                  <span>{label}</span>
+                  <input
+                    type={parameter.type === "integer" || parameter.type === "number" ? "number" : "text"}
+                    value={value == null ? "" : String(value)}
+                    min={parameter.minimum} max={parameter.maximum} step={parameter.step}
+                    disabled={running}
+                    onChange={(event) => void updateParameter(
+                      parameter.name,
+                      event.target.value === "" ? null :
+                        parameter.type === "integer" ? Number.parseInt(event.target.value, 10) :
+                          parameter.type === "number" ? Number.parseFloat(event.target.value) : event.target.value
+                    )}
+                  />
+                  {parameter.help && <small>{parameter.help}</small>}
+                </label>
+              );
+            })}
+          </div>
+        </section>
+      )}
       {!notebook ? (
         <div className="notebook-empty">Choose a Notebook from the Workspace explorer.</div>
       ) : (

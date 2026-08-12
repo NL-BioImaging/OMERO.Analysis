@@ -323,9 +323,54 @@ try {
   await page.locator(".workspace-tree .browser-name")
     .getByText("smoke-notebook.ipynb", { exact: true })
     .waitFor();
+  const portableContract = {
+    schema: "nl.bioimaging.omero-analysis-notebook.v1",
+    inputs: [{
+      id: "measurements", kind: "query", path: "input/smoke.csv",
+      formats: ["csv"], required: true
+    }],
+    results: { path: "results" },
+    parameters: [{
+      name: "minimum", type: "integer", default: 1, minimum: 0,
+      label: "Minimum value"
+    }],
+    requirements: ["pandas"]
+  };
+  const portableNotebook = {
+    nbformat: 4, nbformat_minor: 5,
+    metadata: {
+      kernelspec: { display_name: "Python 3", language: "python", name: "python3" },
+      language_info: { name: "python" },
+      widgets: { stale: true }
+    },
+    cells: [{
+      id: "config", cell_type: "code",
+      metadata: { tags: ["omero-analysis-config"] },
+      execution_count: 5,
+      outputs: [{ output_type: "stream", name: "stdout", text: "stale" }],
+      source: `import omero_analysis_notebook as oan\nctx = oan.configure(r'''${JSON.stringify(portableContract)}''')\nctx.display_parameters()\n`
+    }, {
+      id: "query", cell_type: "code", metadata: {}, execution_count: null, outputs: [],
+      source: "result = await ctx.query('measurements', 'SELECT \"group\", SUM(value) AS total FROM data WHERE value >= $minimum GROUP BY \"group\" ORDER BY \"group\"', {'minimum': ctx.params['minimum']})\nresult.to_csv(ctx.results / 'portable-summary.csv', index=False)\nresult\n"
+    }]
+  };
+  await page.locator('input[accept^=".ipynb"]').setInputFiles({
+    name: "portable-smoke.ipynb",
+    mimeType: "application/x-ipynb+json",
+    buffer: Buffer.from(JSON.stringify(portableNotebook))
+  });
+  const portableItem = page.locator(".workspace-tree .browser-name")
+    .getByText("portable-smoke.ipynb", { exact: true });
+  await portableItem.waitFor();
+  await portableItem.dblclick();
+  await page.getByRole("region", { name: "Notebook parameters" }).waitFor();
+  await page.locator('.notebook-tab').getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByText("Notebook run completed.", { exact: true }).waitFor({ timeout: 120_000 });
+  const portableResult = page.locator('.workspace-tree .browser-name strong[title="portable-summary.csv"]');
+  if (await portableResult.count() !== 1) throw new Error("Portable Notebook result was not saved in Notebooks results");
   if (completions !== 2) throw new Error(`Expected two provider rounds; got ${completions}`);
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
-  console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Assistant, and Notebook conversion");
+  console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Assistant, Notebook conversion, and portable top-level-await query execution");
 } catch (error) {
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));
   console.error("Browser errors:", errors.join("\n"));

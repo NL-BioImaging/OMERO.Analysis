@@ -16,6 +16,7 @@ const roots = [
   "pandas",
   "matplotlib",
   "scipy",
+  "scikit-image",
   "duckdb",
   "pyarrow",
   "python-calamine",
@@ -24,10 +25,11 @@ const roots = [
 const selected = new Set();
 
 function include(name) {
-  if (selected.has(name)) return;
-  const record = lock.packages[name];
+  const resolved = lock.packages[name] ? name : name.replaceAll("_", "-");
+  if (selected.has(resolved)) return;
+  const record = lock.packages[resolved];
   if (!record) throw new Error(`Pyodide ${version} does not provide ${name}`);
-  selected.add(name);
+  selected.add(resolved);
   for (const dependency of record.depends || []) include(dependency);
 }
 roots.forEach(include);

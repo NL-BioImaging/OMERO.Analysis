@@ -51,7 +51,9 @@ when **Enable artifact editor** is turned on in Analysis Settings.
 Data and notebook code execute in an opaque, no-network Pyodide sandbox.
 Notebook execution never calls the AI provider or loads Agent Skill packages.
 Raw notebook HTML and JavaScript are never rendered. Magics, shell commands,
-widgets, non-Python kernels, and arbitrary package downloads are rejected.
+widget JavaScript, non-Python kernels, and arbitrary package downloads are
+rejected. Portable protocol parameters render as native Analysis controls;
+optional ipywidgets are offline-only.
 
 Each Assistant conversation can keep up to ten browser-local TXT, searchable PDF, DOCX, PNG,
 JPEG, or WebP attachments (25 MiB each). PDF and DOCX text is extracted in the
@@ -165,6 +167,15 @@ migrated.
 
 Old `.oa.zip`, `.oac.zip`, `.oa-workflow.json`, legacy manifests, and old
 browser databases are not read or deleted automatically.
+
+## Portable offline-first notebooks
+
+Developers can create ordinary Jupyter projects with local `input/` and
+`results/` folders, then upload the same notebook and rebind it to compatible
+Local or Remote DuckDB, SQLite, SQLite3, or CSV attachments. See the
+[portable notebook developer guide](docs/portable-notebooks.md). The separate
+`omero-analysis-notebook` SDK lives under `notebook-sdk/`, and the root Agent
+Plugin contains the `create-omero-analysis-notebook` skill.
 
 ## Development
 

@@ -6,6 +6,7 @@ import type {
   PipelineRecord,
   WorkspaceFile
 } from "./types";
+import { parseNotebookProtocol } from "./notebookProtocol";
 
 export const INPUT_BINDINGS_KIND = "input-bindings";
 
@@ -170,6 +171,9 @@ export function bindNotebookInputsStrict(
   document: NotebookDocument,
   files: WorkspaceFile[]
 ): { document: NotebookDocument; bindings: InputBinding[] } {
+  if (parseNotebookProtocol(document)) {
+    return { document, bindings: [] };
+  }
   const candidates = workspaceCandidates(files);
   const bindings: InputBinding[] = [];
   const cells = document.cells

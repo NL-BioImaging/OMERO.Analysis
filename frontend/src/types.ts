@@ -1,3 +1,8 @@
+import type {
+  NotebookProtocolBinding,
+  NotebookRunProvenance
+} from "./notebookProtocol";
+
 export type OmeroObjectType = "Image" | "Dataset" | "Plate" | "Screen";
 export type FileSource = "local" | "omero" | "result";
 export type FileState = "loading" | "ready" | "failed" | "missing";
@@ -794,6 +799,12 @@ export interface NotebookRecord {
   attachmentIds: number[];
   selectedDataFileIds: string[];
   remoteQueryBindings?: RemoteQueryBinding[];
+  protocolBindings?: NotebookProtocolBinding[];
+  parameterValues?: Record<string, boolean | number | string | null>;
+  parameterChoices?: Record<string, Array<boolean | number | string>>;
+  parameterChoiceLabels?: Record<string, string[]>;
+  protocolRuns?: NotebookRunProvenance[];
+  portabilityWarning?: string;
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;

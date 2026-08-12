@@ -99,6 +99,32 @@ describe("strict artifact input binding", () => {
     expect(rebound.document.cells[1].source).toContain("/input/screen.duckdb");
   });
 
+  it("preserves a portable protocol configuration cell instead of inserting a legacy binding cell", () => {
+    const literal = JSON.stringify({
+      schema: "nl.bioimaging.omero-analysis-notebook.v1",
+      inputs: [{ id: "measurements", kind: "query", path: "input/old.duckdb", formats: ["duckdb"] }],
+      results: { path: "results" },
+      parameters: [],
+      requirements: []
+    });
+    const document: NotebookDocument = {
+      nbformat: 4,
+      nbformat_minor: 5,
+      metadata: {},
+      cells: [{
+        id: "config",
+        cell_type: "code",
+        source: `import omero_analysis_notebook as oan\nctx = oan.configure(r'''${literal}''')`,
+        metadata: { tags: ["omero-analysis-config"] },
+        execution_count: null,
+        outputs: []
+      }]
+    };
+    const rebound = bindNotebookInputsStrict(document, [input("screen.duckdb")]);
+    expect(rebound.document).toBe(document);
+    expect(rebound.document.cells.filter(isInputBindingsCell)).toHaveLength(0);
+  });
+
   it("recognizes literal outputs from earlier Pipeline steps as staged inputs", () => {
     const methods = [
       method("first", 'db = "/input/source.duckdb"\nout = "/output/table.csv"'),

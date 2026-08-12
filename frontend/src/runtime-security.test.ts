@@ -1,4 +1,4 @@
-import { runtimeWorker, sandboxUrl } from "./runtime";
+import { PythonRuntime, runtimeWorker, sandboxUrl } from "./runtime";
 
 describe("Python sandbox", () => {
   const worker = runtimeWorker("https://omero.example/omero_analysis/runtime/");
@@ -29,6 +29,12 @@ describe("Python sandbox", () => {
     expect(worker).toContain('message.type === "clear_inputs"');
     expect(worker).toContain('message.type === "clear_remote_queries"');
     expect(worker).toContain('message.type === "remote_query_file"');
+    expect(worker).toContain('message.type === "notebook_config"');
+    expect(worker).toContain('type: "notebook_query"');
+    expect(worker).toContain('message.type === "notebook_query_result"');
+    expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain("PyCF_ALLOW_TOP_LEVEL_AWAIT");
+    expect(worker).toContain('"scikit-image"');
+    expect(worker).toContain('ModuleType("omero_analysis_notebook")');
     expect(worker).toContain('ModuleType("omero_analysis_remote")');
     expect(worker).toContain('Path("/remote-query")');
     expect(worker).toContain('message.type === "profile"');

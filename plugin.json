@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "omero-analysis",
+  "version": "0.13.0",
+  "description": "Portable Agent Skills for creating and converting offline-first OMERO.Analysis notebooks.",
+  "author": {
+    "name": "NL-BioImaging",
+    "url": "https://github.com/NL-BioImaging"
+  },
+  "homepage": "https://github.com/NL-BioImaging/OMERO.Analysis",
+  "repository": "https://github.com/NL-BioImaging/OMERO.Analysis",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["omero", "jupyter", "notebook", "duckdb", "sqlite", "csv"],
+  "extensions": {
+    "nl.bioimaging.biomero": {
+      "skills": {
+        "create-omero-analysis-notebook": {
+          "purpose": "notebook-authoring",
+          "consumers": ["omero-analysis"],
+          "auto_activate": false,
+          "required_resources": [
+            "references/PROTOCOL.md",
+            "references/CONVERSION.md"
+          ],
+          "preferred_capabilities": ["omero-data-query-v1"]
+        }
+      }
+    }
+  }
+}

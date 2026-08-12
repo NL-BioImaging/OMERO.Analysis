@@ -33,9 +33,21 @@ import {
 import {
   PythonRuntime,
   RUNTIME_VERSION,
-  type RemoteQueryRuntimeResult
+  type RemoteQueryRuntimeResult,
+  type NotebookQueryRequest
 } from "./runtime";
 import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
+import {
+  extensionOf,
+  inputCandidates,
+  parameterDefaults,
+  parseNotebookProtocol,
+  sanitizeProtocolNotebook,
+  validateParameterValues,
+  type NotebookProtocolBinding,
+  type NotebookProtocolContract,
+  type NotebookProtocolInput
+} from "./notebookProtocol";
 import type {
   ArtifactEditorSession,
   EditorOriginTab
@@ -441,6 +453,51 @@ function bytesLabel(value: number): string {
   if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MiB`;
   if (value >= 1024) return `${(value / 1024).toFixed(1)} KiB`;
   return `${value} bytes`;
+}
+
+function notebookRuntimeName(name: string): string {
+  return name.replace(/[^A-Za-z0-9._ -]/g, "_");
+}
+
+function notebookQueryFormat(name: string): "duckdb" | "sqlite" | "sqlite3" | "csv" {
+  const extension = extensionOf(name);
+  if (extension === ".duckdb") return "duckdb";
+  if (extension === ".sqlite") return "sqlite";
+  if (extension === ".sqlite3") return "sqlite3";
+  if (extension === ".csv") return "csv";
+  throw new Error(`${name} is not a supported notebook query source`);
+}
+
+function typedNotebookQueryParameters(parameters: Record<string, unknown>): Record<string, {
+  type: "null" | "boolean" | "integer" | "float" | "string";
+  value: unknown;
+}> {
+  return Object.fromEntries(Object.entries(parameters).map(([name, value]) => {
+    if (value == null) return [name, { type: "null", value: null }];
+    if (typeof value === "boolean") return [name, { type: "boolean", value }];
+    if (typeof value === "number" && Number.isSafeInteger(value)) return [name, { type: "integer", value }];
+    if (typeof value === "number" && Number.isFinite(value)) return [name, { type: "float", value }];
+    if (typeof value === "string") return [name, { type: "string", value }];
+    throw new Error(`Notebook query parameter ${name} must be a JSON scalar`);
+  }));
+}
+
+function importedNotebookProtocol(document: NotebookRecord["document"]): Pick<
+  NotebookRecord,
+  "document" | "parameterValues" | "portabilityWarning"
+> {
+  const protocol = parseNotebookProtocol(document);
+  return protocol
+    ? {
+        document: sanitizeProtocolNotebook(document),
+        parameterValues: parameterDefaults(protocol),
+        portabilityWarning: undefined
+      }
+    : {
+        document,
+        parameterValues: undefined,
+        portabilityWarning: "Legacy notebook: convert it to the portable protocol to rebind between Local and Remote query sources."
+      };
 }
 
 function workspaceBytes(analysisWorkspace: AnalysisWorkspace | null): number {
@@ -1284,11 +1341,14 @@ export default function App() {
         )) continue;
         try {
           const timestamp = now();
+          const preparedNotebook = importedNotebookProtocol(
+            parseNotebook(await bridge.downloadNotebook(attached))
+          );
           const notebook: NotebookRecord = {
             id: id(),
             workspaceId: initial.workspace.id,
             name: attached.name,
-            document: parseNotebook(await bridge.downloadNotebook(attached)),
+            ...preparedNotebook,
             sourceAnnotationId: attached.annotation_id,
             attachmentIds: [attached.annotation_id],
             selectedDataFileIds: [],
@@ -1310,15 +1370,15 @@ export default function App() {
           (item) => item.sourceAnnotationId === requestedNotebook.annotation_id
         );
         if (!notebook) {
-          const document = parseNotebook(
-            await bridge.downloadNotebook(requestedNotebook)
+          const preparedNotebook = importedNotebookProtocol(
+            parseNotebook(await bridge.downloadNotebook(requestedNotebook))
           );
           const timestamp = now();
           notebook = {
             id: id(),
             workspaceId: initial.workspace.id,
             name: requestedNotebook.name,
-            document,
+            ...preparedNotebook,
             sourceAnnotationId: requestedNotebook.annotation_id,
             attachmentIds: [requestedNotebook.annotation_id],
             selectedDataFileIds: [],
@@ -2500,9 +2560,12 @@ export default function App() {
     }
     try {
       const data = await file.arrayBuffer();
-      const document = parseNotebook(data);
+      const parsed = parseNotebook(data);
+      const protocol = parseNotebookProtocol(parsed);
+      const document = protocol ? sanitizeProtocolNotebook(parsed) : parsed;
+      const uploadData = serializeNotebook(document);
       const attachment = bootstrap.context && bridge.canUpload
-        ? await bridge.uploadNotebook(file.name, new Uint8Array(data))
+        ? await bridge.uploadNotebook(file.name, uploadData)
         : null;
       const timestamp = now();
       const record: NotebookRecord = {
@@ -2515,6 +2578,10 @@ export default function App() {
         selectedDataFileIds: current.files
           .filter((item) => item.source !== "result" && item.role !== "chat-attachment" && !item.deletedAt)
           .map((item) => item.id),
+        parameterValues: protocol ? parameterDefaults(protocol) : undefined,
+        portabilityWarning: protocol
+          ? undefined
+          : "Legacy notebook: input paths are rebound by filename and the notebook is not portable between Local and Remote query sources.",
         createdAt: timestamp,
         updatedAt: timestamp
       };
@@ -2526,9 +2593,13 @@ export default function App() {
       setActiveTab("notebooks");
       await saveNotebook(record);
       setStatus(
-        attachment
-          ? `Uploaded and attached ${record.name}`
-          : `Uploaded ${record.name} to this browser workspace`
+        protocol
+          ? attachment
+            ? `Validated, sanitized, uploaded, and attached portable notebook ${record.name}`
+            : `Validated and uploaded portable notebook ${record.name} to this browser workspace`
+          : attachment
+            ? `Uploaded and attached legacy notebook ${record.name}; portability warning added`
+            : `Uploaded legacy notebook ${record.name}; portability warning added`
       );
     } catch (error) {
       setStatus(`Notebook upload failed: ${String(error)}`);
@@ -2756,13 +2827,187 @@ export default function App() {
     return true;
   }
 
+  async function resolveNotebookProtocolBinding(
+    input: NotebookProtocolInput,
+    record: NotebookRecord,
+    current: AnalysisWorkspace
+  ): Promise<NotebookProtocolBinding | null> {
+    const candidates = inputCandidates(input, current.files);
+    const previous = record.protocolBindings?.find((binding) => binding.inputId === input.id);
+    let source = previous
+      ? candidates.find((file) => file.id === previous.fileId)
+      : undefined;
+    if (!source && candidates.length === 1) source = candidates[0];
+    if (!source && candidates.length > 1) {
+      const selected = await dialogs.choose(
+        `Bind notebook input “${input.id}”`,
+        candidates.map((file) => ({
+          value: file.id,
+          label: file.name,
+          description: input.kind === "query"
+            ? `${file.dataQueryMode === "remote" || !file.data ? "Remote" : "Local"} ${notebookQueryFormat(file.name)} source`
+            : `Supporting ${extensionOf(file.name)} file`
+        })),
+        input.kind === "query"
+          ? "Choose a schema-compatible source. This binding can be changed for another plate."
+          : "Choose the supporting file for this notebook."
+      );
+      if (selected) source = candidates.find((file) => file.id === selected);
+    }
+    if (!source) {
+      if (!input.required) return null;
+      throw new Error(`Required notebook input “${input.id}” has no compatible Workspace file`);
+    }
+    if (input.kind === "file" && !source.data) {
+      throw new Error(`Supporting notebook input ${source.name} must be downloaded before execution`);
+    }
+    const mode: "local" | "remote" = input.kind === "query" &&
+      (source.dataQueryMode === "remote" || !source.data)
+      ? "remote"
+      : "local";
+    if (mode === "remote" && !source.annotationId) {
+      throw new Error(`Remote notebook input ${source.name} is not an OMERO attachment`);
+    }
+    let schemaDigest = source.remoteSchemaDigest;
+    let sourceDigest: string | undefined = source.sha256;
+    if (input.kind === "query" && source.annotationId) {
+      const schema = await bridge.remoteSchema(source.annotationId);
+      schemaDigest = String(schema.schema_digest || schemaDigest || "") || undefined;
+      sourceDigest = String(schema.source_sha256 || sourceDigest || "") || undefined;
+      if (input.schema?.tables?.length) {
+        const available = new Map(
+          (Array.isArray(schema.tables) ? schema.tables : []).map((table: any) => [
+            String(table.name),
+            new Set((Array.isArray(table.columns) ? table.columns : []).map((column: any) => String(column.name)))
+          ])
+        );
+        for (const table of input.schema.tables) {
+          const columns = available.get(table.name);
+          if (!columns || table.columns?.some((column) => !columns.has(column.name))) {
+            throw new Error(`Notebook input ${source.name} does not satisfy the declared schema for ${input.id}`);
+          }
+        }
+      }
+    }
+    return {
+      inputId: input.id,
+      fileId: source.id,
+      name: source.name,
+      kind: input.kind,
+      mode,
+      path: `/input/${notebookRuntimeName(source.name)}`,
+      format: input.kind === "query" ? notebookQueryFormat(source.name) : undefined,
+      annotationId: source.annotationId,
+      originalFileId: source.fileId,
+      schemaDigest,
+      sourceDigest
+    };
+  }
+
+  async function runNotebookBrokerQuery(
+    bindings: NotebookProtocolBinding[],
+    request: NotebookQueryRequest
+  ): Promise<{ data: ArrayBuffer }> {
+    const binding = bindings.find((item) => item.inputId === request.source);
+    if (!binding || binding.kind !== "query") {
+      throw new Error(`Notebook query source is not bound: ${request.source}`);
+    }
+    if (binding.mode !== "remote" || !binding.annotationId) {
+      throw new Error(`Notebook source ${request.source} is not a remote OMERO binding`);
+    }
+    const result = await bridge.remoteQuery(
+      binding.annotationId,
+      request.sql,
+      typedNotebookQueryParameters(request.parameters)
+    );
+    if (typeof result.result_token !== "string") {
+      throw new Error("Remote notebook query did not return a result token");
+    }
+    const data = await bridge.downloadRemoteResult(result.result_token);
+    if (data.byteLength !== Number(result.byte_count)) {
+      throw new Error("Remote notebook query result size changed during download");
+    }
+    return { data };
+  }
+
+  async function prepareProtocolNotebook(record: NotebookRecord): Promise<NotebookRecord> {
+    const current = workspaceRef.current;
+    if (!current) throw new Error("Workspace is unavailable");
+    const contract = parseNotebookProtocol(record.document);
+    if (!contract) {
+      runtime.setNotebookQueryHandler(null);
+      return record;
+    }
+    const bindings = (await Promise.all(
+      contract.inputs.map((input) => resolveNotebookProtocolBinding(input, record, current))
+    )).filter((binding): binding is NotebookProtocolBinding => binding != null);
+    const parameters = {
+      ...parameterDefaults(contract),
+      ...(record.parameterValues || {})
+    };
+    const parameterChoices = { ...(record.parameterChoices || {}) };
+    const parameterChoiceLabels = { ...(record.parameterChoiceLabels || {}) };
+    for (const parameter of contract.parameters) {
+      const choicesQuery = parameter.choices_query;
+      if (!choicesQuery) continue;
+      const binding = bindings.find((item) => item.inputId === choicesQuery.source);
+      if (!binding?.annotationId) continue;
+      const boundedSql = `SELECT * FROM (${choicesQuery.sql.replace(/;\s*$/, "")}) AS choices LIMIT ${choicesQuery.limit}`;
+      const result = await bridge.remoteQuery(binding.annotationId, boundedSql, {});
+      const columns = Array.isArray(result.columns)
+        ? result.columns.map((column: any) => String(column.name ?? column))
+        : [];
+      const rows = Array.isArray(result.preview) ? result.preview : [];
+      const valueIndex = Math.max(0, choicesQuery.value_column
+        ? columns.indexOf(choicesQuery.value_column)
+        : 0);
+      const labelIndex = choicesQuery.label_column
+        ? columns.indexOf(choicesQuery.label_column)
+        : -1;
+      if (choicesQuery.value_column && columns.indexOf(choicesQuery.value_column) < 0) {
+        throw new Error(`Notebook parameter ${parameter.name} choices value column is missing: ${choicesQuery.value_column}`);
+      }
+      if (choicesQuery.label_column && labelIndex < 0) {
+        throw new Error(`Notebook parameter ${parameter.name} choices label column is missing: ${choicesQuery.label_column}`);
+      }
+      const choiceRows = rows
+        .map((row: unknown) => Array.isArray(row)
+          ? { value: row[valueIndex], label: labelIndex >= 0 ? String(row[labelIndex] ?? "") : "" }
+          : null)
+        .filter((item): item is { value: boolean | number | string; label: string } =>
+          item != null && ["boolean", "number", "string"].includes(typeof item.value)
+        );
+      parameterChoices[parameter.name] = choiceRows.map((item) => item.value);
+      parameterChoiceLabels[parameter.name] = choiceRows.map((item) => item.label);
+      if (parameters[parameter.name] == null && parameterChoices[parameter.name].length) {
+        parameters[parameter.name] = parameterChoices[parameter.name][0];
+      }
+    }
+    const validatedParameters = validateParameterValues(contract, parameters, parameterChoices);
+    const changed: NotebookRecord = {
+      ...record,
+      protocolBindings: bindings,
+      parameterValues: validatedParameters,
+      parameterChoices,
+      parameterChoiceLabels,
+      selectedDataFileIds: bindings.map((binding) => binding.fileId),
+      portabilityWarning: undefined,
+      updatedAt: now()
+    };
+    await updateNotebook(changed);
+    runtime.setNotebookQueryHandler((request) => runNotebookBrokerQuery(bindings, request));
+    await runtime.configureNotebook({ contract, bindings, parameters: validatedParameters });
+    return changed;
+  }
+
   async function runNotebook(record: NotebookRecord, fromEditor = false) {
     if (!await openNotebook(record, fromEditor)) return;
     const current = workspaceRef.current;
     if (!current) return;
-    const materialized = await materializeRemoteQueryBindings(
-      record.remoteQueryBindings || [], current
-    );
+    const protocol = parseNotebookProtocol(record.document);
+    const materialized = protocol
+      ? current
+      : await materializeRemoteQueryBindings(record.remoteQueryBindings || [], current);
     await ensureRuntime(materialized.files);
     setNotebookRunRequest({ id: record.id, nonce: Date.now() });
   }
@@ -2871,6 +3116,15 @@ export default function App() {
           omero_analysis: {
             runtime: RUNTIME_VERSION,
             source_annotation: record.sourceAnnotationId || null,
+            protocol: parseNotebookProtocol(record.document)?.schema || null,
+            protocol_bindings: (record.protocolBindings || []).map((binding) => ({
+              input_id: binding.inputId,
+              format: binding.format,
+              mode: binding.mode,
+              source_digest: binding.sourceDigest,
+              schema_digest: binding.schemaDigest
+            })),
+            parameter_values: record.parameterValues || {},
             input_hashes: current.files
               .filter((file) => file.source !== "result" && file.role !== "chat-attachment" && !file.deletedAt)
               .map((file) => ({ name: file.name, sha256: file.sha256 })),
@@ -6410,8 +6664,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           methodIds.set(`${dataset.datasetId}:${item.key}`, importedId);
         } else if (item.kind === "notebook") {
           if (next.notebooks.some(exact)) continue;
-          const document = parseNotebook(
-            await bridge.downloadLibraryItem(item.annotationId)
+          const preparedNotebook = importedNotebookProtocol(
+            parseNotebook(await bridge.downloadLibraryItem(item.annotationId))
           );
           const imported: NotebookRecord = {
             id: id(),
@@ -6419,7 +6673,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             name: uniqueLibraryName(
               item.name, next.notebooks.map((value) => value.name), false
             ),
-            document,
+            ...preparedNotebook,
             attachmentIds: [],
             selectedDataFileIds: next.files
               .filter((file) => file.source !== "result" && file.role !== "chat-attachment" &&
@@ -8280,6 +8534,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             runRequest={notebookRunRequest}
             workspaceActions={workspaceActionsMenu()}
             onBeforeRun={() => ensureRuntime(analysisWorkspace.files).then(() => undefined)}
+            onPrepareProtocol={prepareProtocolNotebook}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
             onSelect={(notebookId) => {

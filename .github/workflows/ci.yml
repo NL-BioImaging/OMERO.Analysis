@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,7 +30,9 @@ jobs:
       - run: >-
           python -m pip install
           "biomero-workflow-skills @ git+https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills.git@v0.4.0"
-      - run: python -m pytest
+      - run: python -m pytest tests
+      - run: python -m pip install -e "./notebook-sdk[test,run,widgets]"
+      - run: python -m pytest notebook-sdk/tests
 
   frontend-and-wheel:
     runs-on: ubuntu-latest
@@ -52,14 +54,18 @@ jobs:
         working-directory: frontend
       - run: npm audit --audit-level=high
         working-directory: frontend
-      - run: python -m pip install build setuptools wheel
+      - run: python -m pip install build setuptools wheel twine jsonschema skills-ref
+      - run: python scripts/validate_agent_plugin.py
+      - run: agentskills validate skills/create-omero-analysis-notebook
       - run: python scripts/build_frontend.py --skip-install
       - run: npm run smoke:runtime
         working-directory: frontend
       - run: npm run smoke:browser
         working-directory: frontend
       - run: python -m build --wheel --no-isolation
+      - run: python -m build --wheel --no-isolation --outdir dist notebook-sdk
       - run: python scripts/verify_wheel.py dist/omero_analysis-*.whl
+      - run: python -m twine check dist/omero_analysis_notebook-*.whl
       - uses: actions/checkout@v4
         with:
           repository: NL-BioImaging/BIOMERO.WorkflowSkills

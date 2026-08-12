@@ -1,0 +1,25 @@
+{
+  "skill": "create-omero-analysis-notebook",
+  "cases": [
+    {
+      "name": "create-from-request",
+      "request": "Create an offline-first notebook that groups a CSV by treatment and saves a plot and CSV.",
+      "expect": ["literal config first", "await ctx.query", "ctx.results", "offline comparison"]
+    },
+    {
+      "name": "convert-solhunt",
+      "fixture": "U:/GPT-Projects-Data/SolHunt/SolHuntMarkers_DuckDB_Analysis.ipynb",
+      "expect": ["preserve original", "replace widgets", "replace direct DuckDB", "bound intensity transfer", "PNG/SVG/CSV"]
+    },
+    {
+      "name": "compose-ci-segmentation",
+      "request": "Convert a notebook that queries CI Segmentation foci assignments.",
+      "expect": ["load analyze-cisegmentation-measurements", "preserve relationship direction", "read-only query"]
+    },
+    {
+      "name": "detect-portability-blockers",
+      "signals": ["ipywidgets", "duckdb.connect", "ATTACH", "SELECT *", "no results output"],
+      "expect": ["widget warning", "direct database warning", "unsafe SQL warning", "unbounded query warning", "missing output warning"]
+    }
+  ]
+}
