@@ -144,6 +144,7 @@ describe("run-only notebook validation", () => {
     } as NotebookRecord;
     const onChange = vi.fn(async (_record: NotebookRecord) => undefined);
     const reset = vi.fn(async () => undefined);
+    const onBeforeRun = vi.fn(async () => undefined);
     const onRunStateChange = vi.fn();
     const runtime = {
       reset,
@@ -154,7 +155,7 @@ describe("run-only notebook validation", () => {
     } as unknown as PythonRuntime;
     const { getByRole } = render(createElement(NotebookView, {
       notebook, inputs: [], runtime, runRequest: null,
-      workspaceActions: null, onBeforeRun: async () => undefined,
+      workspaceActions: null, onBeforeRun,
       onChange, onFiles: async () => undefined, onRunStateChange
     }));
 
@@ -164,6 +165,7 @@ describe("run-only notebook validation", () => {
     const firstChange = onChange.mock.calls[0][0] as NotebookRecord;
     expect(firstChange.document.cells[0]).toMatchObject({ execution_count: null, outputs: [] });
     expect(onChange.mock.invocationCallOrder[0]).toBeLessThan(reset.mock.invocationCallOrder[0]);
+    expect(reset.mock.invocationCallOrder[0]).toBeLessThan(onBeforeRun.mock.invocationCallOrder[0]);
     await waitFor(() => expect(onRunStateChange).toHaveBeenLastCalledWith(false));
     expect(onRunStateChange.mock.calls.map(([value]) => value)).toEqual([true, false]);
   });

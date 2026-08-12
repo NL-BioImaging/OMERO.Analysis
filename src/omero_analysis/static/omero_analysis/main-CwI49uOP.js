@@ -9642,14 +9642,14 @@ function Ww(e) {
         case 1:
           return a !== "all" ? [3, 3] : [4, import(
             /* webpackChunkName: "blueprint-icons-all-paths-loader" */
-            "./allPathsLoader-h9tZiq-b.js"
+            "./allPathsLoader-DOCqSoXo.js"
           )];
         case 2:
           return [2, i.sent().allPathsLoader];
         case 3:
           return [4, import(
             /* webpackChunkName: "blueprint-icons-split-paths-by-size-loader" */
-            "./splitPathsBySizeLoader-Dzhk04QA.js"
+            "./splitPathsBySizeLoader-C6iSxF9D.js"
           )];
         case 4:
           return [2, i.sent().splitPathsBySizeLoader];
@@ -11694,11 +11694,11 @@ function d2(e) {
           document: Wh(r.document),
           updatedAt: (/* @__PURE__ */ new Date()).toISOString()
         };
-        await E(xe), me("Preparing the notebook and current input data…");
+        await E(xe), me("Preparing the notebook and current input data…"), await d.reset();
         const ue = await b(xe);
         ue && !Array.isArray(ue) && (xe = ue.notebook);
         const W = Array.isArray(ue) ? ue : (ue == null ? void 0 : ue.inputs) || i;
-        if (await d.reset(), xe = await oe(xe, !1, W), C && (xe = await C(xe)), Ca(xe.document)) {
+        if (xe = await oe(xe, !1, W), C && (xe = await C(xe)), Ca(xe.document)) {
           const le = {
             startedAt: (/* @__PURE__ */ new Date()).toISOString(),
             parameters: {
@@ -15038,7 +15038,7 @@ function pu(e, r, a = {}) {
   const i = ok(e, r, a);
   return !i || window.parent === window ? !1 : (window.parent.postMessage(i, window.location.origin), !0);
 }
-const sk = 1e3, ik = T.lazy(() => import("./ArtifactEditor-BbkEw0bj.js")), lk = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i, v0 = 256 * 1024 * 1024, $u = "default", sf = (e) => `analysis:artifact-editor:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, k0 = (e) => `analysis:explorer-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, b0 = (e) => `analysis:inspector-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, x0 = () => ({
+const sk = 1e3, ik = T.lazy(() => import("./ArtifactEditor-CCMnrFkw.js")), lk = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i, v0 = 256 * 1024 * 1024, $u = "default", sf = (e) => `analysis:artifact-editor:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, k0 = (e) => `analysis:explorer-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, b0 = (e) => `analysis:inspector-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, x0 = () => ({
   activeProfileId: $u,
   profiles: [{
     id: $u,
