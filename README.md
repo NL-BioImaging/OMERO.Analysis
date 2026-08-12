@@ -1,5 +1,7 @@
 # OMERO.Analysis
 
+Administrators enabling BIOMERO.importer-backed storage should read the [`.analysis` storage compatibility contract](docs/importer-analysis-storage-compatibility.md). It documents the optional runtime APIs, capability checks, versions, deployment, fallback rules, and integration-test matrix.
+
 The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
 and through the modeless **Help** window in OMERO.Analysis.
 Hardware-specific offline model guidance is available in
@@ -118,7 +120,9 @@ Workspaces and temporary connection failures are preserved. Synchronization
 does not build or upload a complete Workspace ZIP. PNG outputs from direct
 Method, Pipeline, and Notebook runs become real grayscale or RGB OMERO Images;
 their other outputs, complete Method history, Pipelines, and validated Python
-notebooks are stored as typed FileAnnotations. Source inputs are excluded,
+notebooks are stored as typed FileAnnotations. Same-stem CSV and SVG plot
+companions are linked directly to the corresponding PNG Image instead of the
+managed Dataset. Source inputs are excluded,
 except that ready inputs containing `template` anywhere in their filename are
 synchronized under Templates for reuse. Assistant conversations, attachments,
 and Assistant validation results always remain browser-local and are never

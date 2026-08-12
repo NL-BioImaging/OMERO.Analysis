@@ -29,6 +29,7 @@ from .managed_omero import (
     set_marker,
     user_id,
 )
+from .inplace_storage import storage_for
 
 _delete = delete_object
 _plain = plain
@@ -206,19 +207,28 @@ def _decrypted_bundle(conn, group_id, encrypted):
     return _validated_payload(value)
 
 
-def _upload(conn, dataset, name, namespace, data, description):
-    with tempfile.TemporaryDirectory(prefix="omero-analysis-settings-") as directory:
-        path = Path(directory) / safe_filename(name)
-        path.write_bytes(data)
-        annotation = conn.createFileAnnfromLocalFile(
-            str(path),
-            mimetype="application/octet-stream"
-            if namespace == SETTINGS_FILE_NAMESPACE else "text/markdown",
-            ns=namespace,
-            desc=description,
+def _upload(conn, dataset, name, namespace, data, description, stored=None):
+    mimetype = (
+        "application/octet-stream"
+        if namespace == SETTINGS_FILE_NAMESPACE else "text/markdown"
+    )
+    if stored is not None:
+        from .inplace_annotations import create_file_annotation
+
+        annotation, storage_mode, _ = create_file_annotation(
+            conn, stored["path"], mimetype=mimetype,
+            namespace=namespace, description=description,
         )
-        dataset.linkAnnotation(annotation)
-    return annotation
+    else:
+        with tempfile.TemporaryDirectory(prefix="omero-analysis-settings-") as directory:
+            path = Path(directory) / safe_filename(name)
+            path.write_bytes(data)
+            annotation = conn.createFileAnnfromLocalFile(
+                str(path), mimetype=mimetype, ns=namespace, desc=description,
+            )
+        storage_mode = "omero"
+    dataset.linkAnnotation(annotation)
+    return annotation, storage_mode
 
 
 def load_settings(conn, group_id):
@@ -257,29 +267,51 @@ def save_settings(conn, group_id, value):
         conn, project, "skills", SKILLS_DATASET_NAME
     )
     encrypted = _encrypted_bundle(conn, group_id, payload)
+    _, storage = storage_for(group_id, _user_id(conn))
+    durable_items = []
+    if storage is not None:
+        durable_items.append({
+            "key": "settings", "kind": "encrypted-settings",
+            "mimeType": "application/octet-stream",
+            "blob": storage.store_blob(encrypted, SETTINGS_FILENAME),
+        })
+        for skill in payload["skills"]:
+            filename = skill.get("filename") or f"{skill['name']}.skill.md"
+            data = skill["content"].encode("utf-8")
+            durable_items.append({
+                "key": f"skill:{skill['id']}", "kind": "user-skill",
+                "mimeType": "text/markdown",
+                "blob": storage.store_blob(data, safe_filename(filename)),
+            })
     old_settings = _managed_annotations(ai_dataset, SETTINGS_FILE_NAMESPACE)
     old_skills = _managed_annotations(skills_dataset, SKILL_FILE_NAMESPACE)
     staged = []
     try:
-        settings_annotation = _upload(
+        settings_stored = durable_items[0]["blob"] if durable_items else None
+        settings_annotation, settings_storage_mode = _upload(
             conn,
             ai_dataset,
             SETTINGS_FILENAME,
             SETTINGS_FILE_NAMESPACE,
             encrypted,
             "Encrypted OMERO Analysis settings bundle",
+            stored=settings_stored,
         )
         staged.append(settings_annotation)
-        for skill in payload["skills"]:
+        storage_modes = [settings_storage_mode]
+        for index, skill in enumerate(payload["skills"], start=1):
             filename = skill.get("filename") or f"{skill['name']}.skill.md"
-            staged.append(_upload(
+            annotation, storage_mode = _upload(
                 conn,
                 skills_dataset,
                 filename,
                 SKILL_FILE_NAMESPACE,
                 skill["content"].encode("utf-8"),
                 f"OMERO Analysis user skill {skill['id']}",
-            ))
+                stored=durable_items[index]["blob"] if durable_items else None,
+            )
+            staged.append(annotation)
+            storage_modes.append(storage_mode)
     except Exception:
         for annotation in staged:
             try:
@@ -298,6 +330,24 @@ def save_settings(conn, group_id, value):
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "skill_count": len(payload["skills"]),
     })
+    if storage is not None:
+        annotation_by_index = [settings_annotation, *staged[1:]]
+        for item, annotation, storage_mode in zip(
+            durable_items, annotation_by_index, storage_modes
+        ):
+            original = annotation.getFile()
+            item["storageMode"] = storage_mode
+            item["omero"] = {
+                "annotationId": int(annotation.getId()),
+                "fileId": int(original.getId()),
+            }
+        storage.write_json(Path("settings") / "manifest.json", {
+            "schema": "nl.bioimaging.analysis.storage.settings.v1",
+            "userId": _user_id(conn), "groupId": int(group_id),
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+            "items": durable_items,
+        })
+        storage.garbage_collect()
     return {
         "schema": SETTINGS_SCHEMA,
         "synced": True,

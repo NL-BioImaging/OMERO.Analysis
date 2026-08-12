@@ -40,7 +40,7 @@ const PACKAGES = [
   "matplotlib",
   "duckdb"
 ];
-export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.10";
+export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.11";
 
 export function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
@@ -86,11 +86,18 @@ async function boot() {
   pyodide = await module.loadPyodide({indexURL: runtimeBase + "/"});
   progress(48, "Loading data-analysis packages…");
   await pyodide.loadPackage(${packages});
+  await pyodide.runPythonAsync(\`
+import os as _oa_os
+_oa_os.environ["MPLBACKEND"] = "Agg"
+import matplotlib as _oa_matplotlib
+_oa_matplotlib.use("Agg", force=True)
+\`);
   progress(78, "Loading vendored Python support…");
   const micropip = pyodide.pyimport("micropip");
   try {
     await micropip.install(runtimeBase + "/seaborn-0.13.2-py3-none-any.whl", {deps: false});
     await micropip.install(runtimeBase + "/pypdf-6.14.2-py3-none-any.whl", {deps: false});
+    loadedPackages.add("seaborn");
     loadedPackages.add("pypdf");
   } finally {
     micropip.destroy();
@@ -262,6 +269,25 @@ async function ensurePackages(code) {
   const missing = required.filter((name) => !loadedPackages.has(name));
   if (!missing.length) return;
   progress(55, "Loading required package" + (missing.length === 1 ? "" : "s") + ": " + missing.join(", "));
+  globalThis.fetch = runtimeFetch;
+  try {
+    await pyodide.loadPackage(missing);
+    missing.forEach((name) => loadedPackages.add(name));
+  } finally {
+    globalThis.fetch = denyNetwork;
+  }
+}
+async function ensureNotebookRequirements(requirements) {
+  const approved = new Set([
+    "duckdb", "matplotlib", "numpy", "pandas", "pyarrow", "pypdf",
+    "python-calamine", "scikit-image", "scipy", "seaborn", "xlrd"
+  ]);
+  const requested = Array.from(new Set((Array.isArray(requirements) ? requirements : [])
+    .map((item) => String(item).split(/[<>=!~]/, 1)[0].toLowerCase().replace(/[_.]/g, "-"))
+    .filter((name) => approved.has(name))));
+  const missing = requested.filter((name) => !loadedPackages.has(name));
+  if (!missing.length) return;
+  progress(55, "Loading notebook requirement" + (missing.length === 1 ? "" : "s") + ": " + missing.join(", "));
   globalThis.fetch = runtimeFetch;
   try {
     await pyodide.loadPackage(missing);
@@ -445,6 +471,7 @@ for _oa_name in list(globals()):
       pyodide.FS.writeFile("/remote-query/" + bindingId + ".csv", bytes);
       send(message.id, "remote_query_file", bindingId);
     } else if (message.type === "notebook_config") {
+      await ensureNotebookRequirements(message.value?.contract?.requirements);
       pyodide.globals.set("_oa_notebook_config_json", JSON.stringify(message.value || {}));
       send(message.id, "notebook_config", true);
     } else if (message.type === "file") {
@@ -632,7 +659,34 @@ _json.dumps(_profiles, ensure_ascii=False)
       let stdout = "", stderr = "";
       pyodide.setStdout({batched: (text) => { stdout += text + "\\n"; }});
       pyodide.setStderr({batched: (text) => { stderr += text + "\\n"; }});
-      await pyodide.runPythonAsync(message.value.code);
+      if (message.value.createSvgCompanions) {
+        await pyodide.runPythonAsync(\`
+import pathlib as _oa_svg_pathlib
+import matplotlib.figure as _oa_svg_figure
+_oa_original_savefig = _oa_svg_figure.Figure.savefig
+def _oa_savefig_with_svg(self, fname, *args, **kwargs):
+    result = _oa_original_savefig(self, fname, *args, **kwargs)
+    path = _oa_svg_pathlib.Path(str(fname))
+    if path.suffix.lower() == ".png":
+        svg_kwargs = {
+            key: value for key, value in kwargs.items()
+            if key in {"bbox_inches", "pad_inches", "facecolor", "edgecolor", "transparent", "dpi"}
+        }
+        _oa_original_savefig(self, path.with_suffix(".svg"), *args, format="svg", **svg_kwargs)
+    return result
+_oa_svg_figure.Figure.savefig = _oa_savefig_with_svg
+\`);
+      }
+      try {
+        await pyodide.runPythonAsync(message.value.code);
+      } finally {
+        if (message.value.createSvgCompanions) {
+          await pyodide.runPythonAsync(\`
+_oa_svg_figure.Figure.savefig = _oa_original_savefig
+del _oa_original_savefig
+\`);
+        }
+      }
       const raw = await pyodide.runPythonAsync(previewCode);
       const files = outputFiles(before);
       const safePayload = modelPayload(JSON.parse(raw), stderr, files);
@@ -712,10 +766,14 @@ export class PythonRuntime {
     return this.readyPromise;
   }
 
-  async run(code: string): Promise<RuntimeOutput> {
+  async run(
+    code: string,
+    timeout = 120_000,
+    createSvgCompanions = false
+  ): Promise<RuntimeOutput> {
     if (!this.readyPromise) await this.start(this.inputs);
     await this.readyPromise;
-    return this.request("run", { code }, 120_000);
+    return this.request("run", { code, createSvgCompanions }, timeout);
   }
 
   async runNotebookCell(source: string): Promise<RuntimeOutput> {
@@ -736,8 +794,13 @@ export class PythonRuntime {
     }
     const encoded = JSON.stringify(source);
     return this.run(`
-import ast as _oa_ast, inspect as _oa_inspect
+import ast as _oa_ast, inspect as _oa_inspect, warnings as _oa_warnings
 globals().pop("result", None)
+_oa_warnings.filterwarnings(
+    "ignore",
+    message="FigureCanvasAgg is non-interactive, and thus cannot be shown",
+    category=UserWarning,
+)
 _oa_source = ${encoded}
 _oa_tree = _oa_ast.parse(_oa_source, filename="<notebook-cell>", mode="exec")
 if _oa_tree.body and isinstance(_oa_tree.body[-1], _oa_ast.Expr):
@@ -765,7 +828,7 @@ try:
         )
 except Exception:
     pass
-`);
+`, 300_000);
   }
 
   setNotebookQueryHandler(

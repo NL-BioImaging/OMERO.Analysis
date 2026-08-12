@@ -16,6 +16,7 @@ export function newMethodSource(files: WorkspaceFile[]): string {
     "}",
     "",
     "# Use INPUTS[\"filename.ext\"] to access attached Workspace data.",
+    "# Save every plot as same-stem PNG and SVG files; save its plotted data as same-stem CSV.",
     ""
   ].join("\n");
 }

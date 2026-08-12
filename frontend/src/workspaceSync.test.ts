@@ -152,6 +152,26 @@ describe("Workspace synchronization inventory", () => {
     expect(csv.metadata.plotImageKeys).toEqual([image.key]);
   });
 
+  it("links same-stem SVG inventory items to their synchronized PNG image", async () => {
+    const value = workspace();
+    value.files[2] = { ...value.files[2], chatId: undefined, methodId: "method-1" };
+    value.files.push({
+      ...value.files[2],
+      id: "result-svg",
+      name: "plot.svg",
+      logicalPath: "/output/plot.svg",
+      type: "image/svg+xml",
+      data: new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\"/>").buffer
+    });
+
+    const payload = await buildWorkspaceSyncPayload(value, context);
+    const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
+    const svg = payload.inventory.items.find((item) =>
+      item.kind === "result" && item.name === "plot.svg"
+    )!;
+    expect(svg.metadata.plotImageKeys).toEqual([image.key]);
+  });
+
   it("canonicalizes object keys and detects a remote digest mismatch", () => {
     expect(canonicalJson({ z: 1, a: { y: 2, b: 3 } })).toBe(
       '{\n  "a": {\n    "b": 3,\n    "y": 2\n  },\n  "z": 1\n}\n'

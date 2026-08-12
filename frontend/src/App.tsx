@@ -59,6 +59,7 @@ import {
   bindPipelineStepCodeStrict,
   bindPythonInputsStrict,
   clearNotebookOutputs,
+  downloadableWorkspaceInputs,
   extendPipelineInputs,
   readyWorkspaceInputs
 } from "./artifactBindings";
@@ -151,6 +152,7 @@ import {
   remoteBindingPreferredAnnotationId,
   remoteBindingPreferredFileId
 } from "./remoteQueryBindings";
+import { upgradeLegacyDatabaseCode } from "./legacyRemoteQuery";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
 import { AiActivityCard } from "./components/AiActivityCard";
@@ -254,6 +256,8 @@ import {
   syncHasChanges,
   withWorkspaceSyncStatus
 } from "./workspaceSync";
+
+const IMPORT_SYNC_POLL_INTERVAL_MS = 1000;
 import {
   reconcileDeletedRemoteWorkspaces,
   remoteWorkspaceWasDeleted
@@ -715,6 +719,10 @@ export default function App() {
   const remoteSettingsLoaded = useRef(false);
   const workspaceSyncInFlight = useRef(false);
   const workspaceSyncQueued = useRef(false);
+  const workspaceSyncPollTimer = useRef<number | null>(null);
+  const workspaceSyncDeferredForRun = useRef(false);
+  const syncRunBarrierTokens = useRef(new Set<string>());
+  const [syncRunBarrierActive, setSyncRunBarrierActive] = useState(false);
   const remoteDeletionInFlight = useRef(false);
   const settingsSyncInFlight = useRef(false);
   const settingsSyncQueued = useRef(false);
@@ -1046,14 +1054,26 @@ export default function App() {
     });
   }, [analysisWorkspace]);
 
+  function setRunSyncBarrier(token: string, active: boolean) {
+    if (active) syncRunBarrierTokens.current.add(token);
+    else syncRunBarrierTokens.current.delete(token);
+    setSyncRunBarrierActive(syncRunBarrierTokens.current.size > 0);
+  }
+
   useEffect(() => {
     if (!analysisWorkspace || !bootstrap.context) {
       setRemoteSync(null);
       setLocalSyncDigest("");
       return;
     }
+    if (syncRunBarrierActive) {
+      workspaceSyncDeferredForRun.current = true;
+      return;
+    }
     let cancelled = false;
+    const delay = workspaceSyncDeferredForRun.current ? 0 : 1000;
     const timer = window.setTimeout(() => {
+      workspaceSyncDeferredForRun.current = false;
       void Promise.all([
         buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!),
         bridge.syncStatus(analysisWorkspace.workspace.id)
@@ -1076,12 +1096,18 @@ export default function App() {
       }).catch((error) => {
         if (!cancelled) setSyncError(String(error));
       });
-    }, 1000);
+    }, delay);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [workspaceSyncSignature, bootstrap.context, bridge]);
+  }, [workspaceSyncSignature, bootstrap.context, bridge, syncRunBarrierActive]);
+
+  useEffect(() => () => {
+    if (workspaceSyncPollTimer.current != null) {
+      window.clearTimeout(workspaceSyncPollTimer.current);
+    }
+  }, []);
 
   useEffect(() => {
     const workspaceRecord = analysisWorkspace?.workspace;
@@ -1393,9 +1419,13 @@ export default function App() {
         setActiveNotebookId(initial.notebooks[0].id);
       }
       setWorkspaceProgress({ percent: 82, message: "Preparing current Workspace inputs…" });
-      const prepared = await removePersistedRemoteQueryInputs(
+      let prepared = await removePersistedRemoteQueryInputs(
         await migratePersistedRemoteMethods(await prepareInputs(initial))
       );
+      for (const notebook of prepared.notebooks) {
+        const contract = parseNotebookProtocol(notebook.document);
+        if (contract) prepared = await discoverExactNotebookInputs(contract, prepared);
+      }
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
@@ -1672,15 +1702,44 @@ export default function App() {
     current: AnalysisWorkspace
   ): WorkspaceFile | null {
     if (!(error instanceof ArtifactBindingError) || !error.referencedName) return null;
-    const suffix = error.referencedName.toLowerCase().match(/(\.[^.\\/]+)$/)?.[1] || "";
-    if (!suffix) return null;
-    const candidates = current.files.filter((file) =>
-      file.dataQueryMode === "remote" && file.state === "ready" &&
-      file.name.toLowerCase().endsWith(suffix) && file.annotationId
-    ).filter((file) => bootstrap.context?.selected_attachments.find(
-      (attachment) => attachment.annotation_id === file.annotationId
-    )?.allowed_modes?.includes("local"));
+    const candidates = downloadableWorkspaceInputs(error.referencedName, current.files)
+      .filter((file) => file.dataQueryMode !== "remote");
     return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  async function legacyRemoteUpgrade(
+    error: unknown,
+    code: string,
+    current: AnalysisWorkspace,
+    artifactKey: string
+  ): Promise<{ code: string; bindings: RemoteQueryBindingV2[] } | null> {
+    if (!(error instanceof ArtifactBindingError) || !error.referencedName) return null;
+    const candidates = downloadableWorkspaceInputs(error.referencedName, current.files)
+      .filter((file) => file.dataQueryMode === "remote" && isOmeroDataQuerySource(file));
+    if (candidates.length !== 1) return null;
+    const source = candidates[0];
+    const format = dataQuerySourceFormat(source);
+    if (!format || !source.annotationId) return null;
+    const schema = await bridge.remoteSchema(source.annotationId);
+    const tables = (Array.isArray(schema.tables) ? schema.tables : [])
+      .map((table: any) => String(table.name || ""))
+      .filter(Boolean);
+    const upgraded = upgradeLegacyDatabaseCode(code, artifactKey, tables, source.name);
+    if (!upgraded) return null;
+    const bindings = upgraded.recipes.map((recipe): RemoteQueryBindingV2 => ({
+      version: 2,
+      bindingId: recipe.bindingId,
+      capability: "omero-data-query-v1",
+      format,
+      sourceName: source.name,
+      preferredAnnotationId: source.annotationId,
+      preferredFileId: source.fileId || undefined,
+      schemaDigest: String(schema.schema_digest || ""),
+      sql: recipe.sql,
+      parameters: {},
+      outputCsvName: recipe.outputCsvName
+    }));
+    return { code: upgraded.code, bindings };
   }
 
   async function offerLocalFallback(
@@ -1696,14 +1755,14 @@ export default function App() {
     if (capacityError) {
       await dialogs.alert(
         "Local data required",
-        `${artifactName} opens a DuckDB or SQLite file directly and cannot use this remote-only ` +
-        `binding. ${capacityError}`
+        `${artifactName} opens a DuckDB or SQLite file directly and needs the database in browser storage. ` +
+        capacityError
       );
       return null;
     }
     const confirmed = await dialogs.confirm(
       "Download database for this legacy analysis?",
-      `${artifactName} opens its database path directly and has no remote query binding. ` +
+      `${artifactName} opens its database path directly and the matching Workspace source is not currently downloaded. ` +
       `Download ${source.name} (${bytesLabel(source.size)}) into browser storage and continue ` +
       `locally? The worker cache remains available for remote-bound analyses.`,
       "Download and continue"
@@ -2904,6 +2963,96 @@ export default function App() {
     };
   }
 
+  async function discoverExactNotebookInputs(
+    contract: NotebookProtocolContract,
+    current: AnalysisWorkspace
+  ): Promise<AnalysisWorkspace> {
+    const missing = contract.inputs.filter((input) => inputCandidates(input, current.files).length === 0);
+    const localQueryInputs = contract.inputs.filter((input) => input.kind === "query").flatMap((input) =>
+      inputCandidates(input, current.files).filter((file) =>
+        file.source === "omero" && file.dataQueryMode !== "remote" &&
+        file.name.toLowerCase() === input.path.split(/[\\/]/).pop()?.toLowerCase()
+      )
+    );
+    if ((!missing.length && !localQueryInputs.length) || !bootstrap.context) return current;
+
+    const attachments = await bridge.listAttachments();
+    let next = current;
+    for (const source of localQueryInputs) {
+      const attachment = attachments.find((candidate) =>
+        candidate.annotation_id === source.annotationId && candidate.default_mode === "remote" &&
+        candidate.allowed_modes?.includes("remote") === true
+      );
+      if (!attachment) continue;
+      const schema = await bridge.remoteSchema(attachment.annotation_id);
+      const promoted: WorkspaceFile = {
+        ...source,
+        data: undefined,
+        size: attachment.size,
+        sha256: "",
+        state: "ready",
+        dataQueryMode: "remote",
+        remoteSchemaDigest: String(schema.schema_digest || "") || undefined,
+        error: undefined
+      };
+      next = {
+        ...next,
+        files: next.files.map((file) => file.id === source.id ? promoted : file)
+      };
+      await saveFile(promoted);
+    }
+    for (const input of missing) {
+      const expectedName = input.path.split(/[\\/]/).pop()?.toLowerCase();
+      if (!expectedName) continue;
+      const attachment = attachments.find((candidate) =>
+        candidate.supported && candidate.name.toLowerCase() === expectedName &&
+        !next.files.some((file) => file.annotationId === candidate.annotation_id)
+      );
+      if (!attachment) continue;
+
+      const remote = input.kind === "query" && attachment.default_mode === "remote" &&
+        attachment.allowed_modes?.includes("remote") === true;
+      const file: WorkspaceFile = {
+        id: id(),
+        workspaceId: next.workspace.id,
+        name: attachment.name,
+        logicalPath: `${next.workspace.rootPath}/inputs/${attachment.annotation_id}--${attachment.name}`,
+        type: attachment.mimetype,
+        size: attachment.size,
+        sha256: "",
+        source: "omero",
+        state: remote ? "ready" : "loading",
+        annotationId: attachment.annotation_id,
+        fileId: attachment.file_id,
+        dataQueryMode: remote ? "remote" : "local",
+        createdAt: now()
+      };
+      if (remote) {
+        const schema = await bridge.remoteSchema(attachment.annotation_id);
+        file.remoteSchemaDigest = String(schema.schema_digest || "") || undefined;
+      } else {
+        const capacityError = capacityWarning(
+          workspaceBytes(next), attachment.size, await storageEstimate(), MAX_WORKSPACE_BYTES
+        );
+        if (capacityError) {
+          throw new Error(`Notebook input ${attachment.name} cannot be downloaded: ${capacityError}`);
+        }
+        const data = await bridge.download(attachment);
+        file.data = data;
+        file.size = data.byteLength;
+        file.sha256 = await sha256(data);
+        file.state = "ready";
+      }
+      next = { ...next, files: [...next.files, file] };
+      await saveFile(file);
+    }
+    if (next !== current) {
+      workspaceRef.current = next;
+      setWorkspace(next);
+    }
+    return next;
+  }
+
   async function runNotebookBrokerQuery(
     bindings: NotebookProtocolBinding[],
     request: NotebookQueryRequest
@@ -2931,13 +3080,14 @@ export default function App() {
   }
 
   async function prepareProtocolNotebook(record: NotebookRecord): Promise<NotebookRecord> {
-    const current = workspaceRef.current;
+    let current = workspaceRef.current;
     if (!current) throw new Error("Workspace is unavailable");
     const contract = parseNotebookProtocol(record.document);
     if (!contract) {
       runtime.setNotebookQueryHandler(null);
       return record;
     }
+    current = await discoverExactNotebookInputs(contract, current);
     const bindings = (await Promise.all(
       contract.inputs.map((input) => resolveNotebookProtocolBinding(input, record, current))
     )).filter((binding): binding is NotebookProtocolBinding => binding != null);
@@ -3002,14 +3152,63 @@ export default function App() {
 
   async function runNotebook(record: NotebookRecord, fromEditor = false) {
     if (!await openNotebook(record, fromEditor)) return;
-    const current = workspaceRef.current;
-    if (!current) return;
-    const protocol = parseNotebookProtocol(record.document);
-    const materialized = protocol
-      ? current
-      : await materializeRemoteQueryBindings(record.remoteQueryBindings || [], current);
-    await ensureRuntime(materialized.files);
     setNotebookRunRequest({ id: record.id, nonce: Date.now() });
+  }
+
+  async function prepareNotebookRuntime(
+    record: NotebookRecord
+  ): Promise<{ inputs: WorkspaceFile[]; notebook: NotebookRecord }> {
+    let current = workspaceRef.current;
+    if (!current) throw new Error("Workspace is not ready");
+    const protocol = parseNotebookProtocol(record.document);
+    if (protocol) {
+      await ensureRuntime(current.files);
+      return { inputs: current.files, notebook: record };
+    }
+    let bindings = record.remoteQueryBindings || [];
+    const cells = [] as NotebookRecord["document"]["cells"];
+    for (let index = 0; index < record.document.cells.length; index += 1) {
+      const cell = record.document.cells[index];
+      if (cell.cell_type !== "code") {
+        cells.push(cell);
+        continue;
+      }
+      let code = Array.isArray(cell.source) ? cell.source.join("") : cell.source;
+      code = bindRemoteQueryCode(code, bindings);
+      try {
+        bindPythonInputsStrict(code, current.files);
+      } catch (error) {
+        const remote = await legacyRemoteUpgrade(
+          error, code, current, `${record.id}-cell-${index + 1}`
+        );
+        if (remote) {
+          bindings = [...bindings, ...remote.bindings];
+          code = remote.code;
+        } else {
+          const local = await offerLocalFallback(error, current, record.name);
+          if (!local) throw error;
+          current = local;
+          bindPythonInputsStrict(code, current.files);
+        }
+      }
+      cells.push({ ...cell, source: code });
+    }
+    current = await materializeRemoteQueryBindings(bindings, current);
+    const changed: NotebookRecord = {
+      ...record,
+      document: { ...record.document, cells },
+      remoteQueryBindings: bindings,
+      portabilityWarning: bindings.length
+        ? "Large OMERO databases are queried remotely; only bounded CSV results enter the browser runtime."
+        : record.portabilityWarning,
+      updatedAt: now()
+    };
+    if (JSON.stringify(changed.document) !== JSON.stringify(record.document) ||
+        JSON.stringify(changed.remoteQueryBindings) !== JSON.stringify(record.remoteQueryBindings)) {
+      await updateNotebook(changed);
+    }
+    await ensureRuntime(current.files);
+    return { inputs: current.files, notebook: changed };
   }
 
   async function renameNotebook(record: NotebookRecord) {
@@ -4403,7 +4602,11 @@ export default function App() {
     let output: RuntimeOutput;
     try {
       setAnalysisPhase("running");
-      output = await runtime.run(normalizedCode);
+      output = await runtime.run(
+        normalizedCode,
+        120_000,
+        purpose === "method" || purpose === "pipeline"
+      );
     } catch (error) {
       const detail = String(error instanceof Error ? error.message : error).slice(0, MAX_TOOL_TEXT);
       const evidenceId = id();
@@ -5724,21 +5927,29 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     selectRun(runId);
     upsertRun(run);
     let bound: ReturnType<typeof bindMethodInputs>;
+    let executionBindings = method.remoteQueryBindings || [];
     try {
       current = await materializeRemoteQueryBindings(
-        method.remoteQueryBindings || [], current
+        executionBindings, current
       );
-      const remoteBoundCode = bindRemoteQueryCode(
-        version.code,
-        method.remoteQueryBindings || []
-      );
+      let remoteBoundCode = bindRemoteQueryCode(version.code, executionBindings);
       try {
         bound = bindMethodInputs(remoteBoundCode, current.files);
       } catch (error) {
-        const local = await offerLocalFallback(error, current, method.name);
-        if (!local) throw error;
-        current = local;
-        bound = bindMethodInputs(remoteBoundCode, current.files);
+        const remote = await legacyRemoteUpgrade(
+          error, remoteBoundCode, current, `${method.id}-v${requestedVersion}`
+        );
+        if (remote) {
+          executionBindings = remote.bindings;
+          remoteBoundCode = remote.code;
+          current = await materializeRemoteQueryBindings(executionBindings, current);
+          bound = bindMethodInputs(remoteBoundCode, current.files);
+        } else {
+          const local = await offerLocalFallback(error, current, method.name);
+          if (!local) throw error;
+          current = local;
+          bound = bindMethodInputs(remoteBoundCode, current.files);
+        }
       }
       run = {
         ...run,
@@ -5755,10 +5966,13 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       return;
     }
     setBusy(true);
+    const syncBarrierToken = `method:${runId}`;
+    setRunSyncBarrier(syncBarrierToken, true);
     turnOutputNames.current.clear();
     try {
       await ensureRuntime(current.files);
       await runtime.beginTurn();
+      turnRemoteQueryBindings.current = executionBindings;
       const { renderResult } = await executeSavedMethodVersion(
         method,
         version,
@@ -5802,6 +6016,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setStatus(stopped ? `Stopped ${method.name}` : `Could not complete ${method.name}: ${message}`);
     } finally {
       setBusy(false);
+      setRunSyncBarrier(syncBarrierToken, false);
     }
   }
 
@@ -6047,6 +6262,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setActiveTab("pipelines");
     setBusy(true);
     const runId = id();
+    const syncBarrierToken = `pipeline:${runId}`;
+    setRunSyncBarrier(syncBarrierToken, true);
     let run: AnalysisRunRecord = {
       id: runId,
       workspaceId: current.workspace.id,
@@ -6103,11 +6320,43 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         setStatus(`Pipeline ${pipeline.name}: step ${index + 1} of ${pipeline.steps.length}`);
         await runtime.beginTurn();
         turnOutputNames.current.clear();
-        const bound = bindPipelineStepCodeStrict(
-          bindRemoteQueryCode(version.code, method.remoteQueryBindings || []),
-          availableInputs,
-          step.inputBindings || {}
-        );
+        let stepBindings = method.remoteQueryBindings || [];
+        let portableCode = bindRemoteQueryCode(version.code, stepBindings);
+        let bound: ReturnType<typeof bindPipelineStepCodeStrict>;
+        try {
+          bound = bindPipelineStepCodeStrict(
+            portableCode,
+            availableInputs,
+            step.inputBindings || {}
+          );
+        } catch (error) {
+          const remote = await legacyRemoteUpgrade(
+            error, portableCode, current, `${pipeline.id}-${step.id}-v${step.methodVersion}`
+          );
+          if (remote) {
+            stepBindings = remote.bindings;
+            portableCode = remote.code;
+            current = await materializeRemoteQueryBindings(stepBindings, current);
+            bound = bindPipelineStepCodeStrict(
+              portableCode, availableInputs, step.inputBindings || {}
+            );
+          } else {
+            const local = await offerLocalFallback(error, current, pipeline.name);
+            if (!local) throw error;
+            current = local;
+            availableInputs = [
+              ...local.files.filter((file) =>
+                file.source !== "result" && file.role !== "chat-attachment" &&
+                file.state === "ready" && Boolean(file.data) && !file.deletedAt
+              ),
+              ...availableInputs.filter((file) => file.source === "result")
+            ];
+            bound = bindPipelineStepCodeStrict(
+              portableCode, availableInputs, step.inputBindings || {}
+            );
+          }
+        }
+        turnRemoteQueryBindings.current = stepBindings;
         const resolvedBindings = Object.fromEntries(
           bound.bindings.map((binding) => [binding.from, binding.to])
         );
@@ -6188,6 +6437,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         // Runtime may have been deliberately stopped.
       }
       setBusy(false);
+      setRunSyncBarrier(syncBarrierToken, false);
     }
   }
 
@@ -6454,15 +6704,61 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     }
   }
 
+  function scheduleWorkspaceSyncPoll(payload: SyncPayload) {
+    if (workspaceSyncPollTimer.current != null) {
+      window.clearTimeout(workspaceSyncPollTimer.current);
+    }
+    workspaceSyncPollTimer.current = window.setTimeout(() => {
+      workspaceSyncPollTimer.current = null;
+      void pollWorkspaceSynchronization(payload);
+    }, IMPORT_SYNC_POLL_INTERVAL_MS);
+  }
+
+  async function pollWorkspaceSynchronization(payload: SyncPayload) {
+    const current = workspaceRef.current;
+    if (!current || current.workspace.id !== payload.inventory.workspace.id) return;
+    try {
+      const remote = await bridge.syncStatus(current.workspace.id);
+      setRemoteSync(remote);
+      if (remote.syncState === "pending") {
+        setStatus(
+          `${remote.pendingOrderCount || 1} plot import(s) pending in BIOMERO.importer`
+        );
+        scheduleWorkspaceSyncPoll(payload);
+        return;
+      }
+      if (remote.syncState === "failed") {
+        setSyncError(remote.reason || "BIOMERO.importer reported an import failure");
+        setStatus("Workspace synchronization is retained for retry after an importer failure");
+        return;
+      }
+      // The importer has completed. Apply once more to publish its Images and
+      // companions in the manifest; polling itself must never create revisions.
+      await synchronizeWorkspace(payload);
+    } catch (error) {
+      setSyncError(String(error));
+      setStatus(`Could not check importer progress: ${String(error)}`);
+      scheduleWorkspaceSyncPoll(payload);
+    }
+  }
+
   async function synchronizeWorkspace(prepared?: SyncPayload) {
     const current = workspaceRef.current;
     const context = bootstrap.context;
     if (!current || !context || remoteDeletionInFlight.current) return;
+    if (syncRunBarrierTokens.current.size > 0) {
+      workspaceSyncDeferredForRun.current = true;
+      return;
+    }
     if (workspaceSyncInFlight.current) {
       workspaceSyncQueued.current = true;
       return;
     }
     workspaceSyncInFlight.current = true;
+    if (workspaceSyncPollTimer.current != null) {
+      window.clearTimeout(workspaceSyncPollTimer.current);
+      workspaceSyncPollTimer.current = null;
+    }
     setSyncing(true);
     setSyncError("");
     try {
@@ -6489,6 +6785,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       }
       const latest = workspaceRef.current;
       if (!latest || latest.workspace.id !== current.workspace.id) return;
+      setRemoteSync(synced);
+      if (synced.syncState === "pending") {
+        setStatus(
+          `${synced.pendingOrderCount || 1} plot import(s) pending in BIOMERO.importer`
+        );
+        scheduleWorkspaceSyncPoll(payload);
+        return;
+      }
+      if (synced.syncState === "failed") {
+        setSyncError(synced.reason || "BIOMERO.importer reported an import failure");
+        setStatus("Workspace synchronization is retained for retry after an importer failure");
+        return;
+      }
       // Synchronization may finish while a Method or Pipeline is still
       // updating runs, executions, and files. Merge the remote metadata into
       // the latest Workspace rather than restoring the snapshot captured when
@@ -6498,7 +6807,6 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       workspaceRef.current = next;
       setWorkspace(next);
       await commitWorkspaceRecord(nextRecord);
-      setRemoteSync(synced);
       setLocalSyncDigest(payload.inventory.digest);
       setStatus(`Reusable Analysis items saved automatically to ${synced.projectName} / ${synced.datasetName}`);
     } catch (error) {
@@ -7503,6 +7811,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   );
   const syncButtonLabel = syncing
     ? "Saving reusable items…"
+    : syncRunBarrierActive
+      ? "Sync queued until run finishes"
     : syncError
       ? "Automatic sync paused"
       : !remoteSync?.linked
@@ -8271,7 +8581,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         ) ? "runtime-loading" : ""}`}>
         <AnalysisNavigation activeTab={activeTab} editorEnabled={editorEnabled}
           onNavigate={(tab) => void navigateFromEditor(tab)} />
-        {!runtimeReady && (activeTab === "methods" || activeTab === "pipelines" || activeTab === "notebooks") && (
+        {!runtimeReady && (activeTab === "methods" || activeTab === "pipelines" ||
+          (activeTab === "notebooks" && notebookRunRequest != null)) && (
           <RuntimeProgressPanel
             progress={runtimeProgress}
             detail={activeTab === "methods"
@@ -8299,7 +8610,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onNotebookPipelineIdChange={setHomeNotebookPipelineId}
             onRunMethod={(method) => void runMethod(method)}
             onRunPipeline={(pipeline) => void runPipeline(pipeline)}
-            onRunNotebook={(notebook) => void runNotebook(notebook)}
+            onOpenNotebook={(notebook) => void openNotebook(notebook)}
             onOpenAssistant={() => setActiveTab("assistant")}
             onNewMethod={() => void createUntitledMethod()}
             onCreatePipeline={() => {
@@ -8532,8 +8843,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             inputs={inputFiles}
             runtime={runtime}
             runRequest={notebookRunRequest}
+            onRunRequestConsumed={() => setNotebookRunRequest(null)}
+            onRunStateChange={(running) => setRunSyncBarrier(
+              `notebook:${activeNotebook?.id || "active"}`, running
+            )}
             workspaceActions={workspaceActionsMenu()}
-            onBeforeRun={() => ensureRuntime(analysisWorkspace.files).then(() => undefined)}
+            onBeforeRun={(record) => activeNotebook
+              ? prepareNotebookRuntime(record)
+              : ensureRuntime(analysisWorkspace.files).then(() => analysisWorkspace.files)}
             onPrepareProtocol={prepareProtocolNotebook}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}

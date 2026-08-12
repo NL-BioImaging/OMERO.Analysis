@@ -86,11 +86,11 @@ function sameResultOrigin(
 }
 
 function isPlotPair(
-  csv: AnalysisWorkspace["files"][number],
+  companion: AnalysisWorkspace["files"][number],
   image: AnalysisWorkspace["files"][number]
 ): boolean {
-  if (resultStem(csv.logicalPath) === resultStem(image.logicalPath)) return true;
-  return resultStem(csv.name) === resultStem(image.name) && sameResultOrigin(csv, image);
+  if (resultStem(companion.logicalPath) === resultStem(image.logicalPath)) return true;
+  return resultStem(companion.name) === resultStem(image.name) && sameResultOrigin(companion, image);
 }
 
 async function itemFromBytes(
@@ -195,10 +195,10 @@ export async function buildWorkspaceSyncPayload(
       viewer: file.viewer || null
     }));
     const plotImageKeys = group.kind === "result" && group.files.some((file) =>
-      file.type === "text/csv" || /\.csv$/i.test(file.name)
+      file.type === "text/csv" || file.type === "image/svg+xml" || /\.(csv|svg)$/i.test(file.name)
     )
-      ? pngGroups.filter((pngGroup) => group.files.some((csv) =>
-          pngGroup.files.some((image) => isPlotPair(csv, image))
+      ? pngGroups.filter((pngGroup) => group.files.some((companion) =>
+          pngGroup.files.some((image) => isPlotPair(companion, image))
         )).map(resultKey).sort()
       : [];
     await add(

@@ -71,6 +71,11 @@ def max_png_pixels():
     return int(_setting("max_png_pixels", 100_000_000))
 
 
+def import_max_concurrency():
+    """Maximum importer PNG orders submitted concurrently per Workspace."""
+    return max(1, min(32, int(_setting("import_max_concurrency", 4))))
+
+
 def allowed_result_extensions():
     value = _setting("allowed_result_extensions", DEFAULT_EXTENSIONS)
     if isinstance(value, str):

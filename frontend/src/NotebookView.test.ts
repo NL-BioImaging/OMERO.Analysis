@@ -1,7 +1,8 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import NotebookView, {
   duckDbProgressSummary,
+  clearNotebookInlineState,
   isDuckDbTechnicalOutput,
   parseNotebook,
   reattachNotebookDocument,
@@ -15,6 +16,25 @@ function bytes(value: unknown): ArrayBuffer {
 }
 
 describe("run-only notebook validation", () => {
+  it("clears only code-cell outputs and execution counts", () => {
+    const document = {
+      nbformat: 4, nbformat_minor: 5, metadata: {},
+      cells: [
+        { id: "text", cell_type: "markdown", metadata: {}, source: "Result notes" },
+        {
+          id: "code", cell_type: "code", metadata: {}, source: "print('old')",
+          execution_count: 7,
+          outputs: [{ output_type: "stream", name: "stdout", text: "old\n" }]
+        }
+      ]
+    } as NotebookDocument;
+
+    const cleared = clearNotebookInlineState(document);
+
+    expect(cleared.cells[0]).toEqual(document.cells[0]);
+    expect(cleared.cells[1]).toMatchObject({ execution_count: null, outputs: [] });
+  });
+
   it("accepts Python nbformat 4 without changing source cells", () => {
     const source = ["value = 1\n", "value + 1"];
     const document = parseNotebook(bytes({
@@ -79,6 +99,157 @@ describe("run-only notebook validation", () => {
     }));
     fireEvent.click(container.querySelector(".notebook-cell")!);
     expect(runNotebookCell).not.toHaveBeenCalled();
+  });
+
+  it("collapses code source by default while keeping output visible", () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "result.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: {
+        nbformat: 4, nbformat_minor: 5, metadata: {},
+        cells: [{
+          id: "cell", cell_type: "code", metadata: {}, source: "value = 1",
+          execution_count: 1,
+          outputs: [{ output_type: "stream", name: "stdout", text: "visible result" }]
+        }]
+      },
+      createdAt: "2026-08-12T10:00:00Z", updatedAt: "2026-08-12T10:00:00Z"
+    } as NotebookRecord;
+    const { container } = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime: {} as PythonRuntime, runRequest: null,
+      workspaceActions: null, onBeforeRun: async () => undefined,
+      onChange: async () => undefined, onFiles: async () => undefined
+    }));
+
+    const code = container.querySelector(".notebook-code") as HTMLDetailsElement;
+    expect(code.open).toBe(false);
+    expect(container.querySelector(".notebook-outputs")?.textContent).toContain("visible result");
+    fireEvent.click(code.querySelector("summary")!);
+    expect(code.open).toBe(true);
+  });
+
+  it("persists cleared inline state before starting a run", async () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "rerun.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: {
+        nbformat: 4, nbformat_minor: 5, metadata: {},
+        cells: [{
+          id: "cell", cell_type: "code", metadata: {}, source: "value = 1",
+          execution_count: 9,
+          outputs: [{ output_type: "stream", name: "stdout", text: "stale" }]
+        }]
+      },
+      createdAt: "2026-08-12T10:00:00Z", updatedAt: "2026-08-12T10:00:00Z"
+    } as NotebookRecord;
+    const onChange = vi.fn(async (_record: NotebookRecord) => undefined);
+    const reset = vi.fn(async () => undefined);
+    const onRunStateChange = vi.fn();
+    const runtime = {
+      reset,
+      syncInputs: vi.fn(async () => undefined),
+      runNotebookCell: vi.fn(async () => ({
+        stdout: "", stderr: "", preview: null, modelPayload: {} as never, files: []
+      }))
+    } as unknown as PythonRuntime;
+    const { getByRole } = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime, runRequest: null,
+      workspaceActions: null, onBeforeRun: async () => undefined,
+      onChange, onFiles: async () => undefined, onRunStateChange
+    }));
+
+    fireEvent.click(getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(reset).toHaveBeenCalled());
+
+    const firstChange = onChange.mock.calls[0][0] as NotebookRecord;
+    expect(firstChange.document.cells[0]).toMatchObject({ execution_count: null, outputs: [] });
+    expect(onChange.mock.invocationCallOrder[0]).toBeLessThan(reset.mock.invocationCallOrder[0]);
+    await waitFor(() => expect(onRunStateChange).toHaveBeenLastCalledWith(false));
+    expect(onRunStateChange.mock.calls.map(([value]) => value)).toEqual([true, false]);
+  });
+
+  it("releases the synchronization barrier when notebook startup fails", async () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "failed.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: { nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [] },
+      createdAt: "2026-08-12T10:00:00Z", updatedAt: "2026-08-12T10:00:00Z"
+    } as NotebookRecord;
+    const onRunStateChange = vi.fn();
+    const runtime = {
+      reset: vi.fn(async () => { throw new Error("kernel failed"); }),
+      syncInputs: vi.fn(async () => undefined)
+    } as unknown as PythonRuntime;
+    const { getByRole } = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime, runRequest: null,
+      workspaceActions: null, onBeforeRun: async () => undefined,
+      onChange: async () => undefined, onFiles: async () => undefined,
+      onRunStateChange
+    }));
+
+    fireEvent.click(getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(onRunStateChange).toHaveBeenLastCalledWith(false));
+    expect(onRunStateChange.mock.calls.map(([value]) => value)).toEqual([true, false]);
+  });
+
+  it("keeps the synchronization barrier until a stopped run has unwound", async () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "stopped.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: { nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [{
+        id: "cell", cell_type: "code", metadata: {}, source: "long_run()",
+        execution_count: null, outputs: []
+      }] },
+      createdAt: "2026-08-12T10:00:00Z", updatedAt: "2026-08-12T10:00:00Z"
+    } as NotebookRecord;
+    let rejectCell: ((error: Error) => void) | undefined;
+    const onRunStateChange = vi.fn();
+    const runtime = {
+      reset: vi.fn(async () => undefined),
+      syncInputs: vi.fn(async () => undefined),
+      runNotebookCell: vi.fn(() => new Promise((_resolve, reject) => { rejectCell = reject; })),
+      stop: vi.fn(() => rejectCell?.(new Error("stopped"))),
+      start: vi.fn(async () => undefined)
+    } as unknown as PythonRuntime;
+    const { getByRole } = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime, runRequest: null,
+      workspaceActions: null, onBeforeRun: async () => undefined,
+      onChange: async () => undefined, onFiles: async () => undefined,
+      onRunStateChange
+    }));
+
+    fireEvent.click(getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(runtime.runNotebookCell).toHaveBeenCalled());
+    expect(onRunStateChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(onRunStateChange).toHaveBeenLastCalledWith(false));
+    expect(onRunStateChange.mock.calls.map(([value]) => value)).toEqual([true, false]);
+  });
+
+  it("consumes a requested run so remounting cannot execute it again", async () => {
+    const notebook = {
+      id: "notebook", workspaceId: "workspace", name: "requested.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: { nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [] },
+      createdAt: "2026-08-12T10:00:00Z", updatedAt: "2026-08-12T10:00:00Z"
+    } as NotebookRecord;
+    const consumed = vi.fn();
+    const runtime = {
+      reset: vi.fn(async () => undefined),
+      syncInputs: vi.fn(async () => undefined)
+    } as unknown as PythonRuntime;
+
+    render(createElement(NotebookView, {
+      notebook, inputs: [], runtime,
+      runRequest: { id: notebook.id, nonce: 42 },
+      onRunRequestConsumed: consumed,
+      workspaceActions: null, onBeforeRun: async () => undefined,
+      onChange: async (_record: NotebookRecord) => undefined,
+      onFiles: async () => undefined
+    }));
+
+    await waitFor(() => expect(consumed).toHaveBeenCalledTimes(1));
+    expect(runtime.reset).toHaveBeenCalledTimes(1);
   });
 
   it("adds a visible input binding cell and rebinds unambiguous input paths", () => {

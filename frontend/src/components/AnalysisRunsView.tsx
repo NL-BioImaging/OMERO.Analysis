@@ -131,7 +131,9 @@ export function AnalysisRunsView({
         <div className="runs-launchers">
           {kind === "method" ? (
             <>
-              <select aria-label="Method" value={methodId || methods[0]?.id || ""}
+              <select aria-label="Method"
+                title={selectedMethod ? `${selectedMethod.name} · v${selectedMethod.currentVersion}` : undefined}
+                value={methodId || methods[0]?.id || ""}
                 disabled={!methods.length || busy}
                 onChange={(event) => onMethodIdChange(event.target.value)}>
                 {methods.map((method) => <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>)}
@@ -147,7 +149,9 @@ export function AnalysisRunsView({
             </>
           ) : (
             <>
-              <select aria-label="Pipeline" value={pipelineId || pipelines[0]?.id || ""}
+              <select aria-label="Pipeline"
+                title={selectedPipeline ? `${selectedPipeline.name} · v${selectedPipeline.version}` : undefined}
+                value={pipelineId || pipelines[0]?.id || ""}
                 disabled={!pipelines.length || busy}
                 onChange={(event) => onPipelineIdChange(event.target.value)}>
                 {pipelines.map((pipeline) => <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>)}

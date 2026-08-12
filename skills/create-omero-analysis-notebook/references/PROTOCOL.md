@@ -75,8 +75,17 @@ limits fail the cell instead of truncating it.
 Analysis stores query downloads transiently outside Workspace Input. Durable
 outputs must be written below `ctx.results`; Analysis collects them under
 `Notebooks/Results/<notebook>/`. Upload sanitation removes cell outputs,
-execution counts, and `metadata.widgets`.
+execution counts, and `metadata.widgets`. Analysis also clears all inline
+outputs and execution counts immediately before every run, then records only
+the current run's output.
 
 Approved browser packages include NumPy, pandas, Matplotlib, seaborn, SciPy,
-scikit-image, DuckDB, PyArrow, python-calamine, xlrd, and pypdf. Declaring a package
-does not permit network installation.
+scikit-image, DuckDB, PyArrow, python-calamine, xlrd, and pypdf. Analysis loads
+declared approved packages from its vendored/Pyodide assets before execution;
+declaration never permits arbitrary network installation.
+
+Plots must work without a desktop display. Use a non-interactive Matplotlib
+backend (Analysis configures `Agg`) and save PNG/SVG files below `ctx.results`.
+Do not rely on an interactive window or on `plt.show()` as the durable result.
+Analysis suppresses the harmless `FigureCanvasAgg is non-interactive` warning,
+but portable notebooks should omit unnecessary `plt.show()` calls.

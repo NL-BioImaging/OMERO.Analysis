@@ -123,7 +123,7 @@ export interface WorkflowSkillSource {
   plugin_version?: string;
   plugin_path?: string;
   plugin_sha256?: string;
-  format?: "agent-plugin-v1" | "legacy-agent-skills";
+  format?: "agent-skills-v1" | "agent-plugin-v1" | "legacy-agent-skills";
 }
 
 export interface WorkflowSkillEntry {
@@ -172,6 +172,8 @@ export interface AnalysisSkillProviderCatalog {
   };
   skills: Array<{
     name: string;
+    format?: "agent-skills-v1";
+    skills_path?: string;
     description: string;
     purpose: string;
     consumers: string[];
@@ -916,6 +918,17 @@ export interface SyncStatus {
   inventoryDigest: string;
   itemCount: number;
   lastSyncedAt?: string;
+  syncState?: "complete" | "pending" | "failed";
+  pendingOrderCount?: number;
+  storage?: {
+    mode: "legacy" | "inplace";
+    ready: boolean;
+    failureCode: string;
+    detail: string;
+    dependencyVersions: Record<string, string | null>;
+    mappedRoot?: string;
+    groupName?: string;
+  };
 }
 
 export interface SyncPlan {

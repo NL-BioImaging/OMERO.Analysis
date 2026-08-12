@@ -1,5 +1,7 @@
 # OMERO.Analysis Manual
 
+For group-mapped `.analysis` storage, see [BIOMERO importer and `.analysis` storage compatibility](importer-analysis-storage-compatibility.md). That contract is authoritative for optional dependency versions, environment/mount requirements, capability failure codes, pending imports, and backfill.
+
 OMERO.Analysis combines browser-local data analysis, reusable Methods and
 Pipelines, run-only Notebooks, and automatic synchronization with OMERO.
 Notebook code and generated Python run locally in the browser. Source data are
@@ -215,6 +217,9 @@ Analysis automatically mirrors reusable Workspace content into the marked
 changed items and does not create or upload a large Workspace ZIP. PNG results
 from direct Method, Pipeline, and Notebook runs become OMERO Images. Other
 direct results, Methods, Pipelines, and Notebooks become typed attachments.
+Same-stem plot CSV and SVG FileAnnotations are linked to the corresponding PNG
+Image rather than to the managed Dataset. Saved Method and Pipeline executions
+automatically create an SVG companion whenever Matplotlib writes a PNG.
 
 Ready input files with `template` anywhere in the filename are also
 synchronized under `Templates`. Other source inputs are excluded.

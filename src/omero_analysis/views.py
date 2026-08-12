@@ -893,6 +893,7 @@ def attachments(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, "list", object_type, object_id, obj)
     context = object_context(object_type, object_id, obj, conn)
+    _apply_data_query_presentation(context)
     return JsonResponse({"attachments": context["supported_attachments"]})
 
 

@@ -3,6 +3,7 @@ import {
   bindNotebookInputsStrict,
   bindPipelineInputsStrict,
   bindPythonInputsStrict,
+  downloadableWorkspaceInputs,
   extendPipelineInputs,
   isInputBindingsCell
 } from "./artifactBindings";
@@ -78,6 +79,23 @@ describe("strict artifact input binding", () => {
       expect(error).toBeInstanceOf(ArtifactBindingError);
       expect((error as ArtifactBindingError).referencedName).toBe("legacy.duckdb");
     }
+  });
+
+  it("finds an undownloaded OMERO database for legacy Method, Pipeline, and Notebook recovery", () => {
+    const remoteOnly: WorkspaceFile = {
+      ...input("current-measurements.duckdb"),
+      source: "omero",
+      annotationId: 42,
+      dataQueryMode: "local",
+      data: undefined,
+      sha256: ""
+    };
+    expect(downloadableWorkspaceInputs("legacy-name.duckdb", [remoteOnly]))
+      .toEqual([remoteOnly]);
+    expect(downloadableWorkspaceInputs("legacy-name.csv", [remoteOnly])).toEqual([]);
+    expect(downloadableWorkspaceInputs("legacy-name.duckdb", [
+      { ...remoteOnly, state: "failed" }
+    ])).toEqual([]);
   });
 
   it("replaces one managed Notebook binding cell and strictly rebinds code cells", () => {

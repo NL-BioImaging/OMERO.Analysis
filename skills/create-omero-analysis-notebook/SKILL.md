@@ -25,7 +25,10 @@ and widgets with the protocol SDK.
    `ctx.results`.
 5. Query data through `await ctx.query(...)`; aggregate and bound SQL before
    returning rows to pandas.
-6. Run offline and validate with `scripts/validate_notebook.py --write`.
+6. Make plotting backend-independent and save durable plots below
+   `ctx.results`; do not depend on an interactive window or `plt.show()`.
+7. Run offline and validate with `scripts/validate_notebook.py --write` so
+   stale cell outputs, execution counts, and widget state are removed.
 
 ## Convert a notebook
 
@@ -43,7 +46,9 @@ and widgets with the protocol SDK.
    databases, load `analyze-cisegmentation-measurements`.
 9. Compare bounded tables and generated plots against the original offline
    run. Do not call a conversion successful solely because it executes.
-10. Validate and report any remaining unsupported package, unsafe SQL,
+10. Make Matplotlib rendering backend-independent and save durable plots
+    below `ctx.results`.
+11. Validate and report any remaining unsupported package, unsafe SQL,
     unbounded transfer, missing output, or ambiguous input.
 
 ## Guardrails

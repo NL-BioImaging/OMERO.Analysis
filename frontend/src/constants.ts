@@ -33,6 +33,9 @@ duckdb, pyarrow, python-calamine, and xlrd. It has no internet access. Never use
 HTTP, sockets, subprocesses, or shell commands. For Excel, prefer pandas.read_excel with
 engine="calamine". Open DuckDB and SQLite databases read-only. Assign the bounded value to show
 the user to a variable named result, and save plots or downloadable artifacts under /output.
+For every Matplotlib plot, save both a same-stem PNG and SVG and, when Plot + CSV mode is on,
+a same-stem CSV containing the plotted data. The host also creates an SVG companion when a saved
+Method or Pipeline writes a PNG, but reusable Method code must still express both formats explicitly.
 Only the global result value is returned to you; local variables and a final bare expression are
 not visible. Before a gallery render, set result={"store_uuid": store_uuid,
 "render_panels": panels} where panels contains every exact snake_case tool argument, including

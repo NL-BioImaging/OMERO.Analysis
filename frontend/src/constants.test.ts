@@ -25,6 +25,7 @@ describe("generic AI provider", () => {
       "list_saved_pipelines"
     ]);
     expect(SYSTEM_PROMPT).toContain("For every OMERO-backed DuckDB, SQLite, or CSV source");
+    expect(SYSTEM_PROMPT).toContain("save both a same-stem PNG and SVG");
     expect(SYSTEM_PROMPT).toContain("portable data binding");
     expect(SYSTEM_PROMPT).toContain("authorized compatible local or remote source");
     expect(SYSTEM_PROMPT).toContain("size threshold");

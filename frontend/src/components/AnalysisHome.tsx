@@ -20,7 +20,7 @@ interface AnalysisHomeProps {
   onNotebookPipelineIdChange: (id: string) => void;
   onRunMethod: (method: MethodRecord) => void;
   onRunPipeline: (pipeline: PipelineRecord) => void;
-  onRunNotebook: (notebook: NotebookRecord) => void;
+  onOpenNotebook: (notebook: NotebookRecord) => void;
   onOpenAssistant: () => void;
   onNewMethod: () => void;
   onCreatePipeline: () => void;
@@ -45,7 +45,7 @@ export function AnalysisHome({
   onNotebookPipelineIdChange,
   onRunMethod,
   onRunPipeline,
-  onRunNotebook,
+  onOpenNotebook,
   onOpenAssistant,
   onNewMethod,
   onCreatePipeline,
@@ -75,7 +75,9 @@ export function AnalysisHome({
             <h3>Run a Method</h3>
             <p>Execute the current saved version with inputs from this Workspace.</p>
             <div className="analysis-card-controls">
-              <HTMLSelect fill aria-label="Method to run" value={methodId || methods[0]?.id || ""}
+              <HTMLSelect fill aria-label="Method to run"
+                title={selectedMethod ? `${selectedMethod.name} · v${selectedMethod.currentVersion}` : undefined}
+                value={methodId || methods[0]?.id || ""}
                 onChange={(event) => onMethodIdChange(event.target.value)} disabled={!methods.length}>
                 {methods.map((method) => (
                   <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>
@@ -94,7 +96,9 @@ export function AnalysisHome({
             <h3>Run a Pipeline</h3>
             <p>Run an ordered collection of pinned Method versions.</p>
             <div className="analysis-card-controls">
-              <HTMLSelect fill aria-label="Pipeline to run" value={pipelineId || pipelines[0]?.id || ""}
+              <HTMLSelect fill aria-label="Pipeline to run"
+                title={selectedPipeline ? `${selectedPipeline.name} · v${selectedPipeline.version}` : undefined}
+                value={pipelineId || pipelines[0]?.id || ""}
                 onChange={(event) => onPipelineIdChange(event.target.value)} disabled={!pipelines.length}>
                 {pipelines.map((pipeline) => (
                   <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>
@@ -110,18 +114,19 @@ export function AnalysisHome({
 
           <Card className="analysis-start-card" elevation={Elevation.ONE}>
             <ActionIcon name="notebook" />
-            <h3>Run a Notebook</h3>
-            <p>Reattach current inputs, reset stale outputs, and run all cells.</p>
+            <h3>Open a Notebook</h3>
+            <p>Review user inputs and parameters before choosing when to run all cells.</p>
             <div className="analysis-card-controls">
-              <HTMLSelect fill aria-label="Notebook to run" value={notebookId || notebooks[0]?.id || ""}
+              <HTMLSelect fill aria-label="Notebook to run" title={selectedNotebook?.name}
+                value={notebookId || notebooks[0]?.id || ""}
                 onChange={(event) => onNotebookIdChange(event.target.value)} disabled={!notebooks.length}>
                 {notebooks.map((notebook) => (
                   <option key={notebook.id} value={notebook.id}>{notebook.name}</option>
                 ))}
               </HTMLSelect>
               <Button disabled={!selectedNotebook}
-                onClick={() => selectedNotebook && onRunNotebook(selectedNotebook)}>
-                <ActionIcon name="run" />Run Notebook
+                onClick={() => selectedNotebook && onOpenNotebook(selectedNotebook)}>
+                <ActionIcon name="notebook" />Open Notebook
               </Button>
               {!notebooks.length && <small>Create, upload, or import a Notebook first.</small>}
             </div>
@@ -170,6 +175,7 @@ export function AnalysisHome({
             <p>Convert a saved Pipeline, or start with current Workspace inputs attached.</p>
             <div className="analysis-card-controls">
               <HTMLSelect fill aria-label="Pipeline to convert to Notebook"
+                title={notebookPipeline ? `${notebookPipeline.name} · v${notebookPipeline.version}` : undefined}
                 value={notebookPipelineId || pipelines[0]?.id || ""}
                 onChange={(event) => onNotebookPipelineIdChange(event.target.value)}
                 disabled={!pipelines.length}>

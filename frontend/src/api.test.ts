@@ -47,6 +47,38 @@ const bootstrap: Bootstrap = {
 };
 
 describe("OMERO capability renewal", () => {
+  it("lists the supported attachments for the active OMERO object", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/token/") {
+        return new Response(JSON.stringify({
+          context_token: "token-1",
+          operations: ["list"]
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      expect(url).toBe("/attachments/Dataset/42/");
+      return new Response(JSON.stringify({
+        attachments: [{
+          annotation_id: 8,
+          file_id: 9,
+          name: "measurements.duckdb",
+          mimetype: "application/octet-stream",
+          size: 128,
+          kind: "attachment",
+          supported: true,
+          default_mode: "remote",
+          allowed_modes: ["local", "remote"]
+        }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const bridge = new OmeroBridge(bootstrap);
+    await bridge.connect();
+    await expect(bridge.listAttachments()).resolves.toEqual([
+      expect.objectContaining({ annotation_id: 8, name: "measurements.duckdb" })
+    ]);
+    vi.unstubAllGlobals();
+  });
+
   it("renews an expired context once and retries the interrupted download", async () => {
     let tokens = 0;
     let downloads = 0;
@@ -222,6 +254,82 @@ describe("BIOMERO measurement-skill adapter", () => {
     const bridge = new OmeroBridge(bootstrap);
     expect((await bridge.listWorkflowSkills()).workflows).toEqual([]);
     expect((await bridge.zarrViewerStatus()).version).toBe("0.3.0");
+    vi.unstubAllGlobals();
+  });
+
+  it("loads a canonical Agent Skills package from ZarrViewer", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === bootstrap.zarrViewerStatusUrl) {
+        return new Response(JSON.stringify({
+          schema_version: 1,
+          available: true,
+          installed: true,
+          enabled: true,
+          version: "0.5.0",
+          minimum_version: "0.4.0",
+          reason: "ready",
+          viewer_url: "/biomero_zarr_viewer/",
+          image_capabilities_template: "/images/0/capabilities/",
+          plate_capabilities_template: "/plates/0/capabilities/",
+          skill_catalog_url: "/biomero_zarr_viewer/api/analysis-skills/"
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      const descriptor = {
+        name: "use-omero-zarr-viewer",
+        format: "agent-skills-v1",
+        skills_path: "skills",
+        description: "Open measured objects in OMERO ZarrViewer.",
+        purpose: "application-operation",
+        consumers: ["omero-analysis"],
+        version: "3",
+        sha256: "a".repeat(64),
+        package_url: "/biomero_zarr_viewer/api/analysis-skills/use-omero-zarr-viewer/",
+        required_resources: ["references/REFERENCE.md"],
+        required_capabilities: ["zarr-render-v2"],
+        match: { extensions: [], filename_globs: [], required_tables: [], auto_activate: false }
+      };
+      const provider = {
+        name: "BIOMERO.ZarrViewer",
+        distribution: "biomero-zarr-viewer",
+        version: "0.5.0",
+        source: "bundled",
+        health: "ready"
+      };
+      if (url.endsWith("/use-omero-zarr-viewer/")) {
+        return new Response(JSON.stringify({
+          schema: "nl.bioimaging.analysis-skill-provider.v1",
+          provider,
+          skill: descriptor,
+          files: [{
+            path: "SKILL.md",
+            media_type: "text/markdown",
+            size: 100,
+            sha256: "b".repeat(64),
+            content: "---\nname: use-omero-zarr-viewer\ndescription: Open measured objects.\n---\n"
+          }, {
+            path: "references/REFERENCE.md",
+            media_type: "text/markdown",
+            size: 10,
+            sha256: "c".repeat(64),
+            content: "# Reference"
+          }]
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        schema: "nl.bioimaging.analysis-skill-provider.v1",
+        provider,
+        skills: [descriptor]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+
+    const skill = await new OmeroBridge(bootstrap).loadZarrViewerSkill();
+    expect(skill.source.format).toBe("agent-skills-v1");
+    expect(skill.source.skills_path).toBe("skills");
+    expect(skill.files.map((file) => file.path)).toEqual([
+      "SKILL.md",
+      "references/REFERENCE.md"
+    ]);
     vi.unstubAllGlobals();
   });
 });

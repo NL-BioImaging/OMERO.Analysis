@@ -84,6 +84,16 @@ export class OmeroBridge {
     return response.arrayBuffer();
   }
 
+  async listAttachments(): Promise<Attachment[]> {
+    const context = this.bootstrap.context;
+    if (!context) return [];
+    const response = await this.authorizedFetch(
+      route(this.bootstrap.attachmentsTemplate, context.object_type, context.object_id)
+    );
+    const body = await readJson(response);
+    return attachmentList(body.attachments);
+  }
+
   async attach(file: WorkspaceFile): Promise<Attachment> {
     const context = this.bootstrap.context;
     if (!context || !file.data) throw new Error("No OMERO target or result data");
@@ -464,6 +474,8 @@ export class OmeroBridge {
     const skill = record(body.skill, "ZarrViewer skill");
     if (
       skill.name !== "use-omero-zarr-viewer" ||
+      !(skill.format == null || skill.format === "agent-skills-v1") ||
+      !(skill.skills_path == null || skill.skills_path === "skills") ||
       typeof skill.version !== "string" ||
       typeof skill.sha256 !== "string" ||
       !Array.isArray(body.files)
@@ -479,8 +491,9 @@ export class OmeroBridge {
         repository_url: "BIOMERO.ZarrViewer",
         configured_ref: String(provider.version || ""),
         resolved_commit: String(provider.version || ""),
-        skills_path: "bundled/analysis_skills",
-        ref_kind: "distribution"
+        skills_path: skill.skills_path === "skills" ? "skills" : "bundled/analysis_skills",
+        ref_kind: "distribution",
+        format: skill.format === "agent-skills-v1" ? "agent-skills-v1" : undefined
       },
       skill: {
         workflow_key: "biomero-zarr-viewer",
@@ -539,6 +552,8 @@ export class OmeroBridge {
       const skill = record(raw, "ZarrViewer skill");
       if (
         typeof skill.name !== "string" ||
+        !(skill.format == null || skill.format === "agent-skills-v1") ||
+        !(skill.skills_path == null || skill.skills_path === "skills") ||
         typeof skill.version !== "string" ||
         typeof skill.sha256 !== "string" ||
         typeof skill.package_url !== "string"

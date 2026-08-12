@@ -35,6 +35,19 @@ function extension(name: string): string {
   return name.toLowerCase().match(/(\.[^.\\/]+)$/)?.[1] || "";
 }
 
+export function downloadableWorkspaceInputs(
+  referencedName: string,
+  files: WorkspaceFile[]
+): WorkspaceFile[] {
+  const suffix = extension(referencedName);
+  if (!suffix) return [];
+  return files.filter((file) =>
+    file.source === "omero" && Boolean(file.annotationId) &&
+    file.state === "ready" && !file.deletedAt && !file.data &&
+    extension(file.name) === suffix
+  );
+}
+
 function uniqueCandidates(candidates: BindingCandidate[]): BindingCandidate[] {
   const values = new Map<string, BindingCandidate>();
   for (const candidate of candidates) {

@@ -81,6 +81,15 @@ export function serializeNotebook(document: NotebookDocument): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(document, null, 2));
 }
 
+export function clearNotebookInlineState(document: NotebookDocument): NotebookDocument {
+  return {
+    ...document,
+    cells: document.cells.map((cell) => cell.cell_type === "code"
+      ? { ...cell, execution_count: null, outputs: [] }
+      : cell)
+  };
+}
+
 const INPUT_BINDINGS_KIND = "input-bindings";
 
 function fileExtension(name: string): string {
@@ -302,8 +311,12 @@ interface Props {
   inputs: WorkspaceFile[];
   runtime: PythonRuntime;
   runRequest: { id: string; nonce: number } | null;
+  onRunRequestConsumed?: () => void;
+  onRunStateChange?: (running: boolean) => void;
   workspaceActions: ReactNode;
-  onBeforeRun: () => Promise<void>;
+  onBeforeRun: (record: NotebookRecord) => Promise<
+    WorkspaceFile[] | { inputs: WorkspaceFile[]; notebook: NotebookRecord } | void
+  >;
   onPrepareProtocol?: (record: NotebookRecord) => Promise<NotebookRecord>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
@@ -314,6 +327,7 @@ interface Props {
 export default function NotebookView(props: Props) {
   const {
     notebook, notebooks = notebook ? [notebook] : [], inputs, runtime, runRequest, workspaceActions,
+    onRunRequestConsumed, onRunStateChange,
     onBeforeRun, onPrepareProtocol, onChange, onFiles, onSelect, onEdit
   } = props;
   const [running, setRunning] = useState(false);
@@ -387,21 +401,28 @@ export default function NotebookView(props: Props) {
 
   async function attachInputs(
     record: NotebookRecord,
-    startRuntime = true
+    startRuntime = true,
+    preparedInputs?: WorkspaceFile[]
   ): Promise<NotebookRecord> {
     setStatus("Attaching current Workspace input data…");
-    if (startRuntime) await onBeforeRun();
-    await runtime.syncInputs(inputs);
-    const readyInputs = inputs.filter(
+    const preparation = startRuntime ? await onBeforeRun(record) : undefined;
+    const preparedRecord = preparation && !Array.isArray(preparation)
+      ? preparation.notebook
+      : record;
+    const currentInputs = startRuntime
+      ? Array.isArray(preparation) ? preparation : preparation?.inputs || inputs
+      : preparedInputs || inputs;
+    await runtime.syncInputs(currentInputs);
+    const readyInputs = currentInputs.filter(
       (file) => file.source !== "result" && file.state === "ready" &&
         !file.deletedAt && Boolean(file.data)
     );
-    const protocol = parseNotebookProtocol(record.document);
+    const protocol = parseNotebookProtocol(preparedRecord.document);
     const changed = {
-      ...record,
+      ...preparedRecord,
       document: protocol
-        ? record.document
-        : reattachNotebookDocument(record.document, readyInputs),
+        ? preparedRecord.document
+        : reattachNotebookDocument(preparedRecord.document, readyInputs),
       selectedDataFileIds: readyInputs.map((file) => file.id),
       updatedAt: new Date().toISOString()
     };
@@ -413,11 +434,22 @@ export default function NotebookView(props: Props) {
   async function runAll() {
     if (!notebook || running) return;
     setRunning(true);
+    onRunStateChange?.(true);
     try {
+      let working: NotebookRecord | null = {
+        ...notebook,
+        document: clearNotebookInlineState(notebook.document),
+        updatedAt: new Date().toISOString()
+      };
+      await onChange(working);
       setStatus("Preparing the notebook and current input data…");
-      await onBeforeRun();
+      const preparation = await onBeforeRun(working);
+      if (preparation && !Array.isArray(preparation)) working = preparation.notebook;
+      const preparedInputs = Array.isArray(preparation)
+        ? preparation
+        : preparation?.inputs || inputs;
       await runtime.reset();
-      let working: NotebookRecord | null = await attachInputs(notebook, false);
+      working = await attachInputs(working, false, preparedInputs);
       if (onPrepareProtocol) working = await onPrepareProtocol(working);
       if (parseNotebookProtocol(working.document)) {
         const run = {
@@ -462,6 +494,7 @@ export default function NotebookView(props: Props) {
       setStatus(`Notebook could not start: ${String(error)}`);
     } finally {
       setRunning(false);
+      onRunStateChange?.(false);
     }
   }
 
@@ -493,14 +526,7 @@ export default function NotebookView(props: Props) {
     if (!notebook) return;
     const changed = {
       ...notebook,
-      document: {
-        ...notebook.document,
-        cells: notebook.document.cells.map((cell) =>
-          cell.cell_type === "code"
-            ? { ...cell, execution_count: null, outputs: [] }
-            : cell
-        )
-      },
+      document: clearNotebookInlineState(notebook.document),
       updatedAt: new Date().toISOString()
     };
     await onChange(changed);
@@ -514,14 +540,16 @@ export default function NotebookView(props: Props) {
       runRequest.nonce !== lastRunRequest.current
     ) {
       lastRunRequest.current = runRequest.nonce;
+      onRunRequestConsumed?.();
       void runAll();
     }
-  }, [runRequest, notebook?.id]);
+  }, [runRequest, notebook?.id, onRunRequestConsumed]);
 
   return (
     <section className="notebook-tab" aria-label="Notebook">
       <div className="notebook-toolbar">
         <select className="notebook-selector" aria-label="Notebook"
+          title={notebook?.name || "No notebook selected"}
           value={notebook?.id || ""} disabled={!notebooks.length || running}
           onChange={(event) => onSelect?.(event.target.value)}>
           {!notebooks.length && <option value="">No notebook selected</option>}
@@ -539,11 +567,12 @@ export default function NotebookView(props: Props) {
         </div>
       </div>
       <p className="notebook-status" role="status">{status}</p>
-      {notebook?.portabilityWarning && (
-        <p className="notebook-portability-warning" role="status">{notebook.portabilityWarning}</p>
-      )}
-      {notebook && protocol && protocol.parameters.length > 0 && (
-        <section className="notebook-parameters" aria-label="Notebook parameters">
+      <div className="notebook-content">
+        {notebook?.portabilityWarning && (
+          <p className="notebook-portability-warning" role="status">{notebook.portabilityWarning}</p>
+        )}
+        {notebook && protocol && protocol.parameters.length > 0 && (
+          <section className="notebook-parameters" aria-label="Notebook parameters">
           <div>
             <strong>Notebook parameters</strong>
             <small>Values are stored with this Notebook and captured in every run.</small>
@@ -592,12 +621,12 @@ export default function NotebookView(props: Props) {
               );
             })}
           </div>
-        </section>
-      )}
-      {!notebook ? (
-        <div className="notebook-empty">Choose a Notebook from the Workspace explorer.</div>
-      ) : (
-        <div className="notebook-cells">
+          </section>
+        )}
+        {!notebook ? (
+          <div className="notebook-empty">Choose a Notebook from the Workspace explorer.</div>
+        ) : (
+          <div className="notebook-cells">
           {notebook.document.cells.map((cell, index) => (
             <article className={`notebook-cell ${cell.cell_type}`} key={cell.id || index}>
               <div className="notebook-cell-gutter">
@@ -609,9 +638,12 @@ export default function NotebookView(props: Props) {
                     <MarkdownPreview markdown={sourceText(cell)} />
                   </div>
                 ) : cell.cell_type === "code" ? (
-                  <div className="notebook-source">
+                  <details className="notebook-code">
+                    <summary>Code</summary>
+                    <div className="notebook-source">
                     <PythonPreview code={sourceText(cell)} />
-                  </div>
+                    </div>
+                  </details>
                 ) : (
                   <pre className="notebook-source">{sourceText(cell)}</pre>
                 )}
@@ -623,8 +655,9 @@ export default function NotebookView(props: Props) {
               </div>
             </article>
           ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

@@ -15,6 +15,10 @@ from omero_analysis.workspace_sync import (
     _canonical_json,
     _item_marker_values,
     _item_namespace,
+    _inventory_matches_manifest,
+    _active_workspace_import_orders,
+    _reconcile_workspace_journals,
+    _upload_bytes,
     _validate_payload,
     _reconcile_result_attachments,
     plan_sync,
@@ -22,6 +26,8 @@ from omero_analysis.workspace_sync import (
     sync_status,
     validate_inventory,
 )
+from omero_analysis.inplace_storage import AnalysisStorage, StorageCapability
+from omero_analysis import settings as analysis_settings
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
 
@@ -192,6 +198,34 @@ def test_template_input_is_a_supported_managed_file_kind():
     assert validated["items"][0]["kind"] == "template-input"
 
 
+def test_upload_bytes_uses_durable_blob_for_inplace_annotation(monkeypatch, tmp_path):
+    blob = tmp_path / "plot.csv"
+    blob.write_bytes(b"x,y\n1,2\n")
+    item = {
+        "key": "result:plot.csv", "kind": "result", "name": "plot.csv",
+        "mimetype": "text/csv",
+    }
+    dataset = FakeObject()
+    captured = {}
+
+    def create(conn, path, **kwargs):
+        captured.update({"path": path, **kwargs})
+        return FakeAnnotation(44, "plot.csv"), "inplace-annotation", None
+
+    monkeypatch.setattr(
+        "omero_analysis.inplace_annotations.create_file_annotation", create
+    )
+    annotation, mode = _upload_bytes(
+        FakeConnection(), dataset, item, blob.read_bytes(),
+        stored={"path": str(blob)},
+    )
+
+    assert annotation.getId() == 44
+    assert mode == "inplace-annotation"
+    assert captured["path"] == str(blob)
+    assert dataset.linked == [annotation]
+
+
 @pytest.mark.parametrize("kind", ["chat-json", "chat-markdown", "chat-attachment"])
 def test_assistant_content_is_not_a_supported_sync_item(kind):
     obj = FakeObject(object_id=151, name="2DWellTestZarr")
@@ -283,6 +317,29 @@ def test_plot_csv_is_linked_to_image_instead_of_dataset():
     assert annotation in image.linked
 
 
+def test_plot_svg_is_linked_to_image_instead_of_dataset():
+    annotation = FakeAnnotation(43, "plot.svg")
+    dataset = FakeObject(object_id=20, annotations=[annotation])
+    image = FakeObject(object_id=30)
+    item = {
+        "key": "result:svg",
+        "kind": "result",
+        "name": "plot.svg",
+        "metadata": {"plotImageKeys": ["result:image"]},
+    }
+
+    _reconcile_result_attachments(
+        FakeConnection(),
+        dataset,
+        [item],
+        {"result:svg": annotation, "result:image": image},
+        {},
+    )
+
+    assert annotation not in dataset.annotations
+    assert annotation in image.linked
+
+
 def test_content_marker_tracks_every_local_result_origin():
     values = _item_marker_values("workspace-1", {
         "key": f"result-content:result:{'a' * 64}",
@@ -337,6 +394,92 @@ def test_status_does_not_adopt_an_unmarked_same_name_project():
     status = sync_status(Connection(obj), obj, "workspace-1")
     assert status["linked"] is False
     assert status["projectId"] is None
+
+
+def test_identical_content_inventory_is_a_noop():
+    obj = FakeObject(object_id=151)
+    conn = FakeConnection(obj)
+    payload = inventory(obj, conn)
+    manifest = {"content_inventory_digest": hashlib.sha256(
+        _canonical_json({
+            "schema": payload["schema"],
+            "workspace": payload["workspace"],
+            "items": payload["items"],
+        })
+    ).hexdigest()}
+    assert _inventory_matches_manifest(payload, manifest)
+
+
+def test_reconciliation_removes_journal_already_in_manifest(monkeypatch, tmp_path):
+    root = tmp_path / "group"
+    root.mkdir()
+    capability = StorageCapability(
+        mode="inplace", ready=True, failure_code="ready", detail="ok",
+        mapped_root=str(root), group_name="Lab",
+    )
+    storage = AnalysisStorage(capability, 1)
+    item = {
+        "key": "result:plot", "sha256": "a" * 64,
+        "remote": {"objectType": "Image", "objectId": 42},
+    }
+    journal_path = storage.pending_path("4973a18e-9bf2-55a5-9f4f-36efc2eb5a51")
+    storage.write_json(journal_path, {
+        "workspaceId": "workspace-1",
+        "orderUuid": "4973a18e-9bf2-55a5-9f4f-36efc2eb5a51",
+        "items": [{"key": item["key"], "sha256": item["sha256"]}],
+    })
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync._remote_object",
+        lambda conn, remote: object(),
+    )
+
+    result = _reconcile_workspace_journals(
+        object(), object(), {"items": [item]}, storage, "workspace-1"
+    )
+
+    assert result == {"syncState": "complete", "pendingOrderCount": 0}
+    assert storage.read_json(journal_path) is None
+
+
+def test_active_import_count_supports_bounded_parallel_batches(monkeypatch, tmp_path):
+    root = tmp_path / "group"
+    root.mkdir()
+    storage = AnalysisStorage(StorageCapability(
+        mode="inplace", ready=True, failure_code="ready", detail="ok",
+        mapped_root=str(root), group_name="Lab",
+    ), 1)
+    uuids = [
+        "4973a18e-9bf2-55a5-9f4f-36efc2eb5a51",
+        "bbf92cc4-840f-522c-bd45-b79525a405a5",
+        "0522b401-9110-571e-b93b-a07dcfbacc15",
+    ]
+    for order_uuid in uuids:
+        storage.write_json(storage.pending_path(order_uuid), {
+            "workspaceId": "workspace-1", "orderUuid": order_uuid,
+        })
+    events = {
+        uuids[0]: {"state": "pending", "hasTerminalEvent": False},
+        uuids[1]: {"state": "pending", "hasTerminalEvent": False},
+        uuids[2]: {"state": "pending", "hasTerminalEvent": True},
+    }
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync.latest_ingest_events",
+        lambda order_uuids: {value: events[value] for value in order_uuids},
+    )
+
+    assert _active_workspace_import_orders(storage, "workspace-1") == 2
+
+
+@pytest.mark.parametrize(("configured", "expected"), [
+    (0, 1), (1, 1), (4, 4), (16, 16), (100, 32),
+])
+def test_import_concurrency_is_configurable_and_safely_bounded(
+    monkeypatch, configured, expected
+):
+    monkeypatch.setattr(
+        analysis_settings, "_setting", lambda name, default: configured
+    )
+    assert analysis_settings.import_max_concurrency() == expected
 
 
 def test_changed_payload_limit_is_enforced(settings):

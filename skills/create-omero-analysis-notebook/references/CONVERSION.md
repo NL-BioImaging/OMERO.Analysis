@@ -13,12 +13,15 @@
    pandas relations in the database. Convert small trusted lookup tables to a
    bounded parameterized `VALUES` CTE only after validating columns/cardinality.
 8. Review packages against the fixed browser allowlist.
-9. Bound transfers. Prefer SQL aggregation, histograms, quantiles, or a stated
+9. Make plotting backend-independent and save PNG/SVG files below
+   `ctx.results`; do not depend on an interactive window or `plt.show()`.
+10. Bound transfers. Prefer SQL aggregation, histograms, quantiles, or a stated
    deterministic sample over loading millions of intensity values.
-10. Run original and converted copies on the same fixture. Compare important
+11. Run original and converted copies on the same fixture. Compare important
     tables, numeric tolerances, row counts, and PNG/SVG/CSV output triplets.
-11. Run validation with `--write`, then upload and test rebinding against a
-    second compatible source.
+12. Run validation with `--write` to clear cell outputs, execution counts, and
+    widget state, then upload and test rebinding against a second compatible
+    source.
 
 Mechanical conversion may add the config cell, clear stale outputs, and report
 paths/imports/widgets. It must not invent table joins, measurement meanings,

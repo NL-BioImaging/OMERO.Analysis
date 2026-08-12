@@ -157,6 +157,25 @@ def test_session_keepalive_marks_the_browser_session_for_renewal():
     assert request.session.modified is True
 
 
+def test_attachment_listing_includes_remote_query_policy(monkeypatch):
+    obj = FakeObject(annotations=[FakeAnnotation(11, "measurements.duckdb", b"duckdb")])
+    conn = FakeConnection(obj)
+    monkeypatch.setattr(
+        views.DataQueryBroker,
+        "capabilities",
+        lambda self: {"ready": True},
+    )
+    request = with_session(RequestFactory().get("/"))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token_for(conn, obj, ["list"])
+
+    response = views.attachments(request, "Image", 1, conn=conn)
+    attachment = json.loads(response.content)["attachments"][0]
+
+    assert attachment["query_format"] == "duckdb"
+    assert attachment["allowed_modes"] == ["local", "remote"]
+    assert attachment["worker_ready"] is True
+
+
 def test_workspace_snapshot_list_upload_and_download_are_separate_from_inputs():
     snapshot = FakeAnnotation(
         21,

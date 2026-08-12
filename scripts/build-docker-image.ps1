@@ -96,7 +96,7 @@ if ($WithWorkflowSkills) { $wheelhouseArguments += "--with-workflow-skills" }
 if (-not $ZarrViewerWheel) {
     $siblingDist = Join-Path (Split-Path -Parent $RepoRoot) "OMERO.ZarrViewer\dist"
     if (Test-Path $siblingDist) {
-        $ZarrViewerWheel = Get-ChildItem (Join-Path $siblingDist "biomero_zarr_viewer-0.4.*.whl") |
+        $ZarrViewerWheel = Get-ChildItem (Join-Path $siblingDist "biomero_zarr_viewer-*.whl") |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1 -ExpandProperty FullName
     }
