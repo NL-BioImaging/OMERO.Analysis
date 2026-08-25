@@ -17,7 +17,9 @@ from requests_toolbelt import MultipartEncoder
 from .errors import InvalidToken, RemoteQueryFailed, RemoteQueryUnavailable, UnsupportedMedia
 from .services import object_group_id
 from .settings import (
+    data_query_request_timeout_seconds,
     data_query_result_ttl_seconds,
+    data_query_source_upload_timeout_seconds,
     data_query_worker_token,
     data_query_worker_url,
     remote_query_threshold_bytes,
@@ -194,7 +196,7 @@ class DataQueryBroker:
             "/v1/sources",
             data=encoder,
             headers={"Content-Type": encoder.content_type},
-            timeout=120,
+            timeout=data_query_source_upload_timeout_seconds(),
         )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
@@ -223,7 +225,7 @@ class DataQueryBroker:
                 method,
                 f"{self.url}{path}",
                 headers=headers,
-                timeout=kwargs.pop("timeout", 40),
+                timeout=kwargs.pop("timeout", data_query_request_timeout_seconds()),
                 stream=True,
                 **kwargs,
             )

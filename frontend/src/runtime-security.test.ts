@@ -37,8 +37,11 @@ describe("Python sandbox", () => {
     expect(worker).toContain('loadedPackages.add("seaborn")');
     expect(worker).toContain('type: "notebook_query"');
     expect(worker).toContain('message.type === "notebook_query_result"');
+    expect(worker).toContain('frame.attrs["omero_analysis_query"] = metrics');
+    expect(worker).toContain('"dataframe_memory_bytes"');
+    expect(worker).toContain('"throughput_mib_per_second"');
     expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain("PyCF_ALLOW_TOP_LEVEL_AWAIT");
-    expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain("3e5");
+    expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain("notebookCellTimeoutMs");
     expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain(
       "FigureCanvasAgg is non-interactive"
     );

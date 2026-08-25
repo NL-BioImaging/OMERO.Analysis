@@ -70,6 +70,7 @@ export interface Bootstrap {
   zarrViewerStatusUrl: string;
   keepaliveUrl: string;
   keepaliveInterval: number;
+  notebookCellTimeoutSeconds?: number;
   styleNonce?: string;
   runtimeBase: string;
 }

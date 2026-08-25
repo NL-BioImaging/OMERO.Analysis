@@ -40,6 +40,7 @@ window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   zarrViewerStatusUrl: value("zarrViewerStatusUrl"),
   keepaliveUrl: value("keepaliveUrl"),
   keepaliveInterval: Number(value("keepaliveInterval")) || 0,
+  notebookCellTimeoutSeconds: Number(value("notebookCellTimeoutSeconds")) || 300,
   styleNonce: value("styleNonce"),
   runtimeBase: value("runtimeBase").replace(/ASSET$/, "")
 };

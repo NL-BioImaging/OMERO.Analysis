@@ -145,6 +145,8 @@ Default synchronization limits can be overridden with OMERO.web settings:
 - `omero.web.analysis.remote_query_threshold_bytes`: 104,857,600 (100 MiB;
   set to `0` to force every supported OMERO attachment remote)
 - `omero.web.analysis.data_query_result_ttl_seconds`: 600
+- `omero.web.analysis.data_query_request_timeout_seconds`: 40 seconds
+- `omero.web.analysis.data_query_source_upload_timeout_seconds`: 120 seconds
 
 Remote DuckDB, SQLite, and CSV queries additionally require the secret-only
 `OMERO_ANALYSIS_DATA_QUERY_WORKER_URL` and

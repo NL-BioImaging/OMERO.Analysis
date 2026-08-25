@@ -609,7 +609,11 @@ export default function App() {
   const bootstrap = window.OMERO_ANALYSIS;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
   const runtime = useMemo(
-    () => new PythonRuntime(bootstrap.runtimeBase, bootstrap.context),
+    () => new PythonRuntime(
+      bootstrap.runtimeBase,
+      bootstrap.context,
+      (bootstrap.notebookCellTimeoutSeconds || 300) * 1000
+    ),
     [bootstrap]
   );
   const dialogs = useDialogs();
@@ -3056,7 +3060,7 @@ export default function App() {
   async function runNotebookBrokerQuery(
     bindings: NotebookProtocolBinding[],
     request: NotebookQueryRequest
-  ): Promise<{ data: ArrayBuffer }> {
+  ): Promise<{ data: ArrayBuffer; metadata: Record<string, unknown> }> {
     const binding = bindings.find((item) => item.inputId === request.source);
     if (!binding || binding.kind !== "query") {
       throw new Error(`Notebook query source is not bound: ${request.source}`);
@@ -3064,19 +3068,35 @@ export default function App() {
     if (binding.mode !== "remote" || !binding.annotationId) {
       throw new Error(`Notebook source ${request.source} is not a remote OMERO binding`);
     }
+    const brokerStarted = performance.now();
     const result = await bridge.remoteQuery(
       binding.annotationId,
       request.sql,
       typedNotebookQueryParameters(request.parameters)
     );
+    const brokerQueryMs = performance.now() - brokerStarted;
     if (typeof result.result_token !== "string") {
       throw new Error("Remote notebook query did not return a result token");
     }
+    const downloadStarted = performance.now();
     const data = await bridge.downloadRemoteResult(result.result_token);
+    const downloadMs = performance.now() - downloadStarted;
     if (data.byteLength !== Number(result.byte_count)) {
       throw new Error("Remote notebook query result size changed during download");
     }
-    return { data };
+    return {
+      data,
+      metadata: {
+        cache_status: result.cache_status,
+        row_count: Number(result.row_count),
+        byte_count: Number(result.byte_count),
+        worker_duration_ms: Number(result.duration_ms),
+        source_sha256: result.source_sha256,
+        sql_sha256: result.sql_sha256,
+        broker_query_ms: brokerQueryMs,
+        download_ms: downloadMs
+      }
+    };
   }
 
   async function prepareProtocolNotebook(record: NotebookRecord): Promise<NotebookRecord> {

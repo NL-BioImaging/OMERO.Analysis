@@ -165,3 +165,26 @@ def test_broker_strips_worker_identifiers_and_uses_bearer_header():
         for call in session.calls
         if "/v1/" in call[1]
     )
+
+
+@override_settings(
+    OMERO_ANALYSIS_DATA_QUERY_WORKER_URL="http://worker:8000",
+    OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN="secret-token",
+    OMERO_ANALYSIS_DATA_QUERY_REQUEST_TIMEOUT_SECONDS=330,
+)
+def test_broker_uses_configured_request_timeout():
+    session = Session()
+    broker = DataQueryBroker(session=session)
+    annotation = FakeAnnotation(11, "measurements.duckdb", b"database")
+    info = SimpleNamespace(
+        name="measurements.duckdb", size=8, mimetype="application/octet-stream"
+    )
+    broker.query(
+        annotation,
+        info,
+        "opaque-scope",
+        "opaque-source",
+        {"sql": "SELECT 1", "parameters": {}},
+    )
+    query_call = next(call for call in session.calls if call[1].endswith("/query"))
+    assert query_call[2]["timeout"] == 330

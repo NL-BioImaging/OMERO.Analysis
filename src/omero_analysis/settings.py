@@ -59,6 +59,11 @@ def max_notebook_cells():
     return int(_setting("max_notebook_cells", 10000))
 
 
+def notebook_cell_timeout_seconds():
+    """Maximum wall time for one browser notebook cell."""
+    return max(1, int(_setting("notebook_cell_timeout_seconds", 300)))
+
+
 def max_sync_items():
     return int(_setting("max_sync_items", 10000))
 
@@ -106,3 +111,13 @@ def remote_query_threshold_bytes():
 
 def data_query_result_ttl_seconds():
     return max(1, int(_setting("data_query_result_ttl_seconds", 600)))
+
+
+def data_query_request_timeout_seconds():
+    """Timeout for broker requests to an already registered query source."""
+    return max(1, int(_setting("data_query_request_timeout_seconds", 40)))
+
+
+def data_query_source_upload_timeout_seconds():
+    """Timeout for streaming and ingesting a new source in the worker."""
+    return max(1, int(_setting("data_query_source_upload_timeout_seconds", 120)))

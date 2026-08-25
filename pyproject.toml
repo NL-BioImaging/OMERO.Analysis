@@ -30,11 +30,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+benchmark = [
+  "duckdb>=1.2,<2",
+]
 biomero-skills = [
   "biomero-workflow-skills>=0.4,<0.5",
 ]
 test = [
   "Django>=3.2,<6",
+  "duckdb>=1.2,<2",
   "pytest>=8",
   "pytest-django>=4.8",
   "build>=1.2",

@@ -25,6 +25,7 @@ export interface NotebookQueryRequest {
 
 export interface NotebookQueryResponse {
   data: ArrayBuffer;
+  metadata?: Record<string, unknown>;
 }
 
 export interface NotebookRuntimeConfiguration {
@@ -175,14 +176,43 @@ class _OANotebookContext:
 
     async def query(self, source, sql, parameters=None):
         _oa_validate_query(sql)
+        import time as _oa_query_time
+        _oa_total_started = _oa_query_time.perf_counter()
         binding = self._bindings.get(str(source))
         if not binding or binding.get("kind") != "query":
             raise KeyError("Notebook query source is not bound: " + str(source))
         values = dict(parameters or {})
         if binding.get("mode") == "remote":
-            path = await _oa_host_query(str(source), str(sql), _oa_json.dumps(values))
+            response = _oa_json.loads(
+                await _oa_host_query(str(source), str(sql), _oa_json.dumps(values))
+            )
+            path = response["path"]
             import pandas as _oa_pd
-            return _oa_pd.read_csv(str(path))
+            _oa_parse_started = _oa_query_time.perf_counter()
+            frame = _oa_pd.read_csv(str(path))
+            _oa_parse_ms = (_oa_query_time.perf_counter() - _oa_parse_started) * 1000
+            metrics = dict(response.get("metadata") or {})
+            metrics.update({
+                "mode": "remote",
+                "parse_ms": _oa_parse_ms,
+                "total_ms": (_oa_query_time.perf_counter() - _oa_total_started) * 1000,
+                "dataframe_memory_bytes": int(frame.memory_usage(deep=True).sum()),
+            })
+            byte_count = metrics.get("byte_count")
+            total_ms = metrics.get("total_ms")
+            if isinstance(byte_count, (int, float)) and isinstance(total_ms, (int, float)) and total_ms > 0:
+                metrics["throughput_mib_per_second"] = float(byte_count) / (1024 * 1024) / (float(total_ms) / 1000)
+            frame.attrs["omero_analysis_query"] = metrics
+            return frame
+        def _oa_local_result(frame):
+            total_ms = (_oa_query_time.perf_counter() - _oa_total_started) * 1000
+            frame.attrs["omero_analysis_query"] = {
+                "mode": "local",
+                "row_count": int(len(frame)),
+                "total_ms": total_ms,
+                "dataframe_memory_bytes": int(frame.memory_usage(deep=True).sum()),
+            }
+            return frame
         path = _oa_pathlib.Path(binding["path"])
         suffix = path.suffix.lower()
         if suffix == ".duckdb":
@@ -192,7 +222,7 @@ class _OANotebookContext:
                 connection.execute("SET enable_external_access=false")
                 connection.execute("SET autoinstall_known_extensions=false")
                 connection.execute("SET autoload_known_extensions=false")
-                return connection.execute(str(sql), values).fetchdf()
+                return _oa_local_result(connection.execute(str(sql), values).fetchdf())
             finally:
                 connection.close()
         if suffix in {".sqlite", ".sqlite3"}:
@@ -211,7 +241,7 @@ class _OANotebookContext:
                 connection.set_authorizer(lambda action, *_args: _oa_sqlite.SQLITE_DENY if action in denied else _oa_sqlite.SQLITE_OK)
                 deadline = _oa_time.monotonic() + 30
                 connection.set_progress_handler(lambda: 1 if _oa_time.monotonic() > deadline else 0, 10000)
-                return _oa_pd.read_sql_query(str(sql), connection, params=values)
+                return _oa_local_result(_oa_pd.read_sql_query(str(sql), connection, params=values))
             finally:
                 connection.close()
         if suffix == ".csv":
@@ -222,7 +252,7 @@ class _OANotebookContext:
                 connection.execute("SET enable_external_access=false")
                 connection.execute("SET autoinstall_known_extensions=false")
                 connection.execute("SET autoload_known_extensions=false")
-                return connection.execute(str(sql), values).fetchdf()
+                return _oa_local_result(connection.execute(str(sql), values).fetchdf())
             finally:
                 connection.close()
         raise ValueError("Unsupported notebook query source: " + suffix)
@@ -436,7 +466,10 @@ addEventListener("message", async (event) => {
       const safe = String(message.id).replace(/[^A-Za-z0-9._-]/g, "_");
       const path = "/remote-query/" + safe + ".csv";
       pyodide.FS.writeFile(path, bytes);
-      pending.resolve(path);
+      pending.resolve(JSON.stringify({
+        path,
+        metadata: message.value.metadata || {}
+      }));
     } catch (error) {
       pending.reject(error);
     }
@@ -715,7 +748,8 @@ export class PythonRuntime {
 
   constructor(
     private readonly runtimeBase: string,
-    private readonly context: OmeroContext | null = null
+    private readonly context: OmeroContext | null = null,
+    private readonly notebookCellTimeoutMs = 300_000
   ) {
     window.addEventListener("message", this.receive);
   }
@@ -828,7 +862,7 @@ try:
         )
 except Exception:
     pass
-`, 300_000);
+`, this.notebookCellTimeoutMs);
   }
 
   setNotebookQueryHandler(
@@ -971,12 +1005,14 @@ except Exception:
               ? message.value.parameters
               : {}
           });
-          const data = result.data.slice(0);
+          // Transfer the downloaded result directly. Cloning here would briefly
+          // double browser memory for the benchmark's several-hundred-MiB CSVs.
+          const data = result.data;
           this.frame?.contentWindow?.postMessage({
             source: "oa-parent",
             id: message.id,
             type: "notebook_query_result",
-            value: { data }
+            value: { data, metadata: result.metadata || {} }
           }, "*", [data]);
         } catch (error) {
           this.frame?.contentWindow?.postMessage({

@@ -60,7 +60,7 @@ from .services import (
 )
 from .tokens import make_context_token, validate_context_token
 from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
-from .settings import integrated_data_analysis
+from .settings import integrated_data_analysis, notebook_cell_timeout_seconds
 from .workspace_sync import (
     SYNC_NAMESPACE,
     apply_sync,
@@ -337,6 +337,7 @@ def analysis(request, conn=None, **kwargs):
             "keepalive_interval": max(
                 0, int(getattr(settings, "PING_INTERVAL", 60000))
             ),
+            "notebook_cell_timeout_seconds": notebook_cell_timeout_seconds(),
             "style_nonce": style_nonce,
             "embedded_host": embedded_host,
         },
