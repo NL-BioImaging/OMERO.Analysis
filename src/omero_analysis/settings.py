@@ -51,6 +51,10 @@ def max_upload_bytes():
     return int(_setting("max_upload_bytes", 268435456))
 
 
+def data_query_promotion_max_bytes():
+    return max(1, int(_setting("data_query_promotion_max_bytes", max_upload_bytes())))
+
+
 def max_notebook_bytes():
     return int(_setting("max_notebook_bytes", 32 * 1024 * 1024))
 

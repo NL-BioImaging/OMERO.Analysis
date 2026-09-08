@@ -189,7 +189,12 @@ class _OANotebookContext:
             path = response["path"]
             import pandas as _oa_pd
             _oa_parse_started = _oa_query_time.perf_counter()
-            frame = _oa_pd.read_csv(str(path))
+            try:
+                frame = _oa_pd.read_csv(str(path))
+            finally:
+                # Each host query has a private transfer path. The returned
+                # DataFrame owns its data; keeping the CSV leaks large buffers.
+                _oa_pathlib.Path(path).unlink(missing_ok=True)
             _oa_parse_ms = (_oa_query_time.perf_counter() - _oa_parse_started) * 1000
             metrics = dict(response.get("metadata") or {})
             metrics.update({

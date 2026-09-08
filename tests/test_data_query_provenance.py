@@ -32,14 +32,21 @@ class Connection(FakeConnection):
         super().__init__(obj)
         self.sequence = 1000
         self.created_all = []
+        self.maps = []
         self.current_group = obj.group_id
         self.unreadable_file = False
     def getEventContext(self):
         return SimpleNamespace(groupId=self.current_group)
     def getObject(self, kind, identifier):
+        if kind == "Annotation":
+            deleted = {i for k, ids, _ in self.deleted if k == "Annotation" for i in ids}
+            return next((a for a in self.created_all + self.maps
+                         if a.getId() == identifier and identifier not in deleted), None)
         if kind == "OriginalFile" and self.unreadable_file:
             return None
         return super().getObject(kind, identifier)
+    def getAnnotationLinks(self, *args, **kwargs):
+        return []
     def createFileAnnfromLocalFile(self, path, mimetype, ns, desc):
         from pathlib import Path
         self.sequence += 1
@@ -84,7 +91,24 @@ def query_case(monkeypatch, settings, tmp_path):
             self.closed = True
     response = Response()
     monkeypatch.setattr(DataQueryBroker, "download", lambda *args, **kwargs: response)
-    monkeypatch.setattr(provenance, "_create_map", lambda conn, values: Map(2000, values))
+    def create_map(conn, values, description=None):
+        item = Map(2000 + len(conn.maps), values)
+        item.tag = description
+        conn.maps.append(item)
+        return item
+    monkeypatch.setattr(provenance, "_create_map", create_map)
+    def upload(conn, path, mimetype, namespace, journal, role):
+        tag = journal.intent(role, "Annotation")
+        item = conn.createFileAnnfromLocalFile(path, mimetype, namespace, tag)
+        item.tag = tag
+        journal.remember(role, item.getId())
+        return item
+    monkeypatch.setattr(provenance.recovery, "upload_annotation", upload)
+    def discover(conn, journal):
+        tags = {v["tag"] for v in journal.value["artifacts"].values()}
+        return [("Annotation", a.getId()) for a in conn.created_all + conn.maps
+                if getattr(a, "tag", None) in tags and conn.getObject("Annotation", a.getId())]
+    monkeypatch.setattr(provenance.recovery, "_discover", discover)
     output = views.data_source_query(request, 11, conn=conn)
     assert output.status_code == 200, output.content
     payload = json.loads(output.content)
@@ -115,9 +139,9 @@ def test_modified_saved_recipe_is_not_reused(query_case):
     request, conn, payload, _, _ = query_case
     provenance.promote_result(request, conn, payload)
     conn.created_all[1].data = b'{"sql":"modified"}'
-    repeated = provenance.promote_result(request, conn, payload)
-    assert not repeated["reused"]
-    assert len(conn.created_all) == 4
+    with pytest.raises(RemoteQueryFailed, match="completed promotion changed"):
+        provenance.promote_result(request, conn, payload)
+    assert len(conn.created_all) == 2
 
 
 def test_download_stream_closes_response_and_audits_exact_bytes(query_case, settings):
@@ -219,6 +243,66 @@ def test_old_worker_does_not_issue_receipt(query_case):
     result.pop("execution")
     claims, _, _, info, _, _ = authorize_query_source(request, conn, annotation_id=11)
     assert provenance.make_receipt(request, conn, claims, info, "token", {"sql": "SELECT 1"}, result) is None
+
+
+@pytest.mark.parametrize("point", ["csv:created", "csv:recorded", "recipe:created", "recipe:recorded",
+                                   "summary:created", "summary:recorded", "csv:linked", "recipe:linked",
+                                   "summary:linked", "complete:recorded"])
+def test_crash_retry_reconciles_or_reuses_exact_completed_result(query_case, monkeypatch, point):
+    request, conn, payload, _, _ = query_case
+    def crash(name):
+        if name == point:
+            raise SystemExit("simulated process death")
+    monkeypatch.setattr(provenance.recovery, "checkpoint", crash)
+    with pytest.raises(SystemExit):
+        provenance.promote_result(request, conn, payload)
+    monkeypatch.setattr(provenance.recovery, "checkpoint", lambda name: None)
+    saved = provenance.promote_result(request, conn, payload)
+    assert saved["reused"] == (point in ("summary:linked", "complete:recorded"))
+    assert len(conn.obj.linked) == 3
+    assert provenance.promote_result(request, conn, payload)["reused"]
+    remaining = [a for a in conn.created_all + conn.maps if conn.getObject("Annotation", a.getId())]
+    assert len(remaining) == 3
+
+
+def test_journal_tampering_fails_closed(query_case):
+    request, conn, payload, _, _ = query_case
+    provenance.promote_result(request, conn, payload)
+    journal = provenance.recovery.PromotionJournal(hashlib.sha256(payload["receipt"].encode()).hexdigest())
+    journal.path.write_text(journal.path.read_text()[:-8] + "tampered")
+    with pytest.raises(Exception):
+        provenance.promote_result(request, conn, payload)
+    assert len(conn.obj.linked) == 3
+
+
+@pytest.mark.parametrize("change", ["session", "permission", "unlink"])
+def test_pending_recovery_still_requires_current_authorization(query_case, monkeypatch, change):
+    request, conn, payload, _, _ = query_case
+    def crash(point):
+        if point == "csv:created":
+            raise SystemExit("interrupted save")
+    monkeypatch.setattr(provenance.recovery, "checkpoint", crash)
+    with pytest.raises(SystemExit):
+        provenance.promote_result(request, conn, payload)
+    monkeypatch.setattr(provenance.recovery, "checkpoint", lambda point: None)
+    if change == "session":
+        request.session.session_key = "revoked-browser-context"
+    elif change == "permission":
+        conn.obj.can_annotate_value = False
+    else:
+        conn.obj.annotations = []
+    with pytest.raises(Exception):
+        provenance.promote_result(request, conn, payload)
+    assert len(conn.created_all) == 1 and not conn.deleted
+
+
+def test_direct_promotion_limit_is_independent_of_manual_uploads(settings):
+    from omero_analysis.settings import data_query_promotion_max_bytes, max_upload_bytes
+    settings.OMERO_ANALYSIS_MAX_UPLOAD_BYTES = 256 * 1024**2
+    assert data_query_promotion_max_bytes() == max_upload_bytes()
+    settings.OMERO_ANALYSIS_DATA_QUERY_PROMOTION_MAX_BYTES = 2 * 1024**3
+    assert data_query_promotion_max_bytes() == 2 * 1024**3
+    assert max_upload_bytes() == 256 * 1024**2
 
 
 def test_tls_settings_apply_to_health_and_worker_requests(settings):

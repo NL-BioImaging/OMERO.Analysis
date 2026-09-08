@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -19,7 +20,8 @@ from .data_query_audit import audit, request_correlation
 from .errors import InvalidToken, PermissionDenied, RemoteQueryFailed, UnsupportedMedia
 from .managed_omero import map_values
 from .services import RESULT_NAMESPACE, attachment_info, can_annotate, safe_filename
-from .settings import max_upload_bytes
+from .settings import data_query_promotion_max_bytes
+from . import data_query_recovery as recovery
 
 NAMESPACE = "nl.bioimaging.analysis.data-query.provenance.v1"
 COMPLETION_SALT = NAMESPACE + ".completion"
@@ -66,10 +68,9 @@ def read_receipt(receipt, result_token):
 def promotion_lock(receipt_hash):
     # Fixed stripes bound lock-file count; OS locks work across web processes.
     # Deployments with multiple web hosts must share this directory on a locking-capable volume.
-    directory = Path(getattr(settings, "OMERO_ANALYSIS_DATA_QUERY_STATE_DIR", "") or
-                     os.getenv("OMERO_ANALYSIS_DATA_QUERY_STATE_DIR", "") or
-                     Path(tempfile.gettempdir()) / "omero-analysis-data-query")
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not re.fullmatch(r"[a-f0-9]{64}", receipt_hash):
+        raise ValueError("Invalid promotion identity")
+    directory = recovery.state_directory()
     path = directory / (receipt_hash[:2] + ".lock")
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     with os.fdopen(fd, "r+b") as handle:
@@ -138,10 +139,12 @@ def _complete_promotion(obj, receipt_hash):
     return None
 
 
-def _create_map(conn, values):
+def _create_map(conn, values, description=None):
     from omero.gateway import MapAnnotationWrapper
     annotation = MapAnnotationWrapper(conn)
     annotation.setNs(NAMESPACE)
+    if description:
+        annotation.setDescription(description)
     annotation.setValue(sorted((key, str(value)) for key, value in values.items()))
     annotation.save()
     return annotation
@@ -165,14 +168,23 @@ def promote_result(request, conn, payload):
     request.data_query_audit.update({key: result[key] for key in (
         "source_sha256", "sql_sha256", "row_count", "byte_count")})
     request.data_query_audit["result_sha256"] = result["execution"]["result_sha256"]
-    if result["byte_count"] > max_upload_bytes():
+    if result["byte_count"] > data_query_promotion_max_bytes():
         raise RemoteQueryFailed("Query result exceeds the Analysis upload limit")
     with promotion_lock(receipt_hash):
+        journal = recovery.PromotionJournal(receipt_hash)
         existing = _complete_promotion(obj, receipt_hash)
         if existing:
+            if journal.value:
+                journal.complete()
+                recovery.clear_staging(journal)
             return existing
-        created = []
-        with tempfile.TemporaryDirectory(prefix="analysis-query-result-") as directory:
+        if journal.value:
+            recovery.reconcile(conn, journal, apply=True)
+            journal.reset(record)
+        else:
+            journal = recovery.PromotionJournal(receipt_hash, record)
+        with tempfile.TemporaryDirectory(prefix="staging-" + journal.value["operation"] + "-",
+                                         dir=recovery.state_directory()) as directory:
             csv_path = Path(directory) / filename
             response = DataQueryBroker(request_id=request_correlation(request)).download(claims["result_id"])
             digest = hashlib.sha256()
@@ -181,7 +193,7 @@ def promote_result(request, conn, payload):
                 with csv_path.open("wb") as handle:
                     for chunk in response.iter_content(chunk_size=1024 * 1024):
                         size += len(chunk)
-                        if size > min(result["byte_count"], max_upload_bytes()):
+                        if size > min(result["byte_count"], data_query_promotion_max_bytes()):
                             raise RemoteQueryFailed("Query result size changed; rerun the query")
                         digest.update(chunk)
                         handle.write(chunk)
@@ -197,34 +209,34 @@ def promote_result(request, conn, payload):
             record.update({"receipt_sha256": receipt_hash, "saved_at": datetime.now(timezone.utc).isoformat(),
                            "promotion_request_id": request_correlation(request)})
             try:
-                csv_annotation = conn.createFileAnnfromLocalFile(str(csv_path), mimetype="text/csv",
-                    ns=RESULT_NAMESPACE, desc="Verified DataQueryWorker CSV; linked query provenance")
-                created.append(csv_annotation)
+                csv_annotation = recovery.upload_annotation(conn, csv_path, "text/csv",
+                                                             RESULT_NAMESPACE, journal, "csv")
                 record["result_annotation_id"] = int(csv_annotation.getId())
                 json_path = Path(directory) / "query-provenance.json"
                 json_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-                provenance = conn.createFileAnnfromLocalFile(str(json_path), mimetype="application/json",
-                    ns=NAMESPACE, desc="Full query recipe and verified execution provenance")
-                created.append(provenance)
+                provenance = recovery.upload_annotation(conn, json_path, "application/json",
+                                                         NAMESPACE, journal, "recipe")
                 completion = {"receipt_sha256": receipt_hash, "result_annotation_id": int(csv_annotation.getId()),
                               "provenance_annotation_id": int(provenance.getId()), "byte_count": size,
                               "result_sha256": digest.hexdigest(),
                               "provenance_byte_count": json_path.stat().st_size,
-                              "provenance_sha256": hashlib.sha256(json_path.read_bytes()).hexdigest()}
+                              "provenance_sha256": recovery.digest_file(json_path)}
+                tag = journal.intent("summary", "Annotation")
                 marker = _create_map(conn, {**completion,
                     "source_file_id": info.file_id, "source_annotation_id": info.annotation_id,
                     "source_sha256": result["source_sha256"], "sql_sha256": result["sql_sha256"],
-                    "completion": signing.dumps(completion, salt=COMPLETION_SALT)})
-                created.append(marker)
-                for annotation in created:
+                    "completion": signing.dumps(completion, salt=COMPLETION_SALT)}, description=tag)
+                journal.remember("summary", marker.getId())
+                for role, annotation in (("csv", csv_annotation), ("recipe", provenance), ("summary", marker)):
                     obj.linkAnnotation(annotation)
+                    recovery.checkpoint(role + ":linked")
+                journal.complete()
             except Exception:
-                for annotation in reversed(created):
-                    try:
-                        conn.deleteObjects("Annotation", [int(annotation.getId())], wait=True)
-                    except Exception:
-                        audit("promotion_cleanup", "failed", request_id=request_correlation(request),
-                              annotation_id=int(annotation.getId()))
+                try:
+                    recovery.reconcile(conn, journal, apply=True)
+                except Exception:
+                    audit("promotion_cleanup", "failed", request_id=request_correlation(request),
+                          operation=journal.value["operation"])
                 raise
     audit("promotion_saved", "success", request_id=request_correlation(request),
           user_id=int(conn.getUserId()), group_id=record["group_id"], receipt_sha256=receipt_hash,

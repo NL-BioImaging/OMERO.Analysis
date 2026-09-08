@@ -41,7 +41,8 @@ addEventListener("message", (event) => {
   }
   if (message.source !== "oa-parent" || !runtimeWorker) return;
   lastRequestId = message.id || "bootstrap";
-  const transfer = message.type === "file" && message.value && message.value.data
+  const transfer = ["file", "remote_query_file", "notebook_query_result"].includes(message.type)
+    && message.value && message.value.data
     ? [message.value.data] : [];
   runtimeWorker.postMessage(message, transfer);
 });

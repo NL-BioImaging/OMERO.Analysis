@@ -1,0 +1,13 @@
+# Apply alongside the worker's deploy/compose.large-export.yaml.
+services:
+  omeroweb:
+    environment:
+      CONFIG_omero_web_wsgi__timeout: "1800"
+      OMERO_ANALYSIS_DATA_QUERY_REQUEST_TIMEOUT_SECONDS: "930"
+      OMERO_ANALYSIS_DATA_QUERY_SOURCE_UPLOAD_TIMEOUT_SECONDS: "1800"
+      OMERO_ANALYSIS_NOTEBOOK_CELL_TIMEOUT_SECONDS: "3600"
+      OMERO_ANALYSIS_DATA_QUERY_RESULT_TTL_SECONDS: "3600"
+      OMERO_ANALYSIS_MAX_DOWNLOAD_BYTES: "2147483648"
+      OMERO_ANALYSIS_DATA_QUERY_PROMOTION_MAX_BYTES: "2147483648"
+# For OMERO Docker images using CONFIG_ environment translation. Also configure
+# proxy_read_timeout and proxy_send_timeout to 1800s in the reverse proxy.

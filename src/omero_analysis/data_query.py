@@ -49,6 +49,13 @@ class ChunkReader:
     def len(self) -> int:
         return self._remaining
 
+    def close(self) -> None:
+        self._buffer = b""
+        self._remaining = 0
+        close = getattr(self._chunks, "close", None)
+        if close:
+            close()
+
     def read(self, size: int = -1) -> bytes:
         if self._remaining <= 0:
             return b""
@@ -57,7 +64,7 @@ class ChunkReader:
             try:
                 self._buffer += bytes(next(self._chunks))
             except StopIteration:
-                break
+                raise RemoteQueryFailed("Source ended before its declared size") from None
         value, self._buffer = self._buffer[:target], self._buffer[target:]
         self._remaining -= len(value)
         return value
@@ -214,13 +221,16 @@ class DataQueryBroker:
                 **({"expected_sha256": digest} if digest else {}),
             }
         )
-        return self._request(
-            "POST",
-            "/v1/sources",
-            data=encoder,
-            headers={"Content-Type": encoder.content_type},
-            timeout=data_query_source_upload_timeout_seconds(),
-        )
+        try:
+            return self._request(
+                "POST",
+                "/v1/sources",
+                data=encoder,
+                headers={"Content-Type": encoder.content_type},
+                timeout=data_query_source_upload_timeout_seconds(),
+            )
+        finally:
+            reader.close()
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._stream(method, path, **kwargs)

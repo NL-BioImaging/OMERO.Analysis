@@ -10,7 +10,7 @@ Fresh membership rows are checked because OMERO's session membership can lag gro
 
 An enhanced query response includes an encrypted/authenticated `provenance_receipt` alongside the existing result token. The receipt binds the exact token, browser session, user/group, context, original source parent/file/annotation, source revision, SQL, typed parameters and worker execution metadata. Receipts expire on the result-token schedule. They remain in browser memory, are cleared on workspace changes and never enter portable Methods, notebook contracts or exports. Hiding Explorer preserves the mounted receipt state.
 
-The **Save query result to OMERO** action calls `POST /api/data-query-result/promote/` with `result_token`, `receipt` and optional `.csv` filename in the JSON body. The destination is always the original context. The server reauthorizes before downloading and immediately before writing, streams within the Analysis upload limit, and verifies exact byte count and SHA-256. An expired/missing result requires a rerun; saving never reruns SQL implicitly.
+The **Save query result to OMERO** action calls `POST /api/data-query-result/promote/` with `result_token`, `receipt` and optional `.csv` filename in the JSON body. The destination is always the original context. The server reauthorizes before downloading and immediately before writing, streams within the direct-promotion limit (defaulting to the existing upload limit), and verifies exact byte count and SHA-256. An expired/missing result requires a rerun; saving never reruns SQL implicitly.
 
 Promotion creates and links three annotations in the destination's group:
 
@@ -18,7 +18,7 @@ Promotion creates and links three annotations in the destination's group:
 * A JSON FileAnnotation under `nl.bioimaging.analysis.data-query.provenance.v1`, containing the full SQL/typed recipe, selected context and source parent, IDs, hashes, actual engine/parser/worker/policy versions, limits, user/group, original execution and access/save times, counts and correlation IDs.
 * A searchable MapAnnotation summary with IDs/hashes and a signed completion marker.
 
-Success is returned only after all links exist. A failed attempt deletes annotations it created. OS file locks coordinate duplicate saves across web processes; a completed receipt reuses the linked annotations after verifying both CSV and recipe checksums. A tampered/deleted completion cannot manufacture a verified result. Multiple web hosts require a shared locking-capable state directory. A process/host crash between OMERO writes is not an OMERO transaction: inspect incomplete artifacts before production rollout and apply a deployment-specific orphan reconciliation procedure. The synchronous exception cleanup and duplicate retry tests do not establish crash-atomic cross-service writes.
+Success is returned only after all links exist. OS file locks coordinate duplicate saves across web processes; a completed receipt reuses the linked annotations after verifying both CSV and recipe checksums. Signed persistent journals and OMERO operation tags support authorized retry after process/host crashes, including lost creation replies and interrupted cleanup. An explicit administrator command reconciles expired attempts without storing credentials. Changed identities, external links and modified completed artifacts fail closed. Multiple web hosts require shared locking-capable state storage and the same signing key. This is recoverable cross-service work, not an OMERO transaction; see the [10M export and recovery runbook](data-query-large-export-recovery.md).
 
 Only the exact remote CSV gets this provenance. A transformed DataFrame or notebook output continues to use the existing saving workflow. SQL and parameter values are intentionally present in the protected JSON recipe, so the provenance has the same confidentiality requirements as the dataset/results.
 
@@ -32,7 +32,8 @@ Existing bearer URL/token settings and their defaults remain valid. Optional set
 | `OMERO_ANALYSIS_DATA_QUERY_CLIENT_CERT_FILE` | Client certificate for mTLS |
 | `OMERO_ANALYSIS_DATA_QUERY_CLIENT_KEY_FILE` | Matching private key; both client settings required |
 | `OMERO_ANALYSIS_DATA_QUERY_AUDIT_FILE` | Persistent JSON-lines audit file outside worker cache |
-| `OMERO_ANALYSIS_DATA_QUERY_STATE_DIR` | Restricted lock directory shared by web processes |
+| `OMERO_ANALYSIS_DATA_QUERY_STATE_DIR` | Persistent restricted lock/journal directory shared by web processes |
+| `OMERO_ANALYSIS_DATA_QUERY_PROMOTION_MAX_BYTES` | Direct CSV save limit; falls back to manual upload limit |
 
 TLS settings require an HTTPS worker URL. Certificate verification stays enabled; stricter transport is not automatically enabled on upgrade. Use the worker's `deploy/compose.mtls.yaml` and reverse-proxy profile with no public worker port. Put CA/client files in server-only mounts and keep the broker on the private network. Certificates, bearer tokens, result tokens and receipts are never emitted in audit events.
 
@@ -67,14 +68,14 @@ The capacity script reuses the existing generator's equivalent mixed numeric/tex
 
 ## Tested locally on 2026-09-08
 
-* Worker: 51 tests on Windows and Linux; lint, format and strict type checks. Linux probes cover read-only root, blocked egress, PID pressure and cgroup OOM. Query tests cover timeout, disconnect, child crash/reaping, oversized output, corrupt files, quota and active leases.
-* Analysis: 129 backend tests, including 18 provenance/download tests, 230 frontend tests, 16 notebook SDK tests, runtime/browser smoke and wheel validation.
+* Worker: 58 tests on Windows and Linux; lint, format and strict type checks. Linux probes cover read-only root, blocked egress, PID pressure and cgroup OOM. Query tests cover timeout, disconnect, child crash/reaping, oversized output, corrupt files, quota and active leases.
+* Analysis: backend and provenance/recovery regression tests, 230 frontend tests, 16 notebook SDK tests, runtime/browser smoke and wheel validation. Exact final counts accompany the tested version pair.
 * Joint HTTP: 17 tests covering both versions in both directions and rollback cache reuse/recomputation; baseline broker source is frozen, not a mock HTTP response.
 * Live OMERO: private/read-only/read-annotate/read-write group owners, members, PIs and administrator; query/schema/download; permitted saves and duplicate reuse; denied saves without artifacts; cross-session/group token rejection; source unlinking; permission downgrade, membership revocation, moved contexts and revoked OMERO sessions.
 * Optional mTLS: actual installed broker readiness and authenticated capabilities succeed with the client certificate; missing client certificate and wrong CA are rejected. This does not change the running broker's transport profile.
 * Capacity: the checked-in [100,000-row report](testing/query-capacity-2026-09-08.json) records the local Windows HTTP measurements and explicit admission failures. It is a smoke capacity baseline, not a production throughput promise.
 
-The release acceptance target is full compatibility, not a claim established by these selected cases. Target-hardware large exports, all production data/file versions, engine-specific OOM recovery, host-crash reconciliation and the complete deployment-specific permission/fault matrix remain rollout gates. Do not publish a production-ready claim until those gates pass.
+The [10M export and recovery runbook](data-query-large-export-recovery.md) records the large-result boundary, actual engine OOM, browser memory and real VM power-cut gates added to this release. Full compatibility remains an acceptance target verified by the matrix, not a universal claim about untested historical engines or deployment hardware. Repeat the documented gates on the production deployment before rollout.
 
 ## Deployment and rollback
 

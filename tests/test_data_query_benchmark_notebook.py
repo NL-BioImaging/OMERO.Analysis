@@ -12,8 +12,8 @@ def test_benchmark_notebook_is_portable_and_covers_full_matrix():
     assert configuration["metadata"]["tags"] == ["omero-analysis-config"]
     assert CONTRACT["schema"] == "nl.bioimaging.omero-analysis-notebook.v1"
     assert [item["id"] for item in CONTRACT["inputs"]] == ["duckdb", "sqlite", "csv"]
-    assert CONTRACT["parameters"][1]["default"] == 4_000_000
-    assert CONTRACT["parameters"][1]["maximum"] == 4_000_000
+    assert CONTRACT["parameters"][1]["default"] == 10_000_000
+    assert CONTRACT["parameters"][1]["maximum"] == 10_000_000
     assert 'for repetition in range(4)' in helpers_source
     assert 'blocked_full_formats.add(format_name)' in helpers_source
     assert 'await run_group("aggregate", size, FORMATS)' in aggregate_source
@@ -22,7 +22,7 @@ def test_benchmark_notebook_is_portable_and_covers_full_matrix():
     assert len(full_cells) == 9
     assert [cell["id"] for cell in full_cells] == [
         f"benchmark-full-{size}-{format_name}"
-        for size in (1_000_000, 2_000_000, 4_000_000)
+        for size in (1_000_000, 4_000_000, 10_000_000)
         for format_name in ("duckdb", "sqlite", "csv")
     ]
     assert 'dataquery-benchmark-results.csv' in document["cells"][2]["source"]

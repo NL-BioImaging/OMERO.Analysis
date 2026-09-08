@@ -18,7 +18,7 @@ var Bm;
 function rg() {
   if (Bm) return Be;
   Bm = 1;
-  var e = Symbol.for("react.element"), r = Symbol.for("react.portal"), a = Symbol.for("react.fragment"), i = Symbol.for("react.strict_mode"), d = Symbol.for("react.profiler"), p = Symbol.for("react.provider"), f = Symbol.for("react.context"), x = Symbol.for("react.forward_ref"), v = Symbol.for("react.suspense"), k = Symbol.for("react.memo"), C = Symbol.for("react.lazy"), E = Symbol.iterator;
+  var e = Symbol.for("react.element"), r = Symbol.for("react.portal"), a = Symbol.for("react.fragment"), i = Symbol.for("react.strict_mode"), d = Symbol.for("react.profiler"), p = Symbol.for("react.provider"), f = Symbol.for("react.context"), x = Symbol.for("react.forward_ref"), v = Symbol.for("react.suspense"), b = Symbol.for("react.memo"), C = Symbol.for("react.lazy"), E = Symbol.iterator;
   function R(F) {
     return F === null || typeof F != "object" ? null : (F = E && F[E] || F["@@iterator"], typeof F == "function" ? F : null);
   }
@@ -58,7 +58,7 @@ function rg() {
     if (F && F.defaultProps) for (Te in Je = F.defaultProps, Je) De[Te] === void 0 && (De[Te] = Je[Te]);
     return { $$typeof: e, type: F, key: Ze, ref: tt, props: De, _owner: he.current };
   }
-  function be(F, ee) {
+  function ke(F, ee) {
     return { $$typeof: e, type: F.type, key: ee, ref: F.ref, props: F.props, _owner: F._owner };
   }
   function We(F) {
@@ -93,7 +93,7 @@ function rg() {
     }
     if (tt) return tt = F, De = De(tt), F = Te === "" ? "." + ye(tt, 0) : Te, Ce(De) ? (Y = "", F != null && (Y = F.replace(Fe, "$&/") + "/"), ue(De, ee, Y, "", function(_t) {
       return _t;
-    })) : De != null && (We(De) && (De = be(De, Y + (!De.key || tt && tt.key === De.key ? "" : ("" + De.key).replace(Fe, "$&/") + "/") + F)), ee.push(De)), 1;
+    })) : De != null && (We(De) && (De = ke(De, Y + (!De.key || tt && tt.key === De.key ? "" : ("" + De.key).replace(Fe, "$&/") + "/") + F)), ee.push(De)), 1;
     if (tt = 0, Te = Te === "" ? "." : Te + ":", Ce(F)) for (var Je = 0; Je < F.length; Je++) {
       Ze = F[Je];
       var lt = Te + ye(Ze, Je);
@@ -110,7 +110,7 @@ function rg() {
       return ee.call(Y, Ze, De++);
     }), Te;
   }
-  function ke(F) {
+  function be(F) {
     if (F._status === -1) {
       var ee = F._result;
       ee = ee(), ee.then(function(Y) {
@@ -167,9 +167,9 @@ function rg() {
   }, Be.forwardRef = function(F) {
     return { $$typeof: x, render: F };
   }, Be.isValidElement = We, Be.lazy = function(F) {
-    return { $$typeof: C, _payload: { _status: -1, _result: F }, _init: ke };
+    return { $$typeof: C, _payload: { _status: -1, _result: F }, _init: be };
   }, Be.memo = function(F, ee) {
-    return { $$typeof: k, type: F, compare: ee === void 0 ? null : ee };
+    return { $$typeof: b, type: F, compare: ee === void 0 ? null : ee };
   }, Be.startTransition = function(F) {
     var ee = K.transition;
     K.transition = {};
@@ -227,9 +227,9 @@ function ag() {
   if (th) return uc;
   th = 1;
   var e = $f(), r = Symbol.for("react.element"), a = Symbol.for("react.fragment"), i = Object.prototype.hasOwnProperty, d = e.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentOwner, p = { key: !0, ref: !0, __self: !0, __source: !0 };
-  function f(x, v, k) {
+  function f(x, v, b) {
     var C, E = {}, R = null, $ = null;
-    k !== void 0 && (R = "" + k), v.key !== void 0 && (R = "" + v.key), v.ref !== void 0 && ($ = v.ref);
+    b !== void 0 && (R = "" + b), v.key !== void 0 && (R = "" + v.key), v.ref !== void 0 && ($ = v.ref);
     for (C in v) i.call(v, C) && !p.hasOwnProperty(C) && (E[C] = v[C]);
     if (x && x.defaultProps) for (C in v = x.defaultProps, v) E[C] === void 0 && (E[C] = v[C]);
     return { $$typeof: r, type: x, key: R, ref: $, props: E, _owner: d.current };
@@ -296,20 +296,20 @@ function ig() {
         return f.now() - x;
       };
     }
-    var v = [], k = [], C = 1, E = null, R = 3, $ = !1, z = !1, V = !1, Z = typeof setTimeout == "function" ? setTimeout : null, te = typeof clearTimeout == "function" ? clearTimeout : null, me = typeof setImmediate < "u" ? setImmediate : null;
+    var v = [], b = [], C = 1, E = null, R = 3, $ = !1, z = !1, V = !1, Z = typeof setTimeout == "function" ? setTimeout : null, te = typeof clearTimeout == "function" ? clearTimeout : null, me = typeof setImmediate < "u" ? setImmediate : null;
     typeof navigator < "u" && navigator.scheduling !== void 0 && navigator.scheduling.isInputPending !== void 0 && navigator.scheduling.isInputPending.bind(navigator.scheduling);
     function je(K) {
-      for (var le = a(k); le !== null; ) {
-        if (le.callback === null) i(k);
-        else if (le.startTime <= K) i(k), le.sortIndex = le.expirationTime, r(v, le);
+      for (var le = a(b); le !== null; ) {
+        if (le.callback === null) i(b);
+        else if (le.startTime <= K) i(b), le.sortIndex = le.expirationTime, r(v, le);
         else break;
-        le = a(k);
+        le = a(b);
       }
     }
     function Ce(K) {
-      if (V = !1, je(K), !z) if (a(v) !== null) z = !0, ke(ie);
+      if (V = !1, je(K), !z) if (a(v) !== null) z = !0, be(ie);
       else {
-        var le = a(k);
+        var le = a(b);
         le !== null && ce(Ce, le.startTime - K);
       }
     }
@@ -328,7 +328,7 @@ function ig() {
         }
         if (E !== null) var Y = !0;
         else {
-          var Te = a(k);
+          var Te = a(b);
           Te !== null && ce(Ce, Te.startTime - le), Y = !1;
         }
         return Y;
@@ -336,9 +336,9 @@ function ig() {
         E = null, R = ne, $ = !1;
       }
     }
-    var he = !1, ve = null, Ae = -1, be = 5, We = -1;
+    var he = !1, ve = null, Ae = -1, ke = 5, We = -1;
     function oe() {
-      return !(e.unstable_now() - We < be);
+      return !(e.unstable_now() - We < ke);
     }
     function Fe() {
       if (ve !== null) {
@@ -364,7 +364,7 @@ function ig() {
     } else ye = function() {
       Z(Fe, 0);
     };
-    function ke(K) {
+    function be(K) {
       ve = K, he || (he = !0, ye());
     }
     function ce(K, le) {
@@ -375,9 +375,9 @@ function ig() {
     e.unstable_IdlePriority = 5, e.unstable_ImmediatePriority = 1, e.unstable_LowPriority = 4, e.unstable_NormalPriority = 3, e.unstable_Profiling = null, e.unstable_UserBlockingPriority = 2, e.unstable_cancelCallback = function(K) {
       K.callback = null;
     }, e.unstable_continueExecution = function() {
-      z || $ || (z = !0, ke(ie));
+      z || $ || (z = !0, be(ie));
     }, e.unstable_forceFrameRate = function(K) {
-      0 > K || 125 < K ? console.error("forceFrameRate takes a positive int between 0 and 125, forcing frame rates higher than 125 fps is not supported") : be = 0 < K ? Math.floor(1e3 / K) : 5;
+      0 > K || 125 < K ? console.error("forceFrameRate takes a positive int between 0 and 125, forcing frame rates higher than 125 fps is not supported") : ke = 0 < K ? Math.floor(1e3 / K) : 5;
     }, e.unstable_getCurrentPriorityLevel = function() {
       return R;
     }, e.unstable_getFirstCallbackNode = function() {
@@ -437,7 +437,7 @@ function ig() {
         default:
           ee = 5e3;
       }
-      return ee = ne + ee, K = { id: C++, callback: le, priorityLevel: K, startTime: ne, expirationTime: ee, sortIndex: -1 }, ne > F ? (K.sortIndex = ne, r(k, K), a(v) === null && K === a(k) && (V ? (te(Ae), Ae = -1) : V = !0, ce(Ce, ne - F))) : (K.sortIndex = ee, r(v, K), z || $ || (z = !0, ke(ie))), K;
+      return ee = ne + ee, K = { id: C++, callback: le, priorityLevel: K, startTime: ne, expirationTime: ee, sortIndex: -1 }, ne > F ? (K.sortIndex = ne, r(b, K), a(v) === null && K === a(b) && (V ? (te(Ae), Ae = -1) : V = !0, ce(Ce, ne - F))) : (K.sortIndex = ee, r(v, K), z || $ || (z = !0, be(ie))), K;
     }, e.unstable_shouldYield = oe, e.unstable_wrapCallback = function(K) {
       var le = R;
       return function() {
@@ -481,9 +481,9 @@ function cg() {
   function f(t, n) {
     for (d[t] = n, t = 0; t < n.length; t++) i.add(n[t]);
   }
-  var x = !(typeof window > "u" || typeof window.document > "u" || typeof window.document.createElement > "u"), v = Object.prototype.hasOwnProperty, k = /^[:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD][:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\-.0-9\u00B7\u0300-\u036F\u203F-\u2040]*$/, C = {}, E = {};
+  var x = !(typeof window > "u" || typeof window.document > "u" || typeof window.document.createElement > "u"), v = Object.prototype.hasOwnProperty, b = /^[:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD][:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\-.0-9\u00B7\u0300-\u036F\u203F-\u2040]*$/, C = {}, E = {};
   function R(t) {
-    return v.call(E, t) ? !0 : v.call(C, t) ? !1 : k.test(t) ? E[t] = !0 : (C[t] = !0, !1);
+    return v.call(E, t) ? !0 : v.call(C, t) ? !1 : b.test(t) ? E[t] = !0 : (C[t] = !0, !1);
   }
   function $(t, n, o, c) {
     if (o !== null && o.type === 0) return !1;
@@ -561,7 +561,7 @@ function cg() {
     var m = Z.hasOwnProperty(n) ? Z[n] : null;
     (m !== null ? m.type !== 0 : c || !(2 < n.length) || n[0] !== "o" && n[0] !== "O" || n[1] !== "n" && n[1] !== "N") && (z(n, o, m, c) && (o = null), c || m === null ? R(n) && (o === null ? t.removeAttribute(n) : t.setAttribute(n, "" + o)) : m.mustUseProperty ? t[m.propertyName] = o === null ? m.type === 3 ? !1 : "" : o : (n = m.attributeName, c = m.attributeNamespace, o === null ? t.removeAttribute(n) : (m = m.type, o = m === 3 || m === 4 && o === !0 ? "" : "" + o, c ? t.setAttributeNS(c, n, o) : t.setAttribute(n, o))));
   }
-  var Ce = e.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED, ie = Symbol.for("react.element"), he = Symbol.for("react.portal"), ve = Symbol.for("react.fragment"), Ae = Symbol.for("react.strict_mode"), be = Symbol.for("react.profiler"), We = Symbol.for("react.provider"), oe = Symbol.for("react.context"), Fe = Symbol.for("react.forward_ref"), ye = Symbol.for("react.suspense"), ue = Symbol.for("react.suspense_list"), W = Symbol.for("react.memo"), ke = Symbol.for("react.lazy"), ce = Symbol.for("react.offscreen"), K = Symbol.iterator;
+  var Ce = e.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED, ie = Symbol.for("react.element"), he = Symbol.for("react.portal"), ve = Symbol.for("react.fragment"), Ae = Symbol.for("react.strict_mode"), ke = Symbol.for("react.profiler"), We = Symbol.for("react.provider"), oe = Symbol.for("react.context"), Fe = Symbol.for("react.forward_ref"), ye = Symbol.for("react.suspense"), ue = Symbol.for("react.suspense_list"), W = Symbol.for("react.memo"), be = Symbol.for("react.lazy"), ce = Symbol.for("react.offscreen"), K = Symbol.iterator;
   function le(t) {
     return t === null || typeof t != "object" ? null : (t = K && t[K] || t["@@iterator"], typeof t == "function" ? t : null);
   }
@@ -663,7 +663,7 @@ function cg() {
         return "Fragment";
       case he:
         return "Portal";
-      case be:
+      case ke:
         return "Profiler";
       case Ae:
         return "StrictMode";
@@ -682,7 +682,7 @@ function cg() {
         return t = t.displayName, t || (t = n.displayName || n.name || "", t = t !== "" ? "ForwardRef(" + t + ")" : "ForwardRef"), t;
       case W:
         return n = t.displayName || null, n !== null ? n : Ze(t.type) || "Memo";
-      case ke:
+      case be:
         n = t._payload, t = t._init;
         try {
           return Ze(t(n));
@@ -1454,16 +1454,16 @@ function cg() {
   function pi(t, n, o, c) {
     if (wo) {
       var m = fi(t, n, o, c);
-      if (m === null) ki(t, n, c, Ta, o), yl(t, c);
+      if (m === null) bi(t, n, c, Ta, o), yl(t, c);
       else if (gl(m, t, n, o, c)) c.stopPropagation();
       else if (yl(t, c), n & 4 && -1 < zc.indexOf(t)) {
         for (; m !== null; ) {
           var w = Cs(m);
-          if (w !== null && Ic(w), w = fi(t, n, o, c), w === null && ki(t, n, c, Ta, o), w === m) break;
+          if (w !== null && Ic(w), w = fi(t, n, o, c), w === null && bi(t, n, c, Ta, o), w === m) break;
           m = w;
         }
         m !== null && c.stopPropagation();
-      } else ki(t, n, c, null, o);
+      } else bi(t, n, c, null, o);
     }
   }
   var Ta = null;
@@ -1570,14 +1570,14 @@ function cg() {
         return 16;
     }
   }
-  var ln = null, vl = null, bo = null;
+  var ln = null, vl = null, ko = null;
   function qc() {
-    if (bo) return bo;
+    if (ko) return ko;
     var t, n = vl, o = n.length, c, m = "value" in ln ? ln.value : ln.textContent, w = m.length;
     for (t = 0; t < o && n[t] === m[t]; t++) ;
     var _ = o - t;
     for (c = 1; c <= _ && n[o - c] === m[w - c]; c++) ;
-    return bo = m.slice(t, 1 < c ? 1 - c : void 0);
+    return ko = m.slice(t, 1 < c ? 1 - c : void 0);
   }
   function na(t) {
     var n = t.keyCode;
@@ -1607,15 +1607,15 @@ function cg() {
   }
   var ra = { eventPhase: 0, bubbles: 0, cancelable: 0, timeStamp: function(t) {
     return t.timeStamp || Date.now();
-  }, defaultPrevented: 0, isTrusted: 0 }, aa = Nt(ra), Fn = ne({}, ra, { view: 0, detail: 0 }), ko = Nt(Fn), mi, xo, oa, So = ne({}, Fn, { screenX: 0, screenY: 0, clientX: 0, clientY: 0, pageX: 0, pageY: 0, ctrlKey: 0, shiftKey: 0, altKey: 0, metaKey: 0, getModifierState: nt, button: 0, buttons: 0, relatedTarget: function(t) {
+  }, defaultPrevented: 0, isTrusted: 0 }, aa = Nt(ra), Fn = ne({}, ra, { view: 0, detail: 0 }), bo = Nt(Fn), mi, xo, oa, So = ne({}, Fn, { screenX: 0, screenY: 0, clientX: 0, clientY: 0, pageX: 0, pageY: 0, ctrlKey: 0, shiftKey: 0, altKey: 0, metaKey: 0, getModifierState: nt, button: 0, buttons: 0, relatedTarget: function(t) {
     return t.relatedTarget === void 0 ? t.fromElement === t.srcElement ? t.toElement : t.fromElement : t.relatedTarget;
   }, movementX: function(t) {
     return "movementX" in t ? t.movementX : (t !== oa && (oa && t.type === "mousemove" ? (mi = t.screenX - oa.screenX, xo = t.screenY - oa.screenY) : xo = mi = 0, oa = t), mi);
   }, movementY: function(t) {
     return "movementY" in t ? t.movementY : xo;
-  } }), bl = Nt(So), yn = ne({}, So, { dataTransfer: 0 }), Ft = Nt(yn), Co = ne({}, Fn, { relatedTarget: 0 }), La = Nt(Co), fs = ne({}, ra, { animationName: 0, elapsedTime: 0, pseudoElement: 0 }), Ma = Nt(fs), Uc = ne({}, ra, { clipboardData: function(t) {
+  } }), kl = Nt(So), yn = ne({}, So, { dataTransfer: 0 }), Ft = Nt(yn), Co = ne({}, Fn, { relatedTarget: 0 }), La = Nt(Co), fs = ne({}, ra, { animationName: 0, elapsedTime: 0, pseudoElement: 0 }), Ma = Nt(fs), Uc = ne({}, ra, { clipboardData: function(t) {
     return "clipboardData" in t ? t.clipboardData : window.clipboardData;
-  } }), $t = Nt(Uc), kl = ne({}, ra, { data: 0 }), Vc = Nt(kl), Ku = {
+  } }), $t = Nt(Uc), bl = ne({}, ra, { data: 0 }), Vc = Nt(bl), Ku = {
     Esc: "Escape",
     Spacebar: " ",
     Left: "ArrowLeft",
@@ -1728,7 +1728,7 @@ function cg() {
     }
   }
   function Jc(t, n) {
-    if (Oa) return t === "compositionend" || !_o && En(t, n) ? (t = qc(), bo = vl = ln = null, Oa = !1, t) : null;
+    if (Oa) return t === "compositionend" || !_o && En(t, n) ? (t = qc(), ko = vl = ln = null, Oa = !1, t) : null;
     switch (t) {
       case "paste":
         return null;
@@ -1837,8 +1837,8 @@ function cg() {
       o = nd(o);
     }
   }
-  function br(t, n) {
-    return t && n ? t === n ? !0 : t && t.nodeType === 3 ? !1 : n && n.nodeType === 3 ? br(t, n.parentNode) : "contains" in t ? t.contains(n) : t.compareDocumentPosition ? !!(t.compareDocumentPosition(n) & 16) : !1 : !1;
+  function kr(t, n) {
+    return t && n ? t === n ? !0 : t && t.nodeType === 3 ? !1 : n && n.nodeType === 3 ? kr(t, n.parentNode) : "contains" in t ? t.contains(n) : t.compareDocumentPosition ? !!(t.compareDocumentPosition(n) & 16) : !1 : !1;
   }
   function vi() {
     for (var t = window, n = An(); n instanceof t.HTMLIFrameElement; ) {
@@ -1859,7 +1859,7 @@ function cg() {
   }
   function _l(t) {
     var n = vi(), o = t.focusedElem, c = t.selectionRange;
-    if (n !== o && o && o.ownerDocument && br(o.ownerDocument.documentElement, o)) {
+    if (n !== o && o && o.ownerDocument && kr(o.ownerDocument.documentElement, o)) {
       if (c !== null && Da(o)) {
         if (n = c.start, t = c.end, t === void 0 && (t = n), "selectionStart" in o) o.selectionStart = n, o.selectionEnd = Math.min(t, o.value.length);
         else if (t = (n = o.ownerDocument || document) && n.defaultView || window, t.getSelection) {
@@ -1878,15 +1878,15 @@ function cg() {
     }
   }
   var vs = x && "documentMode" in document && 11 >= document.documentMode, jo = null, Un = null, Eo = null, Rn = !1;
-  function bs(t, n, o) {
+  function ks(t, n, o) {
     var c = o.window === o ? o.document : o.nodeType === 9 ? o : o.ownerDocument;
     Rn || jo == null || jo !== An(c) || (c = jo, "selectionStart" in c && Da(c) ? c = { start: c.selectionStart, end: c.selectionEnd } : (c = (c.ownerDocument && c.ownerDocument.defaultView || window).getSelection(), c = { anchorNode: c.anchorNode, anchorOffset: c.anchorOffset, focusNode: c.focusNode, focusOffset: c.focusOffset }), Eo && vr(Eo, c) || (Eo = c, c = xi(Un, "onSelect"), 0 < c.length && (n = new aa("onSelect", "select", null, n, o), t.push({ event: n, listeners: c }), n.target = jo)));
   }
-  function kr(t, n) {
+  function br(t, n) {
     var o = {};
     return o[t.toLowerCase()] = n.toLowerCase(), o["Webkit" + t] = "webkit" + n, o["Moz" + t] = "moz" + n, o;
   }
-  var No = { animationend: kr("Animation", "AnimationEnd"), animationiteration: kr("Animation", "AnimationIteration"), animationstart: kr("Animation", "AnimationStart"), transitionend: kr("Transition", "TransitionEnd") }, jl = {}, ad = {};
+  var No = { animationend: br("Animation", "AnimationEnd"), animationiteration: br("Animation", "AnimationIteration"), animationstart: br("Animation", "AnimationStart"), transitionend: br("Transition", "TransitionEnd") }, jl = {}, ad = {};
   x && (ad = document.createElement("div").style, "AnimationEvent" in window || (delete No.animationend.animation, delete No.animationiteration.animation, delete No.animationstart.animation), "TransitionEvent" in window || delete No.transitionend.transition);
   function xr(t) {
     if (jl[t]) return jl[t];
@@ -1895,9 +1895,9 @@ function cg() {
     for (o in n) if (n.hasOwnProperty(o) && o in ad) return jl[t] = n[o];
     return t;
   }
-  var cn = xr("animationend"), qt = xr("animationiteration"), od = xr("animationstart"), za = xr("transitionend"), ks = /* @__PURE__ */ new Map(), sa = "abort auxClick cancel canPlay canPlayThrough click close contextMenu copy cut drag dragEnd dragEnter dragExit dragLeave dragOver dragStart drop durationChange emptied encrypted ended error gotPointerCapture input invalid keyDown keyPress keyUp load loadedData loadedMetadata loadStart lostPointerCapture mouseDown mouseMove mouseOut mouseOver mouseUp paste pause play playing pointerCancel pointerDown pointerMove pointerOut pointerOver pointerUp progress rateChange reset resize seeked seeking stalled submit suspend timeUpdate touchCancel touchEnd touchStart volumeChange scroll toggle touchMove waiting wheel".split(" ");
+  var cn = xr("animationend"), qt = xr("animationiteration"), od = xr("animationstart"), za = xr("transitionend"), bs = /* @__PURE__ */ new Map(), sa = "abort auxClick cancel canPlay canPlayThrough click close contextMenu copy cut drag dragEnd dragEnter dragExit dragLeave dragOver dragStart drop durationChange emptied encrypted ended error gotPointerCapture input invalid keyDown keyPress keyUp load loadedData loadedMetadata loadStart lostPointerCapture mouseDown mouseMove mouseOut mouseOver mouseUp paste pause play playing pointerCancel pointerDown pointerMove pointerOut pointerOver pointerUp progress rateChange reset resize seeked seeking stalled submit suspend timeUpdate touchCancel touchEnd touchStart volumeChange scroll toggle touchMove waiting wheel".split(" ");
   function ia(t, n) {
-    ks.set(t, n), p(n, [t]);
+    bs.set(t, n), p(n, [t]);
   }
   for (var El = 0; El < sa.length; El++) {
     var Nl = sa[El], ep = Nl.toLowerCase(), tp = Nl[0].toUpperCase() + Nl.slice(1);
@@ -1939,14 +1939,14 @@ function cg() {
     var c = 0;
     n && (c |= 4), ld(o, t, c, n);
   }
-  var bi = "_reactListening" + Math.random().toString(36).slice(2);
+  var ki = "_reactListening" + Math.random().toString(36).slice(2);
   function Ro(t) {
-    if (!t[bi]) {
-      t[bi] = !0, i.forEach(function(o) {
+    if (!t[ki]) {
+      t[ki] = !0, i.forEach(function(o) {
         o !== "selectionchange" && (sd.has(o) || Ss(o, !1, t), Ss(o, !0, t));
       });
       var n = t.nodeType === 9 ? t : t.ownerDocument;
-      n === null || n[bi] || (n[bi] = !0, Ss("selectionchange", !1, n));
+      n === null || n[ki] || (n[ki] = !0, Ss("selectionchange", !1, n));
     }
   }
   function ld(t, n, o, c) {
@@ -1962,7 +1962,7 @@ function cg() {
     }
     o = m.bind(null, n, o, t), m = void 0, !ur || n !== "touchstart" && n !== "touchmove" && n !== "wheel" || (m = !0), c ? m !== void 0 ? t.addEventListener(n, o, { capture: !0, passive: m }) : t.addEventListener(n, o, !0) : m !== void 0 ? t.addEventListener(n, o, { passive: m }) : t.addEventListener(n, o, !1);
   }
-  function ki(t, n, o, c, m) {
+  function bi(t, n, o, c, m) {
     var w = c;
     if ((n & 1) === 0 && (n & 2) === 0 && c !== null) e: for (; ; ) {
       if (c === null) return;
@@ -1989,7 +1989,7 @@ function cg() {
     dl(function() {
       var J = w, pe = on(o), ge = [];
       e: {
-        var de = ks.get(t);
+        var de = bs.get(t);
         if (de !== void 0) {
           var Pe = aa, ze = t;
           switch (t) {
@@ -2019,7 +2019,7 @@ function cg() {
             case "mouseout":
             case "mouseover":
             case "contextmenu":
-              Pe = bl;
+              Pe = kl;
               break;
             case "drag":
             case "dragend":
@@ -2046,7 +2046,7 @@ function cg() {
               Pe = Kc;
               break;
             case "scroll":
-              Pe = ko;
+              Pe = bo;
               break;
             case "wheel":
               Pe = Zc;
@@ -2081,7 +2081,7 @@ function cg() {
         e: {
           if (de = t === "mouseover" || t === "pointerover", Pe = t === "mouseout" || t === "pointerout", de && o !== Rc && (ze = o.relatedTarget || o.fromElement) && (Ua(ze) || ze[Wn])) break e;
           if ((Pe || de) && (de = pe.window === pe ? pe : (de = pe.ownerDocument) ? de.defaultView || de.parentWindow : window, Pe ? (ze = o.relatedTarget || o.toElement, Pe = J, ze = ze ? Ua(ze) : null, ze !== null && (Lt = Zr(ze), ze !== Lt || ze.tag !== 5 && ze.tag !== 6) && (ze = null)) : (Pe = null, ze = J), Pe !== ze)) {
-            if (qe = bl, xe = "onMouseLeave", G = "onMouseEnter", U = "mouse", (t === "pointerout" || t === "pointerover") && (qe = Sl, xe = "onPointerLeave", G = "onPointerEnter", U = "pointer"), Lt = Pe == null ? de : Va(Pe), Q = ze == null ? de : Va(ze), de = new qe(xe, U + "leave", Pe, o, pe), de.target = Lt, de.relatedTarget = Q, xe = null, Ua(pe) === J && (qe = new qe(G, U + "enter", ze, o, pe), qe.target = Q, qe.relatedTarget = Lt, xe = qe), Lt = xe, Pe && ze) t: {
+            if (qe = kl, xe = "onMouseLeave", G = "onMouseEnter", U = "mouse", (t === "pointerout" || t === "pointerover") && (qe = Sl, xe = "onPointerLeave", G = "onPointerEnter", U = "pointer"), Lt = Pe == null ? de : Va(Pe), Q = ze == null ? de : Va(ze), de = new qe(xe, U + "leave", Pe, o, pe), de.target = Lt, de.relatedTarget = Q, xe = null, Ua(pe) === J && (qe = new qe(G, U + "enter", ze, o, pe), qe.target = Q, qe.relatedTarget = Lt, xe = qe), Lt = xe, Pe && ze) t: {
               for (qe = Pe, G = ze, U = 0, Q = qe; Q; Q = qa(Q)) U++;
               for (Q = 0, xe = G; xe; xe = qa(xe)) Q++;
               for (; 0 < U - Q; ) qe = qa(qe), U--;
@@ -2123,13 +2123,13 @@ function cg() {
           case "contextmenu":
           case "mouseup":
           case "dragend":
-            Rn = !1, bs(ge, o, pe);
+            Rn = !1, ks(ge, o, pe);
             break;
           case "selectionchange":
             if (vs) break;
           case "keydown":
           case "keyup":
-            bs(ge, o, pe);
+            ks(ge, o, pe);
         }
         var Ge;
         if (_o) e: {
@@ -2399,19 +2399,19 @@ function cg() {
       }
     }
   }
-  function bd(t) {
+  function kd(t) {
     for (t = t.return; t !== null && t.tag !== 5 && t.tag !== 3 && t.tag !== 13; ) t = t.return;
     Yt = t;
   }
   function Ti(t) {
     if (t !== Yt) return !1;
-    if (!dt) return bd(t), dt = !0, !1;
+    if (!dt) return kd(t), dt = !0, !1;
     var n;
     if ((n = t.tag !== 3) && !(n = t.tag !== 5) && (n = t.type, n = n !== "head" && n !== "body" && !Pl(t.type, t.memoizedProps)), n && (n = wn)) {
-      if (zl(t)) throw kd(), Error(a(418));
+      if (zl(t)) throw bd(), Error(a(418));
       for (; n; ) Dl(t, n), n = la(n.nextSibling);
     }
-    if (bd(t), t.tag === 13) {
+    if (kd(t), t.tag === 13) {
       if (t = t.memoizedState, t = t !== null ? t.dehydrated : null, !t) throw Error(a(317));
       e: {
         for (t = t.nextSibling, n = 0; t; ) {
@@ -2432,7 +2432,7 @@ function cg() {
     } else wn = Yt ? la(t.stateNode.nextSibling) : null;
     return !0;
   }
-  function kd() {
+  function bd() {
     for (var t = wn; t; ) t = la(t.nextSibling);
   }
   function Ha() {
@@ -2498,7 +2498,7 @@ function cg() {
     }
     function D(G, U, Q, xe) {
       var Ue = Q.type;
-      return Ue === ve ? pe(G, U, Q.props.children, xe, Q.key) : U !== null && (U.elementType === Ue || typeof Ue == "object" && Ue !== null && Ue.$$typeof === ke && Tr(Ue) === U.type) ? (xe = m(U, Q.props), xe.ref = un(G, U, Q), xe.return = G, xe) : (xe = Qd(Q.type, Q.key, Q.props, null, G.mode, xe), xe.ref = un(G, U, Q), xe.return = G, xe);
+      return Ue === ve ? pe(G, U, Q.props.children, xe, Q.key) : U !== null && (U.elementType === Ue || typeof Ue == "object" && Ue !== null && Ue.$$typeof === be && Tr(Ue) === U.type) ? (xe = m(U, Q.props), xe.ref = un(G, U, Q), xe.return = G, xe) : (xe = Qd(Q.type, Q.key, Q.props, null, G.mode, xe), xe.ref = un(G, U, Q), xe.return = G, xe);
     }
     function J(G, U, Q, xe) {
       return U === null || U.tag !== 4 || U.stateNode.containerInfo !== Q.containerInfo || U.stateNode.implementation !== Q.implementation ? (U = Ep(Q, G.mode, xe), U.return = G, U) : (U = m(U, Q.children || []), U.return = G, U);
@@ -2514,7 +2514,7 @@ function cg() {
             return Q = Qd(U.type, U.key, U.props, null, G.mode, Q), Q.ref = un(G, null, U), Q.return = G, Q;
           case he:
             return U = Ep(U, G.mode, Q), U.return = G, U;
-          case ke:
+          case be:
             var xe = U._init;
             return ge(G, xe(U._payload), Q);
         }
@@ -2532,7 +2532,7 @@ function cg() {
             return Q.key === Ue ? D(G, U, Q, xe) : null;
           case he:
             return Q.key === Ue ? J(G, U, Q, xe) : null;
-          case ke:
+          case be:
             return Ue = Q._init, de(
               G,
               U,
@@ -2553,7 +2553,7 @@ function cg() {
             return G = G.get(xe.key === null ? Q : xe.key) || null, D(U, G, xe, Ue);
           case he:
             return G = G.get(xe.key === null ? Q : xe.key) || null, J(U, G, xe, Ue);
-          case ke:
+          case be:
             var He = xe._init;
             return Pe(G, U, Q, He(xe._payload), Ue);
         }
@@ -2620,7 +2620,7 @@ function cg() {
                       o(G, He.sibling), U = m(He, Q.props.children), U.return = G, G = U;
                       break e;
                     }
-                  } else if (He.elementType === Ue || typeof Ue == "object" && Ue !== null && Ue.$$typeof === ke && Tr(Ue) === He.type) {
+                  } else if (He.elementType === Ue || typeof Ue == "object" && Ue !== null && Ue.$$typeof === be && Tr(Ue) === He.type) {
                     o(G, He.sibling), U = m(He, Q.props), U.ref = un(G, He, Q), U.return = G, G = U;
                     break e;
                   }
@@ -2648,7 +2648,7 @@ function cg() {
               U = Ep(Q, G.mode, xe), U.return = G, G = U;
             }
             return _(G);
-          case ke:
+          case be:
             return He = Q._init, Lt(G, U, He(Q._payload), xe);
         }
         if (os(Q)) return ze(G, U, Q, xe);
@@ -2691,9 +2691,9 @@ function cg() {
   }
   function Cd(t, n, o, c) {
     var m = n.interleaved;
-    return m === null ? (o.next = o, Fl(n)) : (o.next = m.next, m.next = o), n.interleaved = o, bn(t, c);
+    return m === null ? (o.next = o, Fl(n)) : (o.next = m.next, m.next = o), n.interleaved = o, kn(t, c);
   }
-  function bn(t, n) {
+  function kn(t, n) {
     t.lanes |= n;
     var o = t.alternate;
     for (o !== null && (o.lanes |= n), o = t, t = t.return; t !== null; ) t.childLanes |= n, o = t.alternate, o !== null && (o.childLanes |= n), o = t, t = t.return;
@@ -2714,9 +2714,9 @@ function cg() {
     if (c === null) return null;
     if (c = c.shared, (at & 2) !== 0) {
       var m = c.pending;
-      return m === null ? n.next = n : (n.next = m.next, m.next = n), c.pending = n, bn(t, o);
+      return m === null ? n.next = n : (n.next = m.next, m.next = n), c.pending = n, kn(t, o);
     }
-    return m = c.interleaved, m === null ? (n.next = n, Fl(c)) : (n.next = m.next, m.next = n), c.interleaved = n, bn(t, o);
+    return m = c.interleaved, m === null ? (n.next = n, Fl(c)) : (n.next = m.next, m.next = n), c.interleaved = n, kn(t, o);
   }
   function Rs(t, n, o) {
     if (n = n.updateQueue, n !== null && (n = n.shared, (o & 4194240) !== 0)) {
@@ -2838,7 +2838,7 @@ function cg() {
     Oo.current === t && (mt(Gn), mt(Oo));
   }
   var g = da(0);
-  function b(t) {
+  function k(t) {
     for (var n = t; n !== null; ) {
       if (n.tag === 13) {
         var o = n.memoizedState;
@@ -2962,7 +2962,7 @@ function cg() {
     }
     return [w, c];
   }
-  function kn() {
+  function bn() {
   }
   function Do(t, n) {
     var o = N, c = se(), m = n(), w = !qn(c.memoizedState, m);
@@ -2994,7 +2994,7 @@ function cg() {
     }
   }
   function Nd(t) {
-    var n = bn(t, 1);
+    var n = kn(t, 1);
     n !== null && Dr(n, t, 1, -1);
   }
   function Tn(t) {
@@ -3194,7 +3194,7 @@ function cg() {
       var t = _e(Se)[0], n = se().memoizedState;
       return [t, n];
     },
-    useMutableSource: kn,
+    useMutableSource: bn,
     useSyncExternalStore: Do,
     useId: Bl,
     unstable_isNewReconciler: !1
@@ -3206,8 +3206,8 @@ function cg() {
   }, useTransition: function() {
     var t = jt(Se)[0], n = se().memoizedState;
     return [t, n];
-  }, useMutableSource: kn, useSyncExternalStore: Do, useId: Bl, unstable_isNewReconciler: !1 };
-  function kt(t, n) {
+  }, useMutableSource: bn, useSyncExternalStore: Do, useId: Bl, unstable_isNewReconciler: !1 };
+  function bt(t, n) {
     if (t && t.defaultProps) {
       n = ne({}, n), t = t.defaultProps;
       for (var o in t) n[o] === void 0 && (n[o] = t[o]);
@@ -3383,7 +3383,7 @@ Error generating stack: ` + w.message + `
       var de = n.memoizedState;
       _.state = de, Di(n, c, _, m), D = n.memoizedState, M !== c || de !== D || Xt.current || ya ? (typeof pe == "function" && (Fo(n, o, pe, c), D = n.memoizedState), (M = ya || Ld(n, o, M, c, de, D, J)) ? (ge || typeof _.UNSAFE_componentWillMount != "function" && typeof _.componentWillMount != "function" || (typeof _.componentWillMount == "function" && _.componentWillMount(), typeof _.UNSAFE_componentWillMount == "function" && _.UNSAFE_componentWillMount()), typeof _.componentDidMount == "function" && (n.flags |= 4194308)) : (typeof _.componentDidMount == "function" && (n.flags |= 4194308), n.memoizedProps = c, n.memoizedState = D), _.props = c, _.state = D, _.context = J, c = M) : (typeof _.componentDidMount == "function" && (n.flags |= 4194308), c = !1);
     } else {
-      _ = n.stateNode, Ul(t, n), M = n.memoizedProps, J = n.type === n.elementType ? M : kt(n.type, M), _.props = J, ge = n.pendingProps, de = _.context, D = o.contextType, typeof D == "object" && D !== null ? D = Pn(D) : (D = dn(o) ? _r : Ut.current, D = Lo(n, D));
+      _ = n.stateNode, Ul(t, n), M = n.memoizedProps, J = n.type === n.elementType ? M : bt(n.type, M), _.props = J, ge = n.pendingProps, de = _.context, D = o.contextType, typeof D == "object" && D !== null ? D = Pn(D) : (D = dn(o) ? _r : Ut.current, D = Lo(n, D));
       var Pe = o.getDerivedStateFromProps;
       (pe = typeof Pe == "function" || typeof _.getSnapshotBeforeUpdate == "function") || typeof _.UNSAFE_componentWillReceiveProps != "function" && typeof _.componentWillReceiveProps != "function" || (M !== ge || de !== D) && ct(n, _, c, D), ya = !1, de = n.memoizedState, _.state = de, Di(n, c, _, m);
       var ze = n.memoizedState;
@@ -3403,14 +3403,14 @@ Error generating stack: ` + w.message + `
     var n = t.stateNode;
     n.pendingContext ? hd(t, n.pendingContext, n.pendingContext !== n.context) : n.context && hd(t, n.context, !1), zi(t, n.containerInfo);
   }
-  function bm(t, n, o, c, m) {
+  function km(t, n, o, c, m) {
     return Ha(), Li(m), n.flags |= 256, Gt(t, n, o, c), n.child;
   }
   var ip = { dehydrated: null, treeContext: null, retryLane: 0 };
   function lp(t) {
     return { baseLanes: t, cachePool: null, transitions: null };
   }
-  function km(t, n, o) {
+  function bm(t, n, o) {
     var c = n.pendingProps, m = g.current, w = !1, _ = (n.flags & 128) !== 0, M;
     if ((M = _) || (M = t !== null && t.memoizedState === null ? !1 : (m & 2) !== 0), M ? (w = !0, n.flags &= -129) : (t === null || t.memoizedState !== null) && (m |= 1), ht(g, m & 1), t === null)
       return Pi(n), t = n.memoizedState, t !== null && (t = t.dehydrated, t !== null) ? ((n.mode & 1) === 0 ? n.lanes = 1 : t.data === "$!" ? n.lanes = 8 : n.lanes = 1073741824, null) : (_ = c.children, t = c.fallback, w ? (c = n.mode, w = n.child, _ = { mode: "hidden", children: _ }, (c & 1) === 0 && w !== null ? (w.childLanes = 0, w.pendingProps = _) : w = Zd(_, c, 0, null), t = Ds(t, c, o, null), w.return = n, t.return = n, w.sibling = t, n.child = w, n.child.memoizedState = lp(o), n.memoizedState = ip, t) : cp(n, _));
@@ -3474,7 +3474,7 @@ Error generating stack: ` + w.message + `
           default:
             m = 0;
         }
-        m = (m & (c.suspendedLanes | _)) !== 0 ? 0 : m, m !== 0 && m !== w.retryLane && (w.retryLane = m, bn(t, m), Dr(c, t, m, -1));
+        m = (m & (c.suspendedLanes | _)) !== 0 ? 0 : m, m !== 0 && m !== w.retryLane && (w.retryLane = m, kn(t, m), Dr(c, t, m, -1));
       }
       return Ap(), c = Vi(Error(a(421))), Od(t, n, _, c);
     }
@@ -3512,12 +3512,12 @@ Error generating stack: ` + w.message + `
     if (ht(g, c), (n.mode & 1) === 0) n.memoizedState = null;
     else switch (m) {
       case "forwards":
-        for (o = n.child, m = null; o !== null; ) t = o.alternate, t !== null && b(t) === null && (m = o), o = o.sibling;
+        for (o = n.child, m = null; o !== null; ) t = o.alternate, t !== null && k(t) === null && (m = o), o = o.sibling;
         o = m, o === null ? (m = n.child, n.child = null) : (m = o.sibling, o.sibling = null), dp(n, !1, m, o, w);
         break;
       case "backwards":
         for (o = null, m = n.child, n.child = null; m !== null; ) {
-          if (t = m.alternate, t !== null && b(t) === null) {
+          if (t = m.alternate, t !== null && k(t) === null) {
             n.child = m;
             break;
           }
@@ -3565,7 +3565,7 @@ Error generating stack: ` + w.message + `
         break;
       case 13:
         if (c = n.memoizedState, c !== null)
-          return c.dehydrated !== null ? (ht(g, g.current & 1), n.flags |= 128, null) : (o & n.child.childLanes) !== 0 ? km(t, n, o) : (ht(g, g.current & 1), t = Ya(t, n, o), t !== null ? t.sibling : null);
+          return c.dehydrated !== null ? (ht(g, g.current & 1), n.flags |= 128, null) : (o & n.child.childLanes) !== 0 ? bm(t, n, o) : (ht(g, g.current & 1), t = Ya(t, n, o), t !== null ? t.sibling : null);
         ht(g, g.current & 1);
         break;
       case 19:
@@ -3857,7 +3857,7 @@ Error generating stack: ` + w.message + `
         return pn(n), null;
       case 13:
         if (mt(g), c = n.memoizedState, t === null || t.memoizedState !== null && t.memoizedState.dehydrated !== null) {
-          if (dt && wn !== null && (n.mode & 1) !== 0 && (n.flags & 128) === 0) kd(), Ha(), n.flags |= 98560, w = !1;
+          if (dt && wn !== null && (n.mode & 1) !== 0 && (n.flags & 128) === 0) bd(), Ha(), n.flags |= 98560, w = !1;
           else if (w = Ti(n), c !== null && c.dehydrated !== null) {
             if (t === null) {
               if (!w) throw Error(a(318));
@@ -3880,7 +3880,7 @@ Error generating stack: ` + w.message + `
         if (c = (n.flags & 128) !== 0, _ = w.rendering, _ === null) if (c) oc(w, !1);
         else {
           if (Wt !== 0 || t !== null && (t.flags & 128) !== 0) for (t = n.child; t !== null; ) {
-            if (_ = b(t), _ !== null) {
+            if (_ = k(t), _ !== null) {
               for (n.flags |= 128, oc(w, !1), c = _.updateQueue, c !== null && (n.updateQueue = c, n.flags |= 4), n.subtreeFlags = 0, c = o, o = n.child; o !== null; ) w = o, t = c, w.flags &= 14680066, _ = w.alternate, _ === null ? (w.childLanes = 0, w.lanes = t, w.child = null, w.subtreeFlags = 0, w.memoizedProps = null, w.memoizedState = null, w.updateQueue = null, w.dependencies = null, w.stateNode = null) : (w.childLanes = _.childLanes, w.lanes = _.lanes, w.child = _.child, w.subtreeFlags = 0, w.deletions = null, w.memoizedProps = _.memoizedProps, w.memoizedState = _.memoizedState, w.updateQueue = _.updateQueue, w.type = _.type, t = _.dependencies, w.dependencies = t === null ? null : { lanes: t.lanes, firstContext: t.firstContext }), o = o.sibling;
               return ht(g, g.current & 1 | 2), n.child;
             }
@@ -3889,7 +3889,7 @@ Error generating stack: ` + w.message + `
           w.tail !== null && xt() > Qi && (n.flags |= 128, c = !0, oc(w, !1), n.lanes = 4194304);
         }
         else {
-          if (!c) if (t = b(_), t !== null) {
+          if (!c) if (t = k(_), t !== null) {
             if (n.flags |= 128, c = !0, o = t.updateQueue, o !== null && (n.updateQueue = o, n.flags |= 4), oc(w, !0), w.tail === null && w.tailMode === "hidden" && !_.alternate && !dt) return pn(n), null;
           } else 2 * xt() - w.renderingStartTime > Qi && o !== 1073741824 && (n.flags |= 128, c = !0, oc(w, !1), n.lanes = 4194304);
           w.isBackwards ? (_.sibling = n.child, n.child = _) : (o = w.last, o !== null ? o.sibling = _ : n.child = _, w.last = _);
@@ -3996,7 +3996,7 @@ Error generating stack: ` + w.message + `
             break;
           case 1:
             if (ze !== null) {
-              var qe = ze.memoizedProps, Lt = ze.memoizedState, G = n.stateNode, U = G.getSnapshotBeforeUpdate(n.elementType === n.type ? qe : kt(n.type, qe), Lt);
+              var qe = ze.memoizedProps, Lt = ze.memoizedState, G = n.stateNode, U = G.getSnapshotBeforeUpdate(n.elementType === n.type ? qe : bt(n.type, qe), Lt);
               G.__reactInternalSnapshotBeforeUpdate = U;
             }
             break;
@@ -4424,7 +4424,7 @@ Error generating stack: ` + w.message + `
               var c = n.stateNode;
               if (n.flags & 4 && !fn) if (o === null) c.componentDidMount();
               else {
-                var m = n.elementType === n.type ? o.memoizedProps : kt(n.type, o.memoizedProps);
+                var m = n.elementType === n.type ? o.memoizedProps : bt(n.type, o.memoizedProps);
                 c.componentDidUpdate(m, o.memoizedState, c.__reactInternalSnapshotBeforeUpdate);
               }
               var w = n.updateQueue;
@@ -4574,7 +4574,7 @@ Error generating stack: ` + w.message + `
       $e = n.return;
     }
   }
-  var Dy = Math.ceil, Fd = Ce.ReactCurrentDispatcher, yp = Ce.ReactCurrentOwner, sr = Ce.ReactCurrentBatchConfig, at = 0, Kt = null, It = null, tn = 0, Kn = 0, Ki = da(0), Wt = 0, ic = null, Ms = 0, qd = 0, gp = 0, lc = null, Ln = null, wp = 0, Qi = 1 / 0, Ba = null, Ud = !1, vp = null, Vo = null, Vd = !1, Wo = null, Wd = 0, cc = 0, bp = null, Hd = -1, Gd = 0;
+  var Dy = Math.ceil, Fd = Ce.ReactCurrentDispatcher, yp = Ce.ReactCurrentOwner, sr = Ce.ReactCurrentBatchConfig, at = 0, Kt = null, It = null, tn = 0, Kn = 0, Ki = da(0), Wt = 0, ic = null, Ms = 0, qd = 0, gp = 0, lc = null, Ln = null, wp = 0, Qi = 1 / 0, Ba = null, Ud = !1, vp = null, Vo = null, Vd = !1, Wo = null, Wd = 0, cc = 0, kp = null, Hd = -1, Gd = 0;
   function Sn() {
     return (at & 6) !== 0 ? xt() : Hd !== -1 ? Hd : Hd = xt();
   }
@@ -4582,7 +4582,7 @@ Error generating stack: ` + w.message + `
     return (t.mode & 1) === 0 ? 1 : (at & 2) !== 0 && tn !== 0 ? tn & -tn : ma.transition !== null ? (Gd === 0 && (Gd = ho()), Gd) : (t = rt, t !== 0 || (t = window.event, t = t === void 0 ? 16 : vo(t.type)), t);
   }
   function Dr(t, n, o, c) {
-    if (50 < cc) throw cc = 0, bp = null, Error(a(185));
+    if (50 < cc) throw cc = 0, kp = null, Error(a(185));
     Na(t, o, c), ((at & 2) === 0 || t !== Kt) && (t === Kt && ((at & 2) === 0 && (qd |= o), Wt === 4 && Go(t, tn)), Mn(t, c), o === 1 && at === 0 && (n.mode & 1) === 0 && (Qi = xt() + 500, ji && ua()));
   }
   function Mn(t, n) {
@@ -4640,10 +4640,10 @@ Error generating stack: ` + w.message + `
       Ns(), Fd.current = w, at = m, It !== null ? n = 0 : (Kt = null, tn = 0, n = Wt);
     }
     if (n !== 0) {
-      if (n === 2 && (m = Mt(t), m !== 0 && (c = m, n = kp(t, m))), n === 1) throw o = ic, Os(t, 0), Go(t, c), Mn(t, xt()), o;
+      if (n === 2 && (m = Mt(t), m !== 0 && (c = m, n = bp(t, m))), n === 1) throw o = ic, Os(t, 0), Go(t, c), Mn(t, xt()), o;
       if (n === 6) Go(t, c);
       else {
-        if (m = t.current.alternate, (c & 30) === 0 && !zy(m) && (n = Kd(t, c), n === 2 && (w = Mt(t), w !== 0 && (c = w, n = kp(t, w))), n === 1)) throw o = ic, Os(t, 0), Go(t, c), Mn(t, xt()), o;
+        if (m = t.current.alternate, (c & 30) === 0 && !zy(m) && (n = Kd(t, c), n === 2 && (w = Mt(t), w !== 0 && (c = w, n = bp(t, w))), n === 1)) throw o = ic, Os(t, 0), Go(t, c), Mn(t, xt()), o;
         switch (t.finishedWork = m, t.finishedLanes = c, n) {
           case 0:
           case 1:
@@ -4685,7 +4685,7 @@ Error generating stack: ` + w.message + `
     }
     return Mn(t, xt()), t.callbackNode === o ? Dm.bind(null, t) : null;
   }
-  function kp(t, n) {
+  function bp(t, n) {
     var o = lc;
     return t.current.memoizedState.isDehydrated && (Os(t, n).flags |= 256), t = Kd(t, n), t !== 2 && (n = Ln, Ln = o, n !== null && xp(n)), t;
   }
@@ -4732,7 +4732,7 @@ Error generating stack: ` + w.message + `
     var o = Kd(t, n);
     if (t.tag !== 0 && o === 2) {
       var c = Mt(t);
-      c !== 0 && (n = c, o = kp(t, c));
+      c !== 0 && (n = c, o = bp(t, c));
     }
     if (o === 1) throw o = ic, Os(t, 0), Go(t, n), Mn(t, xt()), o;
     if (o === 6) throw Error(a(345));
@@ -4975,7 +4975,7 @@ Error generating stack: ` + w.message + `
     } else t.current = o;
     if (Vd && (Vd = !1, Wo = t, Wd = m), w = t.pendingLanes, w === 0 && (Vo = null), sn(o.stateNode), Mn(t, xt()), n !== null) for (c = t.onRecoverableError, o = 0; o < n.length; o++) m = n[o], c(m.value, { componentStack: m.stack, digest: m.digest });
     if (Ud) throw Ud = !1, t = vp, vp = null, t;
-    return (Wd & 1) !== 0 && t.tag !== 0 && Zi(), w = t.pendingLanes, (w & 1) !== 0 ? t === bp ? cc++ : (cc = 0, bp = t) : cc = 0, ua(), null;
+    return (Wd & 1) !== 0 && t.tag !== 0 && Zi(), w = t.pendingLanes, (w & 1) !== 0 ? t === kp ? cc++ : (cc = 0, kp = t) : cc = 0, ua(), null;
   }
   function Zi() {
     if (Wo !== null) {
@@ -5114,7 +5114,7 @@ Error generating stack: ` + w.message + `
   function Hm(t, n) {
     n === 0 && ((t.mode & 1) === 0 ? n = 1 : (n = pr, pr <<= 1, (pr & 130023424) === 0 && (pr = 4194304)));
     var o = Sn();
-    t = bn(t, n), t !== null && (Na(t, n, o), Mn(t, o));
+    t = kn(t, n), t !== null && (Na(t, n, o), Mn(t, o));
   }
   function Wy(t) {
     var n = t.memoizedState, o = 0;
@@ -5154,7 +5154,7 @@ Error generating stack: ` + w.message + `
       case 16:
         c = n.elementType;
         e: {
-          switch (Id(t, n), t = n.pendingProps, m = c._init, c = m(c._payload), n.type = c, m = n.tag = Ky(c), t = kt(c, t), m) {
+          switch (Id(t, n), t = n.pendingProps, m = c._init, c = m(c._payload), n.type = c, m = n.tag = Ky(c), t = bt(c, t), m) {
             case 0:
               n = op(null, n, c, t, o);
               break e;
@@ -5165,7 +5165,7 @@ Error generating stack: ` + w.message + `
               n = $d(null, n, c, t, o);
               break e;
             case 14:
-              n = mm(null, n, c, kt(c.type, t), o);
+              n = mm(null, n, c, bt(c.type, t), o);
               break e;
           }
           throw Error(a(
@@ -5176,19 +5176,19 @@ Error generating stack: ` + w.message + `
         }
         return n;
       case 0:
-        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : kt(c, m), op(t, n, c, m, o);
+        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : bt(c, m), op(t, n, c, m, o);
       case 1:
-        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : kt(c, m), wm(t, n, c, m, o);
+        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : bt(c, m), wm(t, n, c, m, o);
       case 3:
         e: {
           if (vm(n), t === null) throw Error(a(387));
           c = n.pendingProps, w = n.memoizedState, m = w.element, Ul(t, n), Di(n, c, null, o);
           var _ = n.memoizedState;
           if (c = _.element, w.isDehydrated) if (w = { element: c, isDehydrated: !1, cache: _.cache, pendingSuspenseBoundaries: _.pendingSuspenseBoundaries, transitions: _.transitions }, n.updateQueue.baseState = w, n.memoizedState = w, n.flags & 256) {
-            m = Ja(Error(a(423)), n), n = bm(t, n, c, o, m);
+            m = Ja(Error(a(423)), n), n = km(t, n, c, o, m);
             break e;
           } else if (c !== m) {
-            m = Ja(Error(a(424)), n), n = bm(t, n, c, o, m);
+            m = Ja(Error(a(424)), n), n = km(t, n, c, o, m);
             break e;
           } else for (wn = la(n.stateNode.containerInfo.firstChild), Yt = n, dt = !0, vn = null, o = Sd(n, null, c, o), n.child = o; o; ) o.flags = o.flags & -3 | 4096, o = o.sibling;
           else {
@@ -5206,11 +5206,11 @@ Error generating stack: ` + w.message + `
       case 6:
         return t === null && Pi(n), null;
       case 13:
-        return km(t, n, o);
+        return bm(t, n, o);
       case 4:
         return zi(n, n.stateNode.containerInfo), c = n.pendingProps, t === null ? n.child = Ga(n, null, c, o) : Gt(t, n, c, o), n.child;
       case 11:
-        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : kt(c, m), $d(t, n, c, m, o);
+        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : bt(c, m), $d(t, n, c, m, o);
       case 7:
         return Gt(t, n, n.pendingProps, o), n.child;
       case 8:
@@ -5273,11 +5273,11 @@ Error generating stack: ` + w.message + `
       case 9:
         return m = n.type, c = n.pendingProps.children, Qa(n, o), m = Pn(m), c = c(m), n.flags |= 1, Gt(t, n, c, o), n.child;
       case 14:
-        return c = n.type, m = kt(c, n.pendingProps), m = kt(c.type, m), mm(t, n, c, m, o);
+        return c = n.type, m = bt(c, n.pendingProps), m = bt(c.type, m), mm(t, n, c, m, o);
       case 15:
         return hm(t, n, n.type, n.pendingProps, o);
       case 17:
-        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : kt(c, m), Id(t, n), n.tag = 1, dn(c) ? (t = !0, jr(n)) : t = !1, Qa(n, o), qo(n, c, m), rc(n, c, m, o), sp(null, n, c, !0, t, o);
+        return c = n.type, m = n.pendingProps, m = n.elementType === c ? m : bt(c, m), Id(t, n), n.tag = 1, dn(c) ? (t = !0, jr(n)) : t = !1, Qa(n, o), qo(n, c, m), rc(n, c, m, o), sp(null, n, c, !0, t, o);
       case 19:
         return Sm(t, n, o);
       case 22:
@@ -5319,8 +5319,8 @@ Error generating stack: ` + w.message + `
       case Ae:
         _ = 8, m |= 8;
         break;
-      case be:
-        return t = ir(12, o, n, m | 2), t.elementType = be, t.lanes = w, t;
+      case ke:
+        return t = ir(12, o, n, m | 2), t.elementType = ke, t.lanes = w, t;
       case ye:
         return t = ir(13, o, n, m), t.elementType = ye, t.lanes = w, t;
       case ue:
@@ -5341,7 +5341,7 @@ Error generating stack: ` + w.message + `
           case W:
             _ = 14;
             break e;
-          case ke:
+          case be:
             _ = 16, c = null;
             break e;
         }
@@ -5516,7 +5516,7 @@ Error generating stack: ` + w.message + `
         break;
       case 13:
         $s(function() {
-          var c = bn(t, 1);
+          var c = kn(t, 1);
           if (c !== null) {
             var m = Sn();
             Dr(c, t, 1, m);
@@ -5525,7 +5525,7 @@ Error generating stack: ` + w.message + `
     }
   }, Ra = function(t) {
     if (t.tag === 13) {
-      var n = bn(t, 134217728);
+      var n = kn(t, 134217728);
       if (n !== null) {
         var o = Sn();
         Dr(n, t, 134217728, o);
@@ -5534,7 +5534,7 @@ Error generating stack: ` + w.message + `
     }
   }, Dc = function(t) {
     if (t.tag === 13) {
-      var n = Ho(t), o = bn(t, n);
+      var n = Ho(t), o = kn(t, n);
       if (o !== null) {
         var c = Sn();
         Dr(o, t, n, c);
@@ -6103,12 +6103,12 @@ function gg(e) {
       rows: x.rows,
       columns: x.columns,
       wells: x.wells.map((v) => {
-        const k = Zn(v, "ZarrViewer well");
-        if (typeof k.path != "string" || !Array.isArray(k.fields))
+        const b = Zn(v, "ZarrViewer well");
+        if (typeof b.path != "string" || !Array.isArray(b.fields))
           throw new Error("ZarrViewer returned an invalid well");
         return {
-          path: k.path,
-          fields: k.fields.map((C) => {
+          path: b.path,
+          fields: b.fields.map((C) => {
             const E = Zn(C, "ZarrViewer field");
             if (typeof E.path != "string" || typeof E.name != "string")
               throw new Error("ZarrViewer returned an invalid field");
@@ -6148,7 +6148,7 @@ function R0(e) {
   if (!!a == !!i)
     throw new Error("Each overlay requires either label_path or label_channel");
   const d = r.values == null ? void 0 : Array.from(new Set(
-    (Array.isArray(r.values) ? r.values : []).map((k, C) => Zt(k, `overlay values[${C}]`, 1))
+    (Array.isArray(r.values) ? r.values : []).map((b, C) => Zt(b, `overlay values[${C}]`, 1))
   ));
   if (d && d.length > 256) throw new Error("An overlay supports at most 256 values");
   const p = r.mode == null ? "outline" : String(r.mode);
@@ -6177,7 +6177,7 @@ function P0(e) {
     throw new Error("evidence_ids must contain at least one evidence ID");
   return Array.from(new Set(e)).slice(0, 32);
 }
-function bg(e) {
+function kg(e) {
   const r = Zn(e, "ZarrViewer focus");
   if (typeof r.store_uuid != "string" || !Of.test(r.store_uuid))
     throw new Error("store_uuid must be a canonical UUID from the measurement database");
@@ -6187,11 +6187,11 @@ function bg(e) {
   const i = Zt(r.size_x, "size_x", 1), d = Zt(r.size_y, "size_y", 1), p = r.size_z == null ? void 0 : Zt(r.size_z, "size_z", 1), f = r.size_t == null ? void 0 : Zt(r.size_t, "size_t", 1), x = r.t == null ? 0 : Zt(r.t, "t"), v = r.z == null ? 0 : Zt(r.z, "z");
   if (f != null && x >= f) throw new Error("t is outside the database image bounds");
   if (p != null && v >= p) throw new Error("z is outside the database image bounds");
-  let k;
+  let b;
   if (r.bbox != null) {
     if (!Array.isArray(r.bbox) || r.bbox.length !== 4)
       throw new Error("bbox must contain x0,y0,x1,y1");
-    if (k = r.bbox.map((me, je) => Zt(me, `bbox[${je}]`)), k[0] >= k[2] || k[1] >= k[3] || k[2] > i || k[3] > d) throw new Error("bbox is empty or outside the database image bounds");
+    if (b = r.bbox.map((me, je) => Zt(me, `bbox[${je}]`)), b[0] >= b[2] || b[1] >= b[3] || b[2] > i || b[3] > d) throw new Error("bbox is empty or outside the database image bounds");
   }
   let C;
   if (r.centroid != null) {
@@ -6204,8 +6204,8 @@ function bg(e) {
   }
   let E, R = !1;
   if (r.target_kind === "object") {
-    if (!k) throw new Error("An object preview requires its database bounding box");
-    E = k;
+    if (!b) throw new Error("An object preview requires its database bounding box");
+    E = b;
   } else if (r.target_kind === "point") {
     if (!C) throw new Error("A point preview requires its database centroid");
     E = wg(C, i, d);
@@ -6238,7 +6238,7 @@ function bg(e) {
     sizeY: d,
     sizeZ: p,
     sizeT: f,
-    bbox: k,
+    bbox: b,
     centroid: C,
     sourceChannels: $,
     labelPath: z,
@@ -6252,7 +6252,7 @@ function bg(e) {
     title: typeof r.title == "string" && r.title.trim() ? r.title.trim().slice(0, 180) : `${a} ${r.target_kind} preview`
   };
 }
-function kg(e) {
+function bg(e) {
   const r = Zn(e, "Zarr gallery");
   if (typeof r.store_uuid != "string" || !Of.test(r.store_uuid))
     throw new Error("store_uuid must be a canonical UUID from the measurement database");
@@ -6271,8 +6271,8 @@ function kg(e) {
       (Array.isArray(f.source_channels) ? f.source_channels : []).map((C, E) => Zt(C, `source_channels[${E}]`, 1))
     ));
     if (v.length > 4) throw new Error("At most four source channels may be rendered");
-    const k = (Array.isArray(f.overlays) ? f.overlays : []).map(R0);
-    if (k.length > 8) throw new Error("At most eight overlays may be rendered");
+    const b = (Array.isArray(f.overlays) ? f.overlays : []).map(R0);
+    if (b.length > 8) throw new Error("At most eight overlays may be rendered");
     return {
       field: vu(f.field, `gallery panel ${p + 1} field`),
       roi: x,
@@ -6281,7 +6281,7 @@ function kg(e) {
       z: f.z == null ? 0 : Zt(f.z, "z"),
       title: typeof f.title == "string" ? f.title.trim().slice(0, 160) : `Panel ${p + 1}`,
       caption: typeof f.caption == "string" ? f.caption.trim().slice(0, 320) : void 0,
-      overlays: k,
+      overlays: b,
       scaleBar: !0
     };
   }), i = r.columns == null ? void 0 : Zt(r.columns, "columns", 1);
@@ -6606,7 +6606,7 @@ class Rg {
       "/1/download/",
       `/${r.annotation_id}/download/`
     ), i = await this.authorizedFetch(a);
-    if (!i.ok) throw new Error(await ba(i));
+    if (!i.ok) throw new Error(await ka(i));
     return i.arrayBuffer();
   }
   async listAttachments() {
@@ -6683,7 +6683,7 @@ class Rg {
       "/1/download/",
       `/${r.annotation_id}/download/`
     ), i = await this.authorizedFetch(a);
-    if (!i.ok) throw new Error(await ba(i));
+    if (!i.ok) throw new Error(await ka(i));
     return i.arrayBuffer();
   }
   async listPipelineTemplates() {
@@ -6710,7 +6710,7 @@ class Rg {
       "/1/download/",
       `/${r.annotation_id}/download/`
     ), i = await this.authorizedFetch(a);
-    if (!i.ok) throw new Error(await ba(i));
+    if (!i.ok) throw new Error(await ka(i));
     return i.arrayBuffer();
   }
   async downloadNotebook(r) {
@@ -6718,7 +6718,7 @@ class Rg {
       "/1/download/",
       `/${r.annotation_id}/download/`
     ), i = await this.authorizedFetch(a);
-    if (!i.ok) throw new Error(await ba(i));
+    if (!i.ok) throw new Error(await ka(i));
     return i.arrayBuffer();
   }
   async uploadNotebook(r, a) {
@@ -6772,11 +6772,11 @@ class Rg {
     p.append("inventory", JSON.stringify(r)), p.append("plan_token", a.planToken);
     const f = [];
     for (const v of a.uploadKeys) {
-      const k = i.get(v), C = r.items.find((E) => E.key === v);
-      if (!k || !C) throw new Error(`Missing synchronization payload ${v}`);
+      const b = i.get(v), C = r.items.find((E) => E.key === v);
+      if (!b || !C) throw new Error(`Missing synchronization payload ${v}`);
       f.push(v), p.append(
         "payloads",
-        new Blob([k], { type: C.mimetype }),
+        new Blob([b], { type: C.mimetype }),
         C.name
       );
     }
@@ -6791,7 +6791,7 @@ class Rg {
       headers: { "X-CSRFToken": qr() },
       body: p
     });
-    if (!x.ok) throw new mu(await ba(x), x.status);
+    if (!x.ok) throw new mu(await ka(x), x.status);
     return yh(await At(x));
   }
   async removeWorkspaceSync(r) {
@@ -6828,7 +6828,7 @@ class Rg {
       "/1/download/",
       `/${r}/download/`
     ), i = await this.authorizedFetch(a);
-    if (!i.ok) throw new mu(await ba(i), i.status);
+    if (!i.ok) throw new mu(await ka(i), i.status);
     return i.arrayBuffer();
   }
   async analysisSettings() {
@@ -6872,7 +6872,7 @@ class Rg {
   async dataQueryCapabilities() {
     if (!this.bootstrap.dataQueryCapabilitiesUrl)
       throw new Error("Remote data-query capabilities are unavailable");
-    const r = bt(
+    const r = kt(
       await At(await fetch(this.bootstrap.dataQueryCapabilitiesUrl, {
         credentials: "same-origin"
       })),
@@ -6918,7 +6918,7 @@ class Rg {
       "TOKEN",
       encodeURIComponent(r)
     ), i = await fetch(a, { credentials: "same-origin" });
-    if (!i.ok) throw new mu(await ba(i), i.status);
+    if (!i.ok) throw new mu(await ka(i), i.status);
     return i.arrayBuffer();
   }
   async zarrViewerStatus() {
@@ -6929,17 +6929,17 @@ class Rg {
   }
   async loadZarrViewerSkill() {
     const a = (await this.listZarrViewerSkills()).skills.find(
-      (f) => bt(f, "ZarrViewer skill").name === "use-omero-zarr-viewer"
+      (f) => kt(f, "ZarrViewer skill").name === "use-omero-zarr-viewer"
     );
     if (!a || typeof a.package_url != "string")
       throw new Error("ZarrViewer operation skill is unavailable");
-    const i = bt(
+    const i = kt(
       await At(await fetch(a.package_url, { credentials: "same-origin" })),
       "ZarrViewer skill package"
-    ), d = bt(i.skill, "ZarrViewer skill");
+    ), d = kt(i.skill, "ZarrViewer skill");
     if (d.name !== "use-omero-zarr-viewer" || !(d.format == null || d.format === "agent-skills-v1") || !(d.skills_path == null || d.skills_path === "skills") || typeof d.version != "string" || typeof d.sha256 != "string" || !Array.isArray(i.files))
       throw new Error("ZarrViewer returned an invalid skill package");
-    const p = bt(i.provider, "ZarrViewer skill provider");
+    const p = kt(i.provider, "ZarrViewer skill provider");
     return {
       source: {
         workflow_key: "biomero-zarr-viewer",
@@ -6973,7 +6973,7 @@ class Rg {
         }
       },
       files: i.files.map((f) => {
-        const x = bt(f, "ZarrViewer skill file");
+        const x = kt(f, "ZarrViewer skill file");
         if (typeof x.path != "string" || typeof x.content != "string" || typeof x.sha256 != "string" || x.path !== "SKILL.md" && !x.path.startsWith("references/"))
           throw new Error("ZarrViewer returned an unsafe skill file");
         return x;
@@ -6984,14 +6984,14 @@ class Rg {
     const r = await this.zarrViewerStatus();
     if (!r.available || !r.skill_catalog_url)
       throw new Error("ZarrViewer skill provider is unavailable");
-    const a = bt(
+    const a = kt(
       await At(await fetch(r.skill_catalog_url, { credentials: "same-origin" })),
       "ZarrViewer skill catalog"
-    ), i = bt(a.provider, "ZarrViewer skill provider");
+    ), i = kt(a.provider, "ZarrViewer skill provider");
     if (a.schema !== "nl.bioimaging.analysis-skill-provider.v1" || !Array.isArray(a.skills) || typeof i.name != "string" || typeof i.distribution != "string" || typeof i.version != "string" || typeof i.source != "string" || typeof i.health != "string")
       throw new Error("ZarrViewer returned an invalid skill catalog");
     for (const d of a.skills) {
-      const p = bt(d, "ZarrViewer skill");
+      const p = kt(d, "ZarrViewer skill");
       if (typeof p.name != "string" || !(p.format == null || p.format === "agent-skills-v1") || !(p.skills_path == null || p.skills_path === "skills") || typeof p.version != "string" || typeof p.sha256 != "string" || typeof p.package_url != "string")
         throw new Error("ZarrViewer returned invalid skill metadata");
     }
@@ -7009,7 +7009,7 @@ class Rg {
     return Lg(await At(E));
   }
 }
-async function ba(e) {
+async function ka(e) {
   var r, a;
   try {
     const i = await e.json(), d = ((r = i.error) == null ? void 0 : r.message) || `${e.status} ${e.statusText}`, p = ((a = i.error) == null ? void 0 : a.request_id) || e.headers.get("X-OMERO-Analysis-Request-ID");
@@ -7026,22 +7026,22 @@ async function At(e) {
   return r;
 }
 function yh(e) {
-  const r = bt(e, "Workspace synchronization status");
+  const r = kt(e, "Workspace synchronization status");
   if (r.schema !== "nl.bioimaging.analysis.sync.status.v1" || typeof r.canSync != "boolean" || typeof r.linked != "boolean" || typeof r.remoteRevision != "number" || typeof r.inventoryDigest != "string") throw new Error("OMERO returned an invalid synchronization status");
   return r;
 }
 function Pg(e) {
-  const r = bt(e, "Workspace synchronization plan");
+  const r = kt(e, "Workspace synchronization plan");
   if (r.schema !== "nl.bioimaging.analysis.sync.plan.v1" || typeof r.planToken != "string" || !Array.isArray(r.uploadKeys) || r.uploadKeys.some((a) => typeof a != "string")) throw new Error("OMERO returned an invalid synchronization plan");
   return r;
 }
-function bt(e, r) {
+function kt(e, r) {
   if (!e || typeof e != "object" || Array.isArray(e))
     throw new Error(`${r} is not a valid object`);
   return e;
 }
 function vc(e) {
-  const r = bt(e, "OMERO attachment");
+  const r = kt(e, "OMERO attachment");
   if (!Number.isInteger(r.annotation_id) || !Number.isInteger(r.file_id) || typeof r.name != "string" || typeof r.mimetype != "string" || typeof r.size != "number" || !["attachment", "result", "workspace", "pipeline", "notebook"].includes(r.kind) || typeof r.supported != "boolean")
     throw new Error("OMERO returned invalid attachment metadata");
   return r;
@@ -7052,8 +7052,8 @@ function zp(e) {
   return e.map(vc);
 }
 function Tg(e) {
-  const r = bt(e, "OMERO hierarchy"), a = (i) => {
-    const d = bt(i, "OMERO hierarchy item");
+  const r = kt(e, "OMERO hierarchy"), a = (i) => {
+    const d = kt(i, "OMERO hierarchy item");
     if (typeof d.type != "string" || !Number.isInteger(d.id) || typeof d.name != "string" || typeof d.supported != "boolean") throw new Error("OMERO returned an invalid hierarchy item");
     return d;
   };
@@ -7066,18 +7066,18 @@ function Tg(e) {
   };
 }
 function M0(e) {
-  const r = bt(e, "workflow skill catalog");
+  const r = kt(e, "workflow skill catalog");
   if (![
     "nl.bioimaging.biomero-workflow-skills.v1",
     "nl.bioimaging.biomero-workflow-skills.v2"
   ].includes(String(r.schema)) || r.consumer !== "omero-analysis" || !Array.isArray(r.workflows) || !Array.isArray(r.diagnostics))
     throw new Error("OMERO returned an invalid workflow skill catalog");
   for (const a of r.workflows) {
-    const i = bt(a, "workflow skill entry"), d = bt(i.source, "workflow skill source");
+    const i = kt(a, "workflow skill entry"), d = kt(i.source, "workflow skill source");
     if (typeof d.workflow_key != "string" || !(d.source_kind == null || ["workflow", "application"].includes(d.source_kind)) || !(d.source_key == null || typeof d.source_key == "string") || typeof d.repository_url != "string" || typeof d.configured_ref != "string" || typeof d.resolved_commit != "string" || !Array.isArray(i.skills))
       throw new Error("OMERO returned invalid workflow skill metadata");
     for (const p of i.skills) {
-      const f = bt(p, "workflow skill");
+      const f = kt(p, "workflow skill");
       if (typeof f.name != "string" || typeof f.sha256 != "string" || typeof f.package_url != "string" || !(f.required_resources == null || Array.isArray(f.required_resources) && f.required_resources.every((x) => typeof x == "string")) || !(f.required_capabilities == null || Array.isArray(f.required_capabilities) && f.required_capabilities.every((x) => typeof x == "string")) || !(f.preferred_capabilities == null || Array.isArray(f.preferred_capabilities) && f.preferred_capabilities.every((x) => typeof x == "string")) || !f.match || typeof f.match != "object")
         throw new Error("OMERO returned an invalid workflow skill");
     }
@@ -7085,8 +7085,8 @@ function M0(e) {
   return r;
 }
 function Lg(e) {
-  const r = bt(e, "workflow skill package");
-  if (bt(r.source, "workflow skill source").source_kind === "application")
+  const r = kt(e, "workflow skill package");
+  if (kt(r.source, "workflow skill source").source_kind === "application")
     throw new Error("Application skills are served by their owning application provider");
   if (M0({
     schema: "nl.bioimaging.biomero-workflow-skills.v2",
@@ -7101,7 +7101,7 @@ function Lg(e) {
   }), !Array.isArray(r.files))
     throw new Error("OMERO returned an invalid workflow skill package");
   for (const i of r.files) {
-    const d = bt(i, "workflow skill file");
+    const d = kt(i, "workflow skill file");
     if (typeof d.path != "string" || typeof d.content != "string" || typeof d.sha256 != "string" || d.path !== "SKILL.md" && !d.path.startsWith("references/"))
       throw new Error("OMERO returned an unsafe workflow skill file");
   }
@@ -7176,16 +7176,16 @@ async function Ig(e, r) {
     );
   }
   if (!v.ok) {
-    const C = await ba(v), E = v.status === 401 || v.status === 403 ? " Check the API key and authentication-header type." : v.status === 404 ? " Check whether the endpoint is a base URL or a complete API route." : v.status === 400 ? " Check the model/deployment name and provider protocol." : "";
+    const C = await ka(v), E = v.status === 401 || v.status === 403 ? " Check the API key and authentication-header type." : v.status === 404 ? " Check whether the endpoint is a base URL or a complete API route." : v.status === 400 ? " Check the model/deployment name and provider protocol." : "";
     throw new Error(`${v.status} ${C}.${E}`.replace(/\.\./g, "."));
   }
-  const k = await v.json().catch(() => null);
-  if (!k || typeof k != "object")
+  const b = await v.json().catch(() => null);
+  if (!b || typeof b != "object")
     throw new Error("The provider responded, but its response was not valid JSON");
   if (i) {
-    if (!Array.isArray(k.content))
+    if (!Array.isArray(b.content))
       throw new Error("The endpoint responded but not with an Anthropic Messages response");
-  } else if (!Array.isArray(k.choices))
+  } else if (!Array.isArray(b.choices))
     throw new Error("The endpoint responded but not with an OpenAI-compatible response");
   return `Connection validated for ${e.model} at ${a}`;
 }
@@ -7207,7 +7207,7 @@ function Dg(e) {
 }
 async function zg(e, r, a, i, d = $u, p = !1) {
   var me, je, Ce, ie, he, ve;
-  const f = d.length ? { tools: d, tool_choice: p ? "required" : "auto" } : {}, x = e.authMode === "api-key" ? { "api-key": e.apiKey } : e.authMode === "bearer" ? { Authorization: `Bearer ${e.apiKey}` } : {}, v = If(e), k = (Ae) => fetch(v, {
+  const f = d.length ? { tools: d, tool_choice: p ? "required" : "auto" } : {}, x = e.authMode === "api-key" ? { "api-key": e.apiKey } : e.authMode === "bearer" ? { Authorization: `Bearer ${e.apiKey}` } : {}, v = If(e), b = (Ae) => fetch(v, {
     method: "POST",
     signal: a,
     headers: {
@@ -7223,8 +7223,8 @@ async function zg(e, r, a, i, d = $u, p = !1) {
       stream_options: Ae ? { include_usage: !0 } : void 0
     })
   }), C = !!i;
-  let E = await k(C);
-  if (C && Dg(v) && E.status >= 500 && E.status < 600 && !a.aborted && (i == null || i(""), E = await k(!1)), !E.ok) throw new Error(await ba(E));
+  let E = await b(C);
+  if (C && Dg(v) && E.status >= 500 && E.status < 600 && !a.aborted && (i == null || i(""), E = await b(!1)), !E.ok) throw new Error(await ka(E));
   if (!i || !((me = E.headers.get("content-type")) != null && me.includes("text/event-stream")))
     return wh(await E.json(), qp(e));
   const R = (je = E.body) == null ? void 0 : je.getReader();
@@ -7233,8 +7233,8 @@ async function zg(e, r, a, i, d = $u, p = !1) {
   let z = "", V = "", Z;
   const te = /* @__PURE__ */ new Map();
   for (; ; ) {
-    const { value: Ae, done: be } = await R.read();
-    z += $.decode(Ae || new Uint8Array(), { stream: !be });
+    const { value: Ae, done: ke } = await R.read();
+    z += $.decode(Ae || new Uint8Array(), { stream: !ke });
     const We = z.split(/\r?\n/);
     z = We.pop() || "";
     for (const oe of We) {
@@ -7246,15 +7246,15 @@ async function zg(e, r, a, i, d = $u, p = !1) {
       const ue = (ie = (Ce = ye.choices) == null ? void 0 : Ce[0]) == null ? void 0 : ie.delta;
       ue != null && ue.content && (V += ue.content, i(V));
       for (const W of (ue == null ? void 0 : ue.tool_calls) || []) {
-        const ke = Number(W.index || 0), ce = te.get(ke) || {
+        const be = Number(W.index || 0), ce = te.get(be) || {
           id: "",
           type: "function",
           function: { name: "", arguments: "" }
         };
-        ce.id += W.id || "", ce.function.name += ((he = W.function) == null ? void 0 : he.name) || "", ce.function.arguments += ((ve = W.function) == null ? void 0 : ve.arguments) || "", te.set(ke, ce);
+        ce.id += W.id || "", ce.function.name += ((he = W.function) == null ? void 0 : he.name) || "", ce.function.arguments += ((ve = W.function) == null ? void 0 : ve.arguments) || "", te.set(be, ce);
       }
     }
-    if (be) break;
+    if (ke) break;
   }
   return wh({
     choices: [{
@@ -7277,17 +7277,17 @@ function Fg(e) {
       d = "assistant";
       const x = [], v = Fp(i.content);
       v && x.push({ type: "text", text: v });
-      for (const k of i.tool_calls || []) {
+      for (const b of i.tool_calls || []) {
         let C = {};
         try {
-          C = JSON.parse(k.function.arguments || "{}");
+          C = JSON.parse(b.function.arguments || "{}");
         } catch {
           C = {};
         }
         x.push({
           type: "tool_use",
-          id: k.id,
-          name: k.function.name,
+          id: b.id,
+          name: b.function.name,
           input: C
         });
       }
@@ -7342,11 +7342,11 @@ async function Ug(e, r, a, i, d = $u, p = !1) {
       tool_choice: d.length && p ? { type: "any" } : void 0
     })
   });
-  if (!x.ok) throw new Error(await ba(x));
-  const v = bt(await x.json(), "Anthropic response");
+  if (!x.ok) throw new Error(await ka(x));
+  const v = kt(await x.json(), "Anthropic response");
   if (!Array.isArray(v.content))
     throw new Error("Anthropic returned an invalid response");
-  const k = v.content.filter(
+  const b = v.content.filter(
     (z) => !!(z && typeof z == "object" && z.type === "text")
   ).map((z) => String(z.text || "")).join(""), C = v.content.flatMap((z) => {
     const V = z && typeof z == "object" ? z : {};
@@ -7359,11 +7359,11 @@ async function Ug(e, r, a, i, d = $u, p = !1) {
       }
     }];
   }), E = v.usage && typeof v.usage == "object" ? v.usage : {}, R = Number(E.input_tokens || 0), $ = Number(E.output_tokens || 0);
-  return k && i && i(k), {
+  return b && i && i(b), {
     choices: [{
       message: {
         role: "assistant",
-        content: k || null,
+        content: b || null,
         tool_calls: C.length ? C : void 0
       }
     }],
@@ -7375,17 +7375,17 @@ async function Ug(e, r, a, i, d = $u, p = !1) {
   };
 }
 function wh(e, r = "AI provider") {
-  const a = bt(e, "AI response");
+  const a = kt(e, "AI response");
   if (!Array.isArray(a.choices) || !a.choices.length)
     throw new Error(`${r} returned no response choices`);
   for (const i of a.choices) {
-    const d = bt(bt(i, "AI choice").message, "AI message");
+    const d = kt(kt(i, "AI choice").message, "AI message");
     if (d.role !== "assistant" || !(d.content == null || typeof d.content == "string"))
       throw new Error(`${r} returned an invalid assistant message`);
     if (d.tool_calls != null) {
       if (!Array.isArray(d.tool_calls)) throw new Error(`${r} returned invalid tool calls`);
       for (const p of d.tool_calls) {
-        const f = bt(p, "AI tool call"), x = bt(f.function, "AI tool function");
+        const f = kt(p, "AI tool call"), x = kt(f.function, "AI tool function");
         if (typeof f.id != "string" || f.type !== "function" || typeof x.name != "string" || typeof x.arguments != "string") throw new Error(`${r} returned an invalid tool call`);
       }
     }
@@ -7510,8 +7510,8 @@ var Sa = (function(e, r, a) {
     var v = 15 - r;
     for (d = 0; d < i; ++d)
       if (e[d])
-        for (var k = d << 4 | e[d], C = r - e[d], E = f[e[d] - 1]++ << C, R = E | (1 << C) - 1; E <= R; ++E)
-          x[yf[E] >> v] = k;
+        for (var b = d << 4 | e[d], C = r - e[d], E = f[e[d] - 1]++ << C, R = E | (1 << C) - 1; E <= R; ++E)
+          x[yf[E] >> v] = b;
   } else
     for (x = new Jn(i), d = 0; d < i; ++d)
       e[d] && (x[d] = yf[f[e[d] - 1]++] >> 15 - e[d]);
@@ -7569,7 +7569,7 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
     return a || new Pt(0);
   var f = !a, x = f || r.i != 2, v = r.i;
   f && (a = new Pt(d * 3));
-  var k = function(Yn) {
+  var b = function(Yn) {
     var cr = a.length;
     if (Yn > cr) {
       var An = new Pt(Math.max(cr * 2, Yn));
@@ -7586,7 +7586,7 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
         else if (me == 2) {
           var he = zr(e, E, 31) + 257, ve = zr(e, E + 10, 15) + 4, Ae = he + zr(e, E + 5, 31) + 1;
           E += 14;
-          for (var be = new Pt(Ae), We = new Pt(19), oe = 0; oe < ve; ++oe)
+          for (var ke = new Pt(Ae), We = new Pt(19), oe = 0; oe < ve; ++oe)
             We[mf[oe]] = zr(e, E + oe * 3, 7);
           E += ve * 3;
           for (var Fe = Up(We), ye = (1 << Fe) - 1, ue = Sa(We, Fe, 1), oe = 0; oe < Ae; ) {
@@ -7594,14 +7594,14 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
             E += W & 15;
             var je = W >> 4;
             if (je < 16)
-              be[oe++] = je;
+              ke[oe++] = je;
             else {
-              var ke = 0, ce = 0;
-              for (je == 16 ? (ce = 3 + zr(e, E, 3), E += 2, ke = be[oe - 1]) : je == 17 ? (ce = 3 + zr(e, E, 7), E += 3) : je == 18 && (ce = 11 + zr(e, E, 127), E += 7); ce--; )
-                be[oe++] = ke;
+              var be = 0, ce = 0;
+              for (je == 16 ? (ce = 3 + zr(e, E, 3), E += 2, be = ke[oe - 1]) : je == 17 ? (ce = 3 + zr(e, E, 7), E += 3) : je == 18 && (ce = 11 + zr(e, E, 127), E += 7); ce--; )
+                ke[oe++] = be;
             }
           }
-          var K = be.subarray(0, he), le = be.subarray(he);
+          var K = ke.subarray(0, he), le = ke.subarray(he);
           V = Up(K), Z = Up(le), $ = Sa(K, V, 1), z = Sa(le, Z, 1);
         } else
           Cn(1);
@@ -7611,7 +7611,7 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
           v && Cn(0);
           break;
         }
-        x && k(R + Ce), a.set(e.subarray(je, ie), R), r.b = R += Ce, r.p = E = ie * 8, r.f = C;
+        x && b(R + Ce), a.set(e.subarray(je, ie), R), r.b = R += Ce, r.p = E = ie * 8, r.f = C;
         continue;
       }
       if (E > te) {
@@ -7619,14 +7619,14 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
         break;
       }
     }
-    x && k(R + 131072);
+    x && b(R + 131072);
     for (var ne = (1 << V) - 1, F = (1 << Z) - 1, ee = E; ; ee = E) {
-      var ke = $[Vp(e, E) & ne], Y = ke >> 4;
-      if (E += ke & 15, E > te) {
+      var be = $[Vp(e, E) & ne], Y = be >> 4;
+      if (E += be & 15, E > te) {
         v && Cn(0);
         break;
       }
-      if (ke || Cn(2), Y < 256)
+      if (be || Cn(2), Y < 256)
         a[R++] = Y;
       else if (Y == 256) {
         ee = E, $ = null;
@@ -7648,7 +7648,7 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
           v && Cn(0);
           break;
         }
-        x && k(R + 131072);
+        x && b(R + 131072);
         var Je = R + Te;
         if (R < le) {
           var lt = p - le, _t = Math.min(le, Je);
@@ -7683,9 +7683,9 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
   a.sort(function(ie, he) {
     return ie.f - he.f;
   }), a.push({ s: -1, f: 25001 });
-  var x = a[0], v = a[1], k = 0, C = 1, E = 2;
+  var x = a[0], v = a[1], b = 0, C = 1, E = 2;
   for (a[0] = { s: -1, f: x.f + v.f, l: x, r: v }; C != d - 1; )
-    x = a[a[k].f < a[E].f ? k++ : E++], v = a[k != C && a[k].f < a[E].f ? k++ : E++], a[C++] = { s: -1, f: x.f + v.f, l: x, r: v };
+    x = a[a[b].f < a[E].f ? b++ : E++], v = a[b != C && a[b].f < a[E].f ? b++ : E++], a[C++] = { s: -1, f: x.f + v.f, l: x, r: v };
   for (var R = p[0].s, i = 1; i < d; ++i)
     p[i].s > R && (R = p[i].s);
   var $ = new Jn(R + 1), z = gf(a[C - 1], $, 0);
@@ -7713,7 +7713,7 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
   return { t: new Pt($), l: z };
 }, gf = function(e, r, a) {
   return e.s == -1 ? Math.max(gf(e.l, r, a + 1), gf(e.r, r, a + 1)) : r[e.s] = a;
-}, bh = function(e) {
+}, kh = function(e) {
   for (var r = e.length; r && !e[--r]; )
     ;
   for (var a = new Jn(++r), i = 0, d = e[0], p = 1, f = function(v) {
@@ -7746,20 +7746,20 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
   for (var p = 0; p < i; ++p)
     e[d + p + 4] = a[p];
   return (d + 4 + i) * 8;
-}, kh = function(e, r, a, i, d, p, f, x, v, k, C) {
+}, bh = function(e, r, a, i, d, p, f, x, v, b, C) {
   to(r, C++, a), ++d[256];
-  for (var E = Wp(d, 15), R = E.t, $ = E.l, z = Wp(p, 15), V = z.t, Z = z.l, te = bh(R), me = te.c, je = te.n, Ce = bh(V), ie = Ce.c, he = Ce.n, ve = new Jn(19), Ae = 0; Ae < me.length; ++Ae)
+  for (var E = Wp(d, 15), R = E.t, $ = E.l, z = Wp(p, 15), V = z.t, Z = z.l, te = kh(R), me = te.c, je = te.n, Ce = kh(V), ie = Ce.c, he = Ce.n, ve = new Jn(19), Ae = 0; Ae < me.length; ++Ae)
     ++ve[me[Ae] & 31];
   for (var Ae = 0; Ae < ie.length; ++Ae)
     ++ve[ie[Ae] & 31];
-  for (var be = Wp(ve, 7), We = be.t, oe = be.l, Fe = 19; Fe > 4 && !We[mf[Fe - 1]]; --Fe)
+  for (var ke = Wp(ve, 7), We = ke.t, oe = ke.l, Fe = 19; Fe > 4 && !We[mf[Fe - 1]]; --Fe)
     ;
-  var ye = k + 5 << 3, ue = fc(d, ts) + fc(p, Ac) + f, W = fc(d, R) + fc(p, V) + f + 14 + 3 * Fe + fc(ve, We) + 2 * ve[16] + 3 * ve[17] + 7 * ve[18];
+  var ye = b + 5 << 3, ue = fc(d, ts) + fc(p, Ac) + f, W = fc(d, R) + fc(p, V) + f + 14 + 3 * Fe + fc(ve, We) + 2 * ve[16] + 3 * ve[17] + 7 * ve[18];
   if (v >= 0 && ye <= ue && ye <= W)
-    return F0(r, C, e.subarray(v, v + k));
-  var ke, ce, K, le;
+    return F0(r, C, e.subarray(v, v + b));
+  var be, ce, K, le;
   if (to(r, C, 1 + (W < ue)), C += 2, W < ue) {
-    ke = Sa(R, $, 0), ce = R, K = Sa(V, Z, 0), le = V;
+    be = Sa(R, $, 0), ce = R, K = Sa(V, Z, 0), le = V;
     var ne = Sa(We, oe, 0);
     to(r, C, je - 257), to(r, C + 5, he - 1), to(r, C + 10, Fe - 4), C += 14;
     for (var Ae = 0; Ae < Fe; ++Ae)
@@ -7771,46 +7771,46 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
         to(r, C, ne[Te]), C += We[Te], Te > 15 && (to(r, C, Y[Ae] >> 5 & 127), C += Y[Ae] >> 12);
       }
   } else
-    ke = Wg, ce = ts, K = Gg, le = Ac;
+    be = Wg, ce = ts, K = Gg, le = Ac;
   for (var Ae = 0; Ae < x; ++Ae) {
     var De = i[Ae];
     if (De > 255) {
       var Te = De >> 18 & 31;
-      pc(r, C, ke[Te + 257]), C += ce[Te + 257], Te > 7 && (to(r, C, De >> 23 & 31), C += Ou[Te]);
+      pc(r, C, be[Te + 257]), C += ce[Te + 257], Te > 7 && (to(r, C, De >> 23 & 31), C += Ou[Te]);
       var Ze = De & 31;
       pc(r, C, K[Ze]), C += le[Ze], Ze > 3 && (pc(r, C, De >> 5 & 8191), C += Iu[Ze]);
     } else
-      pc(r, C, ke[De]), C += ce[De];
+      pc(r, C, be[De]), C += ce[De];
   }
-  return pc(r, C, ke[256]), C + ce[256];
+  return pc(r, C, be[256]), C + ce[256];
 }, Jg = /* @__PURE__ */ new Df([65540, 131080, 131088, 131104, 262176, 1048704, 1048832, 2114560, 2117632]), q0 = /* @__PURE__ */ new Pt(0), Xg = function(e, r, a, i, d, p) {
-  var f = p.z || e.length, x = new Pt(i + f + 5 * (1 + Math.ceil(f / 7e3)) + d), v = x.subarray(i, x.length - d), k = p.l, C = (p.r || 0) & 7;
+  var f = p.z || e.length, x = new Pt(i + f + 5 * (1 + Math.ceil(f / 7e3)) + d), v = x.subarray(i, x.length - d), b = p.l, C = (p.r || 0) & 7;
   if (r) {
     C && (v[0] = p.r >> 3);
     for (var E = Jg[r - 1], R = E >> 13, $ = E & 8191, z = (1 << a) - 1, V = p.p || new Jn(32768), Z = p.h || new Jn(z + 1), te = Math.ceil(a / 3), me = 2 * te, je = function(Hr) {
       return (e[Hr] ^ e[Hr + 1] << te ^ e[Hr + 2] << me) & z;
-    }, Ce = new Df(25e3), ie = new Jn(288), he = new Jn(32), ve = 0, Ae = 0, be = p.i || 0, We = 0, oe = p.w || 0, Fe = 0; be + 2 < f; ++be) {
-      var ye = je(be), ue = be & 32767, W = Z[ye];
-      if (V[ue] = W, Z[ye] = ue, oe <= be) {
-        var ke = f - be;
-        if ((ve > 7e3 || We > 24576) && (ke > 423 || !k)) {
-          C = kh(e, v, 0, Ce, ie, he, Ae, We, Fe, be - Fe, C), We = ve = Ae = 0, Fe = be;
+    }, Ce = new Df(25e3), ie = new Jn(288), he = new Jn(32), ve = 0, Ae = 0, ke = p.i || 0, We = 0, oe = p.w || 0, Fe = 0; ke + 2 < f; ++ke) {
+      var ye = je(ke), ue = ke & 32767, W = Z[ye];
+      if (V[ue] = W, Z[ye] = ue, oe <= ke) {
+        var be = f - ke;
+        if ((ve > 7e3 || We > 24576) && (be > 423 || !b)) {
+          C = bh(e, v, 0, Ce, ie, he, Ae, We, Fe, ke - Fe, C), We = ve = Ae = 0, Fe = ke;
           for (var ce = 0; ce < 286; ++ce)
             ie[ce] = 0;
           for (var ce = 0; ce < 30; ++ce)
             he[ce] = 0;
         }
         var K = 2, le = 0, ne = $, F = ue - W & 32767;
-        if (ke > 2 && ye == je(be - F))
-          for (var ee = Math.min(R, ke) - 1, Y = Math.min(32767, be), Te = Math.min(258, ke); F <= Y && --ne && ue != W; ) {
-            if (e[be + K] == e[be + K - F]) {
-              for (var De = 0; De < Te && e[be + De] == e[be + De - F]; ++De)
+        if (be > 2 && ye == je(ke - F))
+          for (var ee = Math.min(R, be) - 1, Y = Math.min(32767, ke), Te = Math.min(258, be); F <= Y && --ne && ue != W; ) {
+            if (e[ke + K] == e[ke + K - F]) {
+              for (var De = 0; De < Te && e[ke + De] == e[ke + De - F]; ++De)
                 ;
               if (De > K) {
                 if (K = De, le = F, De > ee)
                   break;
                 for (var Ze = Math.min(F, De - 2), tt = 0, ce = 0; ce < Ze; ++ce) {
-                  var Je = be - F + ce & 32767, lt = V[Je], _t = Je - lt & 32767;
+                  var Je = ke - F + ce & 32767, lt = V[Je], _t = Je - lt & 32767;
                   _t > tt && (tt = _t, W = Je);
                 }
               }
@@ -7820,18 +7820,18 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
         if (le) {
           Ce[We++] = 268435456 | hf[K] << 18 | vh[le];
           var Yn = hf[K] & 31, cr = vh[le] & 31;
-          Ae += Ou[Yn] + Iu[cr], ++ie[257 + Yn], ++he[cr], oe = be + K, ++ve;
+          Ae += Ou[Yn] + Iu[cr], ++ie[257 + Yn], ++he[cr], oe = ke + K, ++ve;
         } else
-          Ce[We++] = e[be], ++ie[e[be]];
+          Ce[We++] = e[ke], ++ie[e[ke]];
       }
     }
-    for (be = Math.max(be, oe); be < f; ++be)
-      Ce[We++] = e[be], ++ie[e[be]];
-    C = kh(e, v, k, Ce, ie, he, Ae, We, Fe, be - Fe, C), k || (p.r = C & 7 | v[C / 8 | 0] << 3, C -= 7, p.h = Z, p.p = V, p.i = be, p.w = oe);
+    for (ke = Math.max(ke, oe); ke < f; ++ke)
+      Ce[We++] = e[ke], ++ie[e[ke]];
+    C = bh(e, v, b, Ce, ie, he, Ae, We, Fe, ke - Fe, C), b || (p.r = C & 7 | v[C / 8 | 0] << 3, C -= 7, p.h = Z, p.p = V, p.i = ke, p.w = oe);
   } else {
-    for (var be = p.w || 0; be < f + k; be += 65535) {
-      var An = be + 65535;
-      An >= f && (v[C / 8 | 0] = k, An = f), C = F0(v, C + 1, e.subarray(be, An));
+    for (var ke = p.w || 0; ke < f + b; ke += 65535) {
+      var An = ke + 65535;
+      An >= f && (v[C / 8 | 0] = b, An = f), C = F0(v, C + 1, e.subarray(ke, An));
     }
     p.i = f;
   }
@@ -7868,7 +7868,7 @@ var Wg = /* @__PURE__ */ Sa(ts, 9, 0), Hg = /* @__PURE__ */ Sa(ts, 9, 1), Gg = /
   for (var i in r)
     a[i] = r[i];
   return a;
-}, ka = function(e, r) {
+}, ba = function(e, r) {
   return e[r] | e[r + 1] << 8;
 }, Vr = function(e, r) {
   return (e[r] | e[r + 1] << 8 | e[r + 2] << 16 | e[r + 3] << 24) >>> 0;
@@ -7906,8 +7906,8 @@ function vf(e, r) {
   var a;
   if (xh)
     return xh.encode(e);
-  for (var i = e.length, d = new Pt(e.length + (e.length >> 1)), p = 0, f = function(k) {
-    d[p++] = k;
+  for (var i = e.length, d = new Pt(e.length + (e.length >> 1)), p = 0, f = function(b) {
+    d[p++] = b;
   }, a = 0; a < i; ++a) {
     if (p + 5 > d.length) {
       var x = new Pt(p + 8 + (i - a << 1));
@@ -7931,15 +7931,15 @@ function W0(e, r) {
   }
 }
 var ow = function(e, r) {
-  return r + 30 + ka(e, r + 26) + ka(e, r + 28);
+  return r + 30 + ba(e, r + 26) + ba(e, r + 28);
 }, sw = function(e, r, a) {
-  var i = ka(e, r + 28), d = W0(e.subarray(r + 46, r + 46 + i), !(ka(e, r + 8) & 2048)), p = r + 46 + i, f = Vr(e, r + 20), x = a && f == 4294967295 ? iw(e, p) : [f, Vr(e, r + 24), Vr(e, r + 42)], v = x[0], k = x[1], C = x[2];
-  return [ka(e, r + 10), v, k, d, p + ka(e, r + 30) + ka(e, r + 32), C];
+  var i = ba(e, r + 28), d = W0(e.subarray(r + 46, r + 46 + i), !(ba(e, r + 8) & 2048)), p = r + 46 + i, f = Vr(e, r + 20), x = a && f == 4294967295 ? iw(e, p) : [f, Vr(e, r + 24), Vr(e, r + 42)], v = x[0], b = x[1], C = x[2];
+  return [ba(e, r + 10), v, b, d, p + ba(e, r + 30) + ba(e, r + 32), C];
 }, iw = function(e, r) {
-  for (; ka(e, r) != 1; r += 4 + ka(e, r + 2))
+  for (; ba(e, r) != 1; r += 4 + ba(e, r + 2))
     ;
   return [Hp(e, r + 12), Hp(e, r + 4), Hp(e, r + 20)];
-}, bf = function(e) {
+}, kf = function(e) {
   var r = 0;
   if (e)
     for (var a in e) {
@@ -7948,12 +7948,12 @@ var ow = function(e, r) {
     }
   return r;
 }, Sh = function(e, r, a, i, d, p, f, x) {
-  var v = i.length, k = a.extra, C = x && x.length, E = bf(k);
+  var v = i.length, b = a.extra, C = x && x.length, E = kf(b);
   nn(e, r, f != null ? 33639248 : 67324752), r += 4, f != null && (e[r++] = 20, e[r++] = a.os), e[r] = 20, r += 2, e[r++] = a.flag << 1 | (p < 0 && 8), e[r++] = d && 8, e[r++] = a.compression & 255, e[r++] = a.compression >> 8;
   var R = new Date(a.mtime == null ? Date.now() : a.mtime), $ = R.getFullYear() - 1980;
   if (($ < 0 || $ > 119) && Cn(10), nn(e, r, $ << 25 | R.getMonth() + 1 << 21 | R.getDate() << 16 | R.getHours() << 11 | R.getMinutes() << 5 | R.getSeconds() >> 1), r += 4, p != -1 && (nn(e, r, a.crc), nn(e, r + 4, p < 0 ? -p - 2 : p), nn(e, r + 8, a.size)), nn(e, r + 12, v), nn(e, r + 14, E), r += 16, f != null && (nn(e, r, C), nn(e, r + 6, a.attrs), nn(e, r + 10, f), r += 14), e.set(i, r), r += v, E)
-    for (var z in k) {
-      var V = k[z], Z = V.length;
+    for (var z in b) {
+      var V = b[z], Z = V.length;
       nn(e, r, +z), nn(e, r + 2, Z), e.set(V, r + 4), r += 4 + Z;
     }
   return C && (e.set(x, r), r += C), r;
@@ -7966,10 +7966,10 @@ function H0(e, r) {
   V0(e, "", a, r);
   var d = 0, p = 0;
   for (var f in a) {
-    var x = a[f], v = x[0], k = x[1], C = k.level == 0 ? 0 : 8, E = vf(f), R = E.length, $ = k.comment, z = $ && vf($), V = z && z.length, Z = bf(k.extra);
+    var x = a[f], v = x[0], b = x[1], C = b.level == 0 ? 0 : 8, E = vf(f), R = E.length, $ = b.comment, z = $ && vf($), V = z && z.length, Z = kf(b.extra);
     R > 65535 && Cn(11);
-    var te = C ? tw(v, k) : v, me = te.length, je = Bg();
-    je.p(v), i.push(U0(k, {
+    var te = C ? tw(v, b) : v, me = te.length, je = Bg();
+    je.p(v), i.push(U0(b, {
       size: v.length,
       crc: je.d(),
       c: te,
@@ -7983,7 +7983,7 @@ function H0(e, r) {
   for (var Ce = new Pt(p + 22), ie = d, he = p - d, ve = 0; ve < i.length; ++ve) {
     var E = i[ve];
     Sh(Ce, E.o, E, E.f, E.u, E.c.length);
-    var Ae = 30 + E.f.length + bf(E.extra);
+    var Ae = 30 + E.f.length + kf(E.extra);
     Ce.set(E.c, E.o + Ae), Sh(Ce, d, E, E.f, E.u, E.c.length, E.o, E.m), d += 16 + Ae + (E.m ? E.m.length : 0);
   }
   return lw(Ce, d, i.length, he, ie), Ce;
@@ -7991,7 +7991,7 @@ function H0(e, r) {
 function cw(e, r) {
   for (var a = {}, i = e.length - 22; Vr(e, i) != 101010256; --i)
     (!i || e.length - i > 65558) && Cn(13);
-  var d = ka(e, i + 8);
+  var d = ba(e, i + 8);
   if (!d)
     return {};
   var p = Vr(e, i + 16), f = p == 4294967295 || d == 65535;
@@ -8000,12 +8000,12 @@ function cw(e, r) {
     f = Vr(e, x) == 101075792, f && (d = Vr(e, x + 32), p = Vr(e, x + 48));
   }
   for (var v = 0; v < d; ++v) {
-    var k = sw(e, p, f), C = k[0], E = k[1], R = k[2], $ = k[3], z = k[4], V = k[5], Z = ow(e, V);
+    var b = sw(e, p, f), C = b[0], E = b[1], R = b[2], $ = b[3], z = b[4], V = b[5], Z = ow(e, V);
     p = z, C ? C == 8 ? a[$] = nw(e.subarray(Z, Z + E), { out: new Pt(R) }) : Cn(14, "unknown compression type " + C) : a[$] = jc(e, Z, Z + E);
   }
   return a;
 }
-const dw = "omero-analysis-workspaces", uw = 2, bu = [
+const dw = "omero-analysis-workspaces", uw = 2, ku = [
   "workspaces",
   "chats",
   "files",
@@ -8034,7 +8034,7 @@ function pw(e) {
     i.onupgradeneeded = () => {
       const d = i.result;
       d.objectStoreNames.contains("values") || d.createObjectStore("values");
-      for (const p of bu) {
+      for (const p of ku) {
         const f = d.objectStoreNames.contains(p) ? i.transaction.objectStore(p) : d.createObjectStore(p, { keyPath: "id" });
         p !== "workspaces" && !f.indexNames.contains("workspaceId") && f.createIndex("workspaceId", "workspaceId"), p === "workspaces" && !f.indexNames.contains("contextKey") && f.createIndex("contextKey", "contextKey", { unique: !0 }), (p === "files" || p === "executions" || p === "evidence") && !f.indexNames.contains("chatId") && f.createIndex("chatId", "chatId");
       }
@@ -8081,23 +8081,23 @@ const _h = (e) => rn(async () => {
   const i = (await Xn()).transaction("evidence", "readwrite"), d = i.objectStore("evidence");
   (await Wr(d.index("chatId").getAllKeys(e))).forEach((f) => d.delete(f)), r.forEach((f) => d.put(f)), await as(i);
 }), au = (e) => rn(() => G0("files", e)), vw = (e) => rn(() => G0("notebooks", e));
-async function bw(e) {
+async function kw(e) {
   await rn(async () => {
     const r = await Xn(), a = ["files", "executions", "artifacts", "audits", "evidence"], i = r.transaction(["chats", ...a], "readwrite");
     i.objectStore("chats").delete(e);
     const d = a.map((f) => {
-      const x = i.objectStore(f), v = x.indexNames.contains("chatId"), k = v ? x.index("chatId").getAllKeys(e) : x.getAll();
-      return { store: x, indexed: v, request: k };
+      const x = i.objectStore(f), v = x.indexNames.contains("chatId"), b = v ? x.index("chatId").getAllKeys(e) : x.getAll();
+      return { store: x, indexed: v, request: b };
     }), p = await Promise.all(d.map(({ request: f }) => Wr(f)));
     d.forEach(({ store: f, indexed: x }, v) => {
-      x ? p[v].forEach((k) => f.delete(k)) : p[v].filter((k) => k.chatId === e).forEach((k) => f.delete(k.id));
+      x ? p[v].forEach((b) => f.delete(b)) : p[v].filter((b) => b.chatId === e).forEach((b) => f.delete(b.id));
     }), await as(i);
   });
 }
 async function Gp(e) {
   await rn(async () => {
-    const a = (await Xn()).transaction([...bu], "readwrite");
-    for (const i of bu) {
+    const a = (await Xn()).transaction([...ku], "readwrite");
+    for (const i of ku) {
       const d = a.objectStore(i);
       if (i === "workspaces") {
         d.delete(e);
@@ -8113,19 +8113,19 @@ async function K0(e) {
   const r = (e.selected_objects || []).filter((i) => i.type === e.object_type).map((i) => i.id).sort((i, d) => i - d), a = r.length > 1 ? `${e.object_type}-selection:${r.join(",")}` : `${e.object_type}:${e.object_id}`;
   return `${e.user_id}:${e.group_id}:${a}`;
 }
-function kw(e) {
+function bw(e) {
   return e.normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-").replace(/-+/g, "-").slice(0, 64).toLowerCase() || "workspace";
 }
 function xw(e) {
   if (!e) return "OMERO/Local--workspace";
   const r = (e.selected_objects || []).filter((i) => i.type === e.object_type).map((i) => i.id).sort((i, d) => i - d);
-  return `OMERO/${r.length > 1 ? `${e.object_type}-selection-${r.join("-")}` : `${e.object_type}-${e.object_id}`}--${kw(e.name)}`;
+  return `OMERO/${r.length > 1 ? `${e.object_type}-selection-${r.join("-")}` : `${e.object_type}-${e.object_id}`}--${bw(e.name)}`;
 }
 async function yt(e) {
   const r = typeof e == "string" ? new TextEncoder().encode(e) : new Uint8Array(e), a = await crypto.subtle.digest("SHA-256", r);
   return Array.from(new Uint8Array(a), (i) => i.toString(16).padStart(2, "0")).join("");
 }
-function ku(e, r = "New Assistant Chat") {
+function bu(e, r = "New Assistant Chat") {
   const a = (/* @__PURE__ */ new Date()).toISOString();
   return {
     id: crypto.randomUUID(),
@@ -8144,7 +8144,7 @@ async function Sw(e) {
 }
 async function Cc(e) {
   return rn(async () => {
-    const a = (await Xn()).transaction([...bu], "readwrite"), i = await Wr(
+    const a = (await Xn()).transaction([...ku], "readwrite"), i = await Wr(
       a.objectStore("workspaces").get(e.workspace.id)
     ), d = {
       ...e.workspace,
@@ -8164,8 +8164,8 @@ async function Cc(e) {
       evidence: e.evidence
     };
     for (const [f, x] of Object.entries(p)) {
-      const v = a.objectStore(f), k = await Wr(v.index("workspaceId").getAllKeys(d.id)), C = new Set(x.map((E) => E.id));
-      k.forEach((E) => {
+      const v = a.objectStore(f), b = await Wr(v.index("workspaceId").getAllKeys(d.id)), C = new Set(x.map((E) => E.id));
+      b.forEach((E) => {
         C.has(String(E)) || v.delete(E);
       }), x.forEach((E) => v.put(E));
     }
@@ -8176,7 +8176,7 @@ async function jh(e) {
   const r = await K0(e);
   let a = await Sw(r);
   if (!a) {
-    const $ = (/* @__PURE__ */ new Date()).toISOString(), z = ku(crypto.randomUUID());
+    const $ = (/* @__PURE__ */ new Date()).toISOString(), z = bu(crypto.randomUUID());
     return a = {
       id: z.workspaceId,
       contextKey: r,
@@ -8204,7 +8204,7 @@ async function jh(e) {
       evidence: []
     });
   }
-  const [i, d, p, f, x, v, k, C, E, R] = await Promise.all([
+  const [i, d, p, f, x, v, b, C, E, R] = await Promise.all([
     Dt("chats", a.id),
     Dt("files", a.id),
     Dt("executions", a.id),
@@ -8217,7 +8217,7 @@ async function jh(e) {
     Dt("evidence", a.id)
   ]);
   if (!i.length) {
-    const $ = ku(a.id);
+    const $ = bu(a.id);
     a = { ...a, activeChatId: $.id, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, a = (await Cc({
       workspace: a,
       chats: [$],
@@ -8226,13 +8226,13 @@ async function jh(e) {
       runs: f,
       methods: x,
       pipelines: v,
-      notebooks: k,
+      notebooks: b,
       artifacts: C,
       audits: E,
       evidence: R
     })).workspace, i.push($);
   }
-  return { workspace: a, chats: i, files: d, executions: p, runs: f, methods: x, pipelines: v, notebooks: k, artifacts: C, audits: E, evidence: R };
+  return { workspace: a, chats: i, files: d, executions: p, runs: f, methods: x, pipelines: v, notebooks: b, artifacts: C, audits: E, evidence: R };
 }
 async function Kp(e) {
   const r = await K0(e), i = (await Xn()).transaction("workspaces", "readonly");
@@ -8243,7 +8243,7 @@ async function Kp(e) {
 async function Qp(e) {
   const a = (await Xn()).transaction("workspaces", "readonly"), i = await Wr(a.objectStore("workspaces").get(e));
   if (!i) return;
-  const [d, p, f, x, v, k, C, E, R, $] = await Promise.all([
+  const [d, p, f, x, v, b, C, E, R, $] = await Promise.all([
     Dt("chats", i.id),
     Dt("files", i.id),
     Dt("executions", i.id),
@@ -8255,7 +8255,7 @@ async function Qp(e) {
     Dt("audits", i.id),
     Dt("evidence", i.id)
   ]);
-  return { workspace: i, chats: d, files: p, executions: f, runs: x, methods: v, pipelines: k, notebooks: C, artifacts: E, audits: R, evidence: $ };
+  return { workspace: i, chats: d, files: p, executions: f, runs: x, methods: v, pipelines: b, notebooks: C, artifacts: E, audits: R, evidence: $ };
 }
 async function Fr() {
   var r, a;
@@ -8312,13 +8312,13 @@ function Fs(e) {
   return new Uint8Array(vf(e));
 }
 function Nh(e, r) {
-  const a = {}, i = [], d = e.files.filter((k) => !k.deletedAt).map((k) => {
-    const C = { ...k };
-    if (delete C.data, k.source === "local" && r)
-      return i.push(k.name), C.state = "missing", C.error = k.role === "chat-attachment" ? "Chat attachment was omitted because the Workspace snapshot exceeded its size limit. Reselect or remove it before sending this Chat." : "Local input was omitted because the Workspace snapshot exceeded its size limit.", C;
-    if (k.source === "omero" || !k.data) return C;
-    const R = k.notebookId ? `Notebook/${hn(k.notebookId)}` : k.runId ? `Run/${hn(k.runId)}` : `Chat/${hn(k.chatId || "unassigned")}`, $ = k.role === "chat-attachment" ? `Chat/${hn(k.chatId || "unassigned")}/Attachments/${hn(k.id)}--${hn(k.name)}` : k.source === "local" ? `Input/${hn(k.id)}--${hn(k.name)}` : `Results/${R}/${hn(k.id)}--${hn(k.name)}`;
-    return C.archivePath = $, a[$] = new Uint8Array(k.data), C;
+  const a = {}, i = [], d = e.files.filter((b) => !b.deletedAt).map((b) => {
+    const C = { ...b };
+    if (delete C.data, b.source === "local" && r)
+      return i.push(b.name), C.state = "missing", C.error = b.role === "chat-attachment" ? "Chat attachment was omitted because the Workspace snapshot exceeded its size limit. Reselect or remove it before sending this Chat." : "Local input was omitted because the Workspace snapshot exceeded its size limit.", C;
+    if (b.source === "omero" || !b.data) return C;
+    const R = b.notebookId ? `Notebook/${hn(b.notebookId)}` : b.runId ? `Run/${hn(b.runId)}` : `Chat/${hn(b.chatId || "unassigned")}`, $ = b.role === "chat-attachment" ? `Chat/${hn(b.chatId || "unassigned")}/Attachments/${hn(b.id)}--${hn(b.name)}` : b.source === "local" ? `Input/${hn(b.id)}--${hn(b.name)}` : `Results/${R}/${hn(b.id)}--${hn(b.name)}`;
+    return C.archivePath = $, a[$] = new Uint8Array(b.data), C;
   }), p = {
     format: Z0,
     version: J0,
@@ -8331,26 +8331,26 @@ function Nh(e, r) {
     pipelines: e.pipelines,
     notebooks: e.notebooks,
     artifacts: e.artifacts,
-    audits: e.audits.map((k) => ({ ...k, payload: "[omitted from snapshot]" })),
+    audits: e.audits.map((b) => ({ ...b, payload: "[omitted from snapshot]" })),
     evidence: e.evidence,
     files: d,
     omittedLocalInputs: i
   };
   a["workspace.json"] = Fs(JSON.stringify(p, null, 2));
-  for (const k of e.chats) {
-    const C = `Chat/${hn(k.id)}`;
-    a[`${C}/chat.json`] = Fs(JSON.stringify(k, null, 2)), a[`${C}/chat.md`] = Fs(Q0(k));
+  for (const b of e.chats) {
+    const C = `Chat/${hn(b.id)}`;
+    a[`${C}/chat.json`] = Fs(JSON.stringify(b, null, 2)), a[`${C}/chat.md`] = Fs(Q0(b));
   }
-  for (const k of e.methods) {
-    const C = `Methods/${hn(k.id)}`;
-    a[`${C}/method.json`] = Fs(JSON.stringify(k, null, 2));
-    for (const E of k.versions)
+  for (const b of e.methods) {
+    const C = `Methods/${hn(b.id)}`;
+    a[`${C}/method.json`] = Fs(JSON.stringify(b, null, 2));
+    for (const E of b.versions)
       a[`${C}/v${String(E.version).padStart(3, "0")}.py`] = Fs(E.code);
   }
-  for (const k of e.pipelines)
-    a[`Pipelines/${hn(k.id)}.json`] = Fs(JSON.stringify(k, null, 2));
-  for (const k of e.notebooks)
-    a[`Notebooks/${hn(k.id)}--${hn(k.name)}`] = Fs(JSON.stringify(k.document, null, 2));
+  for (const b of e.pipelines)
+    a[`Pipelines/${hn(b.id)}.json`] = Fs(JSON.stringify(b, null, 2));
+  for (const b of e.notebooks)
+    a[`Notebooks/${hn(b.id)}--${hn(b.name)}`] = Fs(JSON.stringify(b.document, null, 2));
   const f = H0(a, { level: 0 }), v = `${hn(e.workspace.rootPath.split("/").at(-1) || "analysis-workspace")}-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.oa-workspace.zip`;
   return { data: f, filename: v, omittedLocalInputs: i, manifest: p };
 }
@@ -8364,7 +8364,7 @@ function Aw(e, r) {
     );
   return i;
 }
-function kf(e) {
+function bf(e) {
   if (!e || e.startsWith("/") || e.startsWith("\\") || e.split(/[\\/]/).includes(".."))
     throw new Error(`Unsafe Workspace archive path: ${e}`);
 }
@@ -8380,12 +8380,12 @@ function _w(e) {
   for (let v = 0; v < i; v += 1) {
     if (a.getUint32(f, !0) !== 33639248)
       throw new Error("Workspace archive contains an invalid directory entry");
-    const k = a.getUint32(f + 24, !0), C = a.getUint16(f + 28, !0), E = a.getUint16(f + 30, !0), R = a.getUint16(f + 32, !0);
-    if (k === 4294967295) throw new Error("ZIP64 Workspace archives are not supported");
-    if (x += k, x > Y0)
+    const b = a.getUint32(f + 24, !0), C = a.getUint16(f + 28, !0), E = a.getUint16(f + 30, !0), R = a.getUint16(f + 32, !0);
+    if (b === 4294967295) throw new Error("ZIP64 Workspace archives are not supported");
+    if (x += b, x > Y0)
       throw new Error("Workspace archive exceeds the 512 MiB limit");
     const $ = f + 46;
-    if (kf(new TextDecoder().decode(e.subarray($, $ + C))), f = $ + C + E + R, f > p + d)
+    if (bf(new TextDecoder().decode(e.subarray($, $ + C))), f = $ + C + E + R, f > p + d)
       throw new Error("Workspace archive directory is malformed");
   }
 }
@@ -8420,34 +8420,34 @@ async function Xp(e, r = null) {
   if (d.length > X0) throw new Error("Workspace archive contains too many entries");
   let p = 0;
   for (const W of d)
-    if (kf(W), p += i[W].byteLength, p > Y0) throw new Error("Workspace archive exceeds the 512 MiB limit");
+    if (bf(W), p += i[W].byteLength, p > Y0) throw new Error("Workspace archive exceeds the 512 MiB limit");
   const f = i["workspace.json"];
   if (!f) throw new Error("Workspace archive does not contain workspace.json");
   const x = jw(JSON.parse(W0(f)));
   if (xf(x)) throw new Error("Workspace archive contains a credential field");
-  const v = crypto.randomUUID(), k = (/* @__PURE__ */ new Date()).toISOString(), C = new Map(x.chats.map((W) => [W.id, crypto.randomUUID()])), E = new Map(x.executions.map((W) => [W.id, crypto.randomUUID()])), R = new Map(x.runs.map((W) => [W.id, crypto.randomUUID()])), $ = new Map(x.evidence.map((W) => [W.id, crypto.randomUUID()])), z = new Map(x.files.map((W) => [W.id, crypto.randomUUID()])), V = new Map(x.artifacts.map((W) => [W.id, crypto.randomUUID()])), Z = new Map(x.methods.map((W) => [W.id, crypto.randomUUID()])), te = new Map(x.pipelines.map((W) => [W.id, crypto.randomUUID()])), me = new Map(x.notebooks.map((W) => [W.id, crypto.randomUUID()])), je = x.chats.map((W) => ({
+  const v = crypto.randomUUID(), b = (/* @__PURE__ */ new Date()).toISOString(), C = new Map(x.chats.map((W) => [W.id, crypto.randomUUID()])), E = new Map(x.executions.map((W) => [W.id, crypto.randomUUID()])), R = new Map(x.runs.map((W) => [W.id, crypto.randomUUID()])), $ = new Map(x.evidence.map((W) => [W.id, crypto.randomUUID()])), z = new Map(x.files.map((W) => [W.id, crypto.randomUUID()])), V = new Map(x.artifacts.map((W) => [W.id, crypto.randomUUID()])), Z = new Map(x.methods.map((W) => [W.id, crypto.randomUUID()])), te = new Map(x.pipelines.map((W) => [W.id, crypto.randomUUID()])), me = new Map(x.notebooks.map((W) => [W.id, crypto.randomUUID()])), je = x.chats.map((W) => ({
     ...W,
     id: C.get(W.id),
     workspaceId: v,
     title: `${W.title} (imported)`,
-    messages: W.messages.map((ke) => {
+    messages: W.messages.map((be) => {
       var ce;
       return {
-        ...ke,
-        executionId: ke.executionId ? E.get(ke.executionId) : void 0,
-        artifactId: ke.artifactId ? V.get(ke.artifactId) : void 0,
-        citationIds: (ce = ke.citationIds) == null ? void 0 : ce.map((K) => E.get(K)).filter(Boolean)
+        ...be,
+        executionId: be.executionId ? E.get(be.executionId) : void 0,
+        artifactId: be.artifactId ? V.get(be.artifactId) : void 0,
+        citationIds: (ce = be.citationIds) == null ? void 0 : ce.map((K) => E.get(K)).filter(Boolean)
       };
     }),
-    updatedAt: k
+    updatedAt: b
   })), Ce = [];
   for (const W of x.files) {
-    let ke;
+    let be;
     if (W.archivePath) {
-      kf(W.archivePath);
+      bf(W.archivePath);
       const ce = i[W.archivePath];
       if (!ce) throw new Error(`Missing archived file: ${W.archivePath}`);
-      if (ke = ce.buffer.slice(ce.byteOffset, ce.byteOffset + ce.byteLength), W.sha256 && await yt(ke) !== W.sha256)
+      if (be = ce.buffer.slice(ce.byteOffset, ce.byteOffset + ce.byteLength), W.sha256 && await yt(be) !== W.sha256)
         throw new Error(`Hash mismatch for ${W.name}`);
     }
     Ce.push({
@@ -8458,9 +8458,9 @@ async function Xp(e, r = null) {
       runId: W.runId ? R.get(W.runId) : void 0,
       notebookId: W.notebookId ? me.get(W.notebookId) : void 0,
       executionId: W.executionId ? E.get(W.executionId) : void 0,
-      data: ke,
+      data: be,
       viewer: W.viewer ? { ...W.viewer, viewerUrl: "" } : void 0,
-      state: ke || W.source === "omero" ? W.state : "missing",
+      state: be || W.source === "omero" ? W.state : "missing",
       logicalPath: W.logicalPath.replace(
         x.workspace.rootPath,
         `${x.workspace.rootPath}--imported`
@@ -8473,7 +8473,7 @@ async function Xp(e, r = null) {
     workspaceId: v,
     chatId: W.chatId ? C.get(W.chatId) : void 0,
     runId: W.runId ? R.get(W.runId) : void 0,
-    outputFileIds: W.outputFileIds.map((ke) => z.get(ke)).filter(Boolean),
+    outputFileIds: W.outputFileIds.map((be) => z.get(be)).filter(Boolean),
     reusedFrom: W.reusedFrom ? E.get(W.reusedFrom) : void 0,
     evidenceId: W.evidenceId ? $.get(W.evidenceId) : void 0
   })), he = x.runs.map((W) => ({
@@ -8481,38 +8481,38 @@ async function Xp(e, r = null) {
     id: R.get(W.id),
     workspaceId: v,
     artifactId: W.kind === "method" ? Z.get(W.artifactId) || W.artifactId : te.get(W.artifactId) || W.artifactId,
-    executionIds: W.executionIds.map((ke) => E.get(ke)).filter(Boolean),
-    steps: W.steps.map((ke) => ({
-      ...ke,
+    executionIds: W.executionIds.map((be) => E.get(be)).filter(Boolean),
+    steps: W.steps.map((be) => ({
+      ...be,
       stepId: crypto.randomUUID(),
-      methodId: Z.get(ke.methodId) || ke.methodId,
-      executionIds: ke.executionIds.map((ce) => E.get(ce)).filter(Boolean)
+      methodId: Z.get(be.methodId) || be.methodId,
+      executionIds: be.executionIds.map((ce) => E.get(ce)).filter(Boolean)
     }))
   })), ve = x.methods.map((W) => ({
     ...W,
     id: Z.get(W.id),
     workspaceId: v,
-    versions: W.versions.map((ke) => ({
-      ...ke,
-      executionId: E.get(ke.executionId) || ""
+    versions: W.versions.map((be) => ({
+      ...be,
+      executionId: E.get(be.executionId) || ""
     })),
-    updatedAt: k
+    updatedAt: b
   })), Ae = x.pipelines.map((W) => ({
     ...W,
     id: te.get(W.id),
     workspaceId: v,
-    steps: W.steps.map((ke) => ({
-      ...ke,
+    steps: W.steps.map((be) => ({
+      ...be,
       id: crypto.randomUUID(),
-      methodId: Z.get(ke.methodId) || ke.methodId
+      methodId: Z.get(be.methodId) || be.methodId
     })),
-    updatedAt: k
-  })), be = x.notebooks.map((W) => ({
+    updatedAt: b
+  })), ke = x.notebooks.map((W) => ({
     ...W,
     id: me.get(W.id),
     workspaceId: v,
-    selectedDataFileIds: W.selectedDataFileIds.map((ke) => z.get(ke)).filter(Boolean),
-    updatedAt: k
+    selectedDataFileIds: W.selectedDataFileIds.map((be) => z.get(be)).filter(Boolean),
+    updatedAt: b
   })), We = C.get(x.workspace.activeChatId) || ((ue = je[0]) == null ? void 0 : ue.id);
   if (!We) throw new Error("Workspace archive contains no chats");
   const oe = {
@@ -8532,8 +8532,8 @@ async function Xp(e, r = null) {
       groupId: x.workspace.groupId,
       snapshotAnnotationId: x.workspace.sourceWorkspaceSnapshotAnnotationId
     },
-    createdAt: k,
-    updatedAt: k
+    createdAt: b,
+    updatedAt: b
   }, Fe = x.artifacts.map((W) => ({
     ...W,
     id: V.get(W.id),
@@ -8559,7 +8559,7 @@ async function Xp(e, r = null) {
     runs: he,
     methods: ve,
     pipelines: Ae,
-    notebooks: be,
+    notebooks: ke,
     artifacts: Fe,
     audits: [],
     evidence: ye
@@ -8717,7 +8717,12 @@ class _OANotebookContext:
             path = response["path"]
             import pandas as _oa_pd
             _oa_parse_started = _oa_query_time.perf_counter()
-            frame = _oa_pd.read_csv(str(path))
+            try:
+                frame = _oa_pd.read_csv(str(path))
+            finally:
+                # Each host query has a private transfer path. The returned
+                # DataFrame owns its data; keeping the CSV leaks large buffers.
+                _oa_pathlib.Path(path).unlink(missing_ok=True)
             _oa_parse_ms = (_oa_query_time.perf_counter() - _oa_parse_started) * 1000
             metrics = dict(response.get("metadata") or {})
             metrics.update({
@@ -9283,7 +9288,7 @@ class Pw {
       }
       if (a.type === "notebook_query") {
         (async () => {
-          var f, x, v, k, C, E, R;
+          var f, x, v, b, C, E, R;
           try {
             if (!this.notebookQueryHandler) throw new Error("Notebook query bridge is not configured");
             const $ = await this.notebookQueryHandler({
@@ -9291,7 +9296,7 @@ class Pw {
               sql: String(((x = a.value) == null ? void 0 : x.sql) || ""),
               parameters: (v = a.value) != null && v.parameters && typeof a.value.parameters == "object" ? a.value.parameters : {}
             }), z = $.data;
-            (C = (k = this.frame) == null ? void 0 : k.contentWindow) == null || C.postMessage({
+            (C = (b = this.frame) == null ? void 0 : b.contentWindow) == null || C.postMessage({
               source: "oa-parent",
               id: a.id,
               type: "notebook_query_result",
@@ -9336,8 +9341,8 @@ class Pw {
           percent: 92 + Math.round(x / Math.max(1, this.inputs.length) * 7),
           message: `Loading ${x + 1} of ${this.inputs.length} data files into Python…`
         });
-        const k = v.data.slice(0);
-        await this.request("file", { name: v.name, data: k }, 3e4, [k]);
+        const b = v.data.slice(0);
+        await this.request("file", { name: v.name, data: b }, 3e4, [b]);
       }
       this.report({ percent: 100, message: "Browser Python is ready" });
     })(), this.readyPromise;
@@ -9470,11 +9475,11 @@ except Exception:
   request(r, a, i, d = []) {
     const p = `runtime-${++this.counter}`;
     return new Promise((f, x) => {
-      var k, C;
+      var b, C;
       const v = window.setTimeout(() => {
         this.pending.delete(p), x(new Error(`${r} exceeded ${i / 1e3} seconds`)), r === "run" && this.start(this.inputs);
       }, i);
-      this.pending.set(p, { resolve: f, reject: x, timer: v }), (C = (k = this.frame) == null ? void 0 : k.contentWindow) == null || C.postMessage(
+      this.pending.set(p, { resolve: f, reject: x, timer: v }), (C = (b = this.frame) == null ? void 0 : b.contentWindow) == null || C.postMessage(
         { source: "oa-parent", id: p, type: r, value: a },
         "*",
         d
@@ -9547,22 +9552,22 @@ function el(e, r, a, i) {
   return new (a || (a = Promise))(function(p, f) {
     function x(C) {
       try {
-        k(i.next(C));
+        b(i.next(C));
       } catch (E) {
         f(E);
       }
     }
     function v(C) {
       try {
-        k(i.throw(C));
+        b(i.throw(C));
       } catch (E) {
         f(E);
       }
     }
-    function k(C) {
+    function b(C) {
       C.done ? p(C.value) : d(C.value).then(x, v);
     }
-    k((i = i.apply(e, r || [])).next());
+    b((i = i.apply(e, r || [])).next());
   });
 }
 function tl(e, r) {
@@ -9573,56 +9578,56 @@ function tl(e, r) {
   return f = { next: x(0), throw: x(1), return: x(2) }, typeof Symbol == "function" && (f[Symbol.iterator] = function() {
     return this;
   }), f;
-  function x(k) {
+  function x(b) {
     return function(C) {
-      return v([k, C]);
+      return v([b, C]);
     };
   }
-  function v(k) {
+  function v(b) {
     if (i) throw new TypeError("Generator is already executing.");
-    for (; f && (f = 0, k[0] && (a = 0)), a; ) try {
-      if (i = 1, d && (p = k[0] & 2 ? d.return : k[0] ? d.throw || ((p = d.return) && p.call(d), 0) : d.next) && !(p = p.call(d, k[1])).done) return p;
-      switch (d = 0, p && (k = [k[0] & 2, p.value]), k[0]) {
+    for (; f && (f = 0, b[0] && (a = 0)), a; ) try {
+      if (i = 1, d && (p = b[0] & 2 ? d.return : b[0] ? d.throw || ((p = d.return) && p.call(d), 0) : d.next) && !(p = p.call(d, b[1])).done) return p;
+      switch (d = 0, p && (b = [b[0] & 2, p.value]), b[0]) {
         case 0:
         case 1:
-          p = k;
+          p = b;
           break;
         case 4:
-          return a.label++, { value: k[1], done: !1 };
+          return a.label++, { value: b[1], done: !1 };
         case 5:
-          a.label++, d = k[1], k = [0];
+          a.label++, d = b[1], b = [0];
           continue;
         case 7:
-          k = a.ops.pop(), a.trys.pop();
+          b = a.ops.pop(), a.trys.pop();
           continue;
         default:
-          if (p = a.trys, !(p = p.length > 0 && p[p.length - 1]) && (k[0] === 6 || k[0] === 2)) {
+          if (p = a.trys, !(p = p.length > 0 && p[p.length - 1]) && (b[0] === 6 || b[0] === 2)) {
             a = 0;
             continue;
           }
-          if (k[0] === 3 && (!p || k[1] > p[0] && k[1] < p[3])) {
-            a.label = k[1];
+          if (b[0] === 3 && (!p || b[1] > p[0] && b[1] < p[3])) {
+            a.label = b[1];
             break;
           }
-          if (k[0] === 6 && a.label < p[1]) {
-            a.label = p[1], p = k;
+          if (b[0] === 6 && a.label < p[1]) {
+            a.label = p[1], p = b;
             break;
           }
           if (p && a.label < p[2]) {
-            a.label = p[2], a.ops.push(k);
+            a.label = p[2], a.ops.push(b);
             break;
           }
           p[2] && a.ops.pop(), a.trys.pop();
           continue;
       }
-      k = r.call(e, a);
+      b = r.call(e, a);
     } catch (C) {
-      k = [6, C], d = 0;
+      b = [6, C], d = 0;
     } finally {
       i = p = 0;
     }
-    if (k[0] & 5) throw k[1];
-    return { value: k[0] ? k[1] : void 0, done: !0 };
+    if (b[0] & 5) throw b[1];
+    return { value: b[0] ? b[1] : void 0, done: !0 };
   }
 }
 function Mw(e) {
@@ -9631,11 +9636,11 @@ function Mw(e) {
 var $w = [/([a-z0-9])([A-Z])/g, /([A-Z])([A-Z][a-z])/g], Ow = /[^A-Z0-9]+/gi;
 function ty(e, r) {
   r === void 0 && (r = {});
-  for (var a = r.splitRegexp, i = a === void 0 ? $w : a, d = r.stripRegexp, p = d === void 0 ? Ow : d, f = r.transform, x = f === void 0 ? Mw : f, v = r.delimiter, k = v === void 0 ? " " : v, C = Rh(Rh(e, i, "$1\0$2"), p, "\0"), E = 0, R = C.length; C.charAt(E) === "\0"; )
+  for (var a = r.splitRegexp, i = a === void 0 ? $w : a, d = r.stripRegexp, p = d === void 0 ? Ow : d, f = r.transform, x = f === void 0 ? Mw : f, v = r.delimiter, b = v === void 0 ? " " : v, C = Rh(Rh(e, i, "$1\0$2"), p, "\0"), E = 0, R = C.length; C.charAt(E) === "\0"; )
     E++;
   for (; C.charAt(R - 1) === "\0"; )
     R--;
-  return C.slice(E, R).split("\0").map(x).join(k);
+  return C.slice(E, R).split("\0").map(x).join(b);
 }
 function Rh(e, r, a) {
   return r instanceof RegExp ? e.replace(r, a) : r.reduce(function(i, d) {
@@ -9699,14 +9704,14 @@ function Ww(e) {
         case 1:
           return a !== "all" ? [3, 3] : [4, import(
             /* webpackChunkName: "blueprint-icons-all-paths-loader" */
-            "./allPathsLoader-Ddy4W5k9.js"
+            "./allPathsLoader-CVALZwY2.js"
           )];
         case 2:
           return [2, i.sent().allPathsLoader];
         case 3:
           return [4, import(
             /* webpackChunkName: "blueprint-icons-split-paths-by-size-loader" */
-            "./splitPathsBySizeLoader-D73-ydnS.js"
+            "./splitPathsBySizeLoader-DBQBmpPz.js"
           )];
         case 4:
           return [2, i.sent().splitPathsBySizeLoader];
@@ -9714,7 +9719,7 @@ function Ww(e) {
     });
   });
 }
-var bc = (
+var kc = (
   /** @class */
   (function() {
     function e() {
@@ -9774,8 +9779,8 @@ var bc = (
     }, e.loadImpl = function(r, a, i) {
       return i === void 0 && (i = {}), el(this, void 0, void 0, function() {
         var d, p, f, x, v;
-        return tl(this, function(k) {
-          switch (k.label) {
+        return tl(this, function(b) {
+          switch (b.label) {
             case 0:
               return this.isValidIconName(r) ? (d = a < fe.LARGE ? Bi.loadedIconPaths16 : Bi.loadedIconPaths20, d.has(r) ? [
                 2
@@ -9785,13 +9790,13 @@ var bc = (
                 /*return*/
               ]);
             case 1:
-              p = k.sent(), k.label = 2;
+              p = b.sent(), b.label = 2;
             case 2:
-              return k.trys.push([2, 4, , 5]), f = a < fe.LARGE ? fe.STANDARD : fe.LARGE, [4, p(r, f)];
+              return b.trys.push([2, 4, , 5]), f = a < fe.LARGE ? fe.STANDARD : fe.LARGE, [4, p(r, f)];
             case 3:
-              return x = k.sent(), d.set(r, x), [3, 5];
+              return x = b.sent(), d.set(r, x), [3, 5];
             case 4:
-              return v = k.sent(), console.error("[Blueprint] Unable to load ".concat(a, "px icon '").concat(r, "'"), v), [3, 5];
+              return v = b.sent(), console.error("[Blueprint] Unable to load ".concat(a, "px icon '").concat(r, "'"), v), [3, 5];
             case 5:
               return [
                 2
@@ -9804,7 +9809,7 @@ var bc = (
       return qw.has(r);
     }, e;
   })()
-), Bi = new bc(), Bp = { exports: {} };
+), Bi = new kc(), Bp = { exports: {} };
 /*!
 	Copyright (c) 2018 Jed Watson.
 	Licensed under the MIT License (MIT), see
@@ -9851,15 +9856,15 @@ function Qw(e) {
   return Mh.set(e, a + 1), "".concat(e, "-").concat(a);
 }
 var Et = T.forwardRef(function(e, r) {
-  var a = e.children, i = e.className, d = e.color, p = e.htmlTitle, f = e.iconName, x = e.size, v = x === void 0 ? fe.STANDARD : x, k = e.svgProps, C = e.tagName, E = C === void 0 ? "span" : C, R = e.title, $ = al(e, ["children", "className", "color", "htmlTitle", "iconName", "size", "svgProps", "tagName", "title"]), z = v >= fe.LARGE, V = z ? fe.LARGE : fe.STANDARD, Z = "0 0 ".concat(V, " ").concat(V), te = Qw("iconTitle"), me = Ke({ fill: d, height: v, role: "img", viewBox: Z, width: v }, k);
+  var a = e.children, i = e.className, d = e.color, p = e.htmlTitle, f = e.iconName, x = e.size, v = x === void 0 ? fe.STANDARD : x, b = e.svgProps, C = e.tagName, E = C === void 0 ? "span" : C, R = e.title, $ = al(e, ["children", "className", "color", "htmlTitle", "iconName", "size", "svgProps", "tagName", "title"]), z = v >= fe.LARGE, V = z ? fe.LARGE : fe.STANDARD, Z = "0 0 ".concat(V, " ").concat(V), te = Qw("iconTitle"), me = Ke({ fill: d, height: v, role: "img", viewBox: Z, width: v }, b);
   return E === null ? T.createElement(
     "svg",
-    Ke({ "aria-labelledby": R ? te : void 0, "data-icon": f, ref: r }, me, $, { className: Ca(i, k == null ? void 0 : k.className) }),
+    Ke({ "aria-labelledby": R ? te : void 0, "data-icon": f, ref: r }, me, $, { className: Ca(i, b == null ? void 0 : b.className) }),
     R && T.createElement("title", { id: te }, R),
     a
   ) : T.createElement(E, Ke(Ke({ "aria-hidden": R ? void 0 : !0 }, $), { className: Ca(Lh, "".concat(Lh, "-").concat(f), i), ref: r, title: p }), T.createElement(
     "svg",
-    Ke({ "data-icon": f }, me, { className: k == null ? void 0 : k.className }),
+    Ke({ "data-icon": f }, me, { className: b == null ? void 0 : b.className }),
     R && T.createElement("title", null, R),
     a
   ));
@@ -10197,7 +10202,7 @@ var wv = "[Blueprint]", vv = wv + " <Spinner> Classes.SMALL/LARGE are ignored if
 function Ih(e) {
   return typeof NODE_ENV < "u" && NODE_ENV === e;
 }
-function bv(e, r, a) {
+function kv(e, r, a) {
   return e == null ? e : Math.min(Math.max(e, r), a);
 }
 function _f(e, r) {
@@ -10209,14 +10214,14 @@ function _f(e, r) {
 function Dh(e) {
   return e.key === "Enter" || e.key === " ";
 }
-function kv(e) {
+function bv(e) {
   return e != null && typeof e != "function";
 }
 function xv(e) {
   return typeof e == "function";
 }
 function Sv(e, r) {
-  kv(e) ? e.current = r : xv(e) && e(r);
+  bv(e) ? e.current = r : xv(e) && e(r);
 }
 function cy() {
   for (var e = [], r = 0; r < arguments.length; r++)
@@ -10319,13 +10324,13 @@ function Su(e, r, a) {
 var Av = { defaultTabIndex: void 0, disabledTabIndex: -1 };
 function _v(e, r, a, i) {
   i === void 0 && (i = Av);
-  var d = i.defaultTabIndex, p = i.disabledTabIndex, f = r.active, x = r.onClick, v = r.onFocus, k = r.onKeyDown, C = r.onKeyUp, E = r.onBlur, R = r.tabIndex, $ = R === void 0 ? d : R, z = T.useState(), V = z[0], Z = z[1], te = T.useState(!1), me = te[0], je = te[1], Ce = T.useRef(null), ie = T.useCallback(function(be) {
-    me && je(!1), E == null || E(be);
-  }, [me, E]), he = T.useCallback(function(be) {
-    Dh(be) && (be.preventDefault(), be.key !== V && je(!0)), Z(be.key), k == null || k(be);
-  }, [V, k]), ve = T.useCallback(function(be) {
+  var d = i.defaultTabIndex, p = i.disabledTabIndex, f = r.active, x = r.onClick, v = r.onFocus, b = r.onKeyDown, C = r.onKeyUp, E = r.onBlur, R = r.tabIndex, $ = R === void 0 ? d : R, z = T.useState(), V = z[0], Z = z[1], te = T.useState(!1), me = te[0], je = te[1], Ce = T.useRef(null), ie = T.useCallback(function(ke) {
+    me && je(!1), E == null || E(ke);
+  }, [me, E]), he = T.useCallback(function(ke) {
+    Dh(ke) && (ke.preventDefault(), ke.key !== V && je(!0)), Z(ke.key), b == null || b(ke);
+  }, [V, b]), ve = T.useCallback(function(ke) {
     var We;
-    Dh(be) && (je(!1), (We = Ce.current) === null || We === void 0 || We.click()), Z(void 0), C == null || C(be);
+    Dh(ke) && (je(!1), (We = Ce.current) === null || We === void 0 || We.click()), Z(void 0), C == null || C(ke);
   }, [C, Ce]), Ae = e && (f || me);
   return [
     Ae,
@@ -10341,15 +10346,15 @@ function _v(e, r, a, i) {
   ];
 }
 var Cu = T.forwardRef(function(e, r) {
-  var a, i, d = e.autoLoad, p = e.className, f = e.color, x = e.icon, v = e.intent, k = e.tagName, C = e.svgProps, E = e.title, R = e.htmlTitle, $ = al(e, ["autoLoad", "className", "color", "icon", "intent", "tagName", "svgProps", "title", "htmlTitle"]), z = (i = (a = e.iconSize) !== null && a !== void 0 ? a : e.size) !== null && i !== void 0 ? i : fe.STANDARD, V = T.useState(function() {
-    return typeof x == "string" ? bc.getPaths(x, z) : void 0;
+  var a, i, d = e.autoLoad, p = e.className, f = e.color, x = e.icon, v = e.intent, b = e.tagName, C = e.svgProps, E = e.title, R = e.htmlTitle, $ = al(e, ["autoLoad", "className", "color", "icon", "intent", "tagName", "svgProps", "title", "htmlTitle"]), z = (i = (a = e.iconSize) !== null && a !== void 0 ? a : e.size) !== null && i !== void 0 ? i : fe.STANDARD, V = T.useState(function() {
+    return typeof x == "string" ? kc.getPaths(x, z) : void 0;
   }), Z = V[0], te = V[1];
   if (T.useEffect(function() {
     var Ce = !1;
     if (typeof x == "string") {
-      var ie = bc.getPaths(x, z);
-      ie !== void 0 ? te(ie) : d ? bc.load(x, z).then(function() {
-        Ce || te(bc.getPaths(x, z));
+      var ie = kc.getPaths(x, z);
+      ie !== void 0 ? te(ie) : d ? kc.load(x, z).then(function() {
+        Ce || te(kc.getPaths(x, z));
       }).catch(function(he) {
         console.error("[Blueprint] Icon '".concat(x, "' (").concat(z, "px) could not be loaded."), he);
       }) : console.error("[Blueprint] Icon '".concat(x, "' (").concat(z, "px) is not loaded yet and autoLoad={false}, did you call Icons.load('").concat(x, "', ").concat(z, ")?"));
@@ -10363,7 +10368,7 @@ var Cu = T.forwardRef(function(e, r) {
     return x;
   if (Z == null) {
     var me = z === fe.STANDARD ? pv : z === fe.LARGE ? fv : void 0;
-    return T.createElement(k || "span", Ke(Ke({ "aria-hidden": E ? void 0 : !0 }, Su($)), { className: Ca(lm, me, yv(x), ns(v), p), "data-icon": x, ref: r, title: R }));
+    return T.createElement(b || "span", Ke(Ke({ "aria-hidden": E ? void 0 : !0 }, Su($)), { className: Ca(lm, me, yv(x), ns(v), p), "data-icon": x, ref: r, title: R }));
   } else {
     var je = Z.map(function(Ce, ie) {
       return T.createElement("path", { d: Ce, key: ie, fillRule: "evenodd" });
@@ -10378,7 +10383,7 @@ var Cu = T.forwardRef(function(e, r) {
       ref: r,
       size: z,
       svgProps: C,
-      tagName: k,
+      tagName: b,
       title: E
     }, Su($)));
   }
@@ -10402,8 +10407,8 @@ var Yo = 45, Fh = "M 50,50 m 0,-".concat(Yo, " a ").concat(Yo, ",").concat(Yo, "
     return r.prototype.componentDidUpdate = function(a) {
       a.value !== this.props.value && this.forceUpdate();
     }, r.prototype.render = function() {
-      var a, i = this.props, d = i.className, p = i.intent, f = i.value, x = i.tagName, v = x === void 0 ? "div" : x, k = al(i, ["className", "intent", "value", "tagName"]), C = this.getSize(), E = Ca(Du, ns(p), (a = {}, a[dv] = f != null, a), d), R = Math.min(Nv, Ev * Qs.LARGE / C), $ = hc - hc * (f == null ? 0.25 : bv(f, 0, 1));
-      return T.createElement(v, Ke({ "aria-label": "loading", "aria-valuemax": 100, "aria-valuemin": 0, "aria-valuenow": f === void 0 ? void 0 : f * 100, className: E, role: "progressbar" }, k), T.createElement(v, { className: lv }, T.createElement(
+      var a, i = this.props, d = i.className, p = i.intent, f = i.value, x = i.tagName, v = x === void 0 ? "div" : x, b = al(i, ["className", "intent", "value", "tagName"]), C = this.getSize(), E = Ca(Du, ns(p), (a = {}, a[dv] = f != null, a), d), R = Math.min(Nv, Ev * Qs.LARGE / C), $ = hc - hc * (f == null ? 0.25 : kv(f, 0, 1));
+      return T.createElement(v, Ke({ "aria-label": "loading", "aria-valuemax": 100, "aria-valuemin": 0, "aria-valuenow": f === void 0 ? void 0 : f * 100, className: E, role: "progressbar" }, b), T.createElement(v, { className: lv }, T.createElement(
         "svg",
         { width: C, height: C, strokeWidth: R.toFixed(2), viewBox: this.getViewBox(R) },
         T.createElement("path", { className: uv, d: Fh }),
@@ -10421,13 +10426,13 @@ var Yo = 45, Fh = "M 50,50 m 0,-".concat(Yo, " a ").concat(Yo, ",").concat(Yo, "
     }, r.displayName = "".concat(Zs, ".Spinner"), r;
   })(Cv)
 ), Pv = gv() ? T.useLayoutEffect : T.useEffect, cm = T.forwardRef(function(e, r) {
-  var a, i = e.children, d = e.tagName, p = d === void 0 ? "div" : d, f = e.title, x = e.className, v = e.ellipsize, k = al(e, ["children", "tagName", "title", "className", "ellipsize"]), C = T.useRef(), E = T.useMemo(function() {
+  var a, i = e.children, d = e.tagName, p = d === void 0 ? "div" : d, f = e.title, x = e.className, v = e.ellipsize, b = al(e, ["children", "tagName", "title", "className", "ellipsize"]), C = T.useRef(), E = T.useMemo(function() {
     return cy(C, r);
   }, [r]), R = T.useState(""), $ = R[0], z = R[1], V = T.useState(), Z = V[0], te = V[1];
   return Pv(function() {
     var me;
     ((me = C.current) === null || me === void 0 ? void 0 : me.textContent) != null && (te(v && C.current.scrollWidth > C.current.clientWidth), z(C.current.textContent));
-  }, [C, i, v]), T.createElement(p, Ke(Ke({}, k), { className: Ca((a = {}, a[rv] = v, a), x), ref: E, title: f ?? (Z ? $ : void 0) }), i);
+  }, [C, i, v]), T.createElement(p, Ke(Ke({}, b), { className: Ca((a = {}, a[rv] = v, a), x), ref: E, title: f ?? (Z ? $ : void 0) }), i);
 });
 cm.defaultProps = {
   ellipsize: !1
@@ -10447,7 +10452,7 @@ var Tv = T.forwardRef(function(e, r) {
 });
 Tv.displayName = "".concat(Zs, ".AnchorButton");
 function uy(e, r, a) {
-  var i, d = e.alignText, p = e.fill, f = e.large, x = e.loading, v = x === void 0 ? !1 : x, k = e.minimal, C = e.outlined, E = e.small, R = e.disabled || v, $ = _v(!R, e, r, a), z = $[0], V = $[1], Z = Ca(im, (i = {}, i[Zw] = z, i[oy] = R, i[sy] = p, i[xu] = f, i[ev] = v, i[iy] = k, i[tv] = C, i[Af] = E, i), mv(d), ns(e.intent), e.className);
+  var i, d = e.alignText, p = e.fill, f = e.large, x = e.loading, v = x === void 0 ? !1 : x, b = e.minimal, C = e.outlined, E = e.small, R = e.disabled || v, $ = _v(!R, e, r, a), z = $[0], V = $[1], Z = Ca(im, (i = {}, i[Zw] = z, i[oy] = R, i[sy] = p, i[xu] = f, i[ev] = v, i[iy] = b, i[tv] = C, i[Af] = E, i), mv(d), ns(e.intent), e.className);
   return Ke(Ke({}, V), { className: Z, disabled: R });
 }
 function py(e) {
@@ -10467,16 +10472,16 @@ function py(e) {
   );
 }
 var es = T.forwardRef(function(e, r) {
-  var a, i = e.className, d = e.elevation, p = e.interactive, f = e.selected, x = e.compact, v = al(e, ["className", "elevation", "interactive", "selected", "compact"]), k = Ca(i, sv, hv(d), (a = {}, a[Bw] = p, a[Yw] = x, a[nv] = f, a));
-  return T.createElement("div", Ke({ className: k, ref: r }, v));
+  var a, i = e.className, d = e.elevation, p = e.interactive, f = e.selected, x = e.compact, v = al(e, ["className", "elevation", "interactive", "selected", "compact"]), b = Ca(i, sv, hv(d), (a = {}, a[Bw] = p, a[Yw] = x, a[nv] = f, a));
+  return T.createElement("div", Ke({ className: b, ref: r }, v));
 });
 es.defaultProps = {
   elevation: Ks.ZERO,
   interactive: !1
 };
 es.displayName = "".concat(Zs, ".Card");
-var kc = T.forwardRef(function(e, r) {
-  var a, i = e.className, d = e.children, p = e.disabled, f = e.fill, x = e.iconName, v = x === void 0 ? "double-caret-vertical" : x, k = e.iconProps, C = e.large, E = e.minimal, R = e.options, $ = R === void 0 ? [] : R, z = e.value, V = al(e, ["className", "children", "disabled", "fill", "iconName", "iconProps", "large", "minimal", "options", "value"]), Z = Ca(iv, (a = {}, a[oy] = p, a[sy] = f, a[xu] = C, a[iy] = E, a), i), te = "Open dropdown", me = v === "double-caret-vertical" ? T.createElement(Wf, Ke({ title: te }, k)) : T.createElement(qf, Ke({ title: te }, k)), je = $.map(function(Ce) {
+var bc = T.forwardRef(function(e, r) {
+  var a, i = e.className, d = e.children, p = e.disabled, f = e.fill, x = e.iconName, v = x === void 0 ? "double-caret-vertical" : x, b = e.iconProps, C = e.large, E = e.minimal, R = e.options, $ = R === void 0 ? [] : R, z = e.value, V = al(e, ["className", "children", "disabled", "fill", "iconName", "iconProps", "large", "minimal", "options", "value"]), Z = Ca(iv, (a = {}, a[oy] = p, a[sy] = f, a[xu] = C, a[iy] = E, a), i), te = "Open dropdown", me = v === "double-caret-vertical" ? T.createElement(Wf, Ke({ title: te }, b)) : T.createElement(qf, Ke({ title: te }, b)), je = $.map(function(Ce) {
     var ie = typeof Ce == "object" ? Ce : { value: Ce };
     return T.createElement("option", Ke({}, ie, { key: ie.value, children: ie.label || ie.value }));
   });
@@ -10492,7 +10497,7 @@ var kc = T.forwardRef(function(e, r) {
     me
   );
 });
-kc.displayName = "".concat(Zs, ".HTMLSelect");
+bc.displayName = "".concat(Zs, ".HTMLSelect");
 const zu = T.createContext("light");
 function fy({
   theme: e,
@@ -10542,7 +10547,7 @@ function hy({
   showRerunAction: v = !0
 }) {
   var Ce;
-  const [k, C] = T.useState(!1), E = my(e, [...a, ...i]), R = new Set(E.map((ie) => ie.id)), $ = new Set(E.filter((ie) => !!ie.sha256).map((ie) => `${ie.type}:${ie.sha256}`));
+  const [b, C] = T.useState(!1), E = my(e, [...a, ...i]), R = new Set(E.map((ie) => ie.id)), $ = new Set(E.filter((ie) => !!ie.sha256).map((ie) => `${ie.type}:${ie.sha256}`));
   for (const ie of i) {
     const he = `${ie.type}:${ie.sha256}`;
     !R.has(ie.id) && (!ie.sha256 || !$.has(he)) && (E.push(ie), R.add(ie.id), ie.sha256 && $.add(he));
@@ -10554,11 +10559,11 @@ function hy({
       Oe,
       {
         className: "detail-toggle",
-        "aria-expanded": k,
+        "aria-expanded": b,
         onClick: () => C((ie) => !ie),
         children: [
-          /* @__PURE__ */ l.jsx(Ie, { name: k ? "clear" : "run" }),
-          k ? "Collapse" : "Show details"
+          /* @__PURE__ */ l.jsx(Ie, { name: b ? "clear" : "run" }),
+          b ? "Collapse" : "Show details"
         ]
       }
     ),
@@ -10590,13 +10595,13 @@ function hy({
       className: `message execution ${e.status}`,
       "data-purpose": V,
       children: [
-        /* @__PURE__ */ l.jsxs("section", { className: "execution-details", "data-expanded": k ? "true" : "false", children: [
+        /* @__PURE__ */ l.jsxs("section", { className: "execution-details", "data-expanded": b ? "true" : "false", children: [
           /* @__PURE__ */ l.jsxs("div", { className: "execution-heading", children: [
             /* @__PURE__ */ l.jsx("span", { children: e.status === "failed" ? "Analysis failed (local)" : e.status === "reused" ? "Analysis reused (local)" : "Analysis (local)" }),
             je
           ] }),
           (te || me.length > 0) && /* @__PURE__ */ l.jsx("p", { className: "activity-timing", children: [te, me.length ? `${me.length} supporting local step${me.length === 1 ? "" : "s"} hidden` : ""].filter(Boolean).join(" · ") }),
-          /* @__PURE__ */ l.jsxs("div", { className: "execution-content", hidden: !k, children: [
+          /* @__PURE__ */ l.jsxs("div", { className: "execution-content", hidden: !b, children: [
             /* @__PURE__ */ l.jsx("h4", { children: "Reusable Python" }),
             /* @__PURE__ */ l.jsx("pre", { children: /* @__PURE__ */ l.jsx("code", { children: e.code }) }),
             e.stdout && /* @__PURE__ */ l.jsx("pre", { children: e.stdout }),
@@ -10655,7 +10660,7 @@ function Mv({ value: e }) {
       ] }),
       /* @__PURE__ */ l.jsxs("table", { children: [
         /* @__PURE__ */ l.jsx("thead", { children: /* @__PURE__ */ l.jsx("tr", { children: d.map((f) => /* @__PURE__ */ l.jsx("th", { children: f }, f)) }) }),
-        /* @__PURE__ */ l.jsx("tbody", { children: p.map((f, x) => /* @__PURE__ */ l.jsx("tr", { children: f.map((v, k) => /* @__PURE__ */ l.jsx("td", { children: String(v ?? "") }, k)) }, x)) })
+        /* @__PURE__ */ l.jsx("tbody", { children: p.map((f, x) => /* @__PURE__ */ l.jsx("tr", { children: f.map((v, b) => /* @__PURE__ */ l.jsx("td", { children: String(v ?? "") }, b)) }, x)) })
       ] })
     ] });
   }
@@ -10726,7 +10731,7 @@ function Dv({ profile: e }) {
       /* @__PURE__ */ l.jsx("thead", { children: /* @__PURE__ */ l.jsx("tr", { children: a.map((f, x) => /* @__PURE__ */ l.jsx("th", { children: f }, x)) }) }),
       /* @__PURE__ */ l.jsx("tbody", { children: i.map((f, x) => {
         const v = Array.isArray(f) ? f : [];
-        return /* @__PURE__ */ l.jsx("tr", { children: a.map((k, C) => /* @__PURE__ */ l.jsx("td", { children: String(v[C] ?? "") }, C)) }, x);
+        return /* @__PURE__ */ l.jsx("tr", { children: a.map((b, C) => /* @__PURE__ */ l.jsx("td", { children: String(v[C] ?? "") }, C)) }, x);
       }) })
     ] }),
     typeof e.summary.rows == "number" && e.summary.rows > i.length && /* @__PURE__ */ l.jsxs("p", { className: "artifact-help", children: [
@@ -10757,7 +10762,7 @@ function zv({
       return /* @__PURE__ */ l.jsxs("div", { className: "table-wrap artifact-table", children: [
         /* @__PURE__ */ l.jsxs("table", { children: [
           /* @__PURE__ */ l.jsx("thead", { children: /* @__PURE__ */ l.jsx("tr", { children: d.map((f, x) => /* @__PURE__ */ l.jsx("th", { children: f }, x)) }) }),
-          /* @__PURE__ */ l.jsx("tbody", { children: p.map((f, x) => /* @__PURE__ */ l.jsx("tr", { children: d.map((v, k) => /* @__PURE__ */ l.jsx("td", { children: f[k] || "" }, k)) }, x)) })
+          /* @__PURE__ */ l.jsx("tbody", { children: p.map((f, x) => /* @__PURE__ */ l.jsx("tr", { children: d.map((v, b) => /* @__PURE__ */ l.jsx("td", { children: f[b] || "" }, b)) }, x)) })
         ] }),
         i.length >= 101 && /* @__PURE__ */ l.jsx("p", { className: "artifact-help", children: "Preview limited to 100 rows." })
       ] });
@@ -11027,7 +11032,7 @@ function Hv({
   canChat: f,
   composerPlaceholder: x,
   prompt: v,
-  busy: k,
+  busy: b,
   onPromptChange: C,
   onSend: E,
   onStop: R,
@@ -11051,7 +11056,7 @@ function Hv({
     ie ? /* @__PURE__ */ l.jsx("div", { className: "blocker", children: `Enter an AI endpoint and model${Ce ? ", and API key" : ""} in Settings.` }) : null,
     /* @__PURE__ */ l.jsxs("div", { className: "chat-attachments", "aria-label": "Assistant attachments", children: [
       /* @__PURE__ */ l.jsxs("div", { className: "attachment-actions", children: [
-        /* @__PURE__ */ l.jsxs("label", { className: `button-like ${k ? "disabled" : ""}`, children: [
+        /* @__PURE__ */ l.jsxs("label", { className: `button-like ${b ? "disabled" : ""}`, children: [
           /* @__PURE__ */ l.jsx(Ie, { name: "attach" }),
           "Attach files",
           /* @__PURE__ */ l.jsx(
@@ -11060,7 +11065,7 @@ function Hv({
               hidden: !0,
               type: "file",
               multiple: !0,
-              disabled: k,
+              disabled: b,
               accept: ".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp",
               onChange: (he) => {
                 V == null || V(Array.from(he.target.files || [])), he.target.value = "";
@@ -11068,7 +11073,7 @@ function Hv({
             }
           )
         ] }),
-        /* @__PURE__ */ l.jsxs(Oe, { disabled: k, onClick: Z, children: [
+        /* @__PURE__ */ l.jsxs(Oe, { disabled: b, onClick: Z, children: [
           /* @__PURE__ */ l.jsx(Ie, { name: "attach" }),
           "File URL"
         ] }),
@@ -11087,7 +11092,7 @@ function Hv({
               " · ",
               he.state
             ] }),
-            (Ae = (ve = he.attachment) == null ? void 0 : ve.warnings) == null ? void 0 : Ae.map((be) => /* @__PURE__ */ l.jsx("em", { children: be }, be)),
+            (Ae = (ve = he.attachment) == null ? void 0 : ve.warnings) == null ? void 0 : Ae.map((ke) => /* @__PURE__ */ l.jsx("em", { children: ke }, ke)),
             he.error && /* @__PURE__ */ l.jsx("em", { children: he.error })
           ] }),
           /* @__PURE__ */ l.jsx(
@@ -11107,10 +11112,10 @@ function Hv({
                 hidden: !0,
                 type: "file",
                 accept: ".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp",
-                onChange: (be) => {
+                onChange: (ke) => {
                   var oe;
-                  const We = (oe = be.target.files) == null ? void 0 : oe[0];
-                  We && (je == null || je(he, We)), be.target.value = "";
+                  const We = (oe = ke.target.files) == null ? void 0 : oe[0];
+                  We && (je == null || je(he, We)), ke.target.value = "";
                 }
               }
             )
@@ -11118,7 +11123,7 @@ function Hv({
           /* @__PURE__ */ l.jsx(
             Oe,
             {
-              disabled: k,
+              disabled: b,
               "aria-label": `Remove ${he.name}`,
               onClick: () => me == null ? void 0 : me(he),
               children: /* @__PURE__ */ l.jsx(Ie, { name: "delete" })
@@ -11144,14 +11149,14 @@ function Hv({
           placeholder: x
         }
       ),
-      k ? /* @__PURE__ */ l.jsxs(Oe, { className: "stop", onClick: R, children: [
+      b ? /* @__PURE__ */ l.jsxs(Oe, { className: "stop", onClick: R, children: [
         /* @__PURE__ */ l.jsx(Ie, { name: "stop" }),
         "Stop"
       ] }) : /* @__PURE__ */ l.jsxs(Oe, { disabled: !f || !v.trim(), onClick: E, children: [
         /* @__PURE__ */ l.jsx(Ie, { name: "run" }),
         "Send"
       ] }),
-      /* @__PURE__ */ l.jsxs(Oe, { disabled: k || !e, onClick: $, children: [
+      /* @__PURE__ */ l.jsxs(Oe, { disabled: b || !e, onClick: $, children: [
         /* @__PURE__ */ l.jsx(Ie, { name: "reset" }),
         "Reset Python"
       ] })
@@ -11189,7 +11194,7 @@ function Gv({
     if (!(f != null && f.data) || f.data.byteLength > 32 * 1024 * 1024 || !/\.(csv|tsv)$/i.test(f.name)) return;
     const V = new TextDecoder().decode(f.data);
     return Iv(V, /\.tsv$/i.test(f.name) ? "	" : ",");
-  }, [f == null ? void 0 : f.id, f == null ? void 0 : f.data, f == null ? void 0 : f.name]), k = x && Array.isArray(x.summary.columns) ? x.summary.columns : [], C = x && typeof x.summary.rows == "number" ? x.summary.rows : v == null ? void 0 : v.rows, E = k.length || (v == null ? void 0 : v.columns) || 0, [R, $] = T.useState(null);
+  }, [f == null ? void 0 : f.id, f == null ? void 0 : f.data, f == null ? void 0 : f.name]), b = x && Array.isArray(x.summary.columns) ? x.summary.columns : [], C = x && typeof x.summary.rows == "number" ? x.summary.rows : v == null ? void 0 : v.rows, E = b.length || (v == null ? void 0 : v.columns) || 0, [R, $] = T.useState(null);
   return T.useEffect(() => {
     if ($(null), !(f != null && f.data) || f.type !== "image/png") return;
     const V = URL.createObjectURL(new Blob([f.data], { type: f.type })), Z = new Image();
@@ -11328,66 +11333,66 @@ function Yv(e) {
   const r = e;
   if (r.schema !== ef) throw new Error(`schema must equal ${ef}`);
   if (!Array.isArray(r.inputs) || !r.inputs.length) throw new Error("inputs must be a non-empty list");
-  const a = /* @__PURE__ */ new Set(), i = r.inputs.map((k, C) => {
-    if (!k || typeof k != "object" || Array.isArray(k)) throw new Error(`inputs[${C}] must be an object`);
-    if (typeof k.id != "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(k.id)) throw new Error(`inputs[${C}].id is invalid`);
-    if (a.has(k.id)) throw new Error(`Duplicate input id: ${k.id}`);
-    a.add(k.id);
-    const E = qh(k.path, "input", `Input ${k.id} path`), R = k.required ?? !0;
-    if (typeof R != "boolean") throw new Error(`Input ${k.id} required must be boolean`);
-    if (k.kind === "query") {
+  const a = /* @__PURE__ */ new Set(), i = r.inputs.map((b, C) => {
+    if (!b || typeof b != "object" || Array.isArray(b)) throw new Error(`inputs[${C}] must be an object`);
+    if (typeof b.id != "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(b.id)) throw new Error(`inputs[${C}].id is invalid`);
+    if (a.has(b.id)) throw new Error(`Duplicate input id: ${b.id}`);
+    a.add(b.id);
+    const E = qh(b.path, "input", `Input ${b.id} path`), R = b.required ?? !0;
+    if (typeof R != "boolean") throw new Error(`Input ${b.id} required must be boolean`);
+    if (b.kind === "query") {
       const $ = /* @__PURE__ */ new Set(["duckdb", "sqlite", "sqlite3", "csv"]);
-      if (!Array.isArray(k.formats) || !k.formats.length || k.formats.some((z) => !$.has(z)))
-        throw new Error(`Input ${k.id} formats are invalid`);
-      return { ...k, path: E, required: R, formats: Array.from(new Set(k.formats)) };
+      if (!Array.isArray(b.formats) || !b.formats.length || b.formats.some((z) => !$.has(z)))
+        throw new Error(`Input ${b.id} formats are invalid`);
+      return { ...b, path: E, required: R, formats: Array.from(new Set(b.formats)) };
     }
-    if (k.kind === "file") {
-      if (!Array.isArray(k.extensions) || !k.extensions.length || k.extensions.some(($) => typeof $ != "string" || !/^\.[A-Za-z0-9][A-Za-z0-9._-]*$/.test($)))
-        throw new Error(`Input ${k.id} extensions are invalid`);
-      return { ...k, path: E, required: R, extensions: k.extensions.map(($) => $.toLowerCase()) };
+    if (b.kind === "file") {
+      if (!Array.isArray(b.extensions) || !b.extensions.length || b.extensions.some(($) => typeof $ != "string" || !/^\.[A-Za-z0-9][A-Za-z0-9._-]*$/.test($)))
+        throw new Error(`Input ${b.id} extensions are invalid`);
+      return { ...b, path: E, required: R, extensions: b.extensions.map(($) => $.toLowerCase()) };
     }
-    throw new Error(`Input ${k.id} kind must be query or file`);
+    throw new Error(`Input ${b.id} kind must be query or file`);
   });
   if (!r.results || typeof r.results != "object" || Array.isArray(r.results)) throw new Error("results must be an object");
   const d = { ...r.results, path: qh(r.results.path, "results", "results.path") };
   if (r.parameters != null && !Array.isArray(r.parameters)) throw new Error("parameters must be a list");
-  const p = /* @__PURE__ */ new Set(), f = (r.parameters || []).map((k, C) => {
-    if (!k || typeof k != "object" || Array.isArray(k)) throw new Error(`parameters[${C}] must be an object`);
-    if (typeof k.name != "string" || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(k.name)) throw new Error(`parameters[${C}].name is invalid`);
-    if (p.has(k.name)) throw new Error(`Duplicate parameter name: ${k.name}`);
-    if (p.add(k.name), !["boolean", "integer", "number", "string", "choice"].includes(k.type)) throw new Error(`Parameter ${k.name} type is invalid`);
-    if (k.label != null && typeof k.label != "string") throw new Error(`Parameter ${k.name} label must be a string`);
-    if (k.help != null && typeof k.help != "string") throw new Error(`Parameter ${k.name} help must be a string`);
-    if (k.type === "boolean" && k.default != null && typeof k.default != "boolean") throw new Error(`Parameter ${k.name} default must be boolean`);
-    if (k.type === "integer" && k.default != null && !Number.isSafeInteger(k.default)) throw new Error(`Parameter ${k.name} default must be integer`);
-    if (k.type === "number" && k.default != null && (typeof k.default != "number" || !Number.isFinite(k.default))) throw new Error(`Parameter ${k.name} default must be numeric`);
-    if (k.type === "string" && k.default != null && typeof k.default != "string") throw new Error(`Parameter ${k.name} default must be a string`);
-    if (["integer", "number"].includes(k.type)) {
+  const p = /* @__PURE__ */ new Set(), f = (r.parameters || []).map((b, C) => {
+    if (!b || typeof b != "object" || Array.isArray(b)) throw new Error(`parameters[${C}] must be an object`);
+    if (typeof b.name != "string" || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(b.name)) throw new Error(`parameters[${C}].name is invalid`);
+    if (p.has(b.name)) throw new Error(`Duplicate parameter name: ${b.name}`);
+    if (p.add(b.name), !["boolean", "integer", "number", "string", "choice"].includes(b.type)) throw new Error(`Parameter ${b.name} type is invalid`);
+    if (b.label != null && typeof b.label != "string") throw new Error(`Parameter ${b.name} label must be a string`);
+    if (b.help != null && typeof b.help != "string") throw new Error(`Parameter ${b.name} help must be a string`);
+    if (b.type === "boolean" && b.default != null && typeof b.default != "boolean") throw new Error(`Parameter ${b.name} default must be boolean`);
+    if (b.type === "integer" && b.default != null && !Number.isSafeInteger(b.default)) throw new Error(`Parameter ${b.name} default must be integer`);
+    if (b.type === "number" && b.default != null && (typeof b.default != "number" || !Number.isFinite(b.default))) throw new Error(`Parameter ${b.name} default must be numeric`);
+    if (b.type === "string" && b.default != null && typeof b.default != "string") throw new Error(`Parameter ${b.name} default must be a string`);
+    if (["integer", "number"].includes(b.type)) {
       for (const E of ["minimum", "maximum", "step"])
-        if (k[E] != null && (typeof k[E] != "number" || !Number.isFinite(k[E]))) throw new Error(`Parameter ${k.name} ${E} must be numeric`);
-      if (k.minimum != null && k.maximum != null && k.minimum > k.maximum) throw new Error(`Parameter ${k.name} minimum exceeds maximum`);
-      if (k.step != null && k.step <= 0) throw new Error(`Parameter ${k.name} step must be positive`);
+        if (b[E] != null && (typeof b[E] != "number" || !Number.isFinite(b[E]))) throw new Error(`Parameter ${b.name} ${E} must be numeric`);
+      if (b.minimum != null && b.maximum != null && b.minimum > b.maximum) throw new Error(`Parameter ${b.name} minimum exceeds maximum`);
+      if (b.step != null && b.step <= 0) throw new Error(`Parameter ${b.name} step must be positive`);
     }
-    if (k.type === "choice") {
-      if (!k.choices && !k.choices_query) throw new Error(`Parameter ${k.name} requires choices or choices_query`);
-      if (k.choices && (!Array.isArray(k.choices) || !k.choices.length || k.choices.some((E) => !["boolean", "number", "string"].includes(typeof E))))
-        throw new Error(`Parameter ${k.name} choices must be a non-empty scalar list`);
-      if (k.default != null && !["boolean", "number", "string"].includes(typeof k.default)) throw new Error(`Parameter ${k.name} default must be scalar`);
-      if (k.choices_query) {
-        if (!a.has(k.choices_query.source)) throw new Error(`Parameter ${k.name} choices_query source is unknown`);
-        if (typeof k.choices_query.sql != "string" || !k.choices_query.sql.trim()) throw new Error(`Parameter ${k.name} choices_query sql is required`);
+    if (b.type === "choice") {
+      if (!b.choices && !b.choices_query) throw new Error(`Parameter ${b.name} requires choices or choices_query`);
+      if (b.choices && (!Array.isArray(b.choices) || !b.choices.length || b.choices.some((E) => !["boolean", "number", "string"].includes(typeof E))))
+        throw new Error(`Parameter ${b.name} choices must be a non-empty scalar list`);
+      if (b.default != null && !["boolean", "number", "string"].includes(typeof b.default)) throw new Error(`Parameter ${b.name} default must be scalar`);
+      if (b.choices_query) {
+        if (!a.has(b.choices_query.source)) throw new Error(`Parameter ${b.name} choices_query source is unknown`);
+        if (typeof b.choices_query.sql != "string" || !b.choices_query.sql.trim()) throw new Error(`Parameter ${b.name} choices_query sql is required`);
         for (const R of ["value_column", "label_column"])
-          if (k.choices_query[R] != null && typeof k.choices_query[R] != "string") throw new Error(`Parameter ${k.name} choices_query ${R} must be a string`);
-        const E = k.choices_query.limit ?? 100;
-        if (!Number.isSafeInteger(E) || E < 1 || E > 1e3) throw new Error(`Parameter ${k.name} choices_query limit must be 1..1000`);
-        k = { ...k, choices_query: { ...k.choices_query, limit: E, sql: Jv(k.choices_query.sql) } };
+          if (b.choices_query[R] != null && typeof b.choices_query[R] != "string") throw new Error(`Parameter ${b.name} choices_query ${R} must be a string`);
+        const E = b.choices_query.limit ?? 100;
+        if (!Number.isSafeInteger(E) || E < 1 || E > 1e3) throw new Error(`Parameter ${b.name} choices_query limit must be 1..1000`);
+        b = { ...b, choices_query: { ...b.choices_query, limit: E, sql: Jv(b.choices_query.sql) } };
       }
     }
-    return { ...k };
+    return { ...b };
   });
-  if (r.requirements != null && (!Array.isArray(r.requirements) || r.requirements.some((k) => typeof k != "string" || !/^[A-Za-z0-9][A-Za-z0-9._<>=!~,-]*$/.test(k))))
+  if (r.requirements != null && (!Array.isArray(r.requirements) || r.requirements.some((b) => typeof b != "string" || !/^[A-Za-z0-9][A-Za-z0-9._<>=!~,-]*$/.test(b))))
     throw new Error("requirements must contain package requirement strings");
-  const x = Array.from(new Set(r.requirements || [])), v = x.map((k) => k.split(/[<>=!~]/, 1)[0].toLowerCase().replace(/[_.]/g, "-")).filter((k) => !Qv.has(k));
+  const x = Array.from(new Set(r.requirements || [])), v = x.map((b) => b.split(/[<>=!~]/, 1)[0].toLowerCase().replace(/[_.]/g, "-")).filter((b) => !Qv.has(b));
   if (v.length)
     throw new Error(`Unsupported package requirement(s): ${Array.from(new Set(v)).sort().join(", ")}`);
   return { ...r, schema: ef, inputs: i, results: d, parameters: f, requirements: x };
@@ -11476,10 +11481,10 @@ function iu(e) {
   const i = a.metadata && typeof a.metadata == "object" ? a.metadata : {}, d = String(((x = i.language_info) == null ? void 0 : x.name) || "python").toLowerCase(), p = String(((v = i.kernelspec) == null ? void 0 : v.language) || "python").toLowerCase();
   if (!["python", "python3"].includes(d) || !["python", "python3"].includes(p))
     throw new Error("Only Python notebooks are supported");
-  const f = a.cells.map((k, C) => {
-    if (!k || typeof k != "object" || Array.isArray(k))
+  const f = a.cells.map((b, C) => {
+    if (!b || typeof b != "object" || Array.isArray(b))
       throw new Error(`Cell ${C + 1} is invalid`);
-    const E = k;
+    const E = b;
     if (!["markdown", "code", "raw"].includes(E.cell_type))
       throw new Error(`Cell ${C + 1} has an unsupported type`);
     if (!(typeof E.source == "string" || Array.isArray(E.source) && E.source.every((R) => typeof R == "string")))
@@ -11673,7 +11678,7 @@ function d2(e) {
     workspaceActions: f,
     onRunRequestConsumed: x,
     onRunStateChange: v,
-    onBeforeRun: k,
+    onBeforeRun: b,
     onPrepareProtocol: C,
     onChange: E,
     onFiles: R,
@@ -11681,7 +11686,7 @@ function d2(e) {
     onEdit: z
   } = e, [V, Z] = T.useState(!1), [te, me] = T.useState("Notebook code never runs automatically."), je = T.useRef(0);
   async function Ce(oe, Fe, ye = r) {
-    var W, ke;
+    var W, be;
     if (!ye) return null;
     const ue = ye.document.cells[oe];
     if (ue.cell_type !== "code") return ye;
@@ -11719,7 +11724,7 @@ function d2(e) {
             (ne, F) => F === oe ? { ...ne, execution_count: Fe, outputs: [o2(ce)] } : ne
           )
         },
-        protocolRuns: (ke = ye.protocolRuns) == null ? void 0 : ke.map(
+        protocolRuns: (be = ye.protocolRuns) == null ? void 0 : be.map(
           (ne, F, ee) => F === ee.length - 1 && ne.status === "running" ? { ...ne, status: "failed", error: K, completedAt: (/* @__PURE__ */ new Date()).toISOString() } : ne
         ),
         updatedAt: (/* @__PURE__ */ new Date()).toISOString()
@@ -11729,9 +11734,9 @@ function d2(e) {
   }
   async function ie(oe, Fe = !0, ye) {
     me("Attaching current Workspace input data…");
-    const ue = Fe ? await k(oe) : void 0, W = ue && !Array.isArray(ue) ? ue.notebook : oe, ke = Fe ? Array.isArray(ue) ? ue : (ue == null ? void 0 : ue.inputs) || i : ye || i;
-    await d.syncInputs(ke);
-    const ce = ke.filter(
+    const ue = Fe ? await b(oe) : void 0, W = ue && !Array.isArray(ue) ? ue.notebook : oe, be = Fe ? Array.isArray(ue) ? ue : (ue == null ? void 0 : ue.inputs) || i : ye || i;
+    await d.syncInputs(be);
+    const ce = be.filter(
       (ne) => ne.source !== "result" && ne.state === "ready" && !ne.deletedAt && !!ne.data
     ), K = xa(W.document), le = {
       ...W,
@@ -11752,7 +11757,7 @@ function d2(e) {
           updatedAt: (/* @__PURE__ */ new Date()).toISOString()
         };
         await E(ye), me("Preparing the notebook and current input data…"), await d.reset();
-        const ue = await k(ye);
+        const ue = await b(ye);
         ue && !Array.isArray(ue) && (ye = ue.notebook);
         const W = Array.isArray(ue) ? ue : (ue == null ? void 0 : ue.inputs) || i;
         if (ye = await ie(ye, !1, W), C && (ye = await C(ye)), xa(ye.document)) {
@@ -11773,8 +11778,8 @@ function d2(e) {
           };
           ye = { ...ye, protocolRuns: [...ye.protocolRuns || [], ce] }, await E(ye);
         }
-        let ke = 1;
-        for (let ce = 0; ye && ce < ye.document.cells.length && !(ye.document.cells[ce].cell_type === "code" && (me(`Running cell ${ce + 1}…`), ye = await Ce(ce, ke++, ye), !ye)); ce += 1)
+        let be = 1;
+        for (let ce = 0; ye && ce < ye.document.cells.length && !(ye.document.cells[ce].cell_type === "code" && (me(`Running cell ${ce + 1}…`), ye = await Ce(ce, be++, ye), !ye)); ce += 1)
           ;
         ye && ((Fe = (oe = ye.protocolRuns) == null ? void 0 : oe.at(-1)) == null ? void 0 : Fe.status) === "running" && (ye = {
           ...ye,
@@ -11803,7 +11808,7 @@ function d2(e) {
   } catch {
     Ae = null;
   }
-  async function be() {
+  async function ke() {
     d.stop(), Z(!1), me("Execution stopped; restoring the isolated Python kernel…"), await d.start(i), me("Execution stopped. The kernel is ready.");
   }
   async function We() {
@@ -11839,7 +11844,7 @@ function d2(e) {
           /* @__PURE__ */ l.jsx(Ie, { name: "run" }),
           "Run"
         ] }),
-        /* @__PURE__ */ l.jsxs(Oe, { disabled: !r || !V, onClick: () => void be(), children: [
+        /* @__PURE__ */ l.jsxs(Oe, { disabled: !r || !V, onClick: () => void ke(), children: [
           /* @__PURE__ */ l.jsx(Ie, { name: "stop" }),
           "Stop"
         ] }),
@@ -11882,8 +11887,8 @@ function d2(e) {
           /* @__PURE__ */ l.jsx("small", { children: "Values are stored with this Notebook and captured in every run." })
         ] }),
         /* @__PURE__ */ l.jsx("div", { className: "notebook-parameter-grid", children: Ae.parameters.map((oe) => {
-          var ke, ce, K;
-          const Fe = ((ke = r.parameterValues) == null ? void 0 : ke[oe.name]) ?? oe.default ?? null, ye = oe.choices || ((ce = r.parameterChoices) == null ? void 0 : ce[oe.name]) || [], ue = ((K = r.parameterChoiceLabels) == null ? void 0 : K[oe.name]) || [], W = oe.label || oe.name;
+          var be, ce, K;
+          const Fe = ((be = r.parameterValues) == null ? void 0 : be[oe.name]) ?? oe.default ?? null, ye = oe.choices || ((ce = r.parameterChoices) == null ? void 0 : ce[oe.name]) || [], ue = ((K = r.parameterChoiceLabels) == null ? void 0 : K[oe.name]) || [], W = oe.label || oe.name;
           return oe.type === "boolean" ? /* @__PURE__ */ l.jsxs("label", { className: "notebook-parameter boolean", children: [
             /* @__PURE__ */ l.jsx(
               "input",
@@ -11973,7 +11978,7 @@ function f2(e) {
 function m2(e, r, a) {
   const i = e.replace(/\\/g, "/").split("/").at(-1) || e, d = f2(r);
   if (a) {
-    const v = d.find((k) => k.name === a);
+    const v = d.find((b) => b.name === a);
     if (!v)
       throw new nl(
         `Input ${i} is bound to ${a}, but that file is not available.`
@@ -12074,13 +12079,13 @@ function nf(e, r, a) {
     const x = r.find((C) => C.id === f.methodId && !C.deletedAt), v = x == null ? void 0 : x.versions.find((C) => C.version === f.methodVersion);
     if (!x || !v)
       throw new nl(`Pipeline step ${f.name} refers to an unavailable Method version.`);
-    const k = Fu(v.code, i, f.inputBindings);
-    d.push(...k.bindings);
+    const b = Fu(v.code, i, f.inputBindings);
+    d.push(...b.bindings);
     for (const C of h2(v.code))
       i.push({ name: C, source: "pipeline-output" });
     return {
       ...f,
-      inputBindings: Object.fromEntries(k.bindings.map((C) => [C.from, C.to]))
+      inputBindings: Object.fromEntries(b.bindings.map((C) => [C.from, C.to]))
     };
   });
   return { pipeline: { ...e, steps: p }, bindings: d };
@@ -12099,13 +12104,13 @@ function v2(e, r, a) {
   );
   return [...e, ...p];
 }
-function b2(e) {
+function k2(e) {
   return {
     ...e,
     cells: e.cells.map((r) => r.cell_type === "code" ? { ...r, execution_count: null, outputs: [] } : r)
   };
 }
-function k2(e) {
+function b2(e) {
   return JSON.stringify(e);
 }
 function x2(e) {
@@ -12139,7 +12144,7 @@ function qs(e, r) {
   let a = e, i = !1;
   for (const d of r) {
     const p = `/input/${d.outputCsvName}`, f = new RegExp(`(["'])${x2(p)}\\1`, "g");
-    a = a.replace(f, () => (i = !0, `remote_query_csv(${k2(Bo(d))})`));
+    a = a.replace(f, () => (i = !0, `remote_query_csv(${b2(Bo(d))})`));
   }
   return !i || /(?:from\s+omero_analysis_remote\s+import|\bremote_query_csv\s*=)/.test(a) ? a : [
     "# OMERO data is rebound and queried through OMERO.Analysis for every run.",
@@ -12155,7 +12160,7 @@ function _2(e) {
 function Zh(e) {
   return JSON.stringify(e);
 }
-function by(e) {
+function ky(e) {
   const r = e.trim(), a = r.match(/^[rubf]*(["']{3})([\s\S]*)\1$/i);
   if (a) return a[2];
   const i = r.match(/^[rubf]*(["'])([\s\S]*)\1$/i);
@@ -12163,7 +12168,7 @@ function by(e) {
 `).replace(/\\(["'\\])/g, "$1") : null;
 }
 function j2(e, r, a) {
-  const i = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), d = new RegExp(`^\\s*${i}\\s*=\\s*([rubf]*(?:"""[\\s\\S]*?"""|'''[\\s\\S]*?'''))\\s*$`, "gim"), p = Array.from(e.matchAll(d), (f) => by(f[1])).filter((f) => f != null);
+  const i = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), d = new RegExp(`^\\s*${i}\\s*=\\s*([rubf]*(?:"""[\\s\\S]*?"""|'''[\\s\\S]*?'''))\\s*$`, "gim"), p = Array.from(e.matchAll(d), (f) => ky(f[1])).filter((f) => f != null);
   return p.length === 1 ? p[0] : p.length === 2 && /\bif\s+use_foci_view\s*:/.test(e) ? a.has("foci_assignments") ? p[0] : p[1] : null;
 }
 function E2(e, r, a, i) {
@@ -12171,7 +12176,7 @@ function E2(e, r, a, i) {
   const d = new Set(a.map((C) => C.toLowerCase())), p = [], f = /^(\s*)([A-Za-z_]\w*)\s*=\s*con\.sql\(([\s\S]*?)\)\.df\(\)\s*$/gm;
   let x = !1, v = e.replace(f, (C, E, R, $) => {
     var je;
-    const z = by($), V = (je = $.trim().match(/^[A-Za-z_]\w*$/)) == null ? void 0 : je[0], Z = z ?? (V ? j2(e, V, d) : null);
+    const z = ky($), V = (je = $.trim().match(/^[A-Za-z_]\w*$/)) == null ? void 0 : je[0], Z = z ?? (V ? j2(e, V, d) : null);
     if (!Z)
       return x = !0, C;
     const te = `${_2(r)}-${p.length + 1}`.slice(0, 128), me = `${te}.csv`;
@@ -12208,7 +12213,7 @@ function N2() {
       confirmLabel: "Use selected object",
       mode: "choose"
     });
-  }), k = (E, R) => new Promise(($) => {
+  }), b = (E, R) => new Promise(($) => {
     d.current = () => $(), r({ title: E, description: R, confirmLabel: "Close", mode: "alert" });
   }), C = e ? /* @__PURE__ */ l.jsx(
     "div",
@@ -12269,7 +12274,7 @@ function N2() {
       )
     }
   ) : null;
-  return { askText: f, confirm: x, alert: k, choose: v, element: C };
+  return { askText: f, confirm: x, alert: b, choose: v, element: C };
 }
 const R2 = {
   preparing: "Preparing",
@@ -12288,7 +12293,7 @@ function P2({
   onAnswer: i
 }) {
   var R;
-  const d = e.aiActivity, p = !!(d != null && d.question && !d.question.answer), [f, x] = T.useState(p), [v, k] = T.useState("");
+  const d = e.aiActivity, p = !!(d != null && d.question && !d.question.answer), [f, x] = T.useState(p), [v, b] = T.useState("");
   if (T.useEffect(() => {
     p && x(!0);
   }, [p, (R = d == null ? void 0 : d.question) == null ? void 0 : R.id]), !d) return null;
@@ -12362,7 +12367,7 @@ function P2({
                       "aria-label": "Another answer",
                       placeholder: "Another answer…",
                       value: v,
-                      onChange: ($) => k($.target.value)
+                      onChange: ($) => b($.target.value)
                     }
                   ),
                   /* @__PURE__ */ l.jsx(Oe, { disabled: !v.trim(), type: "submit", children: "Submit" })
@@ -12410,7 +12415,7 @@ function $2({
   onToggleDataset: f,
   onToggleItem: x
 }) {
-  const [v, k] = T.useState(!0), [C, E] = T.useState(() => new Set(
+  const [v, b] = T.useState(!0), [C, E] = T.useState(() => new Set(
     e.flatMap((z) => Jh.map((V) => `${z.datasetId}:${V}`))
   )), R = r.trim().toLowerCase(), $ = e.map((z) => ({
     dataset: z,
@@ -12426,7 +12431,7 @@ function $2({
         role: "treeitem",
         "aria-expanded": !!R || v,
         onClick: (z) => {
-          R || (z.preventDefault(), k((V) => !V));
+          R || (z.preventDefault(), b((V) => !V));
         },
         children: [
           /* @__PURE__ */ l.jsx("span", { className: "library-tree-chevron", children: "›" }),
@@ -12510,7 +12515,7 @@ function $2({
                       )
                     ), Ae = ie.requiredCapabilities.filter(
                       (We) => We.includes("zarr") && !p
-                    ), be = ve.length > 0 || Ae.length > 0;
+                    ), ke = ve.length > 0 || Ae.length > 0;
                     return /* @__PURE__ */ l.jsx("li", { role: "treeitem", children: /* @__PURE__ */ l.jsxs("label", { children: [
                       /* @__PURE__ */ l.jsx(
                         "input",
@@ -12531,7 +12536,7 @@ function $2({
                           ie.description ? ` · ${ie.description}` : ""
                         ] })
                       ] }),
-                      /* @__PURE__ */ l.jsx("span", { className: be ? "compatibility needs-setup" : "compatibility", children: be ? "Needs setup" : "Compatible" })
+                      /* @__PURE__ */ l.jsx("span", { className: ke ? "compatibility needs-setup" : "compatibility", children: ke ? "Needs setup" : "Compatible" })
                     ] }) }, he);
                   }) })
                 ] }, te);
@@ -12946,12 +12951,12 @@ function z2({ onClose: e }) {
   const [r, a] = T.useState(""), [i, d] = T.useState({
     x: Math.max(24, window.innerWidth - 760),
     y: 92
-  }), p = T.useMemo(() => D2(O2), []), f = r.trim().toLowerCase(), x = f ? p.filter((k) => `${k.heading}
-${k.content}`.toLowerCase().includes(f)) : p, v = (k) => {
-    if (k.target.closest("button, input")) return;
+  }), p = T.useMemo(() => D2(O2), []), f = r.trim().toLowerCase(), x = f ? p.filter((b) => `${b.heading}
+${b.content}`.toLowerCase().includes(f)) : p, v = (b) => {
+    if (b.target.closest("button, input")) return;
     const C = {
-      pointerX: k.clientX,
-      pointerY: k.clientY,
+      pointerX: b.clientX,
+      pointerY: b.clientY,
       left: i.x,
       top: i.y
     }, E = ($) => d({
@@ -12988,7 +12993,7 @@ ${k.content}`.toLowerCase().includes(f)) : p, v = (k) => {
                 type: "search",
                 placeholder: "Search the manual…",
                 value: r,
-                onChange: (k) => a(k.target.value)
+                onChange: (b) => a(b.target.value)
               }
             )
           ] }),
@@ -13001,23 +13006,23 @@ ${k.content}`.toLowerCase().includes(f)) : p, v = (k) => {
         /* @__PURE__ */ l.jsxs("div", { className: "help-window-layout", children: [
           /* @__PURE__ */ l.jsxs("nav", { "aria-label": "Manual table of contents", children: [
             /* @__PURE__ */ l.jsx("strong", { children: "Contents" }),
-            p.map((k) => /* @__PURE__ */ l.jsx(
+            p.map((b) => /* @__PURE__ */ l.jsx(
               Oe,
               {
                 onClick: () => {
                   var C;
-                  return (C = document.getElementById(k.id)) == null ? void 0 : C.scrollIntoView({
+                  return (C = document.getElementById(b.id)) == null ? void 0 : C.scrollIntoView({
                     behavior: "smooth",
                     block: "start"
                   });
                 },
-                children: k.heading
+                children: b.heading
               },
-              k.id
+              b.id
             ))
           ] }),
           /* @__PURE__ */ l.jsxs("div", { className: "help-window-content", children: [
-            x.map((k) => /* @__PURE__ */ l.jsx("section", { id: k.id, children: /* @__PURE__ */ l.jsx(rs, { markdown: k.content }) }, k.id)),
+            x.map((b) => /* @__PURE__ */ l.jsx("section", { id: b.id, children: /* @__PURE__ */ l.jsx(rs, { markdown: b.content }) }, b.id)),
             !x.length && /* @__PURE__ */ l.jsxs("p", { children: [
               "No manual sections match “",
               r,
@@ -13039,7 +13044,7 @@ function F2({
   notebookPipelineId: f,
   busy: x,
   editorEnabled: v,
-  providerReady: k,
+  providerReady: b,
   onMethodIdChange: C,
   onPipelineIdChange: E,
   onNotebookIdChange: R,
@@ -13063,7 +13068,7 @@ function F2({
   }), Ae = a.find((ue) => {
     var W;
     return ue.id === (p || ((W = a[0]) == null ? void 0 : W.id));
-  }), be = r.find(
+  }), ke = r.find(
     (ue) => {
       var W;
       return ue.id === (f || ((W = r[0]) == null ? void 0 : W.id));
@@ -13084,7 +13089,7 @@ function F2({
           /* @__PURE__ */ l.jsx("p", { children: "Execute the current saved version with inputs from this Workspace." }),
           /* @__PURE__ */ l.jsxs("div", { className: "analysis-card-controls", children: [
             /* @__PURE__ */ l.jsx(
-              kc,
+              bc,
               {
                 fill: !0,
                 "aria-label": "Method to run",
@@ -13119,7 +13124,7 @@ function F2({
           /* @__PURE__ */ l.jsx("p", { children: "Run an ordered collection of pinned Method versions." }),
           /* @__PURE__ */ l.jsxs("div", { className: "analysis-card-controls", children: [
             /* @__PURE__ */ l.jsx(
-              kc,
+              bc,
               {
                 fill: !0,
                 "aria-label": "Pipeline to run",
@@ -13154,7 +13159,7 @@ function F2({
           /* @__PURE__ */ l.jsx("p", { children: "Review user inputs and parameters before choosing when to run all cells." }),
           /* @__PURE__ */ l.jsxs("div", { className: "analysis-card-controls", children: [
             /* @__PURE__ */ l.jsx(
-              kc,
+              bc,
               {
                 fill: !0,
                 "aria-label": "Notebook to run",
@@ -13208,7 +13213,7 @@ function F2({
                 }
               )
             ] }),
-            !k && /* @__PURE__ */ l.jsx("small", { children: "Configure an AI provider before using the Assistant." }),
+            !b && /* @__PURE__ */ l.jsx("small", { children: "Configure an AI provider before using the Assistant." }),
             !v && /* @__PURE__ */ l.jsx("small", { children: "Enable the artifact editor to create a Method directly." })
           ] })
         ] }),
@@ -13230,11 +13235,11 @@ function F2({
           /* @__PURE__ */ l.jsx("p", { children: "Convert a saved Pipeline, or start with current Workspace inputs attached." }),
           /* @__PURE__ */ l.jsxs("div", { className: "analysis-card-controls", children: [
             /* @__PURE__ */ l.jsx(
-              kc,
+              bc,
               {
                 fill: !0,
                 "aria-label": "Pipeline to convert to Notebook",
-                title: be ? `${be.name} · v${be.version}` : void 0,
+                title: ke ? `${ke.name} · v${ke.version}` : void 0,
                 value: f || ((ye = r[0]) == null ? void 0 : ye.id) || "",
                 onChange: (ue) => $(ue.target.value),
                 disabled: !r.length,
@@ -13250,8 +13255,8 @@ function F2({
                 Oe,
                 {
                   "aria-label": "Create Notebook from Pipeline",
-                  disabled: !be,
-                  onClick: () => be && Ce(be),
+                  disabled: !ke,
+                  onClick: () => ke && Ce(ke),
                   children: [
                     /* @__PURE__ */ l.jsx(Ie, { name: "pipeline" }),
                     "From Pipeline"
@@ -13332,7 +13337,7 @@ function H2({
   busy: f,
   editorEnabled: x,
   pipelineBuilderOpen: v,
-  runs: k,
+  runs: b,
   selectedRun: C,
   selectedRunExecutions: E,
   selectedRunFiles: R,
@@ -13348,18 +13353,18 @@ function H2({
   onClearMethods: he,
   onCreatePipeline: ve,
   onStop: Ae,
-  onRerun: be,
+  onRerun: ke,
   onSelectRun: We,
   onInspectFile: oe
 }) {
   var F, ee;
-  const [Fe, ye] = T.useState(""), [ue, W] = T.useState("all"), ke = r.find((Y) => {
+  const [Fe, ye] = T.useState(""), [ue, W] = T.useState("all"), be = r.find((Y) => {
     var Te;
     return Y.id === (d || ((Te = r[0]) == null ? void 0 : Te.id));
   }), ce = a.find((Y) => {
     var Te;
     return Y.id === (p || ((Te = a[0]) == null ? void 0 : Te.id));
-  }), K = e === "method" ? "Method" : "Pipeline", le = T.useMemo(() => k.filter((Y) => !Fe.trim() || Y.artifactName.toLowerCase().includes(Fe.trim().toLowerCase())).filter((Y) => ue === "all" || Y.status === ue).sort((Y, Te) => Te.createdAt.localeCompare(Y.createdAt)), [Fe, k, ue]), ne = T.useMemo(
+  }), K = e === "method" ? "Method" : "Pipeline", le = T.useMemo(() => b.filter((Y) => !Fe.trim() || Y.artifactName.toLowerCase().includes(Fe.trim().toLowerCase())).filter((Y) => ue === "all" || Y.status === ue).sort((Y, Te) => Te.createdAt.localeCompare(Y.createdAt)), [Fe, b, ue]), ne = T.useMemo(
     () => W2(E, R, $),
     [$, E, R]
   );
@@ -13382,7 +13387,7 @@ function H2({
               "select",
               {
                 "aria-label": "Method",
-                title: ke ? `${ke.name} · v${ke.currentVersion}` : void 0,
+                title: be ? `${be.name} · v${be.currentVersion}` : void 0,
                 value: d || ((F = r[0]) == null ? void 0 : F.id) || "",
                 disabled: !r.length || f,
                 onChange: (Y) => z(Y.target.value),
@@ -13396,8 +13401,8 @@ function H2({
             /* @__PURE__ */ l.jsxs(
               Oe,
               {
-                disabled: !ke || f,
-                onClick: () => ke && Z(ke),
+                disabled: !be || f,
+                onClick: () => be && Z(be),
                 children: [
                   /* @__PURE__ */ l.jsx(Ie, { name: "run" }),
                   "Run Method"
@@ -13408,8 +13413,8 @@ function H2({
               Oe,
               {
                 "aria-label": "Edit selected Method",
-                disabled: !ke || f,
-                onClick: () => ke && me(ke),
+                disabled: !be || f,
+                onClick: () => be && me(be),
                 children: [
                   /* @__PURE__ */ l.jsx(Ie, { name: "edit" }),
                   "Edit Method"
@@ -13471,7 +13476,7 @@ function H2({
           f ? /* @__PURE__ */ l.jsxs(Oe, { onClick: Ae, children: [
             /* @__PURE__ */ l.jsx(Ie, { name: "stop" }),
             "Stop"
-          ] }) : C && /* @__PURE__ */ l.jsxs(Oe, { onClick: () => be(C), children: [
+          ] }) : C && /* @__PURE__ */ l.jsxs(Oe, { onClick: () => ke(C), children: [
             /* @__PURE__ */ l.jsx(Ie, { name: "reset" }),
             "Rerun"
           ] })
@@ -13638,7 +13643,7 @@ function H2({
                   supplementalOutputs: Te === E.length - 1 ? ne : [],
                   onSave: () => {
                   },
-                  onRerun: () => be(C),
+                  onRerun: () => ke(C),
                   saveDisabled: f,
                   showSaveAction: !1,
                   showRerunAction: !1
@@ -13675,18 +13680,18 @@ function G2({ bridge: e, enabled: r, contextKey: a, canAnnotate: i, ttlSeconds: 
     const E = window.setInterval(() => v(Date.now()), 1e3);
     return () => window.clearInterval(E);
   }, [p.length]), !r || !p.length) return null;
-  function k(E, R) {
+  function b(E, R) {
     f(($) => $.map((z) => z.resultToken === E ? { ...z, ...R } : z));
   }
   async function C(E) {
-    k(E.resultToken, { saving: !0, error: void 0 });
+    b(E.resultToken, { saving: !0, error: void 0 });
     try {
       const R = await e.promoteRemoteResult(E);
-      k(E.resultToken, { saved: Number(R.result.annotation_id) });
+      b(E.resultToken, { saved: Number(R.result.annotation_id) });
     } catch (R) {
-      k(E.resultToken, { error: R instanceof Error ? R.message : String(R) });
+      b(E.resultToken, { error: R instanceof Error ? R.message : String(R) });
     } finally {
-      k(E.resultToken, { saving: !1 });
+      b(E.resultToken, { saving: !1 });
     }
   }
   return /* @__PURE__ */ l.jsxs("details", { className: "query-result-saves", open: !0, children: [
@@ -13762,16 +13767,16 @@ function af(e, r, a) {
   for (const f of e.workflows)
     for (const x of f.skills) {
       let v = x.match.auto_activate ? 1 : 0;
-      const k = [], C = x.match.extensions.find(
+      const b = [], C = x.match.extensions.find(
         (z) => i.some((V) => V.toLowerCase().endsWith(z.toLowerCase()))
       );
-      C && (v += 2, k.push(`extension ${C}`));
+      C && (v += 2, b.push(`extension ${C}`));
       const E = x.match.filename_globs.find(
         (z) => i.some((V) => Z2(V, z))
       );
-      E && (v += 3, k.push(`filename ${E}`));
+      E && (v += 3, b.push(`filename ${E}`));
       const R = x.match.required_tables.map((z) => z.toLowerCase());
-      R.length && R.every((z) => d.has(z)) && (v += 5, k.push(`schema ${R.join(", ")}`)), x.match.extensions.length > 0 || x.match.filename_globs.length > 0 || x.match.required_tables.length > 0 || (v += 1, k.push("general analysis guidance")), v > 0 && p.push({ entry: f, skill: x, score: v, reasons: k });
+      R.length && R.every((z) => d.has(z)) && (v += 5, b.push(`schema ${R.join(", ")}`)), x.match.extensions.length > 0 || x.match.filename_globs.length > 0 || x.match.required_tables.length > 0 || (v += 1, b.push("general analysis guidance")), v > 0 && p.push({ entry: f, skill: x, score: v, reasons: b });
     }
   return p.sort(
     (f, x) => x.score - f.score || f.skill.name.localeCompare(x.skill.name)
@@ -13892,11 +13897,11 @@ function e1(e, r, a) {
     throw new Error("Gallery rendering requires panels");
   const p = Ru(d.panels), f = String(d.store_uuid || "").toLowerCase(), x = new Map(a.map((v) => [v.id, v]));
   for (const v of i) {
-    const k = x.get(v);
-    if (!k) continue;
+    const b = x.get(v);
+    if (!b) continue;
     let C;
     try {
-      C = JSON.parse(k.payload);
+      C = JSON.parse(b.payload);
     } catch {
       continue;
     }
@@ -13916,7 +13921,7 @@ function t0(e, r) {
     (f) => f.role === "assistant" && f.kind !== "execution" && f.kind !== "viewer-preview" && f.kind !== "error" && f.content.trim()
   ).at(-1)) == null ? void 0 : p.content.trim()) || "").replace(/```(?:python|py)\s+[\s\S]*?```/gi, "").trim();
 }
-function ky(e, r) {
+function by(e, r) {
   const a = e.trim(), i = r.trim();
   return i ? [
     "# Assistant summary generated after this analysis completed:",
@@ -13997,10 +14002,10 @@ function o1(e, r, a, i, d = "") {
 # Continued verified analysis
 `
   ), v = r1(
-    ky(x, d),
+    by(x, d),
     p
-  ), k = new Set(((V = e.viewer) == null ? void 0 : V.evidenceIds) || []), C = i.filter(
-    (te) => te.status === "success" && (k.has(te.id) || f.some((me) => me.evidenceId === te.id))
+  ), b = new Set(((V = e.viewer) == null ? void 0 : V.evidenceIds) || []), C = i.filter(
+    (te) => te.status === "success" && (b.has(te.id) || f.some((me) => me.evidenceId === te.id))
   ), E = {
     schema: "nl.bioimaging.omero-analysis-render-bundle.v1",
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -14162,7 +14167,7 @@ function c1(e, r) {
     (E) => !!E && typeof E == "object"
   ) : [];
   let v = 0;
-  const k = a.overlays.map((E) => {
+  const b = a.overlays.map((E) => {
     var z, V, Z;
     const R = (z = E.name) == null ? void 0 : z.toLowerCase().includes("cell"), $ = (V = E.name) == null ? void 0 : V.toLowerCase().includes("foc");
     if (R && p && f != null)
@@ -14191,7 +14196,7 @@ function c1(e, r) {
       sourceChannels: C || a.sourceChannels,
       t: Number.isInteger(r.timepoint) ? Number(r.timepoint) : a.t,
       z: Number.isInteger(r.centroid_z_px) ? Number(r.centroid_z_px) : a.z,
-      overlays: k
+      overlays: b
     }, ...e.panels.slice(1)]
   };
 }
@@ -14247,8 +14252,8 @@ function p1(e, r) {
     ]
   ), d = a.map(i);
   return a.filter((p, f) => d[f].size ? !a.slice(f + 1).some((x, v) => {
-    const k = d[f + 1 + v];
-    return [...d[f]].every((C) => k.has(C));
+    const b = d[f + 1 + v];
+    return [...d[f]].every((C) => b.has(C));
   }) : !0);
 }
 function f1(e) {
@@ -14317,35 +14322,35 @@ function y1(e, r) {
   const d = i.size ? Array.from(i.values()) : a.filter((x) => ["success", "reused", "incomplete"].includes(x.status)), p = /* @__PURE__ */ new Set(), f = [];
   for (const x of d)
     for (const v of x.outputFileIds) {
-      const k = e.files.find(
+      const b = e.files.find(
         (E) => E.id === v && !E.deletedAt
       );
-      if (!k) continue;
-      const C = `${k.sha256}:${k.type}`;
+      if (!b) continue;
+      const C = `${b.sha256}:${b.type}`;
       p.has(C) || (p.add(C), f.push({
         key: C,
-        fileId: k.id,
-        label: m1(k),
-        title: h1(k)
+        fileId: b.id,
+        label: m1(b),
+        title: h1(b)
       }));
     }
   return f.sort((x, v) => {
-    const k = x.label.startsWith("Image:") ? 0 : 1, C = v.label.startsWith("Image:") ? 0 : 1;
-    return k - C || x.label.localeCompare(v.label);
+    const b = x.label.startsWith("Image:") ? 0 : 1, C = v.label.startsWith("Image:") ? 0 : 1;
+    return b - C || x.label.localeCompare(v.label);
   });
 }
 const Cy = 8, g1 = "The tool-round limit has been reached. Do not call more tools. Give the best final answer using the results already available, and clearly state any remaining limitation.", w1 = /\.(?:png|svg|csv|tsv|xlsx|parquet|json|html|pdf)\b/i, v1 = /(?:\/output\/)?([A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|svg|csv|tsv|xlsx|parquet|json|html|pdf))\b/gi;
-function b1(e) {
+function k1(e) {
   return /\b(?:plot|chart|figure|graph|heatmap|grafiek|diagram|csv|spreadsheet|table)\b/i.test(e) ? /\b(?:create|generate|make|draw|plot|export|save|maak|maken|genereer|teken|exporteer|opslaan)\b/i.test(e) || /^\s*(?:please\s+)?plot\b/i.test(e) || /\b(?:as|in)\s+(?:(?:a|an|een|the)\s+)?(?:bar\s+)?(?:plot|chart|figure|graph|heatmap|grafiek|diagram)\b/i.test(e) : !1;
 }
-function k1(e) {
+function b1(e) {
   return Array.from(
     new Set(Array.from(e.matchAll(v1), (r) => r[1]))
   );
 }
 function x1(e, r, a, i = a, d = []) {
-  if (!b1(e)) return null;
-  const p = a.filter((k) => w1.test(k)), f = new Set(i.map((k) => k.toLowerCase())), x = new Set(d.map((k) => k.toLowerCase())), v = k1(r).filter((k) => !f.has(k.toLowerCase())).filter((k) => !x.has(k.toLowerCase()));
+  if (!k1(e)) return null;
+  const p = a.filter((b) => w1.test(b)), f = new Set(i.map((b) => b.toLowerCase())), x = new Set(d.map((b) => b.toLowerCase())), v = b1(r).filter((b) => !f.has(b.toLowerCase())).filter((b) => !x.has(b.toLowerCase()));
   return p.length && !v.length ? null : {
     missingOutputNames: v,
     noCurrentOutput: p.length === 0
@@ -14658,7 +14663,7 @@ async function d0(e, r) {
       }
     );
   a.sort((R, $) => R.key.localeCompare($.key));
-  const k = {
+  const b = {
     schema: "nl.bioimaging.analysis.sync.inventory.v1",
     workspace: {
       id: e.workspace.id,
@@ -14672,8 +14677,8 @@ async function d0(e, r) {
     items: a
   };
   return { inventory: {
-    ...k,
-    digest: await yt(du(k))
+    ...b,
+    digest: await yt(du(b))
   }, bytes: i };
 }
 function u0(e, r) {
@@ -14853,9 +14858,9 @@ async function K1(e, r, a) {
       });
       if (!p.ok) return i();
       const f = await p.json(), x = Array.isArray(f.models) ? f.models : Array.isArray(f.data) ? f.data : [], v = i();
-      for (const k of x) {
-        if (!k || typeof k != "object") continue;
-        const C = k, E = String(C.key || C.id || C.model || "");
+      for (const b of x) {
+        if (!b || typeof b != "object") continue;
+        const C = b, E = String(C.key || C.id || C.model || "");
         if (!E || !v[E]) continue;
         const R = C.capabilities || {};
         v[E] = {
@@ -14876,10 +14881,10 @@ async function K1(e, r, a) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: f }),
             signal: a
-          }), v = x.ok ? await x.json() : {}, k = Array.isArray(v.capabilities) ? v.capabilities.map(String) : [];
+          }), v = x.ok ? await x.json() : {}, b = Array.isArray(v.capabilities) ? v.capabilities.map(String) : [];
           return [f, {
-            vision: k.length ? k.includes("vision") ? "supported" : "unsupported" : "unknown",
-            tools: k.length ? k.includes("tools") ? "supported" : "unsupported" : "unknown",
+            vision: b.length ? b.includes("vision") ? "supported" : "unsupported" : "unknown",
+            tools: b.length ? b.includes("tools") ? "supported" : "unsupported" : "unknown",
             source: "ollama"
           }];
         } catch {
@@ -14921,8 +14926,8 @@ async function Q1(e = "", r = 2500) {
     if (x.status === "fulfilled")
       p.push(x.value);
     else {
-      const k = x.reason instanceof Error ? x.reason.message : String(x.reason);
-      f.push(`${i[v].name} (${i[v].endpoint}): ${k}`);
+      const b = x.reason instanceof Error ? x.reason.message : String(x.reason);
+      f.push(`${i[v].name} (${i[v].endpoint}): ${b}`);
     }
   }), { servers: p, failures: f };
 }
@@ -14982,7 +14987,7 @@ async function B1(e) {
   try {
     let a = Math.min(1, Z1 / Math.max(r.width, r.height)), i = 0.92, d = null, p = 0, f = 0;
     const x = [];
-    for (let k = 0; k < 8; k += 1) {
+    for (let b = 0; b < 8; b += 1) {
       p = Math.max(1, Math.round(r.width * a)), f = Math.max(1, Math.round(r.height * a));
       const C = document.createElement("canvas");
       C.width = p, C.height = f;
@@ -15024,10 +15029,10 @@ function sf(e, r) {
   })();
   return of.set(a, d), d.catch(() => of.delete(a)), d;
 }
-function eb(e) {
+function ek(e) {
   return e > 0 ? Math.min(16e3, Math.floor(e * 0.25)) : 6e3;
 }
-function tb(e) {
+function tk(e) {
   var a, i, d;
   if (!e) return "";
   const r = (a = e.match(/filename\*=UTF-8''([^;]+)/i)) == null ? void 0 : a[1];
@@ -15039,7 +15044,7 @@ function tb(e) {
     }
   return ((d = (i = e.match(/filename="?([^";]+)"?/i)) == null ? void 0 : i[1]) == null ? void 0 : d.trim()) || "";
 }
-async function nb(e) {
+async function nk(e) {
   var $;
   const r = new URL(e.trim());
   if (r.protocol !== "https:" || r.username || r.password)
@@ -15073,11 +15078,11 @@ async function nb(e) {
     }
   }
   const v = new Uint8Array(x);
-  let k = 0;
+  let b = 0;
   f.forEach((z) => {
-    v.set(z, k), k += z.byteLength;
+    v.set(z, b), b += z.byteLength;
   });
-  const C = decodeURIComponent(new URL(a.url || r).pathname.split("/").at(-1) || ""), E = Ey(tb(a.headers.get("content-disposition")) || C), R = Lu(E, i, v.buffer);
+  const C = decodeURIComponent(new URL(a.url || r).pathname.split("/").at(-1) || ""), E = Ey(tk(a.headers.get("content-disposition")) || C), R = Lu(E, i, v.buffer);
   return new File([v], E, { type: R.type });
 }
 function gc(e, r, a, i) {
@@ -15091,7 +15096,7 @@ function gc(e, r, a, i) {
 function w0(e) {
   return !e.titleEdited && !e.messages.some((r) => r.role === "user");
 }
-function rb(e, r, a) {
+function rk(e, r, a) {
   return {
     ...e,
     title: r.slice(0, 100),
@@ -15099,20 +15104,20 @@ function rb(e, r, a) {
     updatedAt: a
   };
 }
-function ab(e, r, a) {
+function ak(e, r, a) {
   const i = T.useRef(a);
   i.current = a, T.useEffect(() => {
     const d = Math.max(0, r || 0);
     if (!e || d <= 0) return;
     const p = async () => {
       var C;
-      const k = await fetch(e, {
+      const b = await fetch(e, {
         method: "GET",
         credentials: "same-origin",
         cache: "no-store"
       }).catch(() => {
       });
-      k && (k.status === 401 || k.status === 403 || k.redirected) && ((C = i.current) == null || C.call(i));
+      b && (b.status === 401 || b.status === 403 || b.redirected) && ((C = i.current) == null || C.call(i));
     };
     p();
     const f = window.setInterval(p, d), x = () => {
@@ -15126,13 +15131,13 @@ function ab(e, r, a) {
   }, [r, e]);
 }
 const Ny = "nl.bioimaging.omero-analysis.host.v1";
-function ob(e, r, a) {
+function ok(e, r, a) {
   var d, p, f, x, v;
   if (e.origin !== a || e.source !== r || ((d = e.data) == null ? void 0 : d.schema) !== Ny || ((p = e.data) == null ? void 0 : p.source) !== "omero-biomero" || ((f = e.data) == null ? void 0 : f.type) !== "theme-changed") return null;
   const i = (v = (x = e.data) == null ? void 0 : x.payload) == null ? void 0 : v.theme;
   return i === "light" || i === "dark" ? i : null;
 }
-function sb(e, r, a = {}) {
+function sk(e, r, a = {}) {
   return e.embeddedHost !== "biomero" ? null : {
     schema: Ny,
     source: "omero-analysis",
@@ -15141,10 +15146,10 @@ function sb(e, r, a = {}) {
   };
 }
 function pu(e, r, a = {}) {
-  const i = sb(e, r, a);
+  const i = sk(e, r, a);
   return !i || window.parent === window ? !1 : (window.parent.postMessage(i, window.location.origin), !0);
 }
-const ib = 1e3, lb = T.lazy(() => import("./ArtifactEditor-DKrGzl4k.js")), cb = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i, v0 = 256 * 1024 * 1024, Mu = "default", lf = (e) => `analysis:artifact-editor:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, b0 = (e) => `analysis:explorer-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, k0 = (e) => `analysis:inspector-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, x0 = () => ({
+const ik = 1e3, lk = T.lazy(() => import("./ArtifactEditor-DNZNOktG.js")), ck = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i, v0 = 256 * 1024 * 1024, Mu = "default", lf = (e) => `analysis:artifact-editor:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, k0 = (e) => `analysis:explorer-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, b0 = (e) => `analysis:inspector-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, x0 = () => ({
   activeProfileId: Mu,
   profiles: [{
     id: Mu,
@@ -15217,11 +15222,11 @@ function cf(e, r) {
 function wc(e) {
   return Math.max(1, Math.ceil(JSON.stringify(e).length / 4));
 }
-function db(e) {
+function dk(e) {
   return e.filter((r) => r.kind !== "execution" && r.kind !== "ai-activity").slice(0, -12).map((r) => `${r.role}: ${r.content.replace(/\s+/g, " ").slice(0, 240)}`).join(`
 `).slice(-12e3);
 }
-function ub(e) {
+function uk(e) {
   return {
     discover_skills: "Checking available analysis guidance",
     load_skill: "Loading analysis guidance",
@@ -15239,7 +15244,7 @@ function ub(e) {
     request_user_choice: "Asking for your decision"
   }[e] || `Using ${e.replaceAll("_", " ")}`;
 }
-function pb(e) {
+function pk(e) {
   try {
     const r = JSON.parse(e);
     return r.ok === !1 || r.error ? {
@@ -15257,7 +15262,7 @@ function pb(e) {
 function Ws(e) {
   return e >= 1024 * 1024 * 1024 ? `${(e / 1024 / 1024 / 1024).toFixed(1)} GiB` : e >= 1024 * 1024 ? `${(e / 1024 / 1024).toFixed(1)} MiB` : e >= 1024 ? `${(e / 1024).toFixed(1)} KiB` : `${e} bytes`;
 }
-function fb(e) {
+function fk(e) {
   return e.replace(/[^A-Za-z0-9._ -]/g, "_");
 }
 function j0(e) {
@@ -15268,7 +15273,7 @@ function j0(e) {
   if (r === ".csv") return "csv";
   throw new Error(`${e} is not a supported notebook query source`);
 }
-function mb(e) {
+function mk(e) {
   return Object.fromEntries(Object.entries(e).map(([r, a]) => {
     if (a == null) return [r, { type: "null", value: null }];
     if (typeof a == "boolean") return [r, { type: "boolean", value: a }];
@@ -15300,7 +15305,7 @@ function Yi(e) {
     (r) => r.source !== "result" && r.role !== "chat-attachment" && r.state === "ready" && !r.deletedAt
   ).map((r) => r.sha256 || r.remoteSchemaDigest || "").filter(Boolean).sort();
 }
-function hb(e) {
+function hk(e) {
   return /delete|remove|trash/i.test(e) ? "delete" : /download/i.test(e) ? "download" : /upload|add files/i.test(e) ? "upload" : /sync|refresh/i.test(e) ? "sync" : /pipeline/i.test(e) ? "pipeline" : /notebook/i.test(e) ? "notebook" : /copy/i.test(e) ? "copy" : /rename|edit/i.test(e) ? "edit" : /save|snapshot/i.test(e) ? "save" : /run|open/i.test(e) ? "run" : /import|reuse/i.test(e) ? "import" : "add";
 }
 function Hs(e) {
@@ -15310,13 +15315,13 @@ function uf(e, r) {
   var a;
   return !!((a = e.requiredCapabilities) != null && a.includes("zarrviewer") || /(?:store_uuid|render_panels|zarrviewer|ome[-_.]?zarr)/i.test(r));
 }
-function yb(e, r) {
+function yk(e, r) {
   const a = e.executions.filter(
     (i) => i.chatId === r.chatId && i.promptId === r.promptId && i.purpose !== "inspection" && !Pu(e, i) && ["success", "reused"].includes(i.status)
   );
   return p1(a, e.files);
 }
-function gb() {
+function gk() {
   var $o, Gn, Oo, Io, ga, zi, Za;
   const e = window.OMERO_ANALYSIS, r = T.useMemo(() => new Rg(e), [e]), a = T.useMemo(
     () => new Pw(
@@ -15327,7 +15332,7 @@ function gb() {
     [e]
   ), i = N2(), d = new URLSearchParams(window.location.search).get("tab"), p = _1(d), [f, x] = T.useState(
     p
-  ), [v, k] = T.useState(null), C = T.useRef(null), [E, R] = T.useState(null), [$, z] = T.useState([]), [V, Z] = T.useState(null), [te, me] = T.useState(null), je = T.useRef(null), Ce = T.useRef(/* @__PURE__ */ new Map()), [ie, he] = T.useState(""), [ve, Ae] = T.useState(null), [be, We] = T.useState(""), [oe, Fe] = T.useState(null), [ye, ue] = T.useState(null), W = T.useRef(/* @__PURE__ */ new Map()), [ke, ce] = T.useState([]), [K, le] = T.useState(Gs), [ne, F] = T.useState(x0), [ee, Y] = T.useState([]), [Te, De] = T.useState(""), [Ze, tt] = T.useState(!1), [Je, lt] = T.useState("http://localhost:1234/v1"), [_t, Yn] = T.useState([]), [cr, An] = T.useState({}), [Hr, Gr] = T.useState(""), [ol, Js] = T.useState(!1), [Xs, Ys] = T.useState(null), [os, _a] = T.useState(!1), [sl, _n] = T.useState(""), [pt, Bs] = T.useState(!1), [ja, il] = T.useState(!1), [io, ei] = T.useState(!1), [an, Kr] = T.useState("light"), [Nc, lo] = T.useState(""), [Jt, Bn] = T.useState(!1), [ti, Ea] = T.useState(""), [Rc, on] = T.useState("ready"), [Qr, er] = T.useState(!1), On = T.useRef(!1), [dr, ni] = T.useState([]), [Ct, ft] = T.useState(null), [ll, cl] = T.useState(480), [dl, ss] = T.useState(360), [ur, co] = T.useState(!0), [uo, po] = T.useState(!0), [is, ls] = T.useState(null), [Ve, zt] = T.useState(null), [qu, Uu] = T.useState(
+  ), [v, b] = T.useState(null), C = T.useRef(null), [E, R] = T.useState(null), [$, z] = T.useState([]), [V, Z] = T.useState(null), [te, me] = T.useState(null), je = T.useRef(null), Ce = T.useRef(/* @__PURE__ */ new Map()), [ie, he] = T.useState(""), [ve, Ae] = T.useState(null), [ke, We] = T.useState(""), [oe, Fe] = T.useState(null), [ye, ue] = T.useState(null), W = T.useRef(/* @__PURE__ */ new Map()), [be, ce] = T.useState([]), [K, le] = T.useState(Gs), [ne, F] = T.useState(x0), [ee, Y] = T.useState([]), [Te, De] = T.useState(""), [Ze, tt] = T.useState(!1), [Je, lt] = T.useState("http://localhost:1234/v1"), [_t, Yn] = T.useState([]), [cr, An] = T.useState({}), [Hr, Gr] = T.useState(""), [ol, Js] = T.useState(!1), [Xs, Ys] = T.useState(null), [os, _a] = T.useState(!1), [sl, _n] = T.useState(""), [pt, Bs] = T.useState(!1), [ja, il] = T.useState(!1), [io, ei] = T.useState(!1), [an, Kr] = T.useState("light"), [Nc, lo] = T.useState(""), [Jt, Bn] = T.useState(!1), [ti, Ea] = T.useState(""), [Rc, on] = T.useState("ready"), [Qr, er] = T.useState(!1), On = T.useRef(!1), [dr, ni] = T.useState([]), [Ct, ft] = T.useState(null), [ll, cl] = T.useState(480), [dl, ss] = T.useState(360), [ur, co] = T.useState(!0), [uo, po] = T.useState(!0), [is, ls] = T.useState(null), [Ve, zt] = T.useState(null), [qu, Uu] = T.useState(
     new URLSearchParams(window.location.search).get("runId")
   ), [Zr, ul] = T.useState(""), [pl, fl] = T.useState(""), [Pc, Tc] = T.useState(""), [Lc, Mc] = T.useState(""), [Vu, $c] = T.useState(!1), xt = T.useRef(/* @__PURE__ */ new Set()), [Wu, ri] = T.useState(!1), [fo, ai] = T.useState(""), [Hu, we] = T.useState("Preparing workspace…"), [, Jr] = T.useState(!0), [tr, sn] = T.useState({
     percent: 3,
@@ -15335,7 +15340,7 @@ function gb() {
   }), [In, Oc] = T.useState(""), [Xr, oi] = T.useState(null), [nr, pr] = T.useState(/* @__PURE__ */ new Set()), [Yr, mo] = T.useState(/* @__PURE__ */ new Set()), [Br, cs] = T.useState(/* @__PURE__ */ new Set()), [Mt, ho] = T.useState(null), [ml, Na] = T.useState(""), [Gu, si] = T.useState(!1), [rt, fr] = T.useState(""), [Ic, Ra] = T.useState(!1), Dc = T.useCallback(() => {
     pu(e, "session-expired");
   }, [e]);
-  ab(
+  ak(
     e.keepaliveUrl,
     e.keepaliveInterval,
     Dc
@@ -15347,10 +15352,10 @@ function gb() {
     pipelines: !0,
     notebooks: !0,
     trash: !1
-  }), [vl, bo] = T.useState(/* @__PURE__ */ new Set()), [qc, na] = T.useState(null), mr = T.useRef(null), [ps, Nt] = T.useState({
+  }), [vl, ko] = T.useState(/* @__PURE__ */ new Set()), [qc, na] = T.useState(null), mr = T.useRef(null), [ps, Nt] = T.useState({
     percent: 0,
     message: "Preparing the browser analysis workspace…"
-  }), [ra, aa] = T.useState({ usage: 0, quota: 0 }), Fn = T.useRef(null), ko = T.useRef(/* @__PURE__ */ new Map()), mi = T.useRef(null), xo = T.useRef(null), oa = T.useRef(null), So = T.useRef(null), bl = T.useRef(null), yn = T.useRef(/* @__PURE__ */ new Set()), Ft = T.useRef([]), Co = T.useRef([]), La = T.useRef([]), fs = T.useRef([]), Ma = T.useRef({});
+  }), [ra, aa] = T.useState({ usage: 0, quota: 0 }), Fn = T.useRef(null), bo = T.useRef(/* @__PURE__ */ new Map()), mi = T.useRef(null), xo = T.useRef(null), oa = T.useRef(null), So = T.useRef(null), kl = T.useRef(null), yn = T.useRef(/* @__PURE__ */ new Set()), Ft = T.useRef([]), Co = T.useRef([]), La = T.useRef([]), fs = T.useRef([]), Ma = T.useRef({});
   C.current = v, je.current = te;
   const Uc = T.useRef(!1);
   T.useEffect(() => {
@@ -15375,7 +15380,7 @@ function gb() {
   }, [v == null ? void 0 : v.workspace.id, e, Ve == null ? void 0 : Ve.dirty]), T.useEffect(() => {
     if (e.embeddedHost !== "biomero" || window.parent === window) return;
     const s = (u) => {
-      const g = ob(u, window.parent, window.location.origin);
+      const g = ok(u, window.parent, window.location.origin);
       g && Kr(g);
     };
     return window.addEventListener("message", s), () => window.removeEventListener("message", s);
@@ -15384,7 +15389,7 @@ function gb() {
     const u = new URL(window.location.href);
     u.searchParams.set("tab", s), window.history.replaceState({}, "", u), x(s);
   }
-  function kl(s) {
+  function bl(s) {
     const u = new URL(window.location.href);
     s ? u.searchParams.set("runId", s) : u.searchParams.delete("runId"), window.history.replaceState({}, "", u), Uu(s);
   }
@@ -15395,31 +15400,31 @@ function gb() {
   function Ku() {
     co((s) => {
       const u = !s;
-      return mn(b0(e.context), u), u;
+      return mn(k0(e.context), u), u;
     });
   }
   function Qu() {
     po((s) => {
       const u = !s;
-      return mn(k0(e.context), u), u;
+      return mn(b0(e.context), u), u;
     });
   }
   const st = (v == null ? void 0 : v.workspace) || null, hr = (v == null ? void 0 : v.chats) || [], nt = hr.find((s) => s.id === (st == null ? void 0 : st.activeChatId)) || hr[0] || null;
   T.useEffect(() => {
     const s = (nt == null ? void 0 : nt.contextUsage) || null;
-    mr.current = s, na(s), nt != null && nt.id && bo((u) => u.has(nt.id) ? u : /* @__PURE__ */ new Set([...u, nt.id]));
+    mr.current = s, na(s), nt != null && nt.id && ko((u) => u.has(nt.id) ? u : /* @__PURE__ */ new Set([...u, nt.id]));
   }, [nt == null ? void 0 : nt.id]), T.useEffect(() => {
     let s = !0;
     return Promise.all([
       zs(lf(e.context)),
-      zs(b0(e.context)),
-      zs(k0(e.context))
+      zs(k0(e.context)),
+      zs(b0(e.context))
     ]).then(([
       u,
       g,
-      b
+      k
     ]) => {
-      s && (Ta.current = typeof u == "boolean" ? u : void 0, Bs(u === !0), co(g !== !1), po(b !== !1), il(!0));
+      s && (Ta.current = typeof u == "boolean" ? u : void 0, Bs(u === !0), co(g !== !1), po(k !== !1), il(!0));
     }), () => {
       s = !1;
     };
@@ -15522,19 +15527,19 @@ function gb() {
       ds.current = !1, Promise.all([
         d0(v, e.context),
         r.syncStatus(v.workspace.id)
-      ]).then(async ([b, S]) => {
+      ]).then(async ([k, S]) => {
         if (!s) {
-          if (Na(b.inventory.digest), ho(S), fr(""), gu(v.workspace, S)) {
+          if (Na(k.inventory.digest), ho(S), fr(""), gu(v.workspace, S)) {
             await js(v.workspace);
             return;
           }
-          S.canSync && (b.inventory.items.length > 0 || S.linked) && (!S.linked || u0(
-            b.inventory.digest,
+          S.canSync && (k.inventory.items.length > 0 || S.linked) && (!S.linked || u0(
+            k.inventory.digest,
             S.inventoryDigest
-          )) && await dt(b);
+          )) && await dt(k);
         }
-      }).catch((b) => {
-        s || fr(String(b));
+      }).catch((k) => {
+        s || fr(String(k));
       });
     }, u);
     return () => {
@@ -15546,7 +15551,7 @@ function gb() {
     const s = v == null ? void 0 : v.workspace;
     if (!(s != null && s.omeroSync) || !e.context) return;
     let u = !1, g = !1;
-    const b = async () => {
+    const k = async () => {
       if (!(u || g || ar.current)) {
         g = !0;
         try {
@@ -15564,10 +15569,10 @@ function gb() {
         }
       }
     }, S = () => {
-      b();
+      k();
     }, A = () => {
-      document.visibilityState === "visible" && b();
-    }, P = window.setInterval(() => void b(), 3e4);
+      document.visibilityState === "visible" && k();
+    }, P = window.setInterval(() => void k(), 3e4);
     return window.addEventListener("focus", S), document.addEventListener("visibilitychange", A), () => {
       u = !0, window.clearInterval(P), window.removeEventListener("focus", S), document.removeEventListener("visibilitychange", A);
     };
@@ -15588,7 +15593,7 @@ function gb() {
       const [
         u,
         g,
-        b,
+        k,
         S,
         A
       ] = await Promise.all([
@@ -15618,7 +15623,7 @@ function gb() {
         };
         F(Ne), le(Ne.profiles[0].settings);
       }
-      if (Array.isArray(b) && Y(b), sn({ percent: 24, message: "Connecting to the current OMERO object…" }), await r.connect(), P.some((Ne) => Ne.omeroSync)) {
+      if (Array.isArray(k) && Y(k), sn({ percent: 24, message: "Connecting to the current OMERO object…" }), await r.connect(), P.some((Ne) => Ne.omeroSync)) {
         sn({
           percent: 29,
           message: "Checking for Workspace changes made in OMERO…"
@@ -15767,7 +15772,7 @@ function gb() {
         const se = xa(Ne.document);
         se && (X = await qa(se, X));
       }
-      s && (k(X), C.current = X, sn({ percent: 94, message: "Finishing the Analysis interface…" }), z(await r.listPipelineTemplates()), s && (er(!0), Nt({ percent: 100, message: "Browser Python starts when an analysis needs it" }), we(B || "Ready — browser Python will start when needed"), aa(await Fr()), sn({ percent: 100, message: "Workspace ready" }), Jr(!1)));
+      s && (b(X), C.current = X, sn({ percent: 94, message: "Finishing the Analysis interface…" }), z(await r.listPipelineTemplates()), s && (er(!0), Nt({ percent: 100, message: "Browser Python starts when an analysis needs it" }), we(B || "Ready — browser Python will start when needed"), aa(await Fr()), sn({ percent: 100, message: "Workspace ready" }), Jr(!1)));
     })().catch((u) => {
       s && (we(`Workspace failed: ${String(u)}`), Oc(String(u)), sn({ percent: 0, message: "Workspace preparation failed" }), Jr(!1));
     }), () => {
@@ -15790,17 +15795,17 @@ function gb() {
       Y(u.skills), await mn(Zp, u.skills), !e.embeddedHost && (u.analysis.theme === "dark" || u.analysis.theme === "light") && (Kr(u.analysis.theme), await mn(Jp, u.analysis.theme));
       const g = Ta.current ?? u.analysis.editorEnabled === !0;
       Ta.current = g, Bs(g), await mn(lf(e.context), g);
-      const b = C.current;
-      if (b && b.workspace.plotCsv !== u.analysis.plotCsv) {
+      const k = C.current;
+      if (k && k.workspace.plotCsv !== u.analysis.plotCsv) {
         const P = {
-          ...b,
+          ...k,
           workspace: {
-            ...b.workspace,
+            ...k.workspace,
             plotCsv: u.analysis.plotCsv,
             updatedAt: re()
           }
         };
-        C.current = P, k(P), await Da(P.workspace);
+        C.current = P, b(P), await Da(P.workspace);
       }
       const S = u.ai.profiles.find(
         (P) => P.id === u.ai.activeProfileId
@@ -15840,8 +15845,8 @@ function gb() {
       ce([]);
       return;
     }
-    const b = fh(u, E).slice(0, 50);
-    return Promise.allSettled(b.map(async (S) => {
+    const k = fh(u, E).slice(0, 50);
+    return Promise.allSettled(k.map(async (S) => {
       const A = `${S.type}:${S.id}`, P = W.current.get(A) || await Dp(g, S);
       return W.current.set(A, P), { candidate: S, capability: P };
     })).then((S) => {
@@ -15883,8 +15888,8 @@ function gb() {
     let u = s;
     const g = new Map(
       u.files.filter((L) => L.annotationId).map((L) => [L.annotationId, L])
-    ), b = ((j = e.context) == null ? void 0 : j.selected_attachments) || [];
-    for (const L of b) {
+    ), k = ((j = e.context) == null ? void 0 : j.selected_attachments) || [];
+    for (const L of k) {
       if (g.has(L.annotation_id)) continue;
       const q = ((N = (O = e.context) == null ? void 0 : O.data_bindings) == null ? void 0 : N[String(L.annotation_id)]) || L.default_mode || "local", B = {
         id: Le(),
@@ -15966,16 +15971,16 @@ function gb() {
   }
   function Bc(s, u) {
     if (!(s instanceof nl) || !s.referencedName) return null;
-    const g = Qh(s.referencedName, u.files).filter((b) => b.dataQueryMode !== "remote");
+    const g = Qh(s.referencedName, u.files).filter((k) => k.dataQueryMode !== "remote");
     return g.length === 1 ? g[0] : null;
   }
-  async function wi(s, u, g, b) {
+  async function wi(s, u, g, k) {
     if (!(s instanceof nl) || !s.referencedName) return null;
     const S = Qh(s.referencedName, g.files).filter((q) => q.dataQueryMode === "remote" && Nu(q));
     if (S.length !== 1) return null;
     const A = S[0], P = Eu(A);
     if (!P || !A.annotationId) return null;
-    const j = await r.remoteSchema(A.annotationId), O = (Array.isArray(j.tables) ? j.tables : []).map((q) => String(q.name || "")).filter(Boolean), N = E2(u, b, O, A.name);
+    const j = await r.remoteSchema(A.annotationId), O = (Array.isArray(j.tables) ? j.tables : []).map((q) => String(q.name || "")).filter(Boolean), N = E2(u, k, O, A.name);
     if (!N) return null;
     const L = N.recipes.map((q) => ({
       version: 2,
@@ -15993,11 +15998,11 @@ function gb() {
     return { code: N.code, bindings: L };
   }
   async function ws(s, u, g) {
-    const b = Bc(s, u);
-    if (!b) return null;
+    const k = Bc(s, u);
+    if (!k) return null;
     const S = gc(
       va(u),
-      b.size,
+      k.size,
       await Fr(),
       eo
     );
@@ -16008,23 +16013,23 @@ function gb() {
       ), null;
     if (!await i.confirm(
       "Download database for this legacy analysis?",
-      `${g} opens its database path directly and the matching Workspace source is not currently downloaded. Download ${b.name} (${Ws(b.size)}) into browser storage and continue locally? The worker cache remains available for remote-bound analyses.`,
+      `${g} opens its database path directly and the matching Workspace source is not currently downloaded. Download ${k.name} (${Ws(k.size)}) into browser storage and continue locally? The worker cache remains available for remote-bound analyses.`,
       "Download and continue"
     )) return null;
-    we(`Downloading ${b.name} for local analysis…`), Nt({ percent: 5, message: `Downloading ${b.name}…` });
+    we(`Downloading ${k.name} for local analysis…`), Nt({ percent: 5, message: `Downloading ${k.name}…` });
     const P = {
-      annotation_id: b.annotationId,
-      file_id: b.fileId || 0,
-      name: b.name,
-      mimetype: b.type,
-      size: b.size,
+      annotation_id: k.annotationId,
+      file_id: k.fileId || 0,
+      name: k.name,
+      mimetype: k.type,
+      size: k.size,
       kind: "attachment",
       supported: !0
     }, j = await r.download(P), O = await yt(j);
-    if (b.sha256 && b.sha256 !== O)
-      throw new Error(`OMERO input ${b.name} no longer matches the Workspace hash`);
+    if (k.sha256 && k.sha256 !== O)
+      throw new Error(`OMERO input ${k.name} no longer matches the Workspace hash`);
     const N = {
-      ...b,
+      ...k,
       data: j,
       size: j.byteLength,
       sha256: O,
@@ -16034,11 +16039,11 @@ function gb() {
       error: void 0
     }, L = {
       ...u,
-      files: u.files.map((q) => q.id === b.id ? N : q)
+      files: u.files.map((q) => q.id === k.id ? N : q)
     };
-    return await no(N), C.current = L, k(L), await br(
+    return await no(N), C.current = L, b(L), await kr(
       L.files,
-      `${b.name} downloaded; continuing ${g} locally`
+      `${k.name} downloaded; continuing ${g} locally`
     ), L;
   }
   function Bu(s) {
@@ -16058,12 +16063,12 @@ function gb() {
     if (dr.length) return dr;
     const g = s.filter((S) => !!S.data);
     await or(g);
-    const b = await a.profileInputs();
+    const k = await a.profileInputs();
     for (const S of s.filter(
       (A) => A.dataQueryMode === "remote" && A.state === "ready" && A.annotationId
     )) {
       const A = await r.remoteSchema(S.annotationId);
-      b.push({
+      k.push({
         path: S.logicalPath,
         format: String(A.format || "remote"),
         size: S.size,
@@ -16073,12 +16078,12 @@ function gb() {
         }
       });
     }
-    return ni(b), b;
+    return ni(k), k;
   }
   function Al(s, u) {
     return s.map((g) => {
       if (g.version === 2) return g;
-      const b = u.files.find(
+      const k = u.files.find(
         (S) => S.annotationId === g.annotationId && (!g.fileId || S.fileId === g.fileId)
       );
       return {
@@ -16086,7 +16091,7 @@ function gb() {
         bindingId: Bo(g),
         capability: g.capability,
         format: g.format,
-        sourceName: (b == null ? void 0 : b.name) || `${g.format}-source`,
+        sourceName: (k == null ? void 0 : k.name) || `${g.format}-source`,
         preferredAnnotationId: g.annotationId,
         preferredFileId: g.fileId || void 0,
         schemaDigest: g.schemaDigest,
@@ -16102,8 +16107,8 @@ function gb() {
       throw new Error(
         `No authorized ${Nf(s)} source is attached to this Workspace`
       );
-    const b = S2(s), S = C2(s), A = g.find(
-      (N) => N.annotationId === b && (!S || N.fileId === S)
+    const k = S2(s), S = C2(s), A = g.find(
+      (N) => N.annotationId === k && (!S || N.fileId === S)
     ), P = A ? [A, ...g.filter((N) => N.id !== A.id)] : g, j = [];
     for (const N of P) {
       const L = await r.remoteSchema(N.annotationId);
@@ -16136,7 +16141,7 @@ function gb() {
     ).values());
     if (!g.length)
       return fs.current = [], Ma.current = {}, On.current && await a.syncRemoteQueries([]), u;
-    const b = [], S = {};
+    const k = [], S = {};
     for (const A of g) {
       if (![1, 2].includes(A.version) || A.capability !== "omero-data-query-v1" || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.csv$/i.test(A.outputCsvName) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(Bo(A)))
         throw new Error("Invalid remote query binding");
@@ -16150,14 +16155,14 @@ function gb() {
       const O = await r.downloadRemoteResult(j.result_token);
       if (O.byteLength !== Number(j.byte_count))
         throw new Error("Remote query result size changed during download");
-      b.push({
+      k.push({
         bindingId: Bo(A),
         name: A.outputCsvName,
         data: O,
         sourceDigest: String(j.source_sha256 || await yt(O))
       }), S[`query:${Bo(A)}`] = P.name;
     }
-    return await or(u.files), await a.syncRemoteQueries(b), fs.current = b.map((A) => A.sourceDigest).sort(), Ma.current = S, u;
+    return await or(u.files), await a.syncRemoteQueries(k), fs.current = k.map((A) => A.sourceDigest).sort(), Ma.current = S, u;
   }
   async function nd(s) {
     const u = new Set([
@@ -16172,18 +16177,18 @@ function gb() {
     );
     if (!g.length) return s;
     await Promise.all(g.map((S) => au(S.id)));
-    const b = new Set(g.map((S) => S.id));
-    return { ...s, files: s.files.filter((S) => !b.has(S.id)) };
+    const k = new Set(g.map((S) => S.id));
+    return { ...s, files: s.files.filter((S) => !k.has(S.id)) };
   }
   async function rd(s) {
     const u = [];
     for (const g of s.methods) {
-      const b = g.remoteQueryBindings || [];
-      if (!b.some((L) => L.version === 1)) {
+      const k = g.remoteQueryBindings || [];
+      if (!k.some((L) => L.version === 1)) {
         u.push(g);
         continue;
       }
-      const S = Al(b, s), A = g.versions.find(
+      const S = Al(k, s), A = g.versions.find(
         (L) => L.version === g.currentVersion
       );
       if (!A) {
@@ -16212,7 +16217,7 @@ function gb() {
     }
     return { ...s, methods: u };
   }
-  async function br(s, u) {
+  async function kr(s, u) {
     if (ni([]), On.current) {
       await vi(s, u);
       return;
@@ -16225,14 +16230,14 @@ function gb() {
   async function Da(s) {
     const u = await _h(s), g = C.current;
     if (!g || g.workspace.id !== u.id || (g.workspace.revision || 0) >= (u.revision || 0)) return u;
-    const b = { ...g, workspace: u };
-    return C.current = b, k(b), u;
+    const k = { ...g, workspace: u };
+    return C.current = k, b(k), u;
   }
   function _l(s) {
     let u = C.current;
     if (u) {
       const g = { ...u, workspace: s };
-      C.current = g, k(g);
+      C.current = g, b(g);
     }
     Da(s);
   }
@@ -16241,32 +16246,32 @@ function gb() {
     if (u) {
       const g = {
         ...u,
-        chats: u.chats.map((b) => b.id === s.id ? s : b)
+        chats: u.chats.map((k) => k.id === s.id ? s : k)
       };
-      C.current = g, k(g);
+      C.current = g, b(g);
     }
     mc(s);
   }
   function jo(s, u) {
     mr.current = u, na(u);
-    const g = C.current, b = g == null ? void 0 : g.chats.find((S) => S.id === s);
-    b && vs({ ...b, contextUsage: u, updatedAt: re() });
+    const g = C.current, k = g == null ? void 0 : g.chats.find((S) => S.id === s);
+    k && vs({ ...k, contextUsage: u, updatedAt: re() });
   }
   function Un(s, u) {
     const g = C.current;
     if (!g) return;
-    const b = g.chats.find((P) => P.id === s);
-    if (!b) return;
-    const S = { ...b, messages: [...b.messages, u], updatedAt: re() }, A = {
+    const k = g.chats.find((P) => P.id === s);
+    if (!k) return;
+    const S = { ...k, messages: [...k.messages, u], updatedAt: re() }, A = {
       ...g,
       chats: g.chats.map((P) => P.id === s ? S : P)
     };
-    C.current = A, k(A), mc(S);
+    C.current = A, b(A), mc(S);
   }
   function Eo(s, u, g) {
-    const b = C.current;
-    if (!b) return;
-    const S = b.chats.find((j) => j.id === s);
+    const k = C.current;
+    if (!k) return;
+    const S = k.chats.find((j) => j.id === s);
     if (!S) return;
     const A = {
       ...S,
@@ -16275,29 +16280,29 @@ function gb() {
       ),
       updatedAt: re()
     }, P = {
-      ...b,
-      chats: b.chats.map((j) => j.id === s ? A : j)
+      ...k,
+      chats: k.chats.map((j) => j.id === s ? A : j)
     };
-    C.current = P, k(P), mc(A);
+    C.current = P, b(P), mc(A);
   }
   function Rn(s, u, g) {
     Eo(
       s,
       u,
-      (b) => b.aiActivity ? { ...b, aiActivity: g(b.aiActivity) } : b
+      (k) => k.aiActivity ? { ...k, aiActivity: g(k.aiActivity) } : k
     );
   }
-  function bs(s, u, g) {
-    Rn(s, u, (b) => ({
-      ...b,
-      entries: [...b.entries, g]
+  function ks(s, u, g) {
+    Rn(s, u, (k) => ({
+      ...k,
+      entries: [...k.entries, g]
     }));
   }
-  function kr(s, u, g, b, S) {
+  function br(s, u, g, k, S) {
     Rn(s, u, (A) => ({
       ...A,
       entries: A.entries.map(
-        (P) => P.id === g ? { ...P, status: b, detail: S || P.detail, completedAt: re() } : P
+        (P) => P.id === g ? { ...P, status: k, detail: S || P.detail, completedAt: re() } : P
       )
     }));
   }
@@ -16305,8 +16310,8 @@ function gb() {
     var S;
     const g = (S = s.aiActivity) == null ? void 0 : S.question;
     if (!g || g.answer) return;
-    const b = ko.current.get(g.id);
-    b && (ko.current.delete(g.id), Rn(b.chatId, b.activityMessageId, (A) => ({
+    const k = bo.current.get(g.id);
+    k && (bo.current.delete(g.id), Rn(k.chatId, k.activityMessageId, (A) => ({
       ...A,
       state: "running",
       question: A.question ? { ...A.question, answer: u, answeredAt: re() } : A.question,
@@ -16318,7 +16323,7 @@ function gb() {
           completedAt: re()
         } : P
       )
-    })), b.resolve(JSON.stringify({ ok: !0, selected: u })));
+    })), k.resolve(JSON.stringify({ ok: !0, selected: u })));
   }
   function jl(s, u) {
     const g = new Set(s.pinnedMessageIds || []);
@@ -16338,74 +16343,74 @@ function gb() {
   function xr(s) {
     const u = C.current;
     if (!u) return;
-    const g = u.executions.some((S) => S.id === s.id), b = {
+    const g = u.executions.some((S) => S.id === s.id), k = {
       ...u,
       executions: g ? u.executions.map((S) => S.id === s.id ? s : S) : [...u.executions, s]
     };
-    C.current = b, k(b), fw(s);
+    C.current = k, b(k), fw(s);
   }
   function cn(s) {
     const u = C.current;
     if (!u) return;
-    const g = u.runs.some((S) => S.id === s.id), b = {
+    const g = u.runs.some((S) => S.id === s.id), k = {
       ...u,
       runs: g ? u.runs.map((S) => S.id === s.id ? s : S) : [...u.runs, s]
     };
-    C.current = b, k(b), mw(s);
+    C.current = k, b(k), mw(s);
   }
   function qt(s) {
     if (!s.length) return;
     const u = C.current;
     if (!u) return;
-    const g = new Set(s.map((S) => S.id)), b = {
+    const g = new Set(s.map((S) => S.id)), k = {
       ...u,
       files: [...u.files.filter((S) => !g.has(S.id)), ...s]
     };
-    C.current = b, k(b), s.forEach((S) => void no(S));
+    C.current = k, b(k), s.forEach((S) => void no(S));
   }
   function od(s) {
     const u = C.current;
     if (!u) return;
     const g = { ...u, audits: [...u.audits, s] };
-    C.current = g, k(g), yw(s);
+    C.current = g, b(g), yw(s);
   }
   function za(s) {
     const u = C.current;
     if (!u) return;
-    const g = Y2(u.evidence, s), b = { ...u, evidence: g };
-    C.current = b, k(b), s.chatId ? ww(s.chatId, g.filter((S) => S.chatId === s.chatId)) : gw(s);
+    const g = Y2(u.evidence, s), k = { ...u, evidence: g };
+    C.current = k, b(k), s.chatId ? ww(s.chatId, g.filter((S) => S.chatId === s.chatId)) : gw(s);
   }
-  function ks(s) {
+  function bs(s) {
     if (!s.length) return;
     const u = C.current;
     if (!u) return;
     const g = { ...u, artifacts: [...u.artifacts, ...s] };
-    C.current = g, k(g), s.forEach((b) => void hw(b));
+    C.current = g, b(g), s.forEach((k) => void hw(k));
   }
   async function sa(s) {
     const u = { ...s, rememberKey: !1 };
     le(u), De("");
-    const g = ne.profiles.length ? ne.profiles : x0().profiles, b = ne.activeProfileId || g[0].id, S = {
-      activeProfileId: b,
+    const g = ne.profiles.length ? ne.profiles : x0().profiles, k = ne.activeProfileId || g[0].id, S = {
+      activeProfileId: k,
       profiles: g.map(
-        (A) => A.id === b ? { ...A, settings: u } : A
+        (A) => A.id === k ? { ...A, settings: u } : A
       )
     };
     F(S), await mn(Xo, Us(S)), await mn(Eh, { ...u, apiKey: "" });
   }
   async function ia(s) {
-    const u = ne.profiles.find((b) => b.id === s);
+    const u = ne.profiles.find((k) => k.id === s);
     if (!u) return;
     const g = { ...ne, activeProfileId: s };
     F(g), le({ ...Gs, ...u.settings }), De(""), await mn(Xo, Us(g));
   }
   async function El() {
-    var b;
-    const s = (b = await i.askText(
+    var k;
+    const s = (k = await i.askText(
       "New AI profile",
       `Profile ${ne.profiles.length + 1}`,
       "Profiles keep independent endpoints, models, authentication settings, and keys."
-    )) == null ? void 0 : b.trim();
+    )) == null ? void 0 : k.trim();
     if (!s) return;
     const u = {
       id: Le(),
@@ -16440,8 +16445,8 @@ function gb() {
     )) return;
     const g = ne.profiles.filter(
       (S) => S.id !== ne.activeProfileId
-    ), b = { activeProfileId: g[0].id, profiles: g };
-    F(b), le(g[0].settings), De(""), await mn(Xo, Us(b));
+    ), k = { activeProfileId: g[0].id, profiles: g };
+    F(k), le(g[0].settings), De(""), await mn(Xo, Us(k));
   }
   async function tp() {
     tt(!0), De("Validating connection…");
@@ -16462,10 +16467,10 @@ function gb() {
         s ? Je : ""
       );
       Yn(u.servers), An((g) => {
-        const b = { ...g };
+        const k = { ...g };
         return u.servers.forEach((S) => {
-          S.models.includes(b[S.endpoint]) || (b[S.endpoint] = S.models[0]);
-        }), b;
+          S.models.includes(k[S.endpoint]) || (k[S.endpoint] = S.models[0]);
+        }), k;
       }), u.servers.length ? Gr(
         `Detected ${u.servers.map((g) => g.name).join(" and ")}.`
       ) : Gr(
@@ -16483,7 +16488,7 @@ function gb() {
       Gr(`${s.name} did not report a usable chat model.`);
       return;
     }
-    const b = {
+    const k = {
       ...K,
       protocol: "openai",
       endpoint: s.endpoint,
@@ -16493,7 +16498,7 @@ function gb() {
       rememberKey: !1
     };
     if (!u) {
-      await sa(b), Gr(
+      await sa(k), Gr(
         `${s.name} is connected to the active AI profile with ${g}.`
       );
       return;
@@ -16501,11 +16506,11 @@ function gb() {
     const S = `${s.name} — ${g}`, A = new Set(ne.profiles.map((L) => L.name));
     let P = S, j = 2;
     for (; A.has(P); ) P = `${S} ${j++}`;
-    const O = { id: Le(), name: P, settings: b }, N = {
+    const O = { id: Le(), name: P, settings: k }, N = {
       activeProfileId: O.id,
       profiles: [...ne.profiles, O]
     };
-    F(N), le(b), De(""), await mn(Xo, Us(N)), Gr(
+    F(N), le(k), De(""), await mn(Xo, Us(N)), Gr(
       `Created and selected ${P}. It will be saved to OMERO automatically.`
     );
   }
@@ -16544,13 +16549,13 @@ function gb() {
         const g = F1(s);
         if (new URL(g).protocol !== "https:")
           throw new Error("Skill URLs must use HTTPS");
-        const b = await fetch(g, { credentials: "omit" });
-        if (!b.ok) throw new Error(`${b.status} ${b.statusText}`);
+        const k = await fetch(g, { credentials: "omit" });
+        if (!k.ok) throw new Error(`${k.status} ${k.statusText}`);
         const S = decodeURIComponent(
           new URL(g).pathname.split("/").at(-1) || "linked-skill.md"
         ), A = await p0({
           filename: S,
-          content: await b.text(),
+          content: await k.text(),
           sourceType: "url",
           sourceUrl: s
         });
@@ -16593,7 +16598,7 @@ function gb() {
       wo.current = !1, _a(!1), wl.current && (wl.current = !1, window.setTimeout(() => void Ss(), 0));
     }
   }
-  async function bi(s) {
+  async function ki(s) {
     const u = C.current;
     if (u) {
       if (!s.name.toLowerCase().endsWith(".ipynb")) {
@@ -16605,7 +16610,7 @@ function gb() {
         return;
       }
       try {
-        const g = await s.arrayBuffer(), b = iu(g), S = xa(b), A = S ? gy(b) : b, P = Vh(A), j = e.context && r.canUpload ? await r.uploadNotebook(s.name, P) : null, O = re(), N = {
+        const g = await s.arrayBuffer(), k = iu(g), S = xa(k), A = S ? gy(k) : k, P = Vh(A), j = e.context && r.canUpload ? await r.uploadNotebook(s.name, P) : null, O = re(), N = {
           id: Le(),
           workspaceId: u.workspace.id,
           name: (j == null ? void 0 : j.name) || s.name,
@@ -16618,7 +16623,7 @@ function gb() {
           createdAt: O,
           updatedAt: O
         }, L = { ...u, notebooks: [...u.notebooks, N] };
-        C.current = L, k(L), Z(N.id), ft({ kind: "notebook", id: N.id }), $t("notebooks"), await Jo(N), we(
+        C.current = L, b(L), Z(N.id), ft({ kind: "notebook", id: N.id }), $t("notebooks"), await Jo(N), we(
           S ? j ? `Validated, sanitized, uploaded, and attached portable notebook ${N.name}` : `Validated and uploaded portable notebook ${N.name} to this browser workspace` : j ? `Uploaded and attached legacy notebook ${N.name}; portability warning added` : `Uploaded legacy notebook ${N.name}; portability warning added`
         );
       } catch (g) {
@@ -16626,7 +16631,7 @@ function gb() {
       }
     }
   }
-  async function Ro(s, u, g, b, S) {
+  async function Ro(s, u, g, k, S) {
     var H;
     const A = C.current;
     if (!A || !g.some((X) => X.cell_type === "code"))
@@ -16670,7 +16675,7 @@ These items require ZarrViewer and cannot run in Notebook.`,
           },
           language_info: { name: "python" },
           omero_analysis: {
-            generated_from: b,
+            generated_from: k,
             created_at: L
           }
         },
@@ -16688,7 +16693,7 @@ Generated from OMERO.Analysis. Inputs are attached from the current Workspace wh
       createdAt: L,
       updatedAt: L
     }, I = { ...A, notebooks: [...A.notebooks, B] };
-    return C.current = I, k(I), Z(B.id), ft({ kind: "notebook", id: B.id }), pr(/* @__PURE__ */ new Set()), mo(/* @__PURE__ */ new Set()), await Jo(B), we(
+    return C.current = I, b(I), Z(B.id), ft({ kind: "notebook", id: B.id }), pr(/* @__PURE__ */ new Set()), mo(/* @__PURE__ */ new Set()), await Jo(B), we(
       S.length ? `Created ${B.name}; skipped ${S.length} ZarrViewer-dependent item(s)` : `Created ${B.name}`
     ), B;
   }
@@ -16702,7 +16707,7 @@ Generated from OMERO.Analysis. Inputs are attached from the current Workspace wh
       we("Select at least one Method to convert");
       return;
     }
-    const g = [], b = [];
+    const g = [], k = [];
     for (const S of u) {
       const A = S.versions.find(
         (P) => P.version === S.currentVersion
@@ -16712,7 +16717,7 @@ Generated from OMERO.Analysis. Inputs are attached from the current Workspace wh
           g.push(S.name);
           continue;
         }
-        b.push({
+        k.push({
           id: Le(),
           cell_type: "markdown",
           source: `## ${S.description || S.name}
@@ -16732,7 +16737,7 @@ Method: \`${S.name}\` · version ${A.version}`,
     await Ro(
       u.length === 1 ? u[0].name : "combined-methods",
       u.length === 1 ? u[0].description || u[0].name : "Combined Methods",
-      b,
+      k,
       {
         kind: "methods",
         methods: u.map((S) => ({
@@ -16744,7 +16749,7 @@ Method: \`${S.name}\` · version ${A.version}`,
       g
     );
   }
-  async function ki(s) {
+  async function bi(s) {
     const u = C.current;
     if (!u) return null;
     const g = s || u.pipelines.filter(
@@ -16752,7 +16757,7 @@ Method: \`${S.name}\` · version ${A.version}`,
     );
     if (!g.length)
       return we("Select at least one Pipeline to convert"), null;
-    const b = [], S = [];
+    const k = [], S = [];
     for (const A of g) {
       g.length > 1 && S.push({
         id: Le(),
@@ -16769,11 +16774,11 @@ ${A.description}`,
           (N) => N.version === P.methodVersion
         );
         if (!j || !O) {
-          b.push(`${A.name} / ${P.name} (unavailable)`);
+          k.push(`${A.name} / ${P.name} (unavailable)`);
           continue;
         }
         if (uf(j, O.code)) {
-          b.push(`${A.name} / ${P.name}`);
+          k.push(`${A.name} / ${P.name}`);
           continue;
         }
         S.push({
@@ -16805,7 +16810,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
           version: A.version
         }))
       },
-      b
+      k
     );
   }
   async function Sr(s, u = !1) {
@@ -16813,19 +16818,19 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
   }
   async function xi(s, u, g) {
     var N, L, q, B;
-    const b = tf(s, g.files), S = (N = u.protocolBindings) == null ? void 0 : N.find((I) => I.inputId === s.id);
-    let A = S ? b.find((I) => I.id === S.fileId) : void 0;
-    if (!A && b.length === 1 && (A = b[0]), !A && b.length > 1) {
+    const k = tf(s, g.files), S = (N = u.protocolBindings) == null ? void 0 : N.find((I) => I.inputId === s.id);
+    let A = S ? k.find((I) => I.id === S.fileId) : void 0;
+    if (!A && k.length === 1 && (A = k[0]), !A && k.length > 1) {
       const I = await i.choose(
         `Bind notebook input “${s.id}”`,
-        b.map((H) => ({
+        k.map((H) => ({
           value: H.id,
           label: H.name,
           description: s.kind === "query" ? `${H.dataQueryMode === "remote" || !H.data ? "Remote" : "Local"} ${j0(H.name)} source` : `Supporting ${pm(H.name)} file`
         })),
         s.kind === "query" ? "Choose a schema-compatible source. This binding can be changed for another plate." : "Choose the supporting file for this notebook."
       );
-      I && (A = b.find((H) => H.id === I));
+      I && (A = k.find((H) => H.id === I));
     }
     if (!A) {
       if (!s.required) return null;
@@ -16859,7 +16864,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
       name: A.name,
       kind: s.kind,
       mode: P,
-      path: `/input/${fb(A.name)}`,
+      path: `/input/${fk(A.name)}`,
       format: s.kind === "query" ? j0(A.name) : void 0,
       annotationId: A.annotationId,
       originalFileId: A.fileId,
@@ -16869,7 +16874,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
   }
   async function qa(s, u) {
     var P, j;
-    const g = s.inputs.filter((O) => tf(O, u.files).length === 0), b = s.inputs.filter((O) => O.kind === "query").flatMap(
+    const g = s.inputs.filter((O) => tf(O, u.files).length === 0), k = s.inputs.filter((O) => O.kind === "query").flatMap(
       (O) => tf(O, u.files).filter(
         (N) => {
           var L;
@@ -16877,10 +16882,10 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
         }
       )
     );
-    if (!g.length && !b.length || !e.context) return u;
+    if (!g.length && !k.length || !e.context) return u;
     const S = await r.listAttachments();
     let A = u;
-    for (const O of b) {
+    for (const O of k) {
       const N = S.find(
         (B) => {
           var I;
@@ -16942,7 +16947,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
       }
       A = { ...A, files: [...A.files, B] }, await no(B);
     }
-    return A !== u && (C.current = A, k(A)), A;
+    return A !== u && (C.current = A, b(A)), A;
   }
   async function cd(s, u) {
     const g = s.find((N) => N.inputId === u.source);
@@ -16950,11 +16955,11 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
       throw new Error(`Notebook query source is not bound: ${u.source}`);
     if (g.mode !== "remote" || !g.annotationId)
       throw new Error(`Notebook source ${u.source} is not a remote OMERO binding`);
-    const b = performance.now(), S = await r.remoteQuery(
+    const k = performance.now(), S = await r.remoteQuery(
       g.annotationId,
       u.sql,
-      mb(u.parameters)
-    ), A = performance.now() - b;
+      mk(u.parameters)
+    ), A = performance.now() - k;
     if (typeof S.result_token != "string")
       throw new Error("Remote notebook query did not return a result token");
     const P = performance.now(), j = await r.downloadRemoteResult(S.result_token), O = performance.now() - P;
@@ -16981,7 +16986,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     if (!g)
       return a.setNotebookQueryHandler(null), s;
     u = await qa(g, u);
-    const b = (await Promise.all(
+    const k = (await Promise.all(
       g.inputs.map((N) => xi(N, s, u))
     )).filter((N) => N != null), S = {
       ..._c(g),
@@ -16990,7 +16995,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     for (const N of g.parameters) {
       const L = N.choices_query;
       if (!L) continue;
-      const q = b.find((Me) => Me.inputId === L.source);
+      const q = k.find((Me) => Me.inputId === L.source);
       if (!(q != null && q.annotationId)) continue;
       const B = `SELECT * FROM (${L.sql.replace(/;\s*$/, "")}) AS choices LIMIT ${L.limit}`, I = await r.remoteQuery(q.annotationId, B, {}), H = Array.isArray(I.columns) ? I.columns.map((Me) => String(Me.name ?? Me)) : [], X = Array.isArray(I.preview) ? I.preview : [], ae = Math.max(0, L.value_column ? H.indexOf(L.value_column) : 0), Ee = L.label_column ? H.indexOf(L.label_column) : -1;
       if (L.value_column && H.indexOf(L.value_column) < 0)
@@ -17004,15 +17009,15 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     }
     const j = Bv(g, S, A), O = {
       ...s,
-      protocolBindings: b,
+      protocolBindings: k,
       parameterValues: j,
       parameterChoices: A,
       parameterChoiceLabels: P,
-      selectedDataFileIds: b.map((N) => N.fileId),
+      selectedDataFileIds: k.map((N) => N.fileId),
       portabilityWarning: void 0,
       updatedAt: re()
     };
-    return await Po(O), a.setNotebookQueryHandler((N) => cd(b, N)), await a.configureNotebook({ contract: g, bindings: b, parameters: j }), O;
+    return await Po(O), a.setNotebookQueryHandler((N) => cd(k, N)), await a.configureNotebook({ contract: g, bindings: k, parameters: j }), O;
   }
   async function dd(s, u = !1) {
     await Sr(s, u) && ls({ id: s.id, nonce: Date.now() });
@@ -17022,7 +17027,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     if (!u) throw new Error("Workspace is not ready");
     if (xa(s.document))
       return await or(u.files), { inputs: u.files, notebook: s };
-    let b = s.remoteQueryBindings || [];
+    let k = s.remoteQueryBindings || [];
     const S = [];
     for (let P = 0; P < s.document.cells.length; P += 1) {
       const j = s.document.cells[P];
@@ -17031,7 +17036,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
         continue;
       }
       let O = Array.isArray(j.source) ? j.source.join("") : j.source;
-      O = qs(O, b);
+      O = qs(O, k);
       try {
         Sc(O, u.files);
       } catch (N) {
@@ -17042,7 +17047,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
           `${s.id}-cell-${P + 1}`
         );
         if (L)
-          b = [...b, ...L.bindings], O = L.code;
+          k = [...k, ...L.bindings], O = L.code;
         else {
           const q = await ws(N, u, s.name);
           if (!q) throw N;
@@ -17051,12 +17056,12 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
       }
       S.push({ ...j, source: O });
     }
-    u = await vr(b, u);
+    u = await vr(k, u);
     const A = {
       ...s,
       document: { ...s.document, cells: S },
-      remoteQueryBindings: b,
-      portabilityWarning: b.length ? "Large OMERO databases are queried remotely; only bounded CSV results enter the browser runtime." : s.portabilityWarning,
+      remoteQueryBindings: k,
+      portabilityWarning: k.length ? "Large OMERO databases are queried remotely; only bounded CSV results enter the browser runtime." : s.portabilityWarning,
       updatedAt: re()
     };
     return (JSON.stringify(A.document) !== JSON.stringify(s.document) || JSON.stringify(A.remoteQueryBindings) !== JSON.stringify(s.remoteQueryBindings)) && await Po(A), await or(u.files), { inputs: u.files, notebook: A };
@@ -17070,12 +17075,12 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     if (!u) return;
     const g = C.current;
     if (!g) return;
-    const b = vt(u.replace(/\.ipynb$/i, ""));
-    let S = `${b}.ipynb`, A = 2;
+    const k = vt(u.replace(/\.ipynb$/i, ""));
+    let S = `${k}.ipynb`, A = 2;
     for (; g.notebooks.some(
       (j) => j.id !== s.id && j.name.toLowerCase() === S.toLowerCase()
     ); )
-      S = `${b}-${A}.ipynb`, A += 1;
+      S = `${k}-${A}.ipynb`, A += 1;
     await Po({ ...s, name: S, updatedAt: re() }), we(`Renamed notebook to ${S}`);
   }
   function Ci(s) {
@@ -17095,25 +17100,25 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     )) return;
     const u = C.current;
     if (!u) return;
-    const g = u.notebooks.filter((A) => A.id !== s.id), b = { ...u, notebooks: g };
-    C.current = b, k(b), V === s.id && Z(((S = g[0]) == null ? void 0 : S.id) || null), (Ct == null ? void 0 : Ct.kind) === "notebook" && Ct.id === s.id && ft({ kind: "folder", id: "notebooks" }), await vw(s.id), we(`Deleted notebook ${s.name}`);
+    const g = u.notebooks.filter((A) => A.id !== s.id), k = { ...u, notebooks: g };
+    C.current = k, b(k), V === s.id && Z(((S = g[0]) == null ? void 0 : S.id) || null), (Ct == null ? void 0 : Ct.kind) === "notebook" && Ct.id === s.id && ft({ kind: "folder", id: "notebooks" }), await vw(s.id), we(`Deleted notebook ${s.name}`);
   }
   async function Po(s) {
     const u = C.current;
     if (!u) return;
     const g = {
       ...u,
-      notebooks: u.notebooks.map((b) => b.id === s.id ? s : b)
+      notebooks: u.notebooks.map((k) => k.id === s.id ? s : k)
     };
-    C.current = g, k(g), await Jo(s);
+    C.current = g, b(g), await Jo(s);
   }
   async function Pl(s, u) {
     const g = C.current;
     if (!g || !u.length) return;
-    const b = [];
+    const k = [];
     for (const S of u) {
       const A = S.data.slice(0);
-      b.push({
+      k.push({
         id: Le(),
         workspaceId: g.workspace.id,
         notebookId: s.id,
@@ -17128,24 +17133,24 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
         createdAt: re()
       });
     }
-    qt(b);
+    qt(k);
   }
   async function Ai(s) {
     if (!s || !v) return;
-    const u = Array.from(s), g = u.reduce((j, O) => j + O.size, 0), b = gc(
+    const u = Array.from(s), g = u.reduce((j, O) => j + O.size, 0), k = gc(
       va(v),
       g,
       await Fr(),
       eo
     );
-    if (b) {
-      we(b);
+    if (k) {
+      we(k);
       return;
     }
     const S = [];
     let A = va(v);
     for (const j of u) {
-      if (!cb.test(j.name)) {
+      if (!ck.test(j.name)) {
         we(`${j.name} is not a supported tabular data file`);
         continue;
       }
@@ -17179,7 +17184,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
       });
     }
     const P = [...v.files, ...S];
-    qt(S), await br(P, "Local inputs added; browser Python will use them when needed"), aa(await Fr());
+    qt(S), await kr(P, "Local inputs added; browser Python will use them when needed"), aa(await Fr());
   }
   async function Tl(s) {
     if (!v) return;
@@ -17187,7 +17192,7 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     if (!u) return;
     if (u.role === "chat-attachment") {
       const S = v.files.filter((P) => P.id !== s), A = { ...v, files: S };
-      C.current = A, k(A), await au(s), we(`Removed chat attachment ${u.name}`), aa(await Fr());
+      C.current = A, b(A), await au(s), we(`Removed chat attachment ${u.name}`), aa(await Fr());
       return;
     }
     if (u.source === "result") {
@@ -17198,8 +17203,8 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
       }), yi === u.id && En(null), we(`Moved ${u.name} to workspace trash; provenance is preserved`);
       return;
     }
-    const g = v.files.filter((S) => S.id !== s), b = { ...v, files: g };
-    C.current = b, k(b), await au(s), await br(g, "Input removed from the Workspace"), aa(await Fr());
+    const g = v.files.filter((S) => S.id !== s), k = { ...v, files: g };
+    C.current = k, b(k), await au(s), await kr(g, "Input removed from the Workspace"), aa(await Fr());
   }
   async function Ll(s) {
     if (!s.some((S) => /^image\//.test(S.type))) return;
@@ -17209,14 +17214,14 @@ Pipeline \`${A.name}\` · Method version ${P.methodVersion}`,
     if (u.vision === "supported") return;
     if (!ms)
       throw new Error("Configure the AI provider and model before adding an image attachment");
-    const g = new AbortController(), b = window.setTimeout(() => g.abort(), 15e3);
+    const g = new AbortController(), k = window.setTimeout(() => g.abort(), 15e3);
     try {
       if (!await Og(K, g.signal))
         throw new Error(
           `Image support could not be confirmed for ${K.model}. Select a known vision model.`
         );
     } finally {
-      window.clearTimeout(b);
+      window.clearTimeout(k);
     }
   }
   async function Ml(s) {
@@ -17260,18 +17265,18 @@ ${O.text}
         }
       }]);
     }
-    const b = eb(K.contextWindow || 0);
-    if (g > b)
+    const k = ek(K.contextWindow || 0);
+    if (g > k)
       throw new Error(
-        `Chat attachments require about ${g.toLocaleString()} tokens; the attachment budget is ${b.toLocaleString()}. Remove or replace a document. Nothing was truncated.`
+        `Chat attachments require about ${g.toLocaleString()} tokens; the attachment budget is ${k.toLocaleString()}. Remove or replace a document. Nothing was truncated.`
       );
     return { parts: u, tokens: g };
   }
   async function pd(s, u, g) {
     var B;
-    const b = C.current, S = b == null ? void 0 : b.workspace.activeChatId;
-    if (!b || !S) throw new Error("No active Chat is available");
-    const A = b.files.filter(
+    const k = C.current, S = k == null ? void 0 : k.workspace.activeChatId;
+    if (!k || !S) throw new Error("No active Chat is available");
+    const A = k.files.filter(
       (I) => I.role === "chat-attachment" && I.chatId === S && !I.deletedAt
     );
     if (A.length >= y0)
@@ -17283,7 +17288,7 @@ ${O.text}
       return;
     }
     const N = gc(
-      va(b),
+      va(k),
       P.byteLength,
       await Fr(),
       eo
@@ -17291,10 +17296,10 @@ ${O.text}
     if (N) throw new Error(N);
     const L = J1(s.name, A.map((I) => I.name)), q = {
       id: Le(),
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       chatId: S,
       name: L,
-      logicalPath: `${b.workspace.rootPath}/Chat/${S}/Attachments/${L}`,
+      logicalPath: `${k.workspace.rootPath}/Chat/${S}/Attachments/${L}`,
       type: j.type,
       size: P.byteLength,
       sha256: O,
@@ -17323,7 +17328,7 @@ ${O.text}
       const H = C.current;
       if (H) {
         const X = { ...H, files: H.files.filter((ae) => ae.id !== q.id) };
-        C.current = X, k(X);
+        C.current = X, b(X);
       }
       throw await au(q.id), I;
     }
@@ -17333,20 +17338,20 @@ ${O.text}
     for (const g of s)
       try {
         await pd(g, "upload");
-      } catch (b) {
-        u.push(`${g.name}: ${String(b).replace(/^Error:\s*/, "")}`);
+      } catch (k) {
+        u.push(`${g.name}: ${String(k).replace(/^Error:\s*/, "")}`);
       }
     u.length && we(`Attachment rejected — ${u.join("; ")}`);
   }
   async function la(s, u) {
     try {
       if (u.size > Tu) throw new Error("Attachment exceeds 25 MiB");
-      const g = await u.arrayBuffer(), b = Lu(s.name, u.type, g);
+      const g = await u.arrayBuffer(), k = Lu(s.name, u.type, g);
       if (await yt(g) !== s.sha256)
         throw new Error("The selected file does not match the attachment stored in this snapshot");
       const A = {
         ...s,
-        type: b.type,
+        type: k.type,
         size: g.byteLength,
         data: g,
         state: "ready",
@@ -17372,7 +17377,7 @@ ${O.text}
     )) == null ? void 0 : u.trim();
     if (s)
       try {
-        const g = await nb(s);
+        const g = await nk(s);
         await pd(g, "url", s);
       } catch (g) {
         we(`URL attachment rejected — ${String(g).replace(/^Error:\s*/, "")}`);
@@ -17380,12 +17385,12 @@ ${O.text}
   }
   async function To(s) {
     if (!v) return;
-    const u = v.files.find((b) => b.id === s);
+    const u = v.files.find((k) => k.id === s);
     if (!(u != null && u.annotationId)) return;
     const g = { ...u, state: "loading", error: void 0 };
     qt([g]);
     try {
-      const b = await r.download({
+      const k = await r.download({
         annotation_id: u.annotationId,
         file_id: u.fileId || 0,
         name: u.name,
@@ -17395,21 +17400,21 @@ ${O.text}
         supported: !0
       }), S = {
         ...u,
-        data: b,
-        size: b.byteLength,
-        sha256: await yt(b),
+        data: k,
+        size: k.byteLength,
+        sha256: await yt(k),
         state: "ready",
         error: void 0
       }, A = v.files.map((P) => P.id === u.id ? S : P);
-      qt([S]), await br(A, "OMERO input restored; Workspace ready");
-    } catch (b) {
-      qt([{ ...u, state: "failed", error: String(b) }]);
+      qt([S]), await kr(A, "OMERO input restored; Workspace ready");
+    } catch (k) {
+      qt([{ ...u, state: "failed", error: String(k) }]);
     }
   }
   async function Vn() {
     if (!v) return;
-    const s = ku(v.workspace.id), u = { ...v.workspace, activeChatId: s.id, updatedAt: re() }, g = { ...v, workspace: u, chats: [...v.chats, s] };
-    C.current = g, k(g), await Promise.all([mc(s), Da(u)]), $t("assistant"), na(null), mr.current = null, yn.current.clear(), On.current && await a.beginTurn();
+    const s = bu(v.workspace.id), u = { ...v.workspace, activeChatId: s.id, updatedAt: re() }, g = { ...v, workspace: u, chats: [...v.chats, s] };
+    C.current = g, b(g), await Promise.all([mc(s), Da(u)]), $t("assistant"), na(null), mr.current = null, yn.current.clear(), On.current && await a.beginTurn();
   }
   function Cr(s) {
     if (!v) return;
@@ -17424,7 +17429,7 @@ ${O.text}
       s.title,
       "The chat folder and exported transcript use this name."
     )) == null ? void 0 : g.trim();
-    u && vs(rb(s, u, re()));
+    u && vs(rk(s, u, re()));
   }
   async function Ol(s) {
     const u = C.current;
@@ -17433,19 +17438,19 @@ ${O.text}
       we("Stop the active analysis before deleting this chat");
       return;
     }
-    const g = u.files.filter((I) => I.chatId === s.id), b = g.filter((I) => I.source === "result").length, S = g.filter((I) => I.role === "chat-attachment").length;
+    const g = u.files.filter((I) => I.chatId === s.id), k = g.filter((I) => I.source === "result").length, S = g.filter((I) => I.role === "chat-attachment").length;
     if (!await i.confirm(
       "Delete chat and results?",
-      `${s.title} and its complete conversation will be permanently removed, together with ${b} result${b === 1 ? "" : "s"}, ${S} attachment${S === 1 ? "" : "s"}, executions, and evidence. Saved Methods, Pipelines, and Notebooks are kept.`,
+      `${s.title} and its complete conversation will be permanently removed, together with ${k} result${k === 1 ? "" : "s"}, ${S} attachment${S === 1 ? "" : "s"}, executions, and evidence. Saved Methods, Pipelines, and Notebooks are kept.`,
       "Delete chat",
       !0
     )) return;
-    const A = u.chats.filter((I) => I.id !== s.id), P = A[0] || ku(u.workspace.id), j = A.length ? A : [P], O = u.workspace.activeChatId === s.id, N = {
+    const A = u.chats.filter((I) => I.id !== s.id), P = A[0] || bu(u.workspace.id), j = A.length ? A : [P], O = u.workspace.activeChatId === s.id, N = {
       ...u.workspace,
       activeChatId: O ? P.id : u.workspace.activeChatId,
       updatedAt: re()
     };
-    await bw(s.id), A.length || await mc(P);
+    await kw(s.id), A.length || await mc(P);
     const L = await _h(N), q = new Set(g.map((I) => I.id)), B = {
       ...u,
       workspace: L,
@@ -17456,7 +17461,7 @@ ${O.text}
       audits: u.audits.filter((I) => I.chatId !== s.id),
       evidence: u.evidence.filter((I) => I.chatId !== s.id)
     };
-    C.current = B, k(B), bo((I) => {
+    C.current = B, b(B), ko((I) => {
       const H = new Set(I);
       return H.delete(s.id), H;
     }), ((Ct == null ? void 0 : Ct.kind) === "chat" && Ct.id === s.id || (Ct == null ? void 0 : Ct.kind) === "file" && q.has(Ct.id)) && ft(null), O && (na(null), mr.current = null, yn.current.clear()), we(`Deleted chat ${s.title} and all of its local results`);
@@ -17469,9 +17474,9 @@ ${O.text}
   }
   function Ot(s, u, g) {
     s.preventDefault(), s.stopPropagation();
-    const b = 210, S = Math.max(60, g.length * 34 + 34);
+    const k = 210, S = Math.max(60, g.length * 34 + 34);
     oi({
-      x: Math.min(s.clientX, window.innerWidth - b - 8),
+      x: Math.min(s.clientX, window.innerWidth - k - 8),
       y: Math.min(s.clientY, window.innerHeight - S - 8),
       title: u,
       actions: g
@@ -17479,19 +17484,19 @@ ${O.text}
   }
   function Ua(s) {
     s.preventDefault();
-    const u = s.clientX, g = ll, b = (A) => cl(Math.max(250, Math.min(520, g + A.clientX - u))), S = () => {
-      window.removeEventListener("mousemove", b), window.removeEventListener("mouseup", S);
+    const u = s.clientX, g = ll, k = (A) => cl(Math.max(250, Math.min(520, g + A.clientX - u))), S = () => {
+      window.removeEventListener("mousemove", k), window.removeEventListener("mouseup", S);
     };
-    window.addEventListener("mousemove", b), window.addEventListener("mouseup", S);
+    window.addEventListener("mousemove", k), window.addEventListener("mouseup", S);
   }
   function Cs(s) {
     s.preventDefault();
-    const u = s.clientX, g = dl, b = (A) => ss(
+    const u = s.clientX, g = dl, k = (A) => ss(
       Math.max(280, Math.min(720, g + u - A.clientX))
     ), S = () => {
-      window.removeEventListener("mousemove", b), window.removeEventListener("mouseup", S);
+      window.removeEventListener("mousemove", k), window.removeEventListener("mouseup", S);
     };
-    window.addEventListener("mousemove", b), window.addEventListener("mouseup", S);
+    window.addEventListener("mousemove", k), window.addEventListener("mouseup", S);
   }
   async function Va() {
     if (!st) return;
@@ -17499,7 +17504,7 @@ ${O.text}
     const s = await Qp(st.id);
     if (!s) return;
     const u = await gs(s);
-    k(u), C.current = u, pr(/* @__PURE__ */ new Set()), mo(/* @__PURE__ */ new Set()), await br(u.files, "Workspace refreshed");
+    b(u), C.current = u, pr(/* @__PURE__ */ new Set()), mo(/* @__PURE__ */ new Set()), await kr(u.files, "Workspace refreshed");
   }
   async function As(s) {
     const u = await i.askText(
@@ -17514,8 +17519,8 @@ ${O.text}
       return;
     }
     if (g === s.name) return;
-    const b = await Kp(e.context);
-    if (b.some(
+    const k = await Kp(e.context);
+    if (k.some(
       (O) => O.id !== s.id && O.name.toLocaleLowerCase() === g.toLocaleLowerCase()
     )) {
       we(`A workspace named ${g} already exists for this OMERO object`);
@@ -17527,14 +17532,14 @@ ${O.text}
       return;
     }
     const P = R1(A, g, re());
-    if (b.some(
+    if (k.some(
       (O) => O.id !== s.id && O.rootPath.toLocaleLowerCase() === P.workspace.rootPath.toLocaleLowerCase()
     )) {
       we(`The workspace folder ${P.workspace.rootPath} already exists`);
       return;
     }
     const j = await Da(P.workspace);
-    await Promise.all(P.files.map(no)), P.workspace = j, (S == null ? void 0 : S.workspace.id) === s.id && (C.current = P, k(P)), we(`Renamed workspace to ${g}`);
+    await Promise.all(P.files.map(no)), P.workspace = j, (S == null ? void 0 : S.workspace.id) === s.id && (C.current = P, b(P)), we(`Renamed workspace to ${g}`);
   }
   async function _i(s) {
     var B, I;
@@ -17550,13 +17555,13 @@ ${O.text}
     if (!u || u === s.name) return;
     let g = u.replace(/[\\/]/g, "_").slice(0, 180);
     if (!g || g === "." || g === "..") return;
-    const b = ((I = s.name.match(/(\.[^.]+)$/)) == null ? void 0 : I[1]) || "";
-    if (b && !g.toLowerCase().endsWith(b.toLowerCase())) {
+    const k = ((I = s.name.match(/(\.[^.]+)$/)) == null ? void 0 : I[1]) || "";
+    if (k && !g.toLowerCase().endsWith(k.toLowerCase())) {
       if (/\.[^.]+$/.test(g)) {
-        we(`Keep the ${b} extension when renaming ${s.name}`);
+        we(`Keep the ${k} extension when renaming ${s.name}`);
         return;
       }
-      g += b;
+      g += k;
     }
     const S = C.current;
     if (!S) return;
@@ -17575,21 +17580,21 @@ ${O.text}
         logicalPath: H.logicalPath.replace(/[^/]+$/, X)
       } : H;
     }), L = N.filter((H, X) => H !== S.files[X]), q = { ...S, files: N };
-    C.current = q, k(q), await Promise.all(L.map(no)), s.source === "local" ? await br(N, `Renamed input to ${g}`) : we(
+    C.current = q, b(q), await Promise.all(L.map(no)), s.source === "local" ? await kr(N, `Renamed input to ${g}`) : we(
       L.length > 1 ? `Renamed ${s.name} and its paired plot data` : `Renamed ${s.name} to ${g}`
     );
   }
   async function ca(s) {
     var q;
-    const u = C.current, g = ve, b = e.context;
-    if (!u || !b || !(g != null && g.available) || !g.version)
-      throw new Error(be || "OMERO ZarrViewer 0.3 or newer is unavailable");
-    const S = fh(b, E);
+    const u = C.current, g = ve, k = e.context;
+    if (!u || !k || !(g != null && g.available) || !g.version)
+      throw new Error(ke || "OMERO ZarrViewer 0.3 or newer is unavailable");
+    const S = fh(k, E);
     if (!S.length)
       throw new Error(
         "No compatible OMERO Image or Plate is available in the current object hierarchy"
       );
-    const A = (q = u.workspace.zarrBindings) == null ? void 0 : q[s], P = A && A.groupId === b.group_id ? S.find(
+    const A = (q = u.workspace.zarrBindings) == null ? void 0 : q[s], P = A && A.groupId === k.group_id ? S.find(
       (B) => B.type === A.objectType && B.id === A.objectId
     ) : void 0;
     if (P)
@@ -17599,7 +17604,7 @@ ${O.text}
           return { binding: mh(
             I,
             P,
-            b.group_id,
+            k.group_id,
             g.version
           ), capability: I };
       } catch {
@@ -17652,7 +17657,7 @@ ${O.text}
     const L = mh(
       N.capability,
       N.candidate,
-      b.group_id,
+      k.group_id,
       g.version
     );
     return _l({
@@ -17664,11 +17669,11 @@ ${O.text}
       updatedAt: re()
     }), { binding: L, capability: N.capability };
   }
-  async function da(s, u, g, b) {
+  async function da(s, u, g, k) {
     const S = C.current, A = ve;
     if (!S || !(A != null && A.available))
-      throw new Error(be || "OMERO ZarrViewer is unavailable");
-    const P = bg(s), j = lu(
+      throw new Error(ke || "OMERO ZarrViewer is unavailable");
+    const P = kg(s), j = lu(
       S.evidence,
       u,
       Yi(S),
@@ -17677,7 +17682,7 @@ ${O.text}
     Rf(P.evidenceIds, j);
     const { binding: O, capability: N } = await ca(P.storeUuid), L = _g(A, N, P), q = Eg(O, P, L);
     let B;
-    if (b) {
+    if (k) {
       const Ee = await jg(N, P);
       if (va(C.current) + Ee.byteLength > eo)
         throw new Error("The rendered preview would exceed the 4 GiB workspace limit");
@@ -17710,10 +17715,10 @@ ${O.text}
       viewer: q,
       createdAt: re()
     };
-    ks([I]), Un(u, {
+    bs([I]), Un(u, {
       id: Le(),
       role: "assistant",
-      content: b ? `Rendered ${P.title} locally from the matching OME-Zarr source.` : `Prepared a validated ZarrViewer link for ${P.title}.`,
+      content: k ? `Rendered ${P.title} locally from the matching OME-Zarr source.` : `Prepared a validated ZarrViewer link for ${P.title}.`,
       kind: "viewer-preview",
       artifactId: I.id,
       activity: "worked",
@@ -17730,7 +17735,7 @@ ${O.text}
       sourceHashes: X,
       skillHashes: ae,
       sourceSkillKey: oo(X, ae),
-      summary: `${b ? "Rendered" : "Opened"} ${P.title} from evidence ${P.evidenceIds.join(", ")}`,
+      summary: `${k ? "Rendered" : "Opened"} ${P.title} from evidence ${P.evidenceIds.join(", ")}`,
       payload: Xi(q),
       createdAt: re()
     }), JSON.stringify({
@@ -17745,10 +17750,10 @@ ${O.text}
     });
   }
   async function mt(s, u, g = {}) {
-    const b = C.current;
-    if (!b || !(ve != null && ve.available))
-      throw new Error(be || "OMERO ZarrViewer is unavailable");
-    const { recipe: S, evidenceIds: A } = kg(s), P = Yi(b), j = Ft.current.map((Ee) => Ee.sha256), O = u.kind === "chat" ? lu(b.evidence, u.chatId, P, j) : b.evidence.filter(
+    const k = C.current;
+    if (!k || !(ve != null && ve.available))
+      throw new Error(ke || "OMERO ZarrViewer is unavailable");
+    const { recipe: S, evidenceIds: A } = bg(s), P = Yi(k), j = Ft.current.map((Ee) => Ee.sha256), O = u.kind === "chat" ? lu(k.evidence, u.chatId, P, j) : k.evidence.filter(
       (Ee) => Ee.runId === u.runId && Ee.sourceSkillKey === oo(P, j)
     );
     e1(s, A, O);
@@ -17757,11 +17762,11 @@ ${O.text}
       throw new Error("The rendered gallery would exceed the 4 GiB workspace limit");
     const B = `${vt(S.filename || S.title || "zarr-gallery").replace(/-png$/, "")}.png`, I = hh(N, S, A), H = {
       id: Le(),
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       ...Hs(u),
       ...g,
       name: B,
-      logicalPath: `${b.workspace.rootPath}/${u.kind === "run" ? "Runs" : g.pipelineId ? "Pipelines" : g.methodId ? "Methods" : "Chat"}/Results/zarr/${B}`,
+      logicalPath: `${k.workspace.rootPath}/${u.kind === "run" ? "Runs" : g.pipelineId ? "Pipelines" : g.methodId ? "Methods" : "Chat"}/Results/zarr/${B}`,
       type: "image/png",
       size: q.byteLength,
       sha256: await yt(q),
@@ -17774,7 +17779,7 @@ ${O.text}
     qt([H]);
     const X = {
       id: Le(),
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       ...Hs(u),
       fileId: H.id,
       kind: "viewer-preview",
@@ -17783,7 +17788,7 @@ ${O.text}
       viewer: I,
       createdAt: re()
     };
-    ks([X]), u.kind === "chat" && Un(u.chatId, {
+    bs([X]), u.kind === "chat" && Un(u.chatId, {
       id: Le(),
       role: "assistant",
       content: `Rendered one ${S.panels.length}-panel OME-Zarr gallery from verified analysis evidence.`,
@@ -17795,7 +17800,7 @@ ${O.text}
     const ae = Le();
     return za({
       id: ae,
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       ...Hs(u),
       kind: "render",
       status: "success",
@@ -17816,10 +17821,10 @@ ${O.text}
   }
   async function ht(s, u, g = {}) {
     var ae;
-    const b = C.current;
-    if (!b || !(ve != null && ve.available))
-      throw new Error(be || "OMERO ZarrViewer is unavailable");
-    const S = Yi(b), A = Ft.current.map((Ee) => Ee.sha256), P = u.kind === "chat" ? lu(b.evidence, u.chatId, S, A) : b.evidence.filter(
+    const k = C.current;
+    if (!k || !(ve != null && ve.available))
+      throw new Error(ke || "OMERO ZarrViewer is unavailable");
+    const S = Yi(k), A = Ft.current.map((Ee) => Ee.sha256), P = u.kind === "chat" ? lu(k.evidence, u.chatId, S, A) : k.evidence.filter(
       (Ee) => Ee.runId === u.runId && Ee.sourceSkillKey === oo(S, A)
     );
     Rf(s.evidenceIds, P);
@@ -17835,11 +17840,11 @@ ${O.text}
       renderKind: s.renderKind
     }, I = {
       id: Le(),
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       ...Hs(u),
       ...g,
       name: q,
-      logicalPath: `${b.workspace.rootPath}/${u.kind === "run" ? "Runs" : g.pipelineId ? "Pipelines" : g.methodId ? "Methods" : "Chat"}/Results/zarr/${q}`,
+      logicalPath: `${k.workspace.rootPath}/${u.kind === "run" ? "Runs" : g.pipelineId ? "Pipelines" : g.methodId ? "Methods" : "Chat"}/Results/zarr/${q}`,
       type: "image/png",
       size: N.byteLength,
       sha256: await yt(N),
@@ -17852,7 +17857,7 @@ ${O.text}
     qt([I]);
     const H = {
       id: Le(),
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       ...Hs(u),
       fileId: I.id,
       kind: "viewer-preview",
@@ -17861,7 +17866,7 @@ ${O.text}
       viewer: B,
       createdAt: re()
     };
-    ks([H]), u.kind === "chat" && Un(u.chatId, {
+    bs([H]), u.kind === "chat" && Un(u.chatId, {
       id: Le(),
       role: "assistant",
       content: s.renderKind === "roi" ? `Reproduced ${L} through ZarrViewer without an AI request.` : `Reproduced the ${s.recipe.panels.length}-panel ${L} gallery through ZarrViewer without an AI request.`,
@@ -17873,7 +17878,7 @@ ${O.text}
     const X = Le();
     return za({
       id: X,
-      workspaceId: b.workspace.id,
+      workspaceId: k.workspace.id,
       ...Hs(u),
       kind: "render",
       status: "success",
@@ -17896,27 +17901,27 @@ ${O.text}
       cited_evidence_ids: s.evidenceIds
     });
   }
-  async function Ar(s, u, g, b, S = {}) {
+  async function Ar(s, u, g, k, S = {}) {
     const A = u1(
       s,
       g,
-      b
+      k
     );
     if (A)
       return mt(A, u, S);
-    const P = d1(s, b);
+    const P = d1(s, k);
     return P ? ht(P, u, S) : null;
   }
-  async function Ut(s, u, g, b, S = {}, A = !1) {
+  async function Ut(s, u, g, k, S = {}, A = !1) {
     const P = await _r(
       g,
-      b,
+      k,
       A,
       S.pipelineId ? "pipeline" : "method",
       S
     ), j = await Ar(
       P,
-      b,
+      k,
       s.name,
       u.renderRecipe || n0(g),
       S
@@ -17924,12 +17929,12 @@ ${O.text}
     return { executionResult: P, renderResult: j };
   }
   async function Xt(s, u) {
-    const g = `${s}/${u}`, b = Ce.current.get(g);
-    if (b) return b;
+    const g = `${s}/${u}`, k = Ce.current.get(g);
+    if (k) return k;
     const S = await r.loadWorkflowSkill(s, u);
     return Ce.current.set(g, S), S;
   }
-  async function _r(s, u, g = !1, b = "analysis", S = {}) {
+  async function _r(s, u, g = !1, k = "analysis", S = {}) {
     const A = C.current;
     if (!A) return Ht("Workspace is not ready");
     const P = performance.now(), j = Hs(u), O = s.replace(/\r\n/g, `
@@ -17951,7 +17956,7 @@ ${O.text}
         ...j,
         status: I.status === "success" || I.status === "reused" ? "reused" : "failed",
         reusedFrom: I.id,
-        purpose: b,
+        purpose: k,
         durationMs: performance.now() - P,
         createdAt: re()
       };
@@ -18013,7 +18018,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
       model: K.model,
       workflowSkills: Ft.current,
       remoteQueryBindings: Co.current,
-      purpose: b,
+      purpose: k,
       createdAt: re()
     };
     xr(H), u.kind === "chat" && Un(u.chatId, {
@@ -18029,7 +18034,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
       on("running"), X = await a.run(
         O,
         12e4,
-        b === "method" || b === "pipeline"
+        k === "method" || k === "pipeline"
       );
     } catch (se) {
       const Se = String(se instanceof Error ? se.message : se).slice(0, so), _e = Le(), jt = {
@@ -18074,7 +18079,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
         createdAt: re()
       }), yn.current.add(se.name);
     }
-    qt(ae), ks(ae.map((se) => ({
+    qt(ae), bs(ae.map((se) => ({
       id: Le(),
       workspaceId: A.workspace.id,
       ...j,
@@ -18094,7 +18099,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
       modelPayload: X.modelPayload,
       outputFileIds: ae.map((se) => se.id),
       missingPlotCsv: Ee,
-      purpose: b === "inspection" && ae.length ? "analysis" : b,
+      purpose: k === "inspection" && ae.length ? "analysis" : k,
       evidenceId: Xe,
       durationMs: performance.now() - P
     };
@@ -18108,7 +18113,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
       skillHashes: q,
       sourceSkillKey: oo(L, q),
       executionId: H.id,
-      summary: `Successful ${b} execution; preview and generated-file metadata are reusable`,
+      summary: `Successful ${k} execution; preview and generated-file metadata are reusable`,
       payload: Xi({
         stdout: X.stdout,
         preview: X.preview,
@@ -18137,7 +18142,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
       for (const Se of (se == null ? void 0 : se.executions) || []) {
         if (!(u.kind === "chat" ? Se.chatId === u.chatId && Se.promptId === u.promptId : Se.runId === u.runId) || !Se.missingPlotCsv.length) continue;
         const jt = Se.missingPlotCsv.filter(
-          (kn) => !yn.current.has(kn.replace(/\.(png|svg)$/i, ".csv"))
+          (bn) => !yn.current.has(bn.replace(/\.(png|svg)$/i, ".csv"))
         );
         jt.length !== Se.missingPlotCsv.length && xr({
           ...Se,
@@ -18155,7 +18160,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
       ...X.modelPayload
     }).slice(0, so);
   }
-  async function Lo(s, u, g, b) {
+  async function Lo(s, u, g, k) {
     let S = {};
     try {
       S = JSON.parse(s.function.arguments || "{}");
@@ -18170,11 +18175,11 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
         return Ht("request_user_choice requires a question and two to four distinct choices");
       const N = Le();
       return new Promise((L) => {
-        ko.current.set(N, {
+        bo.current.set(N, {
           chatId: u,
-          activityMessageId: b,
+          activityMessageId: k,
           resolve: L
-        }), Rn(u, b, (q) => ({
+        }), Rn(u, k, (q) => ({
           ...q,
           state: "waiting",
           question: {
@@ -18394,12 +18399,12 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
     var zo, Wl, Ps, Ts, Hl, Fi, Gl, Kl, Ql, Zl, qi, Jl, Xl, Yl, Rd, Bl, Pd, Td, ec, tc, nc, Ls;
     const s = Nc.trim(), u = C.current, g = u == null ? void 0 : u.chats.find((Re) => Re.id === u.workspace.activeChatId);
     if (!s || !ys || !u || !g) return;
-    const b = u.files.filter(
+    const k = u.files.filter(
       (Re) => Re.role === "chat-attachment" && Re.chatId === g.id && !Re.deletedAt
     );
     let S;
     try {
-      S = await Ml(b);
+      S = await Ml(k);
     } catch (Re) {
       we(`Chat attachment error — ${String(Re).replace(/^Error:\s*/, "")}`);
       return;
@@ -18441,7 +18446,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
     try {
       B = await td(u.files), await a.beginTurn(), await a.syncRemoteQueries([]);
     } catch (Re) {
-      kr(
+      br(
         g.id,
         N,
         L,
@@ -18505,7 +18510,7 @@ ${I.stderr || I.stdout}. Modify the code before trying again.`
         const ut = X2(Re);
         if (!X) return ut;
         const Tt = Re.files.find(
-          (kt) => /(^|\/)PNG_QUESTIONS\.md$/i.test(kt.path)
+          (bt) => /(^|\/)PNG_QUESTIONS\.md$/i.test(bt.path)
         );
         return Tt ? `${ut}
 
@@ -18525,7 +18530,7 @@ ${Tt.content}` : ut;
     Eo(g.id, O, (Re) => ({
       ...Re,
       workflowSkills: Ft.current
-    })), kr(
+    })), br(
       g.id,
       N,
       L,
@@ -18533,10 +18538,10 @@ ${Tt.content}` : ut;
       Ft.current.length ? `${Ft.current.length} matching skill${Ft.current.length === 1 ? "" : "s"} available` : "Workspace data and generic analysis guidance are ready"
     );
     let _e = ((Wl = C.current) == null ? void 0 : Wl.chats.find((Re) => Re.id === g.id)) || g;
-    const jt = K.contextWindow > 0 ? Math.floor(K.contextWindow * 0.6) : 24e3, kn = Math.max(1e3, jt - S.tokens), Do = _e.messages.filter(
+    const jt = K.contextWindow > 0 ? Math.floor(K.contextWindow * 0.6) : 24e3, bn = Math.max(1e3, jt - S.tokens), Do = _e.messages.filter(
       (Re) => Re.kind !== "execution" && Re.kind !== "ai-activity" && Re.kind !== "error"
     );
-    wc(Do) > kn && (_e = { ..._e, summary: db(Do), updatedAt: re() }, vs(_e), we("Older conversation context was compacted; pinned items and the latest six exchanges were retained"));
+    wc(Do) > bn && (_e = { ..._e, summary: dk(Do), updatedAt: re() }, vs(_e), we("Older conversation context was compacted; pinned items and the latest six exchanges were retained"));
     const _d = `${mg}
 
 Workspace root: ${u.workspace.rootPath}
@@ -18546,7 +18551,7 @@ ${_0(u.files)}
 ${B2(Se)}
 
 The user has ${u.methods.filter((Re) => !Re.deletedAt).length} saved methods. ${u.workspace.plotCsv ? "Plot CSV mode is ON: every PNG or SVG must have a same-stem CSV containing its plotted data." : "Plot CSV mode is OFF."}
-${ve != null && ve.available ? `OMERO ZarrViewer ${ve.version} is available. Use its tools only for an explicit request to show, open, or render an image, field, object, or focus; derive every navigation value from the measurement database.` : `OMERO ZarrViewer tools are unavailable in this deployment. ${be}`}
+${ve != null && ve.available ? `OMERO ZarrViewer ${ve.version} is available. Use its tools only for an explicit request to show, open, or render an image, field, object, or focus; derive every navigation value from the measurement database.` : `OMERO ZarrViewer tools are unavailable in this deployment. ${ke}`}
 
 ${Me || (H || ie ? `No specialized pipeline skill was loaded. ${H || ie}` : "No compatible specialized pipeline skill matched; use generic schema-first analysis.")}
 
@@ -18556,7 +18561,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...Do.filter((Re) => jd.has(Re.id)),
       ...Do.slice(-12)
     ].filter(
-      (Re, ut, Tt) => Tt.findIndex((kt) => kt.id === Re.id) === ut
+      (Re, ut, Tt) => Tt.findIndex((bt) => bt.id === Re.id) === ut
     ), Ed = new Set(Vl.map((Re) => Re.id)), Nd = _e.summary ? Do.filter((Re) => !Ed.has(Re.id)).length : 0, Tn = [
       { role: "system", content: _d },
       ..._e.summary ? [{ role: "system", content: `Earlier conversation summary:
@@ -18579,28 +18584,28 @@ ${_e.summary}` }] : [],
       ];
       let ut = !1;
       for (let Tt = 0; Tt <= Cy; Tt += 1) {
-        const kt = C1(Tt, Re);
-        kt.finalSynthesis && (Tn.push({
+        const bt = C1(Tt, Re);
+        bt.finalSynthesis && (Tn.push({
           role: "system",
           content: g1
         }), on("checking"));
         const Fo = Le();
-        bs(g.id, N, {
+        ks(g.id, N, {
           id: Fo,
           kind: "status",
-          label: kt.finalSynthesis ? "Preparing the final answer" : Tt === 0 ? "AI is responding" : "AI is reviewing the result",
+          label: bt.finalSynthesis ? "Preparing the final answer" : Tt === 0 ? "AI is responding" : "AI is reviewing the result",
           status: "active",
           createdAt: re()
         }), Rn(g.id, N, (Ye) => ({
           ...Ye,
-          state: kt.finalSynthesis ? "checking" : "responding"
+          state: bt.finalSynthesis ? "checking" : "responding"
         }));
         const Ui = wc(Tn), Ld = performance.now(), qo = await $0(
           K,
           Tn,
           Fn.current.signal,
           (Ye) => Ea(Ye),
-          kt.tools,
+          bt.tools,
           ut
         );
         ut = !1;
@@ -18613,7 +18618,7 @@ ${_e.summary}` }] : [],
           sessionTokens: (((Kl = mr.current) == null ? void 0 : Kl.sessionTokens) || 0) + Wi,
           estimated: !qo.usage,
           contextWindow: K.contextWindow || 0,
-          compactionThreshold: kn,
+          compactionThreshold: bn,
           compactedMessages: Nd,
           compacted: !!_e.summary
         };
@@ -18625,8 +18630,8 @@ ${_e.summary}` }] : [],
           Md,
           (((qi = C.current) == null ? void 0 : qi.files) || []).filter((Ye) => Ye.source !== "result" && !Ye.deletedAt).map((Ye) => Ye.name)
         ), Hi = !((Jl = ct.tool_calls) != null && Jl.length) && !s0(ct.content || ""), ac = !((Xl = ct.tool_calls) != null && Xl.length) && !S1(ct.content || "");
-        if ((Hi || ac) && !kt.finalSynthesis) {
-          kr(
+        if ((Hi || ac) && !bt.finalSynthesis) {
+          br(
             g.id,
             N,
             Fo,
@@ -18638,9 +18643,9 @@ ${_e.summary}` }] : [],
           }), Ea(""), on("repairing");
           continue;
         }
-        if (Xa && !kt.finalSynthesis) {
+        if (Xa && !bt.finalSynthesis) {
           const Ye = Xa.missingOutputNames.length ? ` Missing claimed files: ${Xa.missingOutputNames.join(", ")}.` : "";
-          kr(
+          br(
             g.id,
             N,
             Fo,
@@ -18652,11 +18657,11 @@ ${_e.summary}` }] : [],
           }), ut = !0, Ea(""), on("repairing");
           continue;
         }
-        if (Xa && kt.finalSynthesis) {
+        if (Xa && bt.finalSynthesis) {
           const Ye = Xa.missingOutputNames.length ? ` The claimed files do not exist: ${Xa.missingOutputNames.join(", ")}.` : "";
           ct.content = `I could not create or verify the requested output in the local workspace.${Ye} No successful local execution produced an artifact, so I will not report it as completed.`;
         }
-        if (Hi && kt.finalSynthesis) {
+        if (Hi && bt.finalSynthesis) {
           const Ye = (Rd = (((Yl = C.current) == null ? void 0 : Yl.executions) || []).filter(
             (xn) => xn.chatId === g.id && xn.promptId === O && xn.purpose === "analysis" && ["success", "reused"].includes(xn.status)
           ).at(-1)) == null ? void 0 : Rd.code;
@@ -18666,7 +18671,7 @@ ${_e.summary}` }] : [],
 ${Ye.trim()}
 \`\`\`` : "I could not produce a validated reusable Python Method for this request.";
         }
-        if (ac && kt.finalSynthesis && s0(ct.content || "")) {
+        if (ac && bt.finalSynthesis && s0(ct.content || "")) {
           const Ye = Array.from(yn.current), xn = Ye.length ? ` Generated outputs: ${Ye.join(", ")}.` : "";
           ct.content = [
             "## Summary",
@@ -18683,13 +18688,13 @@ ${Ye.trim()}
           ].join(`
 `);
         }
-        if (kr(
+        if (br(
           g.id,
           N,
           Fo,
           "completed",
           (Bl = ct.tool_calls) != null && Bl.length ? `${ct.tool_calls.length} next action${ct.tool_calls.length === 1 ? "" : "s"} selected` : "Response completed"
-        ), ct.content && bs(g.id, N, {
+        ), ct.content && ks(g.id, N, {
           id: Le(),
           kind: "message",
           label: (Pd = ct.tool_calls) != null && Pd.length ? "AI progress update" : "Final response",
@@ -18718,23 +18723,23 @@ ${Ye.trim()}
           }));
           break;
         }
-        if (kt.finalSynthesis)
+        if (bt.finalSynthesis)
           throw new Error("The AI provider attempted another tool call during final synthesis");
         P = !0, on(Tt ? "repairing" : "running");
         for (const Ye of ct.tool_calls) {
           const xn = Le();
-          bs(g.id, N, {
+          ks(g.id, N, {
             id: xn,
             kind: "tool",
-            label: ub(Ye.function.name),
+            label: uk(Ye.function.name),
             status: "active",
             createdAt: re()
           }), Ye.function.name !== "request_user_choice" && Rn(g.id, N, ($d) => ({
             ...$d,
             state: Ye.function.name.includes("zarr") ? "checking" : "running"
           }));
-          const Bt = await Lo(Ye, g.id, O, N), Gt = pb(Bt);
-          kr(
+          const Bt = await Lo(Ye, g.id, O, N), Gt = pk(Bt);
+          br(
             g.id,
             N,
             xn,
@@ -18745,7 +18750,7 @@ ${Ye.trim()}
         on("checking");
       }
     } catch (Re) {
-      (nc = Fn.current) != null && nc.signal.aborted || (bs(g.id, N, {
+      (nc = Fn.current) != null && nc.signal.aborted || (ks(g.id, N, {
         id: Le(),
         kind: "status",
         label: "Analysis stopped with an error",
@@ -18779,7 +18784,7 @@ ${Ye.trim()}
     }
   }
   function _s() {
-    var u, g, b;
+    var u, g, k;
     (u = Fn.current) == null || u.abort();
     const s = (g = C.current) == null ? void 0 : g.runs.filter((S) => S.status === "running").sort((S, A) => A.createdAt.localeCompare(S.createdAt))[0];
     s && (xt.current.add(s.id), cn({
@@ -18789,22 +18794,22 @@ ${Ye.trim()}
       completedAt: re(),
       steps: s.steps.map((S) => S.status === "running" ? { ...S, status: "stopped", error: "Stopped by the user" } : S)
     }));
-    for (const [S, A] of ko.current)
-      ko.current.delete(S), A.resolve(Ht("The user stopped the analysis before answering"));
-    a.stop(), Bn(!1), vi(((b = C.current) == null ? void 0 : b.files) || [], "Ready — analysis runs locally in this browser");
+    for (const [S, A] of bo.current)
+      bo.current.delete(S), A.resolve(Ht("The user stopped the analysis before answering"));
+    a.stop(), Bn(!1), vi(((k = C.current) == null ? void 0 : k.files) || [], "Ready — analysis runs locally in this browser");
   }
   async function hd(s) {
     var se, Se;
     const u = C.current;
     if (Jt || !u || !s.chatId || !s.promptId || s.purpose === "inspection" || Pu(u, s) || !["success", "reused"].includes(s.status)) return;
-    const g = u.chats.find((_e) => _e.id === s.chatId), b = g == null ? void 0 : g.messages.find((_e) => _e.id === s.promptId), S = yb(u, s), A = Array.from(new Set(S.map((_e) => _e.code))).join(
+    const g = u.chats.find((_e) => _e.id === s.chatId), k = g == null ? void 0 : g.messages.find((_e) => _e.id === s.promptId), S = yk(u, s), A = Array.from(new Set(S.map((_e) => _e.code))).join(
       `
 
 # Continued analysis / automatic repair
 `
     ) || s.code, P = Al(Array.from(new Map(
       S.flatMap((_e) => _e.remoteQueryBindings || []).map((_e) => [Bo(_e), _e])
-    ).values()), u), j = qs(A, P), O = t0(g, s.promptId), N = ky(
+    ).values()), u), j = qs(A, P), O = t0(g, s.promptId), N = by(
       j,
       O
     ), L = await yt(N), q = a0(
@@ -18815,7 +18820,7 @@ ${Ye.trim()}
         promptId: s.promptId,
         executionIds: S.map((_e) => _e.id)
       }
-    ) || A0((b == null ? void 0 : b.content) || "Analysis method"), B = `${vt(q)}-analysis.py`, I = (se = await i.askText(
+    ) || A0((k == null ? void 0 : k.content) || "Analysis method"), B = `${vt(q)}-analysis.py`, I = (se = await i.askText(
       "Method filename",
       B,
       "Methods are versioned and can be copied to compatible OMERO workspaces."
@@ -18873,12 +18878,12 @@ ${Ye.trim()}
         ...Ne,
         methods: ae ? Ne.methods.map((jt) => jt.id === Me.id ? Me : jt) : [...Ne.methods, Me]
       };
-      C.current = _e, k(_e);
+      C.current = _e, b(_e);
     }
     await ro(Me), we(`Saved ${Me.name} version ${Me.currentVersion}`);
   }
   async function yd(s, u) {
-    var b, S;
+    var k, S;
     const g = C.current;
     if (!(!g || Jt || !s.chatId || !s.promptId))
       try {
@@ -18895,11 +18900,11 @@ ${Ye.trim()}
             chatId: s.chatId,
             promptId: s.promptId
           }
-        ) || s.title || u.name.replace(/\.png$/i, "") || "Zarr render", N = (b = await i.askText(
+        ) || s.title || u.name.replace(/\.png$/i, "") || "Zarr render", N = (k = await i.askText(
           "Method filename",
           `${vt(O)}-analysis.py`,
           "The analysis, render recipe, PNG, and provenance will be saved together."
-        )) == null ? void 0 : b.trim();
+        )) == null ? void 0 : k.trim();
         if (!N) return;
         const L = `${vt(N.replace(/\.py$/i, ""))}.py`, q = (S = await i.askText(
           "Method title",
@@ -18986,19 +18991,19 @@ ${Ye.trim()}
           ...se,
           methods: I ? se.methods.map((_e) => _e.id === ae.id ? ae : _e) : [...se.methods, ae]
         };
-        C.current = Se, k(Se), await ro(ae), qt(Ne), Vt(`${B}-v${H}.zip`, j.archive, "application/zip"), we(
+        C.current = Se, b(Se), await ro(ae), qt(Ne), Vt(`${B}-v${H}.zip`, j.archive, "application/zip"), we(
           `Saved ${ae.name} version ${H}, render recipe, provenance manifest, PNG, and downloadable ZIP`
         );
       } catch (A) {
         we(`Could not save analysis + render: ${String(A)}`);
       }
   }
-  async function jr(s, u = !1, g = !1, b = s.currentVersion) {
+  async function jr(s, u = !1, g = !1, k = s.currentVersion) {
     var B, I;
     let S = C.current;
     if (!S || Jt || !u && f === "editor" && !await ma()) return;
     f === "editor" && (zt(null), un()), $t("methods");
-    const A = s.versions.find((H) => H.version === b);
+    const A = s.versions.find((H) => H.version === k);
     if (!A) return;
     const P = Le(), j = re();
     let O = {
@@ -19007,14 +19012,14 @@ ${Ye.trim()}
       kind: "method",
       artifactId: s.id,
       artifactName: s.name,
-      artifactVersion: b,
+      artifactVersion: k,
       status: "running",
       executionIds: [],
       resolvedBindings: {},
       steps: [],
       createdAt: j
     };
-    kl(P), cn(O);
+    bl(P), cn(O);
     let N, L = s.remoteQueryBindings || [];
     try {
       S = await vr(
@@ -19029,7 +19034,7 @@ ${Ye.trim()}
           X,
           H,
           S,
-          `${s.id}-v${b}`
+          `${s.id}-v${k}`
         );
         if (ae)
           L = ae.bindings, H = ae.code, S = await vr(L, S), N = cf(H, S.files);
@@ -19090,13 +19095,13 @@ ${Ye.trim()}
     var S;
     const u = (S = await i.askText("Rename method", s.name)) == null ? void 0 : S.trim();
     if (!u) return;
-    const g = { ...s, name: `${vt(u.replace(/\.py$/i, ""))}.py`, updatedAt: re() }, b = C.current;
-    if (b) {
+    const g = { ...s, name: `${vt(u.replace(/\.py$/i, ""))}.py`, updatedAt: re() }, k = C.current;
+    if (k) {
       const A = {
-        ...b,
-        methods: b.methods.map((P) => P.id === s.id ? g : P)
+        ...k,
+        methods: k.methods.map((P) => P.id === s.id ? g : P)
       };
-      C.current = A, k(A);
+      C.current = A, b(A);
     }
     ro(g);
   }
@@ -19109,19 +19114,19 @@ ${Ye.trim()}
     if (!u) return;
     const g = C.current;
     if (!g) return;
-    const b = vt(u);
-    let S = b, A = 2;
+    const k = vt(u);
+    let S = k, A = 2;
     for (; g.pipelines.some(
       (N) => N.id !== s.id && !N.deletedAt && N.name.toLowerCase() === S.toLowerCase()
     ); )
-      S = `${b}-${A}`, A += 1;
+      S = `${k}-${A}`, A += 1;
     const P = { ...s, name: S, updatedAt: re() }, j = {
       ...g,
       pipelines: g.pipelines.map(
         (N) => N.id === s.id ? P : N
       )
     };
-    C.current = j, k(j), await Ji(P), we(`Renamed pipeline to ${S}`);
+    C.current = j, b(j), await Ji(P), we(`Renamed pipeline to ${S}`);
   }
   async function ji(s) {
     if (!await i.confirm(
@@ -19133,11 +19138,11 @@ ${Ye.trim()}
       return;
     const u = C.current;
     if (!u) return;
-    const g = { ...s, deletedAt: re(), updatedAt: re() }, b = {
+    const g = { ...s, deletedAt: re(), updatedAt: re() }, k = {
       ...u,
       methods: u.methods.map((S) => S.id === s.id ? g : S)
     };
-    C.current = b, k(b), pr((S) => {
+    C.current = k, b(k), pr((S) => {
       const A = new Set(S);
       return A.delete(s.id), A;
     }), await ro(g), we(`Moved method ${s.name} to trash`);
@@ -19161,9 +19166,9 @@ ${Ye.trim()}
     });
   }
   function ua(s) {
-    const u = s.filter((b) => Nn(b.name)).map((b) => b.id), g = u.length > 0 && u.every((b) => Br.has(b));
-    cs((b) => {
-      const S = new Set(b);
+    const u = s.filter((k) => Nn(k.name)).map((k) => k.id), g = u.length > 0 && u.every((k) => Br.has(k));
+    cs((k) => {
+      const S = new Set(k);
       return u.forEach((A) => {
         g ? S.delete(A) : S.add(A);
       }), S;
@@ -19172,34 +19177,34 @@ ${Ye.trim()}
   async function Wa(s) {
     const u = C.current;
     if (!u) return;
-    const g = new Set(s), b = u.files.filter(
+    const g = new Set(s), k = u.files.filter(
       (N) => g.has(N.id) && N.source === "result" && !N.deletedAt
     );
-    if (!b.length) return;
-    const S = b.slice(0, 5).map((N) => N.name), A = b.length - S.length, P = b.length === 1 ? `${b[0].name} will be hidden, while its provenance record remains intact.` : [
-      `${b.length} outputs will be moved to workspace trash. Their provenance records remain intact.`,
+    if (!k.length) return;
+    const S = k.slice(0, 5).map((N) => N.name), A = k.length - S.length, P = k.length === 1 ? `${k[0].name} will be hidden, while its provenance record remains intact.` : [
+      `${k.length} outputs will be moved to workspace trash. Their provenance records remain intact.`,
       S.join(", ") + (A > 0 ? `, and ${A} more` : "")
     ].join(`
 
 `);
     if (!await i.confirm(
-      b.length === 1 ? "Move output to trash?" : `Move ${b.length} outputs to trash?`,
+      k.length === 1 ? "Move output to trash?" : `Move ${k.length} outputs to trash?`,
       P,
       "Move to trash",
       !0
     )) return;
     const j = re(), O = P1(
       u,
-      b.map((N) => N.id),
+      k.map((N) => N.id),
       j
     );
-    C.current = O, k(O), cs((N) => {
+    C.current = O, b(O), cs((N) => {
       const L = new Set(N);
-      return b.forEach((q) => L.delete(q.id)), L;
-    }), yi && b.some((N) => N.id === yi) && En(null), await Promise.all(
+      return k.forEach((q) => L.delete(q.id)), L;
+    }), yi && k.some((N) => N.id === yi) && En(null), await Promise.all(
       O.files.filter((N) => g.has(N.id) && N.deletedAt === j).map(no)
     ), we(
-      b.length === 1 ? `Moved ${b[0].name} to workspace trash` : `Moved ${b.length} outputs to workspace trash`
+      k.length === 1 ? `Moved ${k[0].name} to workspace trash` : `Moved ${k.length} outputs to workspace trash`
     );
   }
   async function pa() {
@@ -19211,13 +19216,13 @@ ${Ye.trim()}
     )).filter((I) => !!I);
     if (u.length < 2)
       return we("Select at least two methods to combine"), null;
-    const g = vt(u.map((I) => I.name.replace(/\.py$/i, "")).join("-")), b = (q = await i.askText(
+    const g = vt(u.map((I) => I.name.replace(/\.py$/i, "")).join("-")), k = (q = await i.askText(
       "Pipeline name",
       g,
       "The selected methods will become isolated, ordered pipeline steps."
     )) == null ? void 0 : q.trim();
-    if (!b) return null;
-    const S = vt(b);
+    if (!k) return null;
+    const S = vt(k);
     let A = S, P = 2;
     for (; s.pipelines.some(
       (I) => !I.deletedAt && I.name.toLowerCase() === A.toLowerCase()
@@ -19243,16 +19248,16 @@ ${Ye.trim()}
       createdAt: O,
       updatedAt: O
     }, L = { ...s, pipelines: [...s.pipelines, N] };
-    return C.current = L, k(L), pr(/* @__PURE__ */ new Set()), await Ji(N), fl(N.id), ft({ kind: "pipeline", id: N.id }), we(`Created pipeline ${N.name} with ${u.length} isolated steps`), N;
+    return C.current = L, b(L), pr(/* @__PURE__ */ new Set()), await Ji(N), fl(N.id), ft({ kind: "pipeline", id: N.id }), we(`Created pipeline ${N.name} with ${u.length} isolated steps`), N;
   }
   async function Nr(s, u = !1) {
     let g = C.current;
     if (!g || Jt || !u && f === "editor" && !await ma()) return;
     f === "editor" && (zt(null), un()), $t("pipelines"), Bn(!0);
-    const b = Le(), S = `pipeline:${b}`;
+    const k = Le(), S = `pipeline:${k}`;
     Ia(S, !0);
     let A = {
-      id: b,
+      id: k,
       workspaceId: g.workspace.id,
       kind: "pipeline",
       artifactId: s.id,
@@ -19272,7 +19277,7 @@ ${Ye.trim()}
       })),
       createdAt: re()
     };
-    kl(b), cn(A);
+    bl(k), cn(A);
     try {
       const P = s.steps.flatMap(
         (L) => {
@@ -19321,9 +19326,9 @@ ${Ye.trim()}
             if (!jt) throw Se;
             g = jt, j = [
               ...jt.files.filter(
-                (kn) => kn.source !== "result" && kn.role !== "chat-attachment" && kn.state === "ready" && !!kn.data && !kn.deletedAt
+                (bn) => bn.source !== "result" && bn.role !== "chat-attachment" && bn.state === "ready" && !!bn.data && !bn.deletedAt
               ),
-              ...j.filter((kn) => kn.source === "result")
+              ...j.filter((bn) => bn.source === "result")
             ], Ee = rf(
               ae,
               j,
@@ -19343,10 +19348,10 @@ ${Ye.trim()}
           I,
           H,
           Ee.code,
-          { kind: "run", runId: b },
+          { kind: "run", runId: k },
           { methodId: I.id, pipelineId: s.id }
         )).renderResult && (O += 1);
-        const Ne = C.current.executions.filter((Se) => Se.runId === b && !A.executionIds.includes(Se.id)), se = Ne.find((Se) => Se.status === "failed");
+        const Ne = C.current.executions.filter((Se) => Se.runId === k && !A.executionIds.includes(Se.id)), se = Ne.find((Se) => Se.status === "failed");
         if (A = {
           ...A,
           executionIds: [...A.executionIds, ...Ne.map((Se) => Se.id)],
@@ -19371,7 +19376,7 @@ ${Ye.trim()}
       const N = A.steps.some((L) => L.status === "incomplete");
       A = { ...A, status: N ? "incomplete" : "success", completedAt: re() }, cn(A);
     } catch (P) {
-      const j = xt.current.delete(b), O = j ? "Stopped by the user" : String(P);
+      const j = xt.current.delete(k), O = j ? "Stopped by the user" : String(P);
       A = {
         ...A,
         status: j ? "stopped" : "failed",
@@ -19398,11 +19403,11 @@ ${Ye.trim()}
     )) return;
     const u = C.current;
     if (!u) return;
-    const g = { ...s, deletedAt: re(), updatedAt: re() }, b = {
+    const g = { ...s, deletedAt: re(), updatedAt: re() }, k = {
       ...u,
       pipelines: u.pipelines.map((S) => S.id === s.id ? g : S)
     };
-    C.current = b, k(b), await Ji(g), we(`Moved pipeline ${s.name} to workspace trash`);
+    C.current = k, b(k), await Ji(g), we(`Moved pipeline ${s.name} to workspace trash`);
   }
   async function gn(s) {
     const u = C.current;
@@ -19412,9 +19417,9 @@ ${Ye.trim()}
           new TextDecoder().decode(await r.downloadPipelineTemplate(s))
         );
         if (g.format !== "nl.bioimaging.analysis.pipeline.v1" || !g.pipeline || !Array.isArray(g.methods)) throw new Error("Unsupported pipeline template");
-        const b = /* @__PURE__ */ new Map(), S = g.methods.map((j) => {
+        const k = /* @__PURE__ */ new Map(), S = g.methods.map((j) => {
           const O = Le();
-          return b.set(j.id, O), {
+          return k.set(j.id, O), {
             ...j,
             id: O,
             workspaceId: u.workspace.id,
@@ -19430,7 +19435,7 @@ ${Ye.trim()}
           steps: g.pipeline.steps.map((j) => ({
             ...j,
             id: Le(),
-            methodId: b.get(j.methodId) || j.methodId
+            methodId: k.get(j.methodId) || j.methodId
           })),
           createdAt: re(),
           updatedAt: re()
@@ -19441,13 +19446,13 @@ ${Ye.trim()}
           methods: [...u.methods, ...S],
           pipelines: [...u.pipelines, A]
         };
-        C.current = P, k(P), we(`Imported pipeline template ${A.name}`);
+        C.current = P, b(P), we(`Imported pipeline template ${A.name}`);
       } catch (g) {
         we(`Pipeline template import failed: ${String(g)}`);
       }
   }
   function Vt(s, u, g) {
-    const b = (u instanceof Uint8Array, u), S = URL.createObjectURL(new Blob([b], { type: g })), A = document.createElement("a");
+    const k = (u instanceof Uint8Array, u), S = URL.createObjectURL(new Blob([k], { type: g })), A = document.createElement("a");
     A.href = S, A.download = s, A.click(), setTimeout(() => URL.revokeObjectURL(S), 1e3);
   }
   function Hn(s) {
@@ -19460,7 +19465,7 @@ ${Ye.trim()}
   function Pr(s) {
     const u = C.current;
     if (!u) return;
-    const g = new Set(s.steps.map((S) => S.methodId)), b = {
+    const g = new Set(s.steps.map((S) => S.methodId)), k = {
       format: "nl.bioimaging.analysis.pipeline.v1",
       exportedAt: re(),
       pipeline: s,
@@ -19470,7 +19475,7 @@ ${Ye.trim()}
     };
     Vt(
       `${vt(s.name)}.oa-pipeline.json`,
-      new TextEncoder().encode(JSON.stringify(b, null, 2)),
+      new TextEncoder().encode(JSON.stringify(k, null, 2)),
       "application/json"
     );
   }
@@ -19514,7 +19519,7 @@ ${Ye.trim()}
         message: `Removing ${s.name} because it was deleted in OMERO…`
       }), we(`Removing ${s.name}; its synchronized OMERO Workspace was deleted`);
       try {
-        await Gp(s.id), ((u = C.current) == null ? void 0 : u.workspace.id) === s.id && (C.current = null, k(null)), window.location.reload();
+        await Gp(s.id), ((u = C.current) == null ? void 0 : u.workspace.id) === s.id && (C.current = null, b(null)), window.location.reload();
       } catch (g) {
         ar.current = !1, Jr(!1), fr(`Could not remove the deleted OMERO Workspace locally: ${String(g)}`);
       }
@@ -19523,7 +19528,7 @@ ${Ye.trim()}
   function Yt(s) {
     jn.current != null && window.clearTimeout(jn.current), jn.current = window.setTimeout(() => {
       jn.current = null, wn(s);
-    }, ib);
+    }, ik);
   }
   async function wn(s) {
     const u = C.current;
@@ -19565,20 +19570,20 @@ ${Ye.trim()}
             return;
           }
         }
-        const b = s || await d0(u, g);
-        let S = await r.planWorkspaceSync(b.inventory), A;
+        const k = s || await d0(u, g);
+        let S = await r.planWorkspaceSync(k.inventory), A;
         try {
           A = await r.applyWorkspaceSync(
-            b.inventory,
+            k.inventory,
             S,
-            b.bytes
+            k.bytes
           );
         } catch (N) {
           if (!(N instanceof mu) || N.status !== 409) throw N;
-          S = await r.planWorkspaceSync(b.inventory), A = await r.applyWorkspaceSync(
-            b.inventory,
+          S = await r.planWorkspaceSync(k.inventory), A = await r.applyWorkspaceSync(
+            k.inventory,
             S,
-            b.bytes
+            k.bytes
           );
         }
         const P = C.current;
@@ -19586,7 +19591,7 @@ ${Ye.trim()}
         if (ho(A), A.syncState === "pending") {
           we(
             `${A.pendingOrderCount || 1} plot import(s) pending in BIOMERO.importer`
-          ), Yt(b);
+          ), Yt(k);
           return;
         }
         if (A.syncState === "failed") {
@@ -19594,9 +19599,9 @@ ${Ye.trim()}
           return;
         }
         const j = T1(P, A, re()), O = j.workspace;
-        C.current = j, k(j), await Da(O), Na(b.inventory.digest), we(`Reusable Analysis items saved automatically to ${A.projectName} / ${A.datasetName}`);
-      } catch (b) {
-        const S = String(b);
+        C.current = j, b(j), await Da(O), Na(k.inventory.digest), we(`Reusable Analysis items saved automatically to ${A.projectName} / ${A.datasetName}`);
+      } catch (k) {
+        const S = String(k);
         fr(S), we(`Workspace synchronization failed: ${S}`);
       } finally {
         gl.current = !1, si(!1), di.current && (di.current = !1, window.setTimeout(() => void dt(), 0));
@@ -19608,10 +19613,10 @@ ${Ye.trim()}
     try {
       const g = await r.workspaceLibrary();
       hl(g);
-      const b = new Set(s), S = /* @__PURE__ */ new Set(), A = /* @__PURE__ */ new Set();
+      const k = new Set(s), S = /* @__PURE__ */ new Set(), A = /* @__PURE__ */ new Set();
       for (const P of g)
         for (const j of P.items)
-          b.has(j.annotationId) && (S.add(Dl(P, j)), A.add(P.datasetId));
+          k.has(j.annotationId) && (S.add(Dl(P, j)), A.add(P.datasetId));
       if (rr(S), yo(A.size ? A : new Set(g.length ? [g[0].datasetId] : [])), u) {
         if (!S.size)
           throw Ra(!0), new Error("The selected AnalysisWorkspaces items are no longer available");
@@ -19629,10 +19634,10 @@ ${Ye.trim()}
   function Ri(s, u, g) {
     var P;
     if (!u.includes(s) || g) return s;
-    const b = ((P = s.match(/(\.[^.]+)$/)) == null ? void 0 : P[1]) || "", S = b ? s.slice(0, -b.length) : s;
+    const k = ((P = s.match(/(\.[^.]+)$/)) == null ? void 0 : P[1]) || "", S = k ? s.slice(0, -k.length) : s;
     let A = 2;
-    for (; u.includes(`${S} (${A})${b}`); ) A += 1;
-    return `${S} (${A})${b}`;
+    for (; u.includes(`${S} (${A})${k}`); ) A += 1;
+    return `${S} (${A})${k}`;
   }
   function zl(s, u) {
     return {
@@ -19649,7 +19654,7 @@ ${Ye.trim()}
     if (g) {
       zn(!0);
       try {
-        let b = g;
+        let k = g;
         const A = s.flatMap(
           (N) => N.items.map((L) => ({ dataset: N, item: L }))
         ).filter(
@@ -19683,7 +19688,7 @@ ${Ye.trim()}
             return B(H) && ((X = H.libraryOrigin) == null ? void 0 : X.sha256) === L.sha256;
           };
           if (L.kind === "method") {
-            const H = b.methods.find(I);
+            const H = k.methods.find(I);
             if (H) {
               j.set(`${N.datasetId}:${L.key}`, H.id);
               continue;
@@ -19696,10 +19701,10 @@ ${Ye.trim()}
             const ae = X.method, Ee = Le(), Xe = {
               ...ae,
               id: Ee,
-              workspaceId: b.workspace.id,
+              workspaceId: k.workspace.id,
               name: Ri(
                 ae.name,
-                b.methods.filter((Me) => !Me.deletedAt).map((Me) => Me.name),
+                k.methods.filter((Me) => !Me.deletedAt).map((Me) => Me.name),
                 !1
               ),
               versions: ae.versions.map((Me) => ({
@@ -19712,29 +19717,29 @@ ${Ye.trim()}
               createdAt: re(),
               updatedAt: re()
             };
-            b = { ...b, methods: [...b.methods, Xe] }, j.set(`${N.datasetId}:${L.key}`, Ee);
+            k = { ...k, methods: [...k.methods, Xe] }, j.set(`${N.datasetId}:${L.key}`, Ee);
           } else if (L.kind === "notebook") {
-            if (b.notebooks.some(I)) continue;
+            if (k.notebooks.some(I)) continue;
             const H = df(
               iu(await r.downloadLibraryItem(L.annotationId))
             ), X = {
               id: Le(),
-              workspaceId: b.workspace.id,
+              workspaceId: k.workspace.id,
               name: Ri(
                 L.name,
-                b.notebooks.map((ae) => ae.name),
+                k.notebooks.map((ae) => ae.name),
                 !1
               ),
               ...H,
               attachmentIds: [],
-              selectedDataFileIds: b.files.filter((ae) => ae.source !== "result" && ae.role !== "chat-attachment" && !ae.deletedAt && ae.state === "ready").map((ae) => ae.id),
+              selectedDataFileIds: k.files.filter((ae) => ae.source !== "result" && ae.role !== "chat-attachment" && !ae.deletedAt && ae.state === "ready").map((ae) => ae.id),
               libraryOrigin: q,
               createdAt: re(),
               updatedAt: re()
             };
-            b = { ...b, notebooks: [...b.notebooks, X] }, Z(X.id);
+            k = { ...k, notebooks: [...k.notebooks, X] }, Z(X.id);
           } else {
-            if (b.pipelines.some(I)) continue;
+            if (k.pipelines.some(I)) continue;
             const H = JSON.parse(new TextDecoder().decode(
               await r.downloadLibraryItem(L.annotationId)
             ));
@@ -19743,10 +19748,10 @@ ${Ye.trim()}
             const X = H.pipeline, ae = {
               ...X,
               id: Le(),
-              workspaceId: b.workspace.id,
+              workspaceId: k.workspace.id,
               name: Ri(
                 X.name,
-                b.pipelines.filter((Ee) => !Ee.deletedAt).map((Ee) => Ee.name),
+                k.pipelines.filter((Ee) => !Ee.deletedAt).map((Ee) => Ee.name),
                 !1
               ),
               steps: X.steps.map((Ee) => {
@@ -19757,7 +19762,7 @@ ${Ye.trim()}
                   throw new Error(
                     `Pipeline ${X.name} is missing Method dependency method:${Ee.methodId}`
                   );
-                const Me = b.methods.find(
+                const Me = k.methods.find(
                   (Ne) => Ne.id === Xe
                 );
                 if (!(Me != null && Me.versions.some(
@@ -19773,22 +19778,22 @@ ${Ye.trim()}
               createdAt: re(),
               updatedAt: re()
             };
-            b = { ...b, pipelines: [...b.pipelines, ae] };
+            k = { ...k, pipelines: [...k.pipelines, ae] };
           }
         }
         await Promise.all([
-          ...b.methods.filter((N) => !g.methods.some((L) => L.id === N.id)).map(ro),
-          ...b.pipelines.filter((N) => !g.pipelines.some((L) => L.id === N.id)).map(Ji),
-          ...b.notebooks.filter((N) => !g.notebooks.some((L) => L.id === N.id)).map(Jo)
-        ]), C.current = b, k(b), Ra(!1), we(`Imported ${A.length} selected reusable item(s) from AnalysisWorkspaces`);
-      } catch (b) {
-        we(`Library import failed: ${String(b)}`);
+          ...k.methods.filter((N) => !g.methods.some((L) => L.id === N.id)).map(ro),
+          ...k.pipelines.filter((N) => !g.pipelines.some((L) => L.id === N.id)).map(Ji),
+          ...k.notebooks.filter((N) => !g.notebooks.some((L) => L.id === N.id)).map(Jo)
+        ]), C.current = k, b(k), Ra(!1), we(`Imported ${A.length} selected reusable item(s) from AnalysisWorkspaces`);
+      } catch (k) {
+        we(`Library import failed: ${String(k)}`);
       } finally {
         zn(!1);
       }
     }
   }
-  async function bd(s) {
+  async function kd(s) {
     var u;
     if (s)
       try {
@@ -19797,11 +19802,11 @@ ${Ye.trim()}
           throw new Error(
             `Workspace archive exceeds the configured ${Math.floor(g / 1024 / 1024)} MiB limit`
           );
-        const b = await Xp(await s.arrayBuffer(), e.context);
-        if (e.context && (b.workspace.objectType !== e.context.object_type || b.workspace.objectId !== e.context.object_id))
+        const k = await Xp(await s.arrayBuffer(), e.context);
+        if (e.context && (k.workspace.objectType !== e.context.object_type || k.workspace.objectId !== e.context.object_id))
           throw new Error("Workspace snapshot belongs to a different OMERO object");
-        const S = await Cc(b), A = await gs(S);
-        k(A), C.current = A, await br(A.files, "Imported workspace restored");
+        const S = await Cc(k), A = await gs(S);
+        b(A), C.current = A, await kr(A.files, "Imported workspace restored");
       } catch (g) {
         we(`Workspace import failed: ${String(g)}`);
       } finally {
@@ -19811,7 +19816,7 @@ ${Ye.trim()}
   function Ti() {
     st && _l({ ...st, plotCsv: !st.plotCsv, updatedAt: re() });
   }
-  async function kd() {
+  async function bd() {
     const s = !pt;
     !s && (Ve != null && Ve.dirty) && !await i.confirm(
       "Disable artifact editor?",
@@ -19862,15 +19867,15 @@ ${Ye.trim()}
     s && u ? (g.searchParams.set("editorKind", s), g.searchParams.set("editorId", u)) : (g.searchParams.delete("editorKind"), g.searchParams.delete("editorId")), window.history.replaceState({}, "", g);
   }
   function ha(s, u, g) {
-    const b = C.current;
-    if (!b) throw new Error("Workspace is not ready");
+    const k = C.current;
+    if (!k) throw new Error("Workspace is not ready");
     if (s === "method") {
-      const j = b.methods.find((q) => q.id === u && !q.deletedAt), O = j == null ? void 0 : j.versions.find((q) => q.version === j.currentVersion);
+      const j = k.methods.find((q) => q.id === u && !q.deletedAt), O = j == null ? void 0 : j.versions.find((q) => q.version === j.currentVersion);
       if (!j || !O) throw new Error("Method is unavailable");
       const N = qs(
         O.code,
         j.remoteQueryBindings || []
-      ), L = Sc(N, b.files);
+      ), L = Sc(N, k.files);
       return {
         kind: s,
         id: j.id,
@@ -19883,9 +19888,9 @@ ${Ye.trim()}
       };
     }
     if (s === "pipeline") {
-      const j = b.pipelines.find((N) => N.id === u && !N.deletedAt);
+      const j = k.pipelines.find((N) => N.id === u && !N.deletedAt);
       if (!j) throw new Error("Pipeline is unavailable");
-      const O = nf(j, b.methods, b.files);
+      const O = nf(j, k.methods, k.files);
       return {
         kind: s,
         id: j.id,
@@ -19897,12 +19902,12 @@ ${Ye.trim()}
         dirty: JSON.stringify(O.pipeline.steps) !== JSON.stringify(j.steps)
       };
     }
-    const S = b.notebooks.find((j) => j.id === u);
+    const S = k.notebooks.find((j) => j.id === u);
     if (!S) throw new Error("Notebook is unavailable");
-    const A = Ef(S.document, b.files), P = {
+    const A = Ef(S.document, k.files), P = {
       ...S,
       document: A.document,
-      selectedDataFileIds: rl(b.files).map((j) => j.id)
+      selectedDataFileIds: rl(k.files).map((j) => j.id)
     };
     return {
       kind: s,
@@ -19923,15 +19928,15 @@ ${Ye.trim()}
       return;
     }
     if (Ve != null && Ve.dirty && (Ve.kind !== s || Ve.id !== u) && !await ma()) return;
-    const b = g || (f === "editor" ? (Ve == null ? void 0 : Ve.originTab) || "home" : f);
+    const k = g || (f === "editor" ? (Ve == null ? void 0 : Ve.originTab) || "home" : f);
     try {
       let j;
       try {
-        j = ha(s, u, b);
+        j = ha(s, u, k);
       } catch (O) {
         const N = C.current, L = s === "method" ? (S = N == null ? void 0 : N.methods.find((B) => B.id === u)) == null ? void 0 : S.name : s === "pipeline" ? (A = N == null ? void 0 : N.pipelines.find((B) => B.id === u)) == null ? void 0 : A.name : (P = N == null ? void 0 : N.notebooks.find((B) => B.id === u)) == null ? void 0 : P.name;
         if (!(N && L ? await ws(O, N, L) : null)) throw O;
-        j = ha(s, u, b);
+        j = ha(s, u, k);
       }
       zt(j), ft({ kind: s, id: u }), un(s, u), $t("editor"), we(`Editing ${j.name}; current inputs rebound successfully`);
     } catch (j) {
@@ -19994,7 +19999,7 @@ ${Ye.trim()}
           ...u,
           methods: u.methods.map((B) => B.id === L.id ? L : B)
         };
-        return C.current = q, k(q), await ro(L), zt({
+        return C.current = q, b(q), await ro(L), zt({
           ...s,
           original: L,
           draftCode: j.code,
@@ -20016,7 +20021,7 @@ ${Ye.trim()}
           ...u,
           pipelines: u.pipelines.map((L) => L.id === O.id ? O : L)
         };
-        return C.current = N, k(N), await Ji(O), zt({
+        return C.current = N, b(N), await Ji(O), zt({
           ...s,
           original: O,
           draft: O,
@@ -20026,20 +20031,20 @@ ${Ye.trim()}
       }
       const g = u.notebooks.find((P) => P.id === s.id);
       if (!g) throw new Error("Notebook is unavailable");
-      const b = Ef(s.draft.document, u.files), S = {
+      const k = Ef(s.draft.document, u.files), S = {
         ...g,
-        document: b2(b.document),
+        document: k2(k.document),
         selectedDataFileIds: rl(u.files).map((P) => P.id),
         updatedAt: re()
       }, A = {
         ...u,
         notebooks: u.notebooks.map((P) => P.id === S.id ? S : P)
       };
-      return C.current = A, k(A), await Jo(S), zt({
+      return C.current = A, b(A), await Jo(S), zt({
         ...s,
         original: S,
         draft: S,
-        bindingCount: b.bindings.length,
+        bindingCount: k.bindings.length,
         dirty: !1
       }), we(`Saved ${S.name}`), S;
     } catch (g) {
@@ -20083,10 +20088,10 @@ ${Ye.trim()}
     if (!s || !pt) return;
     const u = f === "editor" ? (Ve == null ? void 0 : Ve.originTab) || "home" : f;
     if (Ve != null && Ve.dirty && !await ma()) return;
-    const g = re(), b = C0(s.methods.map((O) => O.name), ".py"), S = s1(s.files), A = {
+    const g = re(), k = C0(s.methods.map((O) => O.name), ".py"), S = s1(s.files), A = {
       id: Le(),
       workspaceId: s.workspace.id,
-      name: b,
+      name: k,
       description: "Untitled Method",
       currentVersion: 1,
       versions: [{
@@ -20102,29 +20107,29 @@ ${Ye.trim()}
       createdAt: g,
       updatedAt: g
     }, P = { ...s, methods: [...s.methods, A] };
-    C.current = P, k(P), await ro(A);
+    C.current = P, b(P), await ro(A);
     const j = ha("method", A.id, u);
-    zt(j), ft({ kind: "method", id: A.id }), un("method", A.id), $t("editor"), we(`Created ${b} and opened it in the Editor`);
+    zt(j), ft({ kind: "method", id: A.id }), un("method", A.id), $t("editor"), we(`Created ${k} and opened it in the Editor`);
   }
   async function Ns() {
     const s = C.current;
     if (!s || !pt) return;
     const u = f === "editor" ? (Ve == null ? void 0 : Ve.originTab) || "home" : f;
     if (Ve != null && Ve.dirty && !await ma()) return;
-    const g = re(), b = C0(s.notebooks.map((O) => O.name), ".ipynb"), S = rl(s.files).map((O) => O.id), A = {
+    const g = re(), k = C0(s.notebooks.map((O) => O.name), ".ipynb"), S = rl(s.files).map((O) => O.id), A = {
       id: Le(),
       workspaceId: s.workspace.id,
-      name: b,
+      name: k,
       document: i1(s.files, Le()),
       attachmentIds: [],
       selectedDataFileIds: S,
       createdAt: g,
       updatedAt: g
     }, P = { ...s, notebooks: [...s.notebooks, A] };
-    C.current = P, k(P), Z(A.id), await Jo(A);
+    C.current = P, b(P), Z(A.id), await Jo(A);
     const j = ha("notebook", A.id, u);
     zt(j), ft({ kind: "notebook", id: A.id }), un("notebook", A.id), $t("editor"), we(
-      `Created ${b} with ${S.length} attached input connection${S.length === 1 ? "" : "s"} and opened it in the Editor`
+      `Created ${k} with ${S.length} attached input connection${S.length === 1 ? "" : "s"} and opened it in the Editor`
     );
   }
   function Oi(s) {
@@ -20159,11 +20164,11 @@ ${Ye.trim()}
     const u = C.current;
     if (!u || Jt) return;
     if (s.kind === "method") {
-      const b = u.methods.find((S) => S.id === s.artifactId && !S.deletedAt);
-      b && jr(b, !1, !0, s.artifactVersion);
+      const k = u.methods.find((S) => S.id === s.artifactId && !S.deletedAt);
+      k && jr(k, !1, !0, s.artifactVersion);
       return;
     }
-    const g = u.pipelines.find((b) => b.id === s.artifactId && !b.deletedAt);
+    const g = u.pipelines.find((k) => k.id === s.artifactId && !k.deletedAt);
     g && Nr(g);
   }
   if (!v || !st || !nt)
@@ -20180,7 +20185,7 @@ ${Ye.trim()}
     te,
     v.files,
     dr
-  ), Cd = ((te == null ? void 0 : te.workflows) || []).reduce((s, u) => s + u.skills.length, 0) + ((oe == null ? void 0 : oe.skills.length) || 0), bn = v.notebooks.find(
+  ), Cd = ((te == null ? void 0 : te.workflows) || []).reduce((s, u) => s + u.skills.length, 0) + ((oe == null ? void 0 : oe.skills.length) || 0), kn = v.notebooks.find(
     (s) => s.id === V
   ) || v.notebooks[0] || null, ya = (() => {
     var u, g;
@@ -20196,49 +20201,49 @@ ${Ye.trim()}
           Inputs: yr.length,
           Results: Ao.length,
           Methods: gr.length,
-          Pipelines: v.pipelines.filter((b) => !b.deletedAt).length,
+          Pipelines: v.pipelines.filter((k) => !k.deletedAt).length,
           Notebooks: v.notebooks.length,
           Updated: new Date(st.updatedAt).toLocaleString()
         }
       };
     if (s.kind === "file") {
-      const b = v.files.find(
+      const k = v.files.find(
         (S) => S.id === s.id && !S.deletedAt
       );
-      if (b) return { kind: "file", title: b.name, file: b };
+      if (k) return { kind: "file", title: k.name, file: k };
     }
     if (s.kind === "chat") {
-      const b = hr.find((S) => S.id === s.id);
-      if (b) return {
+      const k = hr.find((S) => S.id === s.id);
+      if (k) return {
         kind: "chat",
-        title: b.title,
+        title: k.title,
         description: "Active Assistant conversation for developing a Method.",
         metadata: {
-          Messages: b.messages.length,
-          "Pinned messages": ((u = b.pinnedMessageIds) == null ? void 0 : u.length) || 0,
-          Updated: new Date(b.updatedAt).toLocaleString()
+          Messages: k.messages.length,
+          "Pinned messages": ((u = k.pinnedMessageIds) == null ? void 0 : u.length) || 0,
+          Updated: new Date(k.updatedAt).toLocaleString()
         },
-        content: Q0(b),
+        content: Q0(k),
         language: "markdown"
       };
     }
     if (s.kind === "method") {
-      const b = v.methods.find(
+      const k = v.methods.find(
         (A) => A.id === s.id && !A.deletedAt
-      ), S = b == null ? void 0 : b.versions.find(
-        (A) => A.version === b.currentVersion
+      ), S = k == null ? void 0 : k.versions.find(
+        (A) => A.version === k.currentVersion
       );
-      if (b) {
+      if (k) {
         const A = n1((S == null ? void 0 : S.code) || "");
         return {
           kind: "method",
-          title: b.name,
-          description: b.description || "Reusable Python analysis Method.",
+          title: k.name,
+          description: k.description || "Reusable Python analysis Method.",
           metadata: {
-            Version: b.currentVersion,
-            "Saved versions": b.versions.length,
-            Capabilities: ((g = b.requiredCapabilities) == null ? void 0 : g.join(", ")) || "Browser Python",
-            Updated: new Date(b.updatedAt).toLocaleString()
+            Version: k.currentVersion,
+            "Saved versions": k.versions.length,
+            Capabilities: ((g = k.requiredCapabilities) == null ? void 0 : g.join(", ")) || "Browser Python",
+            Updated: new Date(k.updatedAt).toLocaleString()
           },
           methodNarrative: A.narrative,
           content: A.source,
@@ -20247,66 +20252,66 @@ ${Ye.trim()}
       }
     }
     if (s.kind === "pipeline") {
-      const b = v.pipelines.find(
+      const k = v.pipelines.find(
         (S) => S.id === s.id && !S.deletedAt
       );
-      if (b) return {
+      if (k) return {
         kind: "pipeline",
-        title: b.name,
-        description: b.description || "Ordered multi-step Method execution.",
+        title: k.name,
+        description: k.description || "Ordered multi-step Method execution.",
         metadata: {
-          Version: b.version,
-          Steps: b.steps.length,
-          Updated: new Date(b.updatedAt).toLocaleString()
+          Version: k.version,
+          Steps: k.steps.length,
+          Updated: new Date(k.updatedAt).toLocaleString()
         },
-        pipeline: b
+        pipeline: k
       };
     }
     if (s.kind === "notebook") {
-      const b = v.notebooks.find(
+      const k = v.notebooks.find(
         (S) => S.id === s.id
       );
-      if (b) return {
+      if (k) return {
         kind: "notebook",
-        title: b.name,
+        title: k.name,
         description: "Read-only Python nbformat-4 Notebook.",
         metadata: {
-          Cells: b.document.cells.length,
-          "Attached versions": b.attachmentIds.length,
-          "Selected inputs": b.selectedDataFileIds.length,
-          Updated: new Date(b.updatedAt).toLocaleString()
+          Cells: k.document.cells.length,
+          "Attached versions": k.attachmentIds.length,
+          "Selected inputs": k.selectedDataFileIds.length,
+          Updated: new Date(k.updatedAt).toLocaleString()
         },
-        notebook: b
+        notebook: k
       };
     }
     if (s.kind === "zarr") {
-      const b = ke.find((S) => S.id === s.id);
-      if (b) return {
+      const k = be.find((S) => S.id === s.id);
+      if (k) return {
         kind: "zarr",
-        title: b.name,
+        title: k.name,
         description: "OME-Zarr source served by the installed ZarrViewer. It is not downloaded into this browser Workspace.",
         metadata: {
-          Screen: b.contextName,
-          "OMERO source": `${b.objectType} ${b.objectId}`,
-          "OME-Zarr name": b.zarrName,
-          ...b.plateRows && b.plateColumns ? {
-            "Plate size": `${b.plateRows * b.plateColumns}-well (${b.plateRows} × ${b.plateColumns})`,
-            "Wells with data": b.wellsWithData,
-            "Image fields": b.fieldsWithData
+          Screen: k.contextName,
+          "OMERO source": `${k.objectType} ${k.objectId}`,
+          "OME-Zarr name": k.zarrName,
+          ...k.plateRows && k.plateColumns ? {
+            "Plate size": `${k.plateRows * k.plateColumns}-well (${k.plateRows} × ${k.plateColumns})`,
+            "Wells with data": k.wellsWithData,
+            "Image fields": k.fieldsWithData
           } : {},
-          "Store UUID": b.storeUuid
+          "Store UUID": k.storeUuid
         }
       };
     }
     if (s.kind === "folder") {
-      const b = {
+      const k = {
         inputs: {
           kind: "folder",
           title: "Input",
           description: "Source data available to the Assistant, Methods, Pipelines, and Notebooks.",
           metadata: {
             "Downloaded inputs": yr.length,
-            "ZarrViewer sources": ke.length
+            "ZarrViewer sources": be.length
           }
         },
         chat: {
@@ -20360,7 +20365,7 @@ ${Ye.trim()}
           metadata: { Items: v.notebooks.length }
         }
       };
-      if (b[s.id]) return b[s.id];
+      if (k[s.id]) return k[s.id];
     }
     return {
       kind: "workspace",
@@ -20413,7 +20418,7 @@ ${Ye.trim()}
       ] })
     ] })
   ] }), Mo = (s, u, g) => {
-    const b = g.filter((P) => Nn(P.name)), S = b.length > 0 && b.every((P) => Br.has(P.id)), A = g.filter((P) => Br.has(P.id));
+    const k = g.filter((P) => Nn(P.name)), S = k.length > 0 && k.every((P) => Br.has(P.id)), A = g.filter((P) => Br.has(P.id));
     return /* @__PURE__ */ l.jsxs("details", { className: "browser-subfolder result-subfolder", children: [
       /* @__PURE__ */ l.jsxs("summary", { onClick: () => ft({ kind: "folder", id: u }), children: [
         /* @__PURE__ */ l.jsx(et, { name: "chevron", className: "folder-chevron" }),
@@ -20437,7 +20442,7 @@ ${Ye.trim()}
         )
       ] }),
       /* @__PURE__ */ l.jsxs("ul", { className: "browser-list result-browser-list", children: [
-        b.map((P) => /* @__PURE__ */ l.jsxs(
+        k.map((P) => /* @__PURE__ */ l.jsxs(
           "li",
           {
             className: `browser-row output-row ${Br.has(P.id) ? "selected" : ""}`,
@@ -20476,7 +20481,7 @@ ${Ye.trim()}
           },
           P.id
         )),
-        !b.length && /* @__PURE__ */ l.jsx("li", { className: "browser-empty", children: g.length ? "No matching results" : "No results yet" })
+        !k.length && /* @__PURE__ */ l.jsx("li", { className: "browser-empty", children: g.length ? "No matching results" : "No results yet" })
       ] })
     ] });
   };
@@ -20602,8 +20607,8 @@ ${Ye.trim()}
                     )),
                     zarrViewerAvailable: !!(ve != null && ve.available),
                     onToggleDataset: (s, u) => yo((g) => {
-                      const b = new Set(g);
-                      return u ? b.add(s) : b.delete(s), b;
+                      const k = new Set(g);
+                      return u ? k.add(s) : k.delete(s), k;
                     }),
                     onToggleItem: (s) => rr((u) => {
                       const g = new Set(u);
@@ -20799,7 +20804,7 @@ ${Ye.trim()}
                                 /* @__PURE__ */ l.jsx(et, { name: "chevron", className: "folder-chevron" }),
                                 /* @__PURE__ */ l.jsx(et, { name: "folder" }),
                                 /* @__PURE__ */ l.jsx("strong", { children: "Input" }),
-                                /* @__PURE__ */ l.jsx("small", { children: yr.length + ke.length })
+                                /* @__PURE__ */ l.jsx("small", { children: yr.length + be.length })
                               ]
                             }
                           ),
@@ -20849,7 +20854,7 @@ ${Ye.trim()}
                               },
                               s.id
                             )),
-                            ke.filter(
+                            be.filter(
                               (s) => Nn(`${s.name} ${s.contextName}`)
                             ).map((s) => /* @__PURE__ */ l.jsxs(
                               "li",
@@ -20870,7 +20875,7 @@ ${Ye.trim()}
                               },
                               `zarr-${s.id}`
                             )),
-                            !Oa.length && !ke.some(
+                            !Oa.length && !be.some(
                               (s) => Nn(`${s.name} ${s.contextName}`)
                             ) && /* @__PURE__ */ l.jsx("li", { className: "browser-empty", children: "No matching input files" })
                           ] })
@@ -20923,7 +20928,7 @@ ${Ye.trim()}
                                   ] }),
                                   hr.map((s) => {
                                     const u = v.files.filter(
-                                      (b) => b.role === "chat-attachment" && b.chatId === s.id && !b.deletedAt
+                                      (k) => k.role === "chat-attachment" && k.chatId === s.id && !k.deletedAt
                                     ), g = Kc.byChat.get(s.id) || [];
                                     return Nn([
                                       s.title,
@@ -20931,8 +20936,8 @@ ${Ye.trim()}
                                       "chat.md",
                                       "Attachments",
                                       "Results",
-                                      ...u.map((b) => b.name),
-                                      ...g.map((b) => b.name)
+                                      ...u.map((k) => k.name),
+                                      ...g.map((k) => k.name)
                                     ].join(" ")) ? /* @__PURE__ */ l.jsxs(
                                       "details",
                                       {
@@ -20942,14 +20947,14 @@ ${Ye.trim()}
                                           /* @__PURE__ */ l.jsxs(
                                             "summary",
                                             {
-                                              onClick: (b) => {
-                                                fo.trim() || (b.preventDefault(), bo((S) => {
+                                              onClick: (k) => {
+                                                fo.trim() || (k.preventDefault(), ko((S) => {
                                                   const A = new Set(S);
                                                   return A.has(s.id) ? A.delete(s.id) : A.add(s.id), A;
                                                 })), ft({ kind: "chat", id: s.id });
                                               },
-                                              onContextMenu: (b) => Ot(
-                                                b,
+                                              onContextMenu: (k) => Ot(
+                                                k,
                                                 `${vt(s.title)}/`,
                                                 md(s)
                                               ),
@@ -20964,8 +20969,8 @@ ${Ye.trim()}
                                                     className: "browser-more",
                                                     "aria-label": `Actions for folder ${vt(s.title)}`,
                                                     title: `Actions for ${vt(s.title)}`,
-                                                    onClick: (b) => Ot(
-                                                      b,
+                                                    onClick: (k) => Ot(
+                                                      k,
                                                       `${vt(s.title)}/`,
                                                       md(s)
                                                     ),
@@ -21020,32 +21025,32 @@ ${Ye.trim()}
                                               /* @__PURE__ */ l.jsx("strong", { children: "Attachments" }),
                                               /* @__PURE__ */ l.jsx("small", { children: u.length })
                                             ] }),
-                                            /* @__PURE__ */ l.jsx("ul", { className: "browser-list", children: u.map((b) => {
+                                            /* @__PURE__ */ l.jsx("ul", { className: "browser-list", children: u.map((k) => {
                                               var S;
                                               return /* @__PURE__ */ l.jsxs(
                                                 "li",
                                                 {
-                                                  className: `browser-row file-${b.state}`,
-                                                  onClick: () => En(b.id),
-                                                  onContextMenu: (A) => Ot(A, b.name, [
-                                                    { label: "Download", run: () => Hn(b) },
-                                                    { label: "Remove from workspace", danger: !0, run: () => void Tl(b.id) }
+                                                  className: `browser-row file-${k.state}`,
+                                                  onClick: () => En(k.id),
+                                                  onContextMenu: (A) => Ot(A, k.name, [
+                                                    { label: "Download", run: () => Hn(k) },
+                                                    { label: "Remove from workspace", danger: !0, run: () => void Tl(k.id) }
                                                   ]),
                                                   children: [
                                                     /* @__PURE__ */ l.jsx(et, { name: "file" }),
                                                     /* @__PURE__ */ l.jsxs("div", { className: "browser-name", children: [
-                                                      /* @__PURE__ */ l.jsx("strong", { title: `${vt(s.title)}/Attachments/${b.name}`, children: b.name }),
+                                                      /* @__PURE__ */ l.jsx("strong", { title: `${vt(s.title)}/Attachments/${k.name}`, children: k.name }),
                                                       /* @__PURE__ */ l.jsxs("small", { children: [
-                                                        ((S = b.attachment) == null ? void 0 : S.origin) || "upload",
+                                                        ((S = k.attachment) == null ? void 0 : S.origin) || "upload",
                                                         " · ",
-                                                        b.state
+                                                        k.state
                                                       ] }),
-                                                      b.error && /* @__PURE__ */ l.jsx("span", { className: "browser-error", children: b.error })
+                                                      k.error && /* @__PURE__ */ l.jsx("span", { className: "browser-error", children: k.error })
                                                     ] }),
-                                                    /* @__PURE__ */ l.jsx("span", { className: "browser-size", children: Ws(b.size) })
+                                                    /* @__PURE__ */ l.jsx("span", { className: "browser-size", children: Ws(k.size) })
                                                   ]
                                                 },
-                                                b.id
+                                                k.id
                                               );
                                             }) })
                                           ] }),
@@ -21157,7 +21162,7 @@ ${Ye.trim()}
                               "button",
                               {
                                 disabled: !Yr.size,
-                                onClick: () => void ki(),
+                                onClick: () => void bi(),
                                 children: [
                                   /* @__PURE__ */ l.jsx(Ie, { name: "notebook" }),
                                   "To Notebook"
@@ -21338,7 +21343,7 @@ ${Ye.trim()}
                               onChange: (s) => {
                                 var g;
                                 const u = (g = s.target.files) == null ? void 0 : g[0];
-                                u && bi(u), s.target.value = "";
+                                u && ki(u), s.target.value = "";
                               }
                             }
                           )
@@ -21376,7 +21381,7 @@ ${Ye.trim()}
                           oi(null), s.run();
                         },
                         children: [
-                          /* @__PURE__ */ l.jsx(Ie, { name: hb(s.label) }),
+                          /* @__PURE__ */ l.jsx(Ie, { name: hk(s.label) }),
                           s.label
                         ]
                       },
@@ -21394,7 +21399,7 @@ ${Ye.trim()}
                   accept: ".oa-workspace.zip,application/zip",
                   onChange: (s) => {
                     var u;
-                    return void bd(((u = s.target.files) == null ? void 0 : u[0]) || null);
+                    return void kd(((u = s.target.files) == null ? void 0 : u[0]) || null);
                   }
                 }
               ),
@@ -21440,7 +21445,7 @@ ${Ye.trim()}
                       $c(!0), $t("pipelines");
                     },
                     onPipelineToNotebook: (s) => {
-                      ki([s]).then((u) => {
+                      bi([s]).then((u) => {
                         u && Sr(u);
                       });
                     },
@@ -21476,7 +21481,7 @@ ${Ye.trim()}
                     onCreatePipeline: pa,
                     onStop: _s,
                     onRerun: (s) => void Pn(s),
-                    onSelectRun: kl,
+                    onSelectRun: bl,
                     onInspectFile: (s) => En(s)
                   }
                 ),
@@ -21507,9 +21512,9 @@ ${Ye.trim()}
                       ] })
                     ] }),
                     A1(nt.messages).map((s) => {
-                      var b, S, A, P;
+                      var k, S, A, P;
                       if (s.kind === "ai-activity") {
-                        const j = (S = (b = s.aiActivity) == null ? void 0 : b.question) == null ? void 0 : S.id, O = !["completed", "failed", "stopped"].includes(
+                        const j = (S = (k = s.aiActivity) == null ? void 0 : k.question) == null ? void 0 : S.id, O = !["completed", "failed", "stopped"].includes(
                           ((A = s.aiActivity) == null ? void 0 : A.state) || "completed"
                         );
                         return /* @__PURE__ */ l.jsx(
@@ -21517,7 +21522,7 @@ ${Ye.trim()}
                           {
                             message: s,
                             liveText: O ? ti : "",
-                            questionActive: !!(j && ko.current.has(j)),
+                            questionActive: !!(j && bo.current.has(j)),
                             onAnswer: No
                           },
                           s.id
@@ -21632,18 +21637,18 @@ ${Ye.trim()}
                 f === "notebooks" && /* @__PURE__ */ l.jsx(
                   d2,
                   {
-                    notebook: bn,
+                    notebook: kn,
                     notebooks: Xc,
                     inputs: yr,
                     runtime: a,
                     runRequest: is,
                     onRunRequestConsumed: () => ls(null),
                     onRunStateChange: (s) => Ia(
-                      `notebook:${(bn == null ? void 0 : bn.id) || "active"}`,
+                      `notebook:${(kn == null ? void 0 : kn.id) || "active"}`,
                       s
                     ),
                     workspaceActions: Rs(),
-                    onBeforeRun: (s) => bn ? ud(s) : or(v.files).then(() => v.files),
+                    onBeforeRun: (s) => kn ? ud(s) : or(v.files).then(() => v.files),
                     onPrepareProtocol: np,
                     onChange: Po,
                     onFiles: Pl,
@@ -21661,7 +21666,7 @@ ${Ye.trim()}
                     detail: "Syntax highlighting and structured editing controls are loading."
                   }
                 ), children: /* @__PURE__ */ l.jsx(
-                  lb,
+                  lk,
                   {
                     session: Ve,
                     methods: gr,
@@ -21704,7 +21709,7 @@ ${Ye.trim()}
                           {
                             type: "checkbox",
                             checked: pt,
-                            onChange: () => void kd()
+                            onChange: () => void bd()
                           }
                         ),
                         /* @__PURE__ */ l.jsxs("span", { children: [
@@ -21971,7 +21976,7 @@ ${Ye.trim()}
                           /* @__PURE__ */ l.jsxs("div", { className: "custom-skill-actions", children: [
                             /* @__PURE__ */ l.jsxs(Oe, { onClick: () => {
                               var s;
-                              return (s = bl.current) == null ? void 0 : s.click();
+                              return (s = kl.current) == null ? void 0 : s.click();
                             }, children: [
                               /* @__PURE__ */ l.jsx(Ie, { name: "upload" }),
                               "Upload skill"
@@ -21983,7 +21988,7 @@ ${Ye.trim()}
                             /* @__PURE__ */ l.jsx(
                               "input",
                               {
-                                ref: bl,
+                                ref: kl,
                                 hidden: !0,
                                 type: "file",
                                 accept: ".md,.txt,text/markdown,text/plain",
@@ -22144,17 +22149,17 @@ ${Ye.trim()}
       we(`${u.name} exceeds the 2 GiB file limit`);
       return;
     }
-    const b = await u.arrayBuffer(), S = {
+    const k = await u.arrayBuffer(), S = {
       ...s,
       name: u.name,
       type: u.type || S0(u.name),
-      size: b.byteLength,
-      sha256: await yt(b),
-      data: b,
+      size: k.byteLength,
+      sha256: await yt(k),
+      data: k,
       state: "ready",
       error: void 0
     }, A = g.files.map((P) => P.id === s.id ? S : P);
-    qt([S]), await br(A, "Missing local input restored");
+    qt([S]), await kr(A, "Missing local input restored");
   }
   async function Ad(s) {
     const u = C.current;
@@ -22162,7 +22167,7 @@ ${Ye.trim()}
       Bn(!0), yn.current.clear();
       try {
         await or(u.files), await a.beginTurn();
-        const g = Le(), b = await _r(
+        const g = Le(), k = await _r(
           s.code,
           { kind: "chat", chatId: s.chatId, promptId: g },
           !0,
@@ -22170,7 +22175,7 @@ ${Ye.trim()}
         ), S = C.current, A = S == null ? void 0 : S.methods.flatMap(
           (j) => j.versions.map((O) => ({ method: j, version: O }))
         ).find(({ version: j }) => j.codeHash === s.codeHash), P = await Ar(
-          b,
+          k,
           { kind: "chat", chatId: s.chatId, promptId: g },
           (A == null ? void 0 : A.method.name) || "python-rerun-analysis.py",
           A == null ? void 0 : A.version.renderRecipe
@@ -22256,10 +22261,10 @@ function et({ name: e, className: r = "" }) {
     }
   );
 }
-const Ry = document.getElementById("root"), E0 = document.getElementById("omero-analysis-context"), ot = (e) => Ry.dataset[e] || "", fu = window.OMERO_ANALYSIS, wb = ot("embeddedHost");
+const Ry = document.getElementById("root"), E0 = document.getElementById("omero-analysis-context"), ot = (e) => Ry.dataset[e] || "", fu = window.OMERO_ANALYSIS, wk = ot("embeddedHost");
 window.OMERO_ANALYSIS = fu != null && fu.runtimeBase ? fu : {
   context: E0 ? JSON.parse(E0.textContent || "null") : null,
-  embeddedHost: wb === "biomero" ? "biomero" : void 0,
+  embeddedHost: wk === "biomero" ? "biomero" : void 0,
   tokenUrl: ot("tokenUrl"),
   contextTemplate: ot("contextTemplate"),
   attachmentsTemplate: ot("attachmentsTemplate"),
@@ -22294,7 +22299,7 @@ window.OMERO_ANALYSIS = fu != null && fu.runtimeBase ? fu : {
   runtimeBase: ot("runtimeBase").replace(/ASSET$/, "")
 };
 fg.createRoot(Ry).render(
-  /* @__PURE__ */ l.jsx(sg.StrictMode, { children: /* @__PURE__ */ l.jsx(gb, {}) })
+  /* @__PURE__ */ l.jsx(sg.StrictMode, { children: /* @__PURE__ */ l.jsx(gk, {}) })
 );
 export {
   Ie as A,

@@ -12,7 +12,7 @@ from omero_analysis.data_query import (
     source_format,
     validate_result_token,
 )
-from omero_analysis.errors import InvalidToken, UnsupportedMedia
+from omero_analysis.errors import InvalidToken, RemoteQueryFailed, UnsupportedMedia
 from omero_analysis.tokens import make_context_token, validate_context_token
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
@@ -62,6 +62,38 @@ def test_chunk_reader_is_bounded_and_reports_remaining_length():
     assert reader.len == 4
     assert reader.read() == b"cdef"
     assert reader.read() == b""
+
+
+def test_failed_source_upload_closes_chunk_generator(monkeypatch, settings):
+    settings.OMERO_ANALYSIS_DATA_QUERY_WORKER_URL = "http://worker.invalid"
+    settings.OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN = "test-only"
+    closed = []
+    def chunks():
+        try:
+            yield b"a" * 100
+            yield b"b" * 100
+        finally:
+            closed.append(True)
+    broker = DataQueryBroker()
+    def request(method, path, **kwargs):
+        if path.endswith("resolve"):
+            return {"cached": False}
+        kwargs["data"].read(1024)
+        raise RuntimeError("Interrupted upload")
+    monkeypatch.setattr(broker, "_request", request)
+    annotation = SimpleNamespace(getFileInChunks=chunks)
+    info = SimpleNamespace(name="source.csv", size=200, mimetype="text/csv")
+    with pytest.raises(RuntimeError, match="Interrupted upload"):
+        broker._source(annotation, info, "scope", "source")
+    assert closed == [True]
+    broker.session.close()
+
+
+def test_truncated_source_does_not_leave_multipart_encoder_spinning():
+    reader = ChunkReader(iter([b"short"]), 10)
+    with pytest.raises(RemoteQueryFailed, match="declared size"):
+        reader.read(10)
+    reader.close()
 
 
 def test_opaque_references_and_encrypted_result_token_are_context_bound(monkeypatch):
