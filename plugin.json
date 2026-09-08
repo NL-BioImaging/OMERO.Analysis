@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "omero-analysis",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Portable Agent Skills for creating and converting offline-first OMERO.Analysis notebooks.",
   "author": {
     "name": "NL-BioImaging",

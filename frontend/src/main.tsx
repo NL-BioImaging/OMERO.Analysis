@@ -37,6 +37,7 @@ window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   dataSourceSchemaTemplate: value("dataSourceSchemaTemplate"),
   dataSourceQueryTemplate: value("dataSourceQueryTemplate"),
   dataQueryResultDownloadTemplate: value("dataQueryResultDownloadTemplate"),
+  dataQueryResultPromoteUrl: value("dataQueryResultPromoteUrl"),
   zarrViewerStatusUrl: value("zarrViewerStatusUrl"),
   keepaliveUrl: value("keepaliveUrl"),
   keepaliveInterval: Number(value("keepaliveInterval")) || 0,

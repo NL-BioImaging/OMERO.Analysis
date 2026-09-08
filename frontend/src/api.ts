@@ -43,7 +43,31 @@ export class OmeroApiError extends Error {
   }
 }
 
+export interface QuerySaveReceipt {
+  annotationId: number;
+  resultToken: string;
+  receipt: string;
+  rowCount: number;
+  completedAt: number;
+}
+
 export class OmeroBridge {
+  private queryResultListeners = new Set<(result: QuerySaveReceipt) => void>();
+
+  subscribeQueryResults(listener: (result: QuerySaveReceipt) => void): () => void {
+    this.queryResultListeners.add(listener);
+    return () => { this.queryResultListeners.delete(listener); };
+  }
+
+  async promoteRemoteResult(result: QuerySaveReceipt): Promise<Record<string, any>> {
+    const url = this.bootstrap.dataQueryResultPromoteUrl;
+    if (!url) throw new Error("Saving verified query results is unavailable");
+    return readJson(await this.authorizedFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+      body: JSON.stringify({ result_token: result.resultToken, receipt: result.receipt })
+    }));
+  }
   private readonly transport: OmeroContextTransport;
 
   constructor(private readonly bootstrap: Bootstrap) {
@@ -432,7 +456,7 @@ export class OmeroBridge {
       "/1/query/",
       `/${annotationId}/query/`
     );
-    return await readJson(await this.authorizedFetch(url, {
+    const result = await readJson(await this.authorizedFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -440,6 +464,14 @@ export class OmeroBridge {
       },
       body: JSON.stringify({ sql, parameters })
     }));
+    if (typeof result.result_token === "string" && typeof result.provenance_receipt === "string") {
+      const receipt: QuerySaveReceipt = {
+        annotationId, resultToken: result.result_token, receipt: result.provenance_receipt,
+        rowCount: Number(result.row_count), completedAt: Date.now()
+      };
+      this.queryResultListeners.forEach((listener) => listener(receipt));
+    }
+    return result;
   }
 
   async downloadRemoteResult(resultToken: string): Promise<ArrayBuffer> {

@@ -179,6 +179,9 @@ def generate(output_dir: Path, rows: int, chunk_size: int, force: bool = False) 
         "column_count": len(COLUMNS),
         "columns": list(COLUMNS),
         "samples": _samples(rows),
+        "engine_versions": {"duckdb": duckdb.__version__, "sqlite": sqlite3.sqlite_version},
+        "capacity_probe": {"concurrency": [1, 2, 4, 8], "temperatures": ["cold", "warm"],
+                           "command": "python scripts/benchmark_query_capacity.py --rows " + str(rows)},
         "timings": timings,
         "files": {
             name: {
@@ -197,7 +200,7 @@ def generate(output_dir: Path, rows: int, chunk_size: int, force: bool = False) 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("benchmark-data"))
-    parser.add_argument("--rows", type=int, default=4_000_000)
+    parser.add_argument("--rows", type=int, default=10_000_000)
     parser.add_argument("--chunk-size", type=int, default=10_000)
     parser.add_argument("--force", action="store_true")
     arguments = parser.parse_args()

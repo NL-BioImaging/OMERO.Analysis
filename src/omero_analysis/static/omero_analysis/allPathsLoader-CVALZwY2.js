@@ -1,4 +1,4 @@
-import { _ as n, a as o } from "./main-0zWXx0Zy.js";
+import { _ as n, a as o } from "./main-WwrBrp7y.js";
 var s = function(a, e) {
   return n(void 0, void 0, void 0, function() {
     var t;
@@ -7,7 +7,7 @@ var s = function(a, e) {
         case 0:
           return [4, import(
             /* webpackChunkName: "blueprint-icons-all-paths" */
-            "./allPaths-y5EAqWPe.js"
+            "./allPaths-D4K3FjC3.js"
           )];
         case 1:
           return t = r.sent().getIconPaths, [2, t(a, e)];

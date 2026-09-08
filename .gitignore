@@ -13,3 +13,5 @@ src/omero_analysis/static/omero_analysis/pyodide/
 src/omero_analysis/static/omero_analysis/assets/
 .DS_Store
 benchmark-data/
+.local-query-deployment/
+.local-query-gates/

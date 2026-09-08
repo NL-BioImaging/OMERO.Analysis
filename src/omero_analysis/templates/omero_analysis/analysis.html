@@ -35,6 +35,7 @@
        data-data-source-schema-template="{% url 'omero_analysis_data_source_schema' annotation_id=1 %}"
        data-data-source-query-template="{% url 'omero_analysis_data_source_query' annotation_id=1 %}"
        data-data-query-result-download-template="{% url 'omero_analysis_data_query_result_download' result_token='TOKEN' %}"
+       data-data-query-result-promote-url="{% url 'omero_analysis_data_query_result_promote' %}"
        data-zarr-viewer-status-url="{% url 'omero_analysis_zarr_viewer_integration' %}"
        data-keepalive-url="{% url 'omero_analysis_session_keepalive' %}"
        data-keepalive-interval="{{ keepalive_interval }}"

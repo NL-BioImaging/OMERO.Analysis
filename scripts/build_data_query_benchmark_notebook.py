@@ -19,7 +19,7 @@ CONTRACT = {
     "results": {"path": "results"},
     "parameters": [
         {"name": "run_id", "type": "string", "default": "local-baseline-001", "label": "Unique benchmark run ID"},
-        {"name": "maximum_rows", "type": "integer", "default": 4_000_000, "minimum": 1, "maximum": 4_000_000, "help": "Use a smaller value only for local smoke validation."},
+        {"name": "maximum_rows", "type": "integer", "default": 10_000_000, "minimum": 1, "maximum": 10_000_000, "help": "Use a smaller value only for local smoke validation."},
         {"name": "run_full_results", "type": "boolean", "default": True},
     ],
     "requirements": ["pandas", "matplotlib"],
@@ -38,7 +38,7 @@ import pandas as pd
 
 FORMATS = ("duckdb", "sqlite", "csv")
 _maximum_rows = int(ctx.params["maximum_rows"])
-SIZES = tuple(size for size in (1_000_000, 2_000_000, 4_000_000) if size <= _maximum_rows)
+SIZES = tuple(size for size in (1_000_000, 4_000_000, 10_000_000) if size <= _maximum_rows)
 if not SIZES:
     SIZES = (_maximum_rows,)
 EXPECTED_COLUMNS = [
@@ -222,7 +222,7 @@ def build_notebook() -> dict:
             *[
                 code_cell(
                     f"benchmark-full-smoke-{format_name}",
-                    f'''if SIZES and SIZES[0] not in (1_000_000, 2_000_000, 4_000_000):
+                    f'''if SIZES and SIZES[0] not in (1_000_000, 4_000_000, 10_000_000):
     await run_group("full", SIZES[0], ("{format_name}",))
 pd.DataFrame(records)
 ''',
@@ -234,10 +234,17 @@ pd.DataFrame(records)
                     f"benchmark-full-{size}-{format_name}",
                     full_group_source(size, format_name),
                 )
-                for size in (1_000_000, 2_000_000, 4_000_000)
+                for size in (1_000_000, 4_000_000, 10_000_000)
                 for format_name in BENCHMARK_FORMATS
             ],
             code_cell("benchmark-report", REPORT),
+            {"id": "capacity-probe", "cell_type": "markdown", "metadata": {}, "source":
+             "## Worker capacity gate\n\nRun `python scripts/benchmark_query_capacity.py --rows 100000 --repeats 3` "
+             "from the Analysis checkout for concurrent HTTP runs at 1/2/4/8 clients using these equivalent mixed schemas. "
+             "The report records cold/warm latency p50/p95, transfer bytes, sampled process memory, cache disk usage, "
+             "evictions and explicit failures. It uses a disposable worker/cache; it does not clear the live OMERO cache. "
+             "Cold means a new result-cache key; operating-system caches are not cleared. "
+             "Increase `--rows` for capacity testing; exports above configured limits must fail explicitly."},
         ],
     }
 

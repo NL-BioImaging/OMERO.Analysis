@@ -1,7 +1,9 @@
 import json
+import hashlib
 import logging
 import secrets
 import uuid
+import time
 from functools import wraps
 from pathlib import Path
 from urllib.parse import quote
@@ -38,7 +40,10 @@ from .data_query import (
     query_policy,
     result_token_claims,
     validate_result_token,
+    authorize_query_source,
 )
+from .data_query_audit import audit as query_audit, request_correlation
+from .data_query_provenance import make_receipt, promote_result
 from .integrations import zarr_viewer_status
 from .managed_omero import marker as managed_marker, plain as managed_plain
 from .services import (
@@ -102,13 +107,21 @@ def api_errors(function):
         try:
             return function(*args, **kwargs)
         except AnalysisError as exc:
+            error = {"code": exc.code, "message": str(exc)}
+            if getattr(exc, "worker_code", None):
+                error["worker_code"] = exc.worker_code
+            if getattr(exc, "request_id", None):
+                error["request_id"] = exc.request_id
             return JsonResponse(
-                {"error": {"code": exc.code, "message": str(exc)}},
+                {"error": error},
                 status=exc.status,
             )
         except Exception:
             request_id = uuid.uuid4().hex[:12]
-            logger.exception("Unhandled OMERO Analysis error request_id=%s", request_id)
+            if function.__name__.startswith(("data_source_", "data_query_")):
+                logger.error("Data query operation failed request_id=%s", request_id)
+            else:
+                logger.exception("Unhandled OMERO Analysis error request_id=%s", request_id)
             response = JsonResponse(
                 {
                     "error": {
@@ -123,6 +136,24 @@ def api_errors(function):
             return response
 
     return wrapped
+
+
+def query_audited(event):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(request, *args, **kwargs):
+            started = time.monotonic()
+            request_id = request_correlation(request)
+            response = function(request, *args, **kwargs)
+            context = getattr(request, "data_query_audit", {})
+            status = response.status_code
+            query_audit(event, "success" if 200 <= status < 300 else "denied" if status < 500 else "failed",
+                        **{**context, "request_id": request_id,
+                           "duration_ms": int((time.monotonic() - started) * 1000)})
+            response["X-Request-ID"] = request_id
+            return response
+        return wrapped
+    return decorate
 
 
 def _panel_context_object(conn, object_type, object_id):
@@ -786,21 +817,7 @@ def context_token(request, conn=None, **kwargs):
 
 
 def _data_query_attachment(request, conn, annotation_id):
-    claims = validate_context_token(request, conn, "data_query")
-    _, _, obj = get_context_object(
-        conn, claims["object_type"], claims["object_id"]
-    )
-    validate_context_token(
-        request,
-        conn,
-        "data_query",
-        claims["object_type"],
-        claims["object_id"],
-        obj,
-    )
-    annotation, info = get_scoped_attachment(obj, annotation_id)
-    scope, source_ref = opaque_references(request, conn, claims, info)
-    return claims, obj, annotation, info, scope, source_ref
+    return authorize_query_source(request, conn, annotation_id=annotation_id)
 
 
 @require_GET
@@ -811,6 +828,7 @@ def data_query_capabilities(request, conn=None, **kwargs):
 
 
 @require_GET
+@query_audited("schema")
 @login_required(setGroupContext=True)
 @api_errors
 def data_source_schema(request, annotation_id, conn=None, **kwargs):
@@ -818,11 +836,12 @@ def data_source_schema(request, annotation_id, conn=None, **kwargs):
         request, conn, annotation_id
     )
     return JsonResponse(
-        DataQueryBroker().schema(annotation, info, scope, source_ref)
+        DataQueryBroker(request_id=request_correlation(request)).schema(annotation, info, scope, source_ref)
     )
 
 
 @require_POST
+@query_audited("query")
 @login_required(setGroupContext=True)
 @api_errors
 def data_source_query(request, annotation_id, conn=None, **kwargs):
@@ -839,36 +858,52 @@ def data_source_query(request, annotation_id, conn=None, **kwargs):
         from .errors import InvalidObject
 
         raise InvalidObject("Remote query request must be a JSON object")
-    result, result_id = DataQueryBroker().query(
+    result, result_id = DataQueryBroker(request_id=request_correlation(request)).query(
         annotation, info, scope, source_ref, payload
     )
     result["result_token"] = make_result_token(
         request, conn, claims, info, result_id
     )
+    receipt = make_receipt(request, conn, claims, info, result["result_token"], payload, result)
+    if receipt:
+        result["provenance_receipt"] = receipt
+    request.data_query_audit.update({key: result[key] for key in (
+        "source_sha256", "sql_sha256", "row_count", "byte_count", "cache_status") if key in result})
+    if isinstance(result.get("execution"), dict):
+        request.data_query_audit["result_sha256"] = result["execution"].get("result_sha256")
     return JsonResponse(result)
 
 
 @require_GET
+@query_audited("download")
 @login_required(setGroupContext=True, doConnectionCleanup=False)
 @api_errors
 def data_query_result_download(request, result_token, conn=None, **kwargs):
-    claims = result_token_claims(result_token)
-    _, _, obj = get_context_object(
-        conn, claims.get("object_type"), claims.get("object_id")
-    )
-    _, info = get_scoped_attachment(obj, claims.get("annotation_id"))
-    validated = validate_result_token(request, conn, result_token, obj, info)
-    worker_response = DataQueryBroker().download(validated["result_id"])
+    validated, _, _, _, _, _ = authorize_query_source(request, conn, result_token=result_token)
+    worker_response = DataQueryBroker(request_id=request_correlation(request)).download(validated["result_id"])
 
     def chunks():
+        byte_count = 0
+        digest = hashlib.sha256()
         try:
-            yield from worker_response.iter_content(chunk_size=1024 * 1024)
+            for chunk in worker_response.iter_content(chunk_size=1024 * 1024):
+                byte_count += len(chunk)
+                digest.update(chunk)
+                yield chunk
+            query_audit("download_transfer", "success", request_id=request_correlation(request),
+                        **request.data_query_audit, byte_count=byte_count, result_sha256=digest.hexdigest())
+        except BaseException:
+            query_audit("download_transfer", "interrupted", request_id=request_correlation(request))
+            raise
         finally:
             worker_response.close()
 
     response = ConnCleaningHttpResponse(
         chunks(), content_type="text/csv; charset=utf-8"
     )
+    # A generator closed before its first iteration never enters its finally block.
+    # Django closes registered resources even when the client never starts the body.
+    response._resource_closers.append(worker_response.close)
     response.conn = conn
     if worker_response.headers.get("Content-Length"):
         response["Content-Length"] = worker_response.headers["Content-Length"]
@@ -876,6 +911,19 @@ def data_query_result_download(request, result_token, conn=None, **kwargs):
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@require_POST
+@query_audited("promotion")
+@login_required(setGroupContext=True)
+@api_errors
+def data_query_result_promote(request, conn=None, **kwargs):
+    try:
+        payload = json.loads(request.body or b"{}")
+    except (ValueError, UnicodeDecodeError) as exc:
+        from .errors import InvalidObject
+        raise InvalidObject("Result-save request must be valid JSON") from exc
+    return JsonResponse(promote_result(request, conn, payload))
 
 
 @require_GET
