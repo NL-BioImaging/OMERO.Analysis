@@ -3,6 +3,7 @@ import argparse
 from collections import Counter
 import hashlib
 import json
+import math
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +52,20 @@ def main():
     assert len(documents['engines']) == 18 and all(r['status'] == 'passed' and r['fresh_query_and_ingestion'] == 'passed' for r in documents['engines'])
     for key, count in (('boundaries', 4), ('omero', 3), ('browser', 3), ('vm_promotions', 10), ('vm_cache', 6), ('vm_cache_durable', 2), ('vm_first_directory', 1)):
         assert len(documents[key]) == count and all(r['status'] == 'passed' for r in documents[key]), key
+    assert {(r['case'], r['repeat']) for r in documents['engines']} == {
+        (case, repeat) for case in ('duckdb_limit', 'duckdb_cgroup', 'sqlite_cgroup', 'csv_cgroup', 'worker_oom', 'restart') for repeat in range(3)}
+    assert all(r['oom_kills'] > 0 for r in documents['engines'] if r['case'].endswith('_cgroup'))
+    assert all(r['killed_state']['OOMKilled'] and r['killed_state']['ExitCode'] == 137 for r in documents['engines'] if r['case'] == 'worker_oom')
+    assert {r['case'] for r in documents['boundaries']} == {'rows_exact', 'rows_over', 'bytes_exact', 'bytes_over'}
+    for key in ('omero', 'browser'):
+        assert {r['format'] for r in documents[key]} == {'duckdb', 'sqlite', 'csv'}, key
+    assert {r['point'] for r in documents['vm_promotions']} == {
+        'csv_file:created', 'csv_file:chunk', 'csv:created', 'recipe_file:created', 'recipe:created',
+        'summary:created', 'csv:linked', 'recipe:linked', 'summary:linked', 'complete:recorded'}
+    assert {r['point'] for r in documents['vm_cache']} == {
+        kind + ':' + phase for kind in ('sources', 'results') for phase in ('before-rename', 'after-rename', 'after-fsync')}
+    assert {r['point'] for r in documents['vm_cache_durable']} == {'sources:after-fsync', 'results:after-fsync'}
+    assert documents['vm_first_directory'][0]['point'] == 'csv_file:created'
     regression = [r for r in documents['regression'] if r.get('event') == 'request']
     regression_expected = {(fmt, size, repeat, kind, temperature)
                            for fmt in ('duckdb', 'sqlite', 'csv') for size in (1_000_000, 4_000_000)
@@ -64,16 +79,30 @@ def main():
         if row.get('event') != 'batch':
             continue
         item = {k:v for k,v in row.items() if k not in ('event', 'observation')}
+        item['bounded_rejection_count'] = item.pop('failure_count')
         observation = row['observation']
         group = observation['cgroup']
         item.update(memory_peak_bytes=int(group['memory.peak']), memory_events=group['memory.events'], cache=observation['cache'])
         batches.append(item)
+    overview = []
+    for fmt, concurrency, kind, temperature in sorted({(r['format'], r['concurrency'], r['kind'], r['temperature']) for r in requests}):
+        selected = [r for r in requests if (r['format'], r['concurrency'], r['kind'], r['temperature']) == (fmt, concurrency, kind, temperature)]
+        passed = [r for r in selected if r['status'] == 'passed']
+        seconds = sorted(r['seconds'] for r in passed)
+        overview.append({'format': fmt, 'concurrency': concurrency, 'kind': kind, 'temperature': temperature,
+                         'success_count': len(passed), 'bounded_rejection_count': len(selected) - len(passed),
+                         'p50_seconds': seconds[math.ceil(len(seconds) * .5) - 1] if seconds else None,
+                         'p95_seconds': seconds[math.ceil(len(seconds) * .95) - 1] if seconds else None,
+                         'transfer_bytes': sum(r['transfer_bytes'] for r in passed)})
     report = {'schema': 'analysis-query-release-evidence-v1', 'date': '2026-09-08', 'status': 'passed',
               'evidence': sources, 'capacity_configurations': [r for r in capacity if r.get('event') == 'configuration'],
-              'request_outcomes': dict(Counter(r['status'] for r in requests)), 'batches': batches,
+              'worker_capabilities': [r['value'] for r in capacity if r.get('event') == 'worker_capabilities'],
+              'request_outcomes': dict(Counter(r['status'] for r in requests)), 'overview': overview, 'batches': batches,
               'ingestion': [{k:v for k,v in r.items() if k not in ('observation', 'event')} for r in capacity if r.get('event') == 'ingestion'],
               'boundaries': [{k:v for k,v in r.items() if k not in ('observation','logs')} for r in documents['boundaries']],
-              'engine_faults': [{k:v for k,v in r.items() if k not in ('observation','logs','killed_state')} for r in documents['engines']],
+              'engine_faults': [{**{k:v for k,v in r.items() if k not in ('observation','logs','killed_state')},
+                                 **({'killed_state': {k:r['killed_state'][k] for k in ('OOMKilled', 'ExitCode')}} if 'killed_state' in r else {})}
+                                for r in documents['engines']],
               'omero': [{k:v for k,v in r.items() if k != 'saved'} for r in documents['omero']],
               'browser': [{'format':r['format'],'seconds':r['seconds'],'sha256':r['sha256'],'status':r['status']} for r in documents['browser']],
               'vm_promotions': documents['vm_promotions'], 'vm_cache': documents['vm_cache'],

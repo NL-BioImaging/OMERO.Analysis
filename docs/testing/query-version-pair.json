@@ -1,17 +1,53 @@
 {
   "tested_date": "2026-09-08",
   "worker_version": "0.2.0",
-  "worker_implementation_commit": "56a754fe2107a920e1fa40295e3f146c1045130b",
+  "worker_implementation_commit": "80dae969f8ff0d4a9cb1699caed31a36fef9328f",
   "analysis_version": "0.14.0",
-  "analysis_implementation_commit": "ca310ef429ce6ee7ebd3e169fa9f874cb1d3f676",
-  "local_worker_image": "sha256:24f521c5806551db3ec2d00d4781ec2168aa30f4df3eb380fb07c090a9eb313b",
-  "local_analysis_image": "sha256:84ff3c44ba976014f33f710898591baca4d1c621a9f9d23d1f25632959cd8568",
-  "regression_tests": {"worker_windows": 58, "worker_linux": 58, "analysis_backend": 146, "http_matrix": 17, "frontend": 230, "notebook_sdk": 16},
-  "large_export_profile": {"max_rows": 10000000, "max_csv_bytes": 2147483648, "worker_query_timeout_seconds": 900, "duckdb_memory_limit": "256MB"},
+  "analysis_implementation_commit": "fe9cc2b8c627515b14417fd17f7fc7ef734fca02",
+  "local_worker_image": "sha256:1c44c9bcd07b1e53320d2a5de8d19bc18cd17a87e8caf97476df477eca92c283",
+  "regression_tests": {
+    "worker_windows": 58,
+    "worker_linux": 58,
+    "analysis_backend": 146,
+    "http_matrix": 17,
+    "frontend": 230,
+    "notebook_sdk": 16
+  },
+  "large_export_profile": {
+    "max_rows": 10000000,
+    "max_csv_bytes": 2147483648,
+    "worker_query_timeout_seconds": 900,
+    "duckdb_memory_limit": "256MB"
+  },
+  "local_deployment": {
+    "worker_first_existing_analysis": "passed",
+    "enhanced_pair_permissions": "passed",
+    "chrome_notebook_query_and_verified_save": "passed",
+    "web_and_proxy_timeout_seconds": 1800,
+    "final_worker_readiness": "passed",
+    "chrome_session_after_graceful_reload": "passed"
+  },
   "analysis_base_branch": "analysis_integration",
   "worker_pr": "https://github.com/NL-BioImaging/OMERO.DataQueryWorker/pull/1",
   "analysis_pr": "https://github.com/NL-BioImaging/OMERO.Analysis/pull/3",
   "baseline_worker_commit": "2115594b39108fb55605e4958e11bebf497ef282",
   "baseline_analysis_commit": "4db7f8b25f5562ed3045fd116309d2b5db3d6440",
-  "production_rollout": "blocked pending target-environment acceptance documented in ../data-query-production-foundations.md"
+  "production_rollout": "blocked pending target-environment acceptance documented in ../data-query-production-foundations.md",
+  "candidate_analysis_image": "sha256:0885cb1a1ad579aea78b57826316b8c5a834c67c39e2b17b7507b772f3f20db3",
+  "local_analysis_update": {
+    "base_image": "sha256:84ff3c44ba976014f33f710898591baca4d1c621a9f9d23d1f25632959cd8568",
+    "updated_file": "omero_analysis/data_query_recovery.py",
+    "sha256": "dc1d5ee4fae2e1b1be54886b084c9b2ff6a348ce3ee6bf87b404add3d7242c7f",
+    "method": "Installed final recovery module and gracefully reloaded Gunicorn to preserve file-backed login sessions; candidate image contains the same final wheel."
+  },
+  "local_engine_versions": {
+    "duckdb": "1.5.5",
+    "sqlite": "3.46.1",
+    "sqlglot": "28.10.1"
+  },
+  "capacity_image_notes": {
+    "duckdb": "Earlier candidate image sha256:1da40f932d3dcbb21c04bd084d4befb0232b9aae8804bf5bd4bec9ff41d855e1, before final cache recovery/invalid-metadata corrections; original raw configuration predates image-ID recording.",
+    "sqlite_csv_regression": "Image sha256:24f521c5806551db3ec2d00d4781ec2168aa30f4df3eb380fb07c090a9eb313b at worker 56a754f; final 80dae96 adds startup directory fsync only.",
+    "final_pair": "Final pair regression/HTTP CI and first-directory VM recovery pass separately; capacity measurements were not repeated for startup-only changes."
+  }
 }

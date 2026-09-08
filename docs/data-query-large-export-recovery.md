@@ -69,6 +69,8 @@ QUERY_GATE_EVIDENCE=benchmark-data/release-10m.jsonl \
 
 The broker benchmark performs real HTTP queries/downloads. Cold means a new query key over an ingested source, not a flushed OS page cache; source ingestion is timed separately. It records per-request outcomes, p50/p95, transfer sizes, cgroup memory high-water marks, OOM counters and cache usage/evictions. Cgroup memory includes charged file cache. Eight clients intentionally compete for four query slots: 429 is a bounded admission result, not a successful export. Unexpected failures fail the gate. Multiple broad system tests running on the same host affect timings; these measurements establish correctness/capacity on this machine, not a throughput service-level objective.
 
+The formats may run independently using `--formats duckdb`, `--formats sqlite` and `--formats csv`, each with a distinct output file and disposable worker/cache. Publish their union only after every run has a passed verdict. `scripts/summarize_query_release.py --help` lists the required evidence inputs; its `--capacity` accepts one combined file or three format files. It verifies all 540 unique 10M request cases, all 72 single-client 1M/4M regression cases, exact boundary checks, engine faults, live OMERO saves, browser loads and VM recovery outcomes before writing the compact report. Only explicit admission/quota rejection is accepted under concurrent load; row/byte overflow is accepted solely in the dedicated boundary tests.
+
 The engine suite forces actual DuckDB engine-limit errors, DuckDB/SQLite/CSV-conversion kernel OOM, whole-worker group OOM and active-query container SIGKILL. It requires evidence of `oom_kill` or `OOMKilled` for kernel cases, then verifies cached bytes, a fresh uncached query, a new upload/query and released staging/slots. Merely allocating Python memory is not considered an engine OOM test.
 
 The live OMERO and browser gates are complementary: the former queries, downloads, verifies and saves the exact CSV through real OMERO; the latter feeds those checksum-matched bytes through the real headless Chrome/Pyodide sandbox three times and verifies row count, row-ID sum and temporary-file cleanup. The latter is not a browser network load test of OMERO. Source fixtures have no embedded line breaks, allowing the transfer counter to count lines; general CSV quoting/Unicode is covered by the HTTP contract suite.
@@ -87,12 +89,29 @@ python scripts/test_query_vm_powercut.py --host 172.29.128.250 --repair-search-i
   --output benchmark-data/vm-promotions.jsonl
 python scripts/test_query_vm_cache_powercut.py --host 172.29.128.250 \
   --output benchmark-data/vm-cache.jsonl
+python scripts/test_query_vm_cache_powercut.py --host 172.29.128.250 \
+  --points sources:after-fsync results:after-fsync --output benchmark-data/vm-cache-durable.jsonl
+python scripts/test_query_vm_powercut.py --host 172.29.128.250 --points csv_file:created \
+  --output benchmark-data/vm-first-directory.jsonl
 Stop-VM -Name analysis-query-crash-gate
 ```
 
 In PowerShell, use a backtick or one line instead of the displayed shell continuation backslash. Hyper-V provisioning requires an elevated host shell. The image/tool downloads require host Internet access and several GB of free space. SSH keys, private test credentials, VM disks and raw evidence stay in ignored `.local-query-gates`/`benchmark-data` directories. Preserve the VM disk/environment for investigation; do not commit them.
 
 The controller first synchronizes the **baseline** images, harness and original source. It does not synchronize after the tested operation starts or reaches its barrier. It then uses Hyper-V `TurnOff`, restarts the guest, waits for actual OMERO authentication/worker readiness and checks recovery. Production code has no fault-injection API or environment switch: the test uses private Python processes and a test-only worker entrypoint. Cache tests cover before rename, after rename and after directory fsync for both source and result publication. Promotion tests cover creation, file upload, each attachment link and completion before the response.
+
+Each promotion run uses a fresh journal directory created after the baseline sync. The barrier lives outside that directory and its parent, so syncing the test marker cannot hide missing production directory fsyncs. To repeat the first-use checkpoint, run `test_query_vm_powercut.py --points csv_file:created`. The after-fsync cache checkpoints also assert that the published entry still exists after reboot, rather than accepting recomputation alone.
+
+Once these commands and the export/browser commands above complete, validate and publish their evidence (use the actual browser output path if overridden):
+
+```sh
+python scripts/summarize_query_release.py --capacity benchmark-data/release-10m.jsonl \
+  --regression benchmark-data/release-regression.jsonl --engines benchmark-data/engine-faults.jsonl \
+  --boundaries benchmark-data/boundaries.jsonl --omero benchmark-data/omero-10m.jsonl \
+  --browser benchmark-data/browser-10m.jsonl --vm-promotions benchmark-data/vm-promotions.jsonl \
+  --vm-cache benchmark-data/vm-cache.jsonl --vm-cache-durable benchmark-data/vm-cache-durable.jsonl \
+  --vm-first-directory benchmark-data/vm-first-directory.jsonl --output docs/testing/query-large-export.json
+```
 
 During early power-cut testing, OMERO 5.6.18's Lucene index failed with `read past EOF`, preventing Blitz startup. PostgreSQL recovered its WAL and worker cache recovery succeeded. `scripts/repair_query_gate_search.py` is a guarded, explicit disposable-stack procedure: stop OMERO, quarantine the damaged FullText directory, restart and run OMERO's documented reindex preparation/reset/finish sequence. It preserves the old index. The controller invokes it only with `--repair-search-index` and recognized index corruption, and records operator-assisted recovery separately. See [OMERO's reindexing instructions](https://omero.readthedocs.io/en/stable/sysadmins/search.html#re-indexing) for production administration. Do not generalize this helper into an automatic production index deletion job.
 
@@ -105,6 +124,7 @@ Local evidence on 2026-09-08 establishes:
 * Eighteen engine/restart cases pass (six cases repeated three times). Nineteen live process-kill checkpoints, including interrupted cleanup, and an actual operator dry-run/apply pass.
 * Ten promotion VM power cuts pass; completed saves are reused. Six cache-publication cuts pass, with additional checks that fsynced source/result entries survive. The final promotion run required no search-index repair; earlier index corruption and its manual recovery remain documented above.
 * Browser/Pyodide loads all three 10M results in 19.23, 16.54 and 14.58 seconds, verifies all rows and removes temporary CSVs, including after a parse error.
+* The upgraded local OMERO stack advertises 10M rows/2 GiB/900 seconds, with 930-second broker and 1,800-second Gunicorn/nginx timeouts. The user's logged-in Chrome session ran a synthetic notebook query and saved the CSV/provenance; the stored bytes, SQL recipe and effective 10M limit were verified. The synthetic source, saved annotations and synchronized test library were then removed.
 
 The repeated concurrency matrix is a separate required artifact; its final outcome must accompany the paired release. Repeat permission, storage and timeout checks on the actual production deployment. Host-filesystem guarantees, historical database engine versions and different OMERO server builds require their own acceptance evidence.
 
