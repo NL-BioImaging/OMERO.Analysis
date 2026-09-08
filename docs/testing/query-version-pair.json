@@ -3,7 +3,7 @@
   "worker_version": "0.2.0",
   "worker_implementation_commit": "2be0f198be4a35eb03886b59f065bd2ace1e3c34",
   "analysis_version": "0.14.0",
-  "analysis_implementation_commit": "e189e4e5e2e7544836415cc73598590f8e1ff8c1",
+  "analysis_implementation_commit": "9ba33948d3745a057f767d426aa4af5493481f7d",
   "analysis_base_branch": "analysis_integration",
   "worker_pr": "https://github.com/NL-BioImaging/OMERO.DataQueryWorker/pull/1",
   "analysis_pr": "https://github.com/NL-BioImaging/OMERO.Analysis/pull/3",

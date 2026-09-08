@@ -57,6 +57,7 @@ npm --prefix frontend run smoke:runtime
 npm --prefix frontend run smoke:browser
 python scripts/test_local_omero_queries.py
 python scripts/test_query_mtls.py
+python -m pip install psutil
 python scripts/benchmark_query_capacity.py --rows 100000 --repeats 3
 ```
 
