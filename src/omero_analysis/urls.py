@@ -46,6 +46,11 @@ urlpatterns = [
         name="omero_analysis_data_source_query",
     ),
     re_path(
+        r"^api/data-query-result/promote/$",
+        views.data_query_result_promote,
+        name="omero_analysis_data_query_result_promote",
+    ),
+    re_path(
         r"^api/data-query-result/(?P<result_token>[A-Za-z0-9_=-]+)/download/$",
         views.data_query_result_download,
         name="omero_analysis_data_query_result_download",

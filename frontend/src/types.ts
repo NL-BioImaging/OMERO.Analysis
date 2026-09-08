@@ -67,6 +67,7 @@ export interface Bootstrap {
   dataSourceSchemaTemplate?: string;
   dataSourceQueryTemplate?: string;
   dataQueryResultDownloadTemplate?: string;
+  dataQueryResultPromoteUrl?: string;
   zarrViewerStatusUrl: string;
   keepaliveUrl: string;
   keepaliveInterval: number;
@@ -76,6 +77,7 @@ export interface Bootstrap {
 }
 
 export interface DataQueryCapabilities {
+  features?: { result_promotion_v1?: boolean };
   available: boolean;
   ready: boolean;
   capability: "omero-data-query-v1";

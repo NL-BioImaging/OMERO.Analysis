@@ -238,6 +238,13 @@ pd.DataFrame(records)
                 for format_name in BENCHMARK_FORMATS
             ],
             code_cell("benchmark-report", REPORT),
+            {"id": "capacity-probe", "cell_type": "markdown", "metadata": {}, "source":
+             "## Worker capacity gate\n\nRun `python scripts/benchmark_query_capacity.py --rows 100000 --repeats 3` "
+             "from the Analysis checkout for concurrent HTTP runs at 1/2/4/8 clients using these equivalent mixed schemas. "
+             "The report records cold/warm latency p50/p95, transfer bytes, sampled process memory, cache disk usage, "
+             "evictions and explicit failures. It uses a disposable worker/cache; it does not clear the live OMERO cache. "
+             "Cold means a new result-cache key; operating-system caches are not cleared. "
+             "Increase `--rows` for capacity testing; exports above configured limits must fail explicitly."},
         ],
     }
 

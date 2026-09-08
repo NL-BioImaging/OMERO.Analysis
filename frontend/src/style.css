@@ -1706,6 +1706,11 @@ th { position: sticky; top: 0; background: #183040; }
   gap: .4rem;
 }
 
+
+.query-result-saves { padding: .6rem; border-bottom: 1px solid var(--line); }
+.query-result-saves > div { display: grid; gap: .35rem; padding: .5rem 0; }
+.query-result-saves small { overflow-wrap: anywhere; }
+
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,
    or positioning here. Those remain identical to the dark Analysis layout. */

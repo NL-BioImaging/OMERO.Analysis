@@ -179,6 +179,9 @@ def generate(output_dir: Path, rows: int, chunk_size: int, force: bool = False) 
         "column_count": len(COLUMNS),
         "columns": list(COLUMNS),
         "samples": _samples(rows),
+        "engine_versions": {"duckdb": duckdb.__version__, "sqlite": sqlite3.sqlite_version},
+        "capacity_probe": {"concurrency": [1, 2, 4, 8], "temperatures": ["cold", "warm"],
+                           "command": "python scripts/benchmark_query_capacity.py --rows " + str(rows)},
         "timings": timings,
         "files": {
             name: {

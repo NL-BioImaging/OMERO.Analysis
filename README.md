@@ -1,5 +1,9 @@
 # OMERO.Analysis
 
+For paired DataQueryWorker upgrades, verified CSV saving, authorization, audit,
+mTLS, test commands and rollback, see the
+[production foundations guide](docs/data-query-production-foundations.md).
+
 Administrators enabling BIOMERO.importer-backed storage should read the [`.analysis` storage compatibility contract](docs/importer-analysis-storage-compatibility.md). It documents the optional runtime APIs, capability checks, versions, deployment, fallback rules, and integration-test matrix.
 
 The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
