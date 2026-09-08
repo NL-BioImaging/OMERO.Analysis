@@ -29,7 +29,16 @@ def state_directory():
     directory = Path(getattr(settings, "OMERO_ANALYSIS_DATA_QUERY_STATE_DIR", "") or
                      os.getenv("OMERO_ANALYSIS_DATA_QUERY_STATE_DIR", "") or
                      Path(tempfile.gettempdir()) / "omero-analysis-data-query")
+    missing = []
+    parent = directory
+    while not parent.exists():
+        missing.append(parent)
+        parent = parent.parent
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # The first journal must survive a crash even when its directory is new.
+    # Fsyncing only the leaf does not persist its name in the parent directory.
+    for created in reversed(missing):
+        _sync_directory(created.parent)
     return directory
 
 

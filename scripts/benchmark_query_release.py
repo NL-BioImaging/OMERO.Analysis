@@ -102,7 +102,8 @@ def main():
                                     except RemoteQueryFailed as exc:
                                         code = getattr(exc, "worker_code", "")
                                         status = getattr(exc, "worker_status", None)
-                                        expected = concurrency > 1 and status in (413, 429, 507)
+                                        expected = concurrency > 1 and (status, code) in (
+                                            (429, "query_capacity_exceeded"), (507, "cache_capacity_exceeded"))
                                         item.update(status="bounded_rejection" if expected else "failed", worker_code=code,
                                                     http_status=status, error_reason=str(exc).split("\n")[0])
                                         if not expected:

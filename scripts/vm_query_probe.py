@@ -19,6 +19,7 @@ def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "omeroweb.settings")
     import django
     django.setup()
+    from django.conf import settings
     from django.test import RequestFactory
     from omero.gateway import BlitzGateway, DatasetWrapper
     from omero.model import ExperimenterGroupI, DatasetI, PermissionsI
@@ -27,6 +28,9 @@ def main():
     from omero_analysis.data_query import DataQueryBroker, authorize_query_source, make_result_token
     from omero_analysis.data_query_provenance import make_receipt, promote_result, promotion_lock
     from omero_analysis.tokens import make_context_token
+    base_state = recovery.state_directory()
+    if data.get("state"):
+        settings.OMERO_ANALYSIS_DATA_QUERY_STATE_DIR = data["state"]
 
     conn = BlitzGateway("root", data["password"], host="omeroserver", port=4064)
     assert conn.connect(), "Disposable OMERO is not ready"
@@ -61,7 +65,7 @@ def main():
             result_token = make_result_token(request, conn, claims, info, identifier)
             receipt = make_receipt(request, conn, claims, info, result_token, query, result)
             # Private output, consumed by the orchestrator without logging it.
-            print(json.dumps({"prefix": prefix, "group": group_id, "dataset": obj.getId(),
+            print(json.dumps({"prefix": prefix, "state": str(base_state / prefix), "group": group_id, "dataset": obj.getId(),
                               "context_token": token, "source": annotation.getId(),
                               "payload": {"result_token": result_token, "receipt": receipt}}))
             return
@@ -71,7 +75,7 @@ def main():
             def pause(point):
                 if point != data["point"]:
                     return
-                marker = recovery.state_directory() / "gate.barrier"
+                marker = base_state.parent / "query-gate-controls" / "gate.barrier"
                 with marker.open("w") as handle:
                     handle.write(point)
                     handle.flush()

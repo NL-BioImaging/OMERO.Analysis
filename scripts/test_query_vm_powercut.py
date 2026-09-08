@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VM = "analysis-query-crash-gate"
 WEB = "query-powercut-web-1"
 PYTHON = "/opt/omero/web/venv3/bin/python"
-STATE = "/opt/omero/web/OMERO.web/var/query-state/gate.barrier"
+STATE = "/opt/omero/web/OMERO.web/var/query-gate-controls/gate.barrier"
 
 
 def main():
@@ -49,7 +49,7 @@ def main():
         try:
             setup = remote(command, {"mode": "setup", "password": password})
             private = {**response_json(setup), "password": password, "point": point}
-            remote(f"sudo docker exec {WEB} {PYTHON} -c \"from pathlib import Path; Path('{STATE}').unlink(missing_ok=True)\"")
+            remote(f"sudo docker exec {WEB} {PYTHON} -c \"from pathlib import Path; p=Path('{STATE}'); p.parent.mkdir(parents=True,exist_ok=True); p.unlink(missing_ok=True)\"")
             # Establish a durable baseline (images, harness, original source).
             # No sync is issued after the promotion starts or reaches its barrier.
             remote("sync")

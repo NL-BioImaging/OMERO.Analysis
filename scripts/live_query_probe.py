@@ -21,6 +21,7 @@ def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "omeroweb.settings")
     import django
     django.setup()
+    from django.conf import settings
     from django.test import RequestFactory
     from omero.gateway import BlitzGateway, DatasetWrapper
     from omero.model import ExperimenterGroupI, ExperimenterI, PermissionsI, DatasetI
@@ -33,6 +34,10 @@ def main():
     root = BlitzGateway("root", credentials["password"], host=credentials.get("host", "omeroserver"), port=4064)
     assert root.connect(), "OMERO administrator connection failed"
     prefix = "dqw-test-" + uuid.uuid4().hex[:10]
+    state_root = Path(getattr(settings, "OMERO_ANALYSIS_DATA_QUERY_STATE_DIR", "") or
+                      os.getenv("OMERO_ANALYSIS_DATA_QUERY_STATE_DIR", "") or
+                      Path(tempfile.gettempdir()) / "omero-analysis-data-query")
+    settings.OMERO_ANALYSIS_DATA_QUERY_STATE_DIR = str(state_root / prefix)
     admin = root.getAdminService()
     groups, users, datasets, connections, outcomes = [], [], [], [], []
     password = secrets.token_urlsafe(24)
