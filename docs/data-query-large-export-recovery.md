@@ -126,7 +126,24 @@ Local evidence on 2026-09-08 establishes:
 * Browser/Pyodide loads all three 10M results in 19.23, 16.54 and 14.58 seconds, verifies all rows and removes temporary CSVs, including after a parse error.
 * The upgraded local OMERO stack advertises 10M rows/2 GiB/900 seconds, with 930-second broker and 1,800-second Gunicorn/nginx timeouts. The user's logged-in Chrome session ran a synthetic notebook query and saved the CSV/provenance; the stored bytes, SQL recipe and effective 10M limit were verified. The synthetic source, saved annotations and synchronized test library were then removed.
 
-The repeated concurrency matrix is a separate required artifact; its final outcome must accompany the paired release. Repeat permission, storage and timeout checks on the actual production deployment. Host-filesystem guarantees, historical database engine versions and different OMERO server builds require their own acceptance evidence.
+The [completed release evidence](testing/query-large-export-2026-09-08.json) validates all 540 unique 10M requests: 468 successful exports/aggregates and 72 explicit capacity rejections, with zero unexpected failures. All 72 single-client 1M/4M regression requests pass. The table pools successful full CSV request/download times over three repeats; rejected requests are excluded from latency percentiles. Warm labels mean a repeated query key; under cache pressure an evicted result is recomputed. The report records each batch's actual outcome, transfer bytes, memory and eviction counters.
+
+| Format | Clients | Full export cold p95 (s) | Full export warm p95 (s) |
+|---|---:|---:|---:|
+| duckdb | 1 | 84.98 | 4.50 |
+| duckdb | 2 | 97.19 | 7.38 |
+| duckdb | 4 | 239.80 | 13.31 |
+| duckdb | 8 | 247.80 | 257.97 |
+| sqlite | 1 | 113.97 | 4.84 |
+| sqlite | 2 | 119.86 | 7.52 |
+| sqlite | 4 | 303.03 | 13.72 |
+| sqlite | 8 | 308.30 | 311.55 |
+| csv | 1 | 87.80 | 5.19 |
+| csv | 2 | 99.64 | 6.88 |
+| csv | 4 | 258.89 | 13.31 |
+| csv | 8 | 244.12 | 250.98 |
+
+Repeat permission, storage and timeout checks on the actual production deployment. Host-filesystem guarantees, historical database engine versions and different OMERO server builds require their own acceptance evidence.
 
 Upgrade worker first, verify the existing Analysis, then install the reviewed Analysis wheel from the `analysis_integration` line and enable the large-export profile. Check effective web/proxy timeouts and a permitted/denied synthetic save before use. mTLS remains a separate optional deployment change with overlapping bearer credentials during transition.
 

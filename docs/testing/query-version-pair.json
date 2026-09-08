@@ -49,5 +49,24 @@
     "duckdb": "Earlier candidate image sha256:1da40f932d3dcbb21c04bd084d4befb0232b9aae8804bf5bd4bec9ff41d855e1, before final cache recovery/invalid-metadata corrections; original raw configuration predates image-ID recording.",
     "sqlite_csv_regression": "Image sha256:24f521c5806551db3ec2d00d4781ec2168aa30f4df3eb380fb07c090a9eb313b at worker 56a754f; final 80dae96 adds startup directory fsync only.",
     "final_pair": "Final pair regression/HTTP CI and first-directory VM recovery pass separately; capacity measurements were not repeated for startup-only changes."
+  },
+  "large_export_evidence": "query-large-export-2026-09-08.json",
+  "large_export_request_outcomes": {
+    "passed": 468,
+    "bounded_rejection": 72
+  },
+  "browser_verification": {
+    "status": "passed",
+    "dataset": 655,
+    "library_dataset": 656,
+    "csv_annotation": 3335,
+    "recipe_annotation": 3336,
+    "bytes": 22,
+    "sha256": "a16585bddc0f882cfccc51b1aa02acfc2b3cd7bf284b2be1dcf8e3d0b0cac3ea",
+    "browser": "Chrome user session",
+    "max_rows": 10000000,
+    "notebook_query": "passed",
+    "direct_csv_save": "passed",
+    "synthetic_artifacts_cleaned": true
   }
 }
