@@ -135,6 +135,17 @@ def test_download_stream_closes_response_and_audits_exact_bytes(query_case, sett
     assert transfer["byte_count"] == len(CSV)
 
 
+def test_unstarted_download_closes_broker_response(query_case):
+    request, conn, payload, response, _ = query_case
+    download_request = RequestFactory().get("/download/")
+    download_request.session = request.session
+    response.headers = {}
+    result = views.data_query_result_download(download_request, payload["result_token"], conn=conn)
+    assert not response.closed
+    result.close()
+    assert response.closed
+
+
 @pytest.mark.parametrize("change", ["receipt", "token", "session", "user", "group", "unlink", "file", "permission"])
 def test_promotion_reauthorizes_and_tampering_creates_nothing(query_case, change):
     request, conn, payload, _, _ = query_case

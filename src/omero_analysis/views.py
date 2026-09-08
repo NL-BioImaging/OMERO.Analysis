@@ -901,6 +901,9 @@ def data_query_result_download(request, result_token, conn=None, **kwargs):
     response = ConnCleaningHttpResponse(
         chunks(), content_type="text/csv; charset=utf-8"
     )
+    # A generator closed before its first iteration never enters its finally block.
+    # Django closes registered resources even when the client never starts the body.
+    response._resource_closers.append(worker_response.close)
     response.conn = conn
     if worker_response.headers.get("Content-Length"):
         response["Content-Length"] = worker_response.headers["Content-Length"]

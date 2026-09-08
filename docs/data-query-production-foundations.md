@@ -67,7 +67,7 @@ The capacity script reuses the existing generator's equivalent mixed numeric/tex
 ## Tested locally on 2026-09-08
 
 * Worker: 51 tests on Windows and Linux; lint, format and strict type checks. Linux probes cover read-only root, blocked egress, PID pressure and cgroup OOM. Query tests cover timeout, disconnect, child crash/reaping, oversized output, corrupt files, quota and active leases.
-* Analysis: backend regressions, 17 provenance/download tests, 230 frontend tests, 16 notebook SDK tests, runtime/browser smoke and wheel validation.
+* Analysis: 129 backend tests, including 18 provenance/download tests, 230 frontend tests, 16 notebook SDK tests, runtime/browser smoke and wheel validation.
 * Joint HTTP: 17 tests covering both versions in both directions and rollback cache reuse/recomputation; baseline broker source is frozen, not a mock HTTP response.
 * Live OMERO: private/read-only/read-annotate/read-write group owners, members, PIs and administrator; query/schema/download; permitted saves and duplicate reuse; denied saves without artifacts; cross-session/group token rejection; source unlinking; permission downgrade, membership revocation, moved contexts and revoked OMERO sessions.
 * Optional mTLS: actual installed broker readiness and authenticated capabilities succeed with the client certificate; missing client certificate and wrong CA are rejected. This does not change the running broker's transport profile.
