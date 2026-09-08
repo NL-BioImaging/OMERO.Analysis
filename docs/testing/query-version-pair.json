@@ -1,0 +1,13 @@
+{
+  "tested_date": "2026-09-08",
+  "worker_version": "0.2.0",
+  "worker_implementation_commit": "2be0f198be4a35eb03886b59f065bd2ace1e3c34",
+  "analysis_version": "0.14.0",
+  "analysis_implementation_commit": "e189e4e5e2e7544836415cc73598590f8e1ff8c1",
+  "analysis_base_branch": "analysis_integration",
+  "worker_pr": "https://github.com/NL-BioImaging/OMERO.DataQueryWorker/pull/1",
+  "analysis_pr": "https://github.com/NL-BioImaging/OMERO.Analysis/pull/3",
+  "baseline_worker_commit": "2115594b39108fb55605e4958e11bebf497ef282",
+  "baseline_analysis_commit": "4db7f8b25f5562ed3045fd116309d2b5db3d6440",
+  "production_rollout": "blocked pending target-environment acceptance documented in ../data-query-production-foundations.md"
+}
