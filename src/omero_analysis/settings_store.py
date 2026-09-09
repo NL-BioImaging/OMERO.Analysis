@@ -347,7 +347,7 @@ def save_settings(conn, group_id, value):
             "updatedAt": datetime.now(timezone.utc).isoformat(),
             "items": durable_items,
         })
-        storage.garbage_collect()
+        storage.prune_empty_directories()
     return {
         "schema": SETTINGS_SCHEMA,
         "synced": True,

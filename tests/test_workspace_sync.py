@@ -29,6 +29,22 @@ from omero_analysis.workspace_sync import (
 from omero_analysis.inplace_storage import AnalysisStorage, StorageCapability
 from omero_analysis import settings as analysis_settings
 
+
+def test_sync_bundle_handles_more_than_django_multipart_file_limit():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from omero_analysis.workspace_sync import bundled_uploads
+    payloads = [f"value-{index}-é".encode() for index in range(101)] + [b""]
+    items = [{"key": str(index), "kind": "result", "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+             for index, data in enumerate(payloads)]
+    request = RequestFactory().post("/", {"payload_bundle": SimpleUploadedFile("bundle.bin", b"".join(payloads))})
+    assert len(request.FILES) == 1
+    parts = bundled_uploads({"items": items}, [item["key"] for item in items], request.FILES["payload_bundle"])
+    assert [_validate_payload(item, part) for item, part in zip(items, parts)] == payloads
+    with pytest.raises(InvalidObject, match="size"):
+        bundled_uploads({"items": items}, ["0"], request.FILES["payload_bundle"])
+    with pytest.raises(InvalidObject, match="keys"):
+        bundled_uploads({"items": items}, ["0", "0"], request.FILES["payload_bundle"])
+
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
 
 
@@ -80,7 +96,7 @@ def test_inventory_validation_and_empty_plan_are_deterministic():
     assert plan["delete"] == 0
     assert plan["uploadKeys"] == ["method:one"]
     assert plan["uploadBytes"] == 12
-    assert plan["datasetName"] == "Screen-151 — 2DWellTestZarr"
+    assert plan["datasetName"] == "Screen-151 — Cells"
     assert plan["planToken"]
 
 
@@ -456,6 +472,7 @@ def test_active_import_count_supports_bounded_parallel_batches(monkeypatch, tmp_
     for order_uuid in uuids:
         storage.write_json(storage.pending_path(order_uuid), {
             "workspaceId": "workspace-1", "orderUuid": order_uuid,
+            "createdAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
         })
     events = {
         uuids[0]: {"state": "pending", "hasTerminalEvent": False},

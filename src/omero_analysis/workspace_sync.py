@@ -9,9 +9,12 @@ import re
 import tempfile
 import zipfile
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 
 from django.core import signing
+
+from .sync_lock import serialized_sync
 
 from .errors import (
     AttachmentNotFound,
@@ -49,6 +52,7 @@ from .inplace_storage import (
     latest_ingest_event,
     latest_ingest_events,
     retry_order_uuid,
+    record_import_completion,
     storage_capability,
     storage_for,
     submit_png_order,
@@ -97,7 +101,10 @@ def _digest(value):
 
 def _content_inventory_digest(inventory):
     """Digest user-visible synchronized content, excluding the restore archive."""
+    snapshot_state = next((item.get('metadata', {}).get('stateDigest') for item in inventory['items']
+                           if item.get('kind') == 'workspace-snapshot'), None)
     return _digest({
+        **({'snapshotStateDigest': snapshot_state} if snapshot_state else {}),
         "schema": inventory["schema"],
         "workspace": inventory["workspace"],
         "items": [
@@ -197,10 +204,7 @@ def _managed_dataset(project, workspace_id):
 
 def _dataset_name(inventory, project=None):
     workspace = inventory["workspace"]
-    base = (
-        f"{workspace['sourceObjectType']}-{workspace['sourceObjectId']} "
-        f"\u2014 {workspace['sourceObjectName']}"
-    )
+    base = f"{workspace['sourceObjectType']}-{workspace['sourceObjectId']} — {workspace['name']}"
     if project is not None:
         for dataset in _project_datasets(project):
             if str(_plain(dataset.getName())) != base:
@@ -377,11 +381,14 @@ def _plan_claims(request, conn, obj, inventory, plan):
     }
 
 
+@serialized_sync
 def sync_status(conn, obj, workspace_id):
     workspace_id = _workspace_id(workspace_id)
     project = _managed_project(conn, object_group_id(obj))
     dataset = _managed_dataset(project, workspace_id)
     annotation, manifest = _read_manifest(dataset)
+    from .workspace_lifecycle import state_for
+    _, lifecycle = state_for(conn, obj, workspace_id)
     capability = storage_capability(object_group_id(obj))
     storage_status = capability.public()
     if capability.ready:
@@ -390,6 +397,8 @@ def sync_status(conn, obj, workspace_id):
         storage_status["attachments"] = attachment_capability().public()
     status = {
         "schema": STATUS_SCHEMA,
+        "lifecycle": lifecycle["state"] if dataset is not None or lifecycle["state"] != "active" else "unavailable",
+        "lifecycleRevision": lifecycle["revision"],
         "canSync": can_annotate(obj),
         "reason": "" if can_annotate(obj) else "You cannot annotate the selected OMERO object.",
         "linked": dataset is not None,
@@ -408,8 +417,13 @@ def sync_status(conn, obj, workspace_id):
         "lastSyncedAt": (manifest or {}).get("updated_at"),
         "storage": storage_status,
         "syncState": "complete",
+        "browseState": lifecycle.get("browseState", "ready"),
     }
     if capability.ready:
+        _, journal_storage = storage_for(object_group_id(obj), _user_id(conn), initialize=False)
+        cleanup = journal_storage.read_json(Path("workspaces") / workspace_id / "pending-cleanup.json") if journal_storage else None
+        status["cleanupPending"] = len((cleanup or {}).get("pending", []))
+        status["cleanupErrors"] = (cleanup or {}).get("errors", [])
         _, storage = storage_for(
             object_group_id(obj), _user_id(conn), initialize=False
         )
@@ -468,21 +482,17 @@ def _reconcile_workspace_journals(conn, dataset, manifest, storage, workspace_id
             journal.update({"state": "failed", "lastError": "Pending journal has no order UUID"})
             event = {"state": "failed", "stage": None}
         else:
-            event = events[order_uuid]
-            if event["state"] == "pending" and event.get("hasTerminalEvent"):
-                event = {
-                    **event,
-                    "state": "failed",
-                    "detail": "The importer UUID was reused after a terminal event",
-                }
-            if event["state"] == "imported":
-                image = _importer_image(dataset, order_uuid) if dataset is not None else None
-                if image is None:
-                    event = {
-                        **event,
-                        "state": "pending",
-                        "detail": "Import completed; waiting for the Image in the target Dataset",
-                    }
+            event = _journal_event(journal, events[order_uuid], dataset)
+        if event.get('recoveredImageId'):
+            if events.get(order_uuid, {}).get('state') != 'imported':
+                record_import_completion(journal)
+            # A browser may disappear before the final manifest commit. Keep
+            # these completed imports recoverable, outside the active queue.
+            journal.update({'state': 'imported', 'event': event,
+                            'archivedReason': 'Completed import awaiting workspace publication'})
+            storage.write_json(Path('history') / journal_path.name, journal)
+            storage.delete_json(journal_path.relative_to(storage.user_root))
+            continue
         journal["event"] = event
         journal["state"] = "failed" if event["state"] in {"failed", "timeout"} else event["state"]
         journal["updatedAt"] = datetime.now(timezone.utc).isoformat()
@@ -504,10 +514,37 @@ def _reconcile_workspace_journals(conn, dataset, manifest, storage, workspace_id
     return {"syncState": "complete", "pendingOrderCount": 0}
 
 
+def _journal_event(journal, event, dataset=None):
+    """OMERO membership is authoritative even after a lost tracker update."""
+    order_uuid = journal.get("orderUuid")
+    image = _importer_image(dataset, order_uuid) if dataset is not None else None
+    if image is not None:
+        return {**event, "state": "imported", "recoveredImageId": int(image.getId())}
+    if event.get("state") == "pending" and event.get("hasTerminalEvent"):
+        return {**event, "state": "failed", "detail": "Importer UUID reused after a terminal event"}
+    if event.get("state") in {"pending", "imported"}:
+        stamp = event.get("timestamp") or journal.get("submittedAt") or journal.get("createdAt")
+        try:
+            created = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            expired = (datetime.now(timezone.utc) - created).total_seconds() > max(
+                30, int(os.environ.get("OMERO_ANALYSIS_IMPORT_TIMEOUT_SECONDS", "120"))
+            )
+        except (TypeError, ValueError):
+            expired = True
+        if expired:
+            return {**event, "state": "timeout", "detail": "Import attempt expired; start sync to retry"}
+        if event.get("state") == "imported" and dataset is not None:
+            return {**event, "state": "pending", "detail": "Waiting for the imported Image"}
+    return event
+
+
 def _active_workspace_import_orders(storage, workspace_id):
     """Count non-terminal importer attempts consuming concurrency capacity."""
     pending_root = storage.user_root / "pending"
     order_uuids = []
+    journals = {}
     if not pending_root.exists():
         return 0
     for journal_path in pending_root.glob("*.json"):
@@ -519,12 +556,13 @@ def _active_workspace_import_orders(storage, workspace_id):
             if not order_uuid:
                 continue
             order_uuids.append(order_uuid)
+            journals[order_uuid] = journal
         except (OSError, ValueError):
             continue
     events = latest_ingest_events(order_uuids)
     return sum(
-        event["state"] == "pending" and not event.get("hasTerminalEvent")
-        for event in events.values()
+        _journal_event(journals[key], event)["state"] == "pending"
+        for key, event in events.items()
     )
 
 
@@ -559,12 +597,29 @@ def _pending_status(conn, obj, workspace_id, state, count, detail=""):
     return status
 
 
+@serialized_sync
 def plan_sync(request, conn, obj, inventory):
+    from .workspace_lifecycle import require_active
+    require_active(conn, obj, inventory)
     if not can_annotate(obj):
         raise PermissionDenied("The selected OMERO object cannot be synchronized")
+    sync_status(conn, obj, inventory["workspace"]["id"])
     project = _managed_project(conn, object_group_id(obj))
     dataset = _managed_dataset(project, inventory["workspace"]["id"])
     _, manifest = _read_manifest(dataset)
+    _, storage = storage_for(object_group_id(obj), _user_id(conn), initialize=False)
+    if storage is not None:
+        current = {(item['key'], item['sha256']) for item in inventory['items']}
+        for path in (storage.user_root / 'pending').glob('*.json'):
+            journal = storage.read_json(path.relative_to(storage.user_root))
+            if not journal or journal.get('workspaceId') != inventory['workspace']['id']:
+                continue
+            if journal.get('state') not in {'failed', 'imported'}:
+                continue
+            if all((item.get('key'), item.get('sha256')) not in current for item in journal.get('items', [])):
+                storage.write_json(Path('history') / path.name, {**journal, 'archivedReason': 'Superseded by a new synchronization'})
+                storage.delete_json(path.relative_to(storage.user_root))
+        storage.prune_empty_directories()
     remote = _remote_items(manifest)
     upload_keys = []
     create = update = unchanged = 0
@@ -605,6 +660,7 @@ def plan_sync(request, conn, obj, inventory):
         salt=PLAN_SALT,
         compress=True,
     )
+    plan["payloadEncoding"] = "concat-v1"
     return plan
 
 
@@ -626,6 +682,43 @@ def _validate_plan_token(request, conn, obj, inventory, token):
     if any(claims.get(key) != value for key, value in expected.items()):
         raise PermissionDenied("Synchronization plan belongs to another context")
     return claims
+
+
+def bundled_uploads(inventory, keys, bundle):
+    """Views into one bounded multipart file; no extraction or extra temp files.
+
+    Sizes come from the validated inventory. The signed plan still determines
+    the exact key order in apply_sync, and each item keeps its SHA-256 check.
+    """
+    items = {item["key"]: item for item in inventory["items"]}
+    if len(keys) > max_sync_items() or len(set(keys)) != len(keys) or any(key not in items for key in keys):
+        raise InvalidObject("Synchronization bundle keys are invalid")
+    total = sum(items[key]["size"] for key in keys)
+    if total > max_sync_changed_bytes():
+        raise FileTooLarge("Synchronization bundle exceeds the changed-byte limit")
+    if bundle.size != total:
+        raise InvalidObject("Synchronization bundle size does not match its inventory")
+
+    class Part:
+        def __init__(self, offset, size):
+            self.offset, self.size = offset, size
+
+        def chunks(self):
+            bundle.seek(self.offset)
+            remaining = self.size
+            while remaining:
+                chunk = bundle.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise InvalidObject("Synchronization bundle is truncated")
+                remaining -= len(chunk)
+                yield chunk
+
+    offset, parts = 0, []
+    for key in keys:
+        size = items[key]["size"]
+        parts.append(Part(offset, size))
+        offset += size
+    return parts
 
 
 def _validate_payload(item, uploaded):
@@ -983,7 +1076,10 @@ def _delete_ref(conn, ref):
         _delete(conn, object_type, object_id)
 
 
+@serialized_sync
 def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads):
+    from .workspace_lifecycle import require_active
+    require_active(conn, obj, inventory)
     if not can_annotate(obj):
         raise PermissionDenied("The selected OMERO object cannot be synchronized")
     claims = _validate_plan_token(request, conn, obj, inventory, plan_token)
@@ -1059,6 +1155,11 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             pending_path = storage.pending_path(order_uuid)
             journal = storage.read_json(pending_path)
             if journal is None:
+                completed = storage.read_json(Path('history') / pending_path.name)
+                if completed and _importer_image(dataset, completed.get('orderUuid')) is not None:
+                    journal = completed
+                    storage.write_json(pending_path, journal)
+            if journal is None:
                 if active_orders >= concurrency_limit:
                     pending_count += 1
                     continue
@@ -1118,6 +1219,8 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     "attempt": attempt,
                     "state": "pending",
                     "event": None,
+                    "submittedAt": None,
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
                     "lastError": None,
                     "updatedAt": datetime.now(timezone.utc).isoformat(),
                 })
@@ -1138,7 +1241,7 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     continue
             else:
                 order_uuid = str(journal.get("orderUuid") or order_uuid)
-            event = latest_ingest_event(order_uuid)
+            event = _journal_event(journal, latest_ingest_event(order_uuid), dataset)
             image = _importer_image(dataset, order_uuid) if event["state"] == "imported" else None
             if event["state"] in {"failed", "timeout"}:
                 journal.update({"state": "failed", "event": event})
@@ -1187,7 +1290,8 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                         _user_id(conn), inventory["workspace"]["id"],
                         item["key"], item["sha256"],
                     )
-                    journal = storage.read_json(storage.pending_path(base_order_uuid)) or {}
+                    journal = (storage.read_json(storage.pending_path(base_order_uuid)) or
+                               storage.read_json(Path("history") / storage.pending_path(base_order_uuid).name) or {})
                     order_uuid = str(journal.get("orderUuid") or base_order_uuid)
                     remote_obj = _importer_image(dataset, order_uuid)
                     if remote_obj is None:
@@ -1248,11 +1352,15 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                 "schema": "nl.bioimaging.analysis.storage.workspace.v1",
                 "userId": _user_id(conn), "groupId": group_id,
                 "workspaceId": inventory["workspace"]["id"],
+                "workspace": inventory["workspace"],
+                "datasetName": str(_plain(dataset.getName())),
                 "datasetId": int(dataset.getId()), "revision": revision,
                 "updatedAt": datetime.now(timezone.utc).isoformat(),
                 "items": [
                     {
                         "key": item["key"], "kind": item["kind"],
+                        "name": item["name"], "logicalPath": item.get("logicalPath"),
+                        "metadata": item.get("metadata", {}),
                         "mimeType": item["mimetype"], "size": item["size"],
                         "sha256": item["sha256"], "remote": item["remote"],
                         "storageMode": (item.get("storage") or {}).get("mode", "omero"),
@@ -1271,137 +1379,54 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                         _user_id(conn), inventory["workspace"]["id"],
                         item["key"], item["sha256"],
                     )))
-            storage.garbage_collect()
+            for item in inventory["items"]:
+                if item["kind"] == "png-image":
+                    order = deterministic_order_uuid(_user_id(conn), inventory["workspace"]["id"], item["key"], item["sha256"])
+                    storage.delete_json(Path('history') / storage.pending_path(order).name)
+            from .workspace_lifecycle import state_for
+            _, lifecycle_state = state_for(conn, obj, inventory["workspace"]["id"])
+            try:
+                storage.publish_workspace(storage_manifest, _username(conn))
+                lifecycle_state["browseState"] = "ready"
+            except (OSError, ValueError):
+                lifecycle_state["browseState"] = "failed"
+                import logging
+                logging.getLogger(__name__).exception("Workspace browsing copy needs refresh")
+            storage.write_json(Path("workspaces") / inventory["workspace"]["id"] / "lifecycle.json", lifecycle_state)
+            storage.prune_empty_directories()
     except Exception:
-        for object_type, object_id in reversed(staged):
-            try:
-                _delete(conn, object_type, object_id)
-            except Exception:
-                pass
-        if dataset_created:
-            try:
-                _delete(conn, "Dataset", dataset.getId())
-            except Exception:
-                pass
+        from .workspace_lifecycle import cleanup_replaced
+        # Keep the Dataset and recovery journal until all failed staging is resolved.
+        # A manifest already committed before the failure protects its live objects.
+        cleanup_replaced(conn, obj, inventory["workspace"]["id"], dataset, staged, 0)
         raise
 
     new_keys = {item["key"] for item in new_items}
     new_by_key = {item["key"]: item for item in new_items}
+    replaced = []
     for key, prior in old_items.items():
         replacement = new_by_key.get(key)
         if key not in new_keys or replacement["remote"] != prior.get("remote"):
-            try:
-                _delete_ref(conn, prior.get("remote") or {})
-            except Exception:
-                pass
+            remote = prior.get("remote") or {}
+            if remote.get("object_id"):
+                replaced.append((remote["object_type"], remote["object_id"]))
     if old_manifest_annotation is not None:
-        try:
-            _delete(conn, "Annotation", old_manifest_annotation.getId())
-        except Exception:
-            pass
+        replaced.append(("Annotation", old_manifest_annotation.getId()))
+    from .workspace_lifecycle import cleanup_replaced
+    cleanup_replaced(conn, obj, inventory["workspace"]["id"], dataset, replaced, revision)
     return sync_status(conn, obj, inventory["workspace"]["id"])
 
 
+@serialized_sync
 def remove_sync(conn, obj, workspace_id):
-    if not can_annotate(obj):
-        raise PermissionDenied("The selected OMERO object cannot be synchronized")
+    from .workspace_lifecycle import change_lifecycle, state_for
     workspace_id = _workspace_id(workspace_id)
-    _, storage = storage_for(object_group_id(obj), _user_id(conn))
-    project = _managed_project(conn, object_group_id(obj))
-    dataset = _managed_dataset(project, workspace_id)
-    if dataset is None:
-        if storage is not None:
-            storage.delete_json(storage.workspace_manifest_path(workspace_id))
-            storage.garbage_collect()
-        return {"removed": 0, "dataset_deleted": False, "preserved_unmanaged": 0}
-    manifest_annotation, manifest = _read_manifest(dataset)
-    removed = 0
-    content_marker_ids = {
-        int(annotation.getId())
-        for annotation in _annotations(dataset)
-        if (
-            str(_plain(getattr(annotation, "getNs", lambda: None)()))
-            == SYNC_NAMESPACE
-            and _map_values(annotation).get("role") == "content-item"
-            and _map_values(annotation).get("workspace_id") == workspace_id
-        )
-    }
-    for item in _remote_items(manifest).values():
-        try:
-            _delete_ref(conn, item.get("remote") or {})
-            removed += 1
-        except Exception:
-            pass
-    for annotation_id in content_marker_ids:
-        try:
-            _delete(conn, "Annotation", annotation_id)
-            removed += 1
-        except Exception:
-            pass
-    if manifest_annotation is not None:
-        try:
-            _delete(conn, "Annotation", manifest_annotation.getId())
-            removed += 1
-        except Exception:
-            pass
-    marker_annotation, _ = _marker(dataset, "dataset")
-    if marker_annotation is not None:
-        try:
-            _delete(conn, "Annotation", marker_annotation.getId())
-        except Exception:
-            pass
-    source_marker, marker_values = _marker(
-        obj, "source-link", {"workspace_id": workspace_id}
-    )
-    if source_marker is not None and marker_values.get("workspace_id") == workspace_id:
-        try:
-            _delete(conn, "Annotation", source_marker.getId())
-        except Exception:
-            pass
-    managed_ids = {
-        int((item.get("remote") or {}).get("object_id"))
-        for item in _remote_items(manifest).values()
-        if (item.get("remote") or {}).get("object_id")
-    }
-    remaining_annotations = [
-        annotation for annotation in _annotations(dataset)
-        if int(annotation.getId()) not in managed_ids
-        and int(annotation.getId()) not in content_marker_ids
-        and annotation is not marker_annotation
-        and annotation is not manifest_annotation
-    ]
-    try:
-        remaining_images = [
-            image for image in dataset.listChildren()
-            if int(image.getId()) not in managed_ids
-        ]
-    except (AttributeError, TypeError):
-        remaining_images = []
-    unmanaged = len(remaining_annotations) + len(remaining_images)
-    deleted = False
-    if unmanaged == 0:
-        try:
-            _delete(conn, "Dataset", dataset.getId())
-            deleted = True
-        except Exception:
-            deleted = False
-    if storage is not None:
-        storage.delete_json(storage.workspace_manifest_path(workspace_id))
-        pending_root = storage.user_root / "pending"
-        if pending_root.exists():
-            for pending in pending_root.glob("*.json"):
-                try:
-                    value = json.loads(pending.read_text(encoding="utf-8"))
-                    if value.get("workspaceId") == workspace_id:
-                        pending.unlink()
-                except (OSError, ValueError):
-                    continue
-        storage.garbage_collect()
-    return {
-        "removed": removed,
-        "dataset_deleted": deleted,
-        "preserved_unmanaged": unmanaged,
-    }
+    _, state = state_for(conn, obj, workspace_id)
+    if state["state"] == "active":
+        change_lifecycle(conn, obj, workspace_id, "trash", state["revision"])
+        _, state = state_for(conn, obj, workspace_id)
+    result = change_lifecycle(conn, obj, workspace_id, "purge", state["revision"])
+    return result["cleanup"]
 
 
 def library_datasets(conn, obj):
@@ -1456,6 +1481,8 @@ def library_datasets(conn, obj):
             "datasetId": int(dataset.getId()),
             "datasetName": str(_plain(dataset.getName())),
             "workspaceId": str(workspace.get("id") or ""),
+            "lifecycle": marker.get("lifecycle", "active"),
+            "lifecycleRevision": int(marker.get("lifecycle_revision", 0)),
             "workspaceName": str(workspace.get("name") or ""),
             "sourceObjectType": str(workspace.get("sourceObjectType") or ""),
             "sourceObjectId": int(workspace.get("sourceObjectId") or 0),

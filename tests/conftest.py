@@ -86,6 +86,9 @@ class FakeObject:
     def getName(self):
         return self.name
 
+    def getId(self):
+        return self.object_id
+
     def listAnnotations(self):
         return list(self.annotations) + [
             annotation for annotation in self.linked if annotation not in self.annotations

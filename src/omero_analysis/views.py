@@ -468,7 +468,7 @@ def _workspace_panel_summary(conn, obj, values):
         "snapshot_annotation_id": int(snapshot.get("annotationId") or 0) or None,
         "counts": counts,
         "can_resume": source_type in {"Image", "Dataset", "Plate", "Screen"}
-        and source_id > 0,
+        and source_id > 0 and conn.getObject(source_type, source_id) is not None,
     }
 
 
@@ -481,6 +481,13 @@ def _configure_panel_context(conn, obj, context):
         return context
 
     _, sync_values = managed_marker(obj, SYNC_NAMESPACE)
+    # Dataset content indexes are linked alongside its workspace marker.
+    # Annotation ordering must not turn the container into one of its results.
+    container_role = {"Dataset": "dataset", "Project": "project"}.get(context["object_type"])
+    if container_role:
+        _, container_values = managed_marker(obj, SYNC_NAMESPACE, role=container_role)
+        if container_values.get("role") == container_role:
+            sync_values = container_values
     _, settings_values = managed_marker(obj, SETTINGS_NAMESPACE)
     sync_role = sync_values.get("role")
     settings_role = settings_values.get("role")
@@ -526,6 +533,17 @@ def _configure_panel_context(conn, obj, context):
         return context
 
     if object_type in {"Image", "Dataset", "Plate", "Screen"}:
+        context["analysis_workspaces"] = [
+            item for item in library_datasets(conn, obj)
+            if item["sourceObjectType"] == object_type and item["sourceObjectId"] == context["object_id"]
+        ]
+        for item in context["analysis_workspaces"]:
+            try:
+                item["syncStatus"] = sync_status(conn, obj, item["workspaceId"])
+            except AnalysisError as exc:
+                if exc.code != 'sync_busy':
+                    raise
+                item["syncStatus"] = {"syncState": "syncing"}
         context["panel_kind"] = "source"
         context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
         return context
@@ -1189,6 +1207,14 @@ def workspace_sync_apply(
     inventory = validate_inventory(
         inventory_payload, workspace_id, object_type, object_id, obj, conn
     )
+    uploads = request.FILES.getlist("payloads")
+    bundles = request.FILES.getlist("payload_bundle")
+    if bundles:
+        from .errors import InvalidObject
+        from .workspace_sync import bundled_uploads
+        if len(bundles) != 1 or uploads:
+            raise InvalidObject("Supply one synchronization bundle or individual payloads")
+        uploads = bundled_uploads(inventory, payload_keys, bundles[0])
     result = apply_sync(
         request,
         conn,
@@ -1196,7 +1222,7 @@ def workspace_sync_apply(
         inventory,
         request.POST.get("plan_token") or "",
         payload_keys,
-        request.FILES.getlist("payloads"),
+        uploads,
     )
     return JsonResponse(result)
 
@@ -1211,6 +1237,42 @@ def workspace_sync_remove(
         request, conn, "sync_remove", object_type, object_id
     )
     return JsonResponse(remove_sync(conn, obj, workspace_id))
+
+
+@require_http_methods(["POST"])
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_lifecycle(request, object_type, object_id, workspace_id, conn=None, **kwargs):
+    from .workspace_lifecycle import change_lifecycle
+    _, _, obj = _sync_context(request, conn, "sync_remove", object_type, object_id)
+    try:
+        payload = json.loads(request.body)
+        if not isinstance(payload, dict):
+            raise ValueError()
+    except (ValueError, TypeError) as exc:
+        from .errors import InvalidObject
+        raise InvalidObject("Request body must be a JSON object") from exc
+    return JsonResponse(change_lifecycle(conn, obj, workspace_id,
+                        payload.get("action"), payload.get("revision")))
+
+
+@require_GET
+@login_required(setGroupContext=True, doConnectionCleanup=False)
+@api_errors
+def workspace_result(request, object_type, object_id, workspace_id, conn=None, **kwargs):
+    from .workspace_results import result_payload
+    _, _, obj = _sync_context(request, conn, "library_download", object_type, object_id)
+    item, handle, chunks = result_payload(conn, obj, workspace_id, request.GET.get("key", ""))
+    response = ConnCleaningHttpResponse(iter(lambda: handle.read(1024 * 1024), b"") if handle else chunks,
+                                        content_type=item["mimetype"])
+    response.conn = conn
+    if handle:
+        response._resource_closers.append(handle.close)
+    response["Content-Length"] = str(item["size"])
+    response["Content-Disposition"] = "attachment; filename*=UTF-8''" + quote(item["name"], safe="")
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @require_GET

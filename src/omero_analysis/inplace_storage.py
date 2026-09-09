@@ -14,6 +14,7 @@ import os
 import tempfile
 import threading
 import uuid
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from importlib import import_module, metadata
@@ -364,7 +365,7 @@ class AnalysisStorage:
 
     def garbage_collect(self):
         referenced = set()
-        for folder in (self.user_root / "workspaces", self.user_root / "settings", self.user_root / "pending"):
+        for folder in (self.user_root / "workspaces", self.user_root / "settings", self.user_root / "pending", self.user_root / "history"):
             if not folder.exists():
                 continue
             for manifest in folder.rglob("*.json"):
@@ -373,7 +374,8 @@ class AnalysisStorage:
                 try:
                     value = json.loads(manifest.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
-                    continue
+                    # An unreadable manifest may protect a live source file.
+                    return 0
                 for item in value.get("items", []):
                     blob = item.get("blob") or {}
                     if blob.get("relativePath"):
@@ -389,6 +391,114 @@ class AnalysisStorage:
                         deleted += 1
         return deleted
 
+    def prune_empty_directories(self):
+        """Remove empty technical directories only; never follow links."""
+        removed = 0
+        for path in sorted(self.user_root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+            self._ensure_inside(path)
+            if path.is_dir() and not path.is_symlink():
+                try:
+                    path.rmdir()
+                    removed += 1
+                except OSError:
+                    pass
+        return removed
+
+    def publish_workspace(self, manifest, username):
+        """Publish a detached, human-readable mirror of a committed manifest.
+
+        OMERO in-place imports retain immutable source paths. Browsing copies
+        cannot mutate those sources, even on filesystems supporting hard links.
+        The index limits cleanup to files previously published by this method.
+        """
+        def label(value):
+            value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '-', str(value))
+            value = value.strip(' .')[:120].rstrip(' .') or 'Analysis'
+            if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', value, re.I):
+                value = '_' + value
+            return value
+
+        workspace_id = _safe_name(manifest["workspaceId"])
+        user = label(username) + '--' + self.user_root.name
+        base = self.analysis_root / user / '+AnalysisWorkspaces'
+        name = label(manifest.get('datasetName') or (manifest.get('workspace') or {}).get('name') or workspace_id)
+        destination = base / (name + '--' + str(int(manifest['datasetId'])))
+        # Use the same containment/symlink checks as canonical storage.
+        publisher = object.__new__(AnalysisStorage)
+        publisher.user_root = self.analysis_root / user
+        publisher.analysis_root = self.analysis_root
+        if publisher.user_root.is_symlink():
+            raise ValueError('Unsafe browse root')
+        publisher.user_root.mkdir(exist_ok=True)
+        publisher._ensure_directory(destination)
+        index_path = Path('workspaces') / workspace_id / 'browse.json'
+        old = self.read_json(index_path) or {}
+        published = []
+        used = set()
+        folders = {'method': 'Methods', 'method-python': 'Methods', 'pipeline': 'Pipelines',
+                   'notebook': 'Notebooks', 'workspace-snapshot': 'Workspace',
+                   'template-input': 'Input', 'png-image': 'Results', 'result': 'Results'}
+        items = list(manifest.get('items', []))
+        committed = {item.get('key') for item in items}
+        for history in (self.user_root / 'history').glob('*.json'):
+            record = self.read_json(history.relative_to(self.user_root))
+            if record and record.get('workspaceId') == workspace_id and record.get('state') == 'imported':
+                items.extend({**item, 'kind': 'recovered-import'} for item in record.get('items', [])
+                             if item.get('key') not in committed)
+        folders['recovered-import'] = 'Recovered imports'
+        for item in items:
+            blob = item.get('blob') or {}
+            if not blob.get('path'):
+                continue
+            source = self._ensure_inside(Path(blob['path']))
+            data = source.read_bytes()
+            if hashlib.sha256(data).hexdigest() != blob['sha256']:
+                raise ValueError('Cannot publish a corrupt source blob')
+            filename = label(item.get('name') or blob.get('filename') or source.name)
+            folder = folders.get(item.get('kind'), 'Files')
+            relative = Path(folder) / filename
+            if str(relative).casefold() in used:
+                filename = f'{Path(filename).stem}--{blob["sha256"][:12]}{Path(filename).suffix}'
+                relative = Path(folder) / filename
+            used.add(str(relative).casefold())
+            target = destination / relative
+            publisher.atomic_write(target, data)
+            published.append(target.relative_to(self.analysis_root).as_posix())
+        publisher.atomic_write(destination / 'README.txt', (
+            'Managed browsing copy of +AnalysisWorkspaces. Rename and save workspaces in OMERO.Analysis.\n'
+            'Files here are refreshed after synchronization; local edits are not imported into OMERO.\n'
+            f'Workspace: {workspace_id}\nDataset: {manifest["datasetId"]}\n'
+        ).encode())
+        published.append((destination / 'README.txt').relative_to(self.analysis_root).as_posix())
+        for relative in set(old.get('files', [])) - set(published):
+            stale = publisher._ensure_inside(self.analysis_root / relative)
+            if stale.is_file():
+                stale.unlink()
+        publisher.prune_empty_directories()
+        self.write_json(index_path, {'files': published})
+
+    def remove_workspace_view(self, workspace_id):
+        """Remove only indexed browsing copies; retain immutable import sources."""
+        index_path = Path('workspaces') / _safe_name(workspace_id) / 'browse.json'
+        index = self.read_json(index_path) or {}
+        roots = set()
+        for relative in index.get('files', []):
+            parts = Path(relative).parts
+            if len(parts) < 3 or not parts[0].endswith('--' + self.user_root.name) or parts[1] != '+AnalysisWorkspaces':
+                raise ValueError('Invalid workspace browse index')
+            publisher = object.__new__(AnalysisStorage)
+            publisher.user_root = self.analysis_root / parts[0]
+            if publisher.user_root.is_symlink():
+                raise ValueError('Unsafe browse root')
+            target = publisher._ensure_inside(self.analysis_root / relative)
+            if target.is_file():
+                target.unlink()
+            roots.add(publisher.user_root)
+        for root in roots:
+            publisher.user_root = root
+            publisher.prune_empty_directories()
+        self.delete_json(index_path)
+
 
 def storage_for(group_id, user_id, *, initialize=True):
     capability = storage_capability(group_id, initialize=initialize)
@@ -396,7 +506,7 @@ def storage_for(group_id, user_id, *, initialize=True):
         return capability, None
     try:
         storage = AnalysisStorage(capability, user_id)
-        probe = storage.user_root / ".write-probe"
+        probe = storage.user_root / f".write-probe-{uuid.uuid4()}"
         storage.atomic_write(probe, b"ok")
         probe.unlink()
         return capability, storage
@@ -432,6 +542,15 @@ def submit_png_order(capability, order_uuid, username, dataset_id, item_key, pat
     }
     symbols["log_ingestion_step"](order, symbols["STAGE_NEW_ORDER"])
     return order
+
+
+def record_import_completion(journal):
+    """Repair a lost terminal event only after the caller verified the Image."""
+    order = journal.get('order')
+    if not order or str(order.get('UUID')) != str(journal.get('orderUuid')):
+        return
+    symbols = _dependencies()
+    symbols['log_ingestion_step'](order, symbols['STAGE_IMPORTED'])
 
 
 def latest_ingest_event(order_uuid):

@@ -291,6 +291,7 @@ def object_context(object_type, object_id, obj, conn=None):
         "object_type": object_type,
         "object_id": int(object_id),
         "name": str(_plain(obj.getName())),
+        "source_path": source_name_path(object_type, obj),
         "user_id": user_id,
         "group_id": object_group_id(obj),
         "can_annotate": can_annotate(obj),
@@ -332,6 +333,36 @@ def _hierarchy_item(value):
         "name": name,
         "supported": value_type in SUPPORTED_OBJECT_TYPES,
     }
+
+
+def source_name_path(object_type, obj):
+    """A stable readable ancestry, including HCS parents via WellSample/Well.
+
+    Multiple OMERO parents have no intrinsic order. Choose the first full path
+    by name and ID; only traverse parents readable through the current gateway.
+    """
+    visible = {"Project", "Dataset", "Screen", "Plate", "Image"}
+
+    def walk(value, kind, seen):
+        identity = (kind, int(value.getId()))
+        if identity in seen or len(seen) >= 8:
+            return []
+        parents_method = getattr(value, "listParents", None)
+        parents = list(parents_method()) if callable(parents_method) else []
+        if not parents:
+            parent_method = getattr(value, "getParent", None)
+            parent = parent_method() if callable(parent_method) else None
+            parents = [parent] if parent is not None else []
+        paths = [walk(parent, _object_type(parent), seen | {identity})
+                 for parent in parents if parent is not None]
+        paths = [path for path in paths if path]
+        prefix = min(paths, key=lambda path: [(item['name'].casefold(), item['id']) for item in path]) if paths else []
+        if kind in visible:
+            name = str(_plain(value.getName()) or f"{kind} {identity[1]}")
+            return prefix + [{"type": kind, "id": identity[1], "name": name}]
+        return prefix
+
+    return walk(obj, object_type, set())
 
 
 def object_hierarchy(object_type, object_id, obj):

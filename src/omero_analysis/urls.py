@@ -135,6 +135,18 @@ urlpatterns = [
         name="omero_analysis_workspace_sync_remove",
     ),
     re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/lifecycle/$",
+        views.workspace_lifecycle,
+        name="omero_analysis_workspace_lifecycle",
+    ),
+    re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/result/$",
+        views.workspace_result,
+        name="omero_analysis_workspace_result",
+    ),
+    re_path(
         r"^api/workspace-library/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
         views.workspace_library,
         name="omero_analysis_workspace_library",

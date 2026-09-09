@@ -314,16 +314,16 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
         "name": obj.name,
     }
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {"role": "ai-settings", "profile_count": "3"}
         if namespace == views.SETTINGS_NAMESPACE else {},
     ))
-    settings_context = views._configure_panel_context(None, obj, dict(base))
+    settings_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert settings_context["panel_kind"] == "settings"
     assert settings_context["managed_count"] == "3"
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {
             "role": "dataset",
@@ -346,13 +346,13 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
         "snapshot": {"annotationId": 1171},
         "items": [],
     }])
-    workspace_context = views._configure_panel_context(None, obj, dict(base))
+    workspace_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert workspace_context["panel_kind"] == "workspace"
     assert workspace_context["workspace_summary"]["can_resume"] is True
     assert workspace_context["workspace_summary"]["source_id"] == 152
     assert workspace_context["workspace_summary"]["snapshot_annotation_id"] == 1171
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {
             "role": "content-item",
@@ -361,11 +361,11 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
             "canonical_name": "heatmap.png",
         } if namespace == views.SYNC_NAMESPACE else {},
     ))
-    result_context = views._configure_panel_context(None, obj, dict(base))
+    result_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert result_context["panel_kind"] == "result"
     assert result_context["result_name"] == "heatmap.png"
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {
             "role": "item",
@@ -374,11 +374,11 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
             "canonical_name": "managed-heatmap.png",
         } if namespace == views.SYNC_NAMESPACE else {},
     ))
-    image_result_context = views._configure_panel_context(None, obj, dict(base))
+    image_result_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert image_result_context["panel_kind"] == "result"
     assert image_result_context["result_name"] == "managed-heatmap.png"
 
-    multi_context = views._configure_panel_context(None, obj, {
+    multi_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, {
         **base,
         "selection_count": 2,
         "selected_objects": [
@@ -387,6 +387,22 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
         ],
     })
     assert multi_context["panel_kind"] == "source"
+
+
+def test_workspace_marker_wins_over_result_indexes_in_any_annotation_order(monkeypatch):
+    from types import SimpleNamespace
+    def annotation(values):
+        return SimpleNamespace(getNs=lambda: views.SYNC_NAMESPACE, getValue=lambda: list(values.items()))
+    workspace = annotation({"role": "dataset", "workspace_id": "workspace-1",
+                            "source_object_type": "Screen", "source_object_id": "152"})
+    result = annotation({"role": "content-item", "workspace_id": "workspace-1", "item_kind": "png-image"})
+    monkeypatch.setattr(views, "library_datasets", lambda *_: [])
+    for markers in ([result, workspace], [workspace, result]):
+        obj = FakeObject(object_id=454, name="Screen-152 — SolHunt", annotations=markers)
+        context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, {"object_type": "Dataset", "object_id": 454, "name": obj.name})
+        assert context['panel_kind'] == 'workspace'
+        assert context['workspace_summary']['can_resume']
+        assert context['workspace_summary']['workspace_id'] == 'workspace-1'
 
 
 def test_panel_renders_source_guidance_and_multi_selection_variants(settings):

@@ -18,6 +18,8 @@ from types import SimpleNamespace
 
 def main():
     credentials = json.load(sys.stdin)
+    if credentials.get("disposable_stack") is not True:
+        raise RuntimeError("Permission fixtures require a disposable stack; pass disposable_stack: true only for an isolated test stack")
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "omeroweb.settings")
     import django
     django.setup()
@@ -40,6 +42,14 @@ def main():
     settings.OMERO_ANALYSIS_DATA_QUERY_STATE_DIR = str(state_root / prefix)
     admin = root.getAdminService()
     groups, users, datasets, connections, outcomes = [], [], [], [], []
+    created = {"prefix": prefix, "groups": [], "users": [], "datasets": [], "annotations": []}
+    journal_path = state_root / (prefix + "-fixture-ids.json")
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    def record(kind, identifier):
+        created[kind].append(identifier)
+        temporary = journal_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(created, indent=2))
+        temporary.replace(journal_path)
     password = secrets.token_urlsafe(24)
     try:
         for label, permissions in [("private", "rw----"), ("read-only", "rwr---"),
@@ -49,6 +59,7 @@ def main():
             group.ldap = rbool(False)
             group.details.permissions = PermissionsI(permissions)
             group_id = admin.createGroup(group)
+            record("groups", group_id)
             groups.append((label, admin.getGroup(group_id)))
         for role in ("owner", "member", "pi"):
             user = ExperimenterI()
@@ -58,6 +69,7 @@ def main():
             user.ldap = rbool(False)
             user_id = admin.createExperimenterWithPassword(user, rstring(password), groups[0][1],
                                                             [admin.lookupGroup("user")] + [g for _, g in groups[1:]])
+            record("users", user_id)
             users.append((role, admin.getExperimenter(user_id)))
             conn = BlitzGateway(prefix + "-" + role, password, host=credentials.get("host", "omeroserver"), port=4064)
             connections.append((role, conn))
@@ -72,11 +84,13 @@ def main():
             dataset = DatasetWrapper(owner, DatasetI())
             dataset.setName(prefix + "-" + label)
             dataset.save()
+            record("datasets", {"group": group_id, "id": dataset.getId()})
             datasets.append((group_id, dataset.getId()))
             with tempfile.TemporaryDirectory() as temporary:
                 source_path = Path(temporary) / "measurements.csv"
                 source_path.write_bytes(b"id,area\n1,10.5\n2,20.5\n")
                 annotation = owner.createFileAnnfromLocalFile(str(source_path), mimetype="text/csv", ns=prefix)
+                record("annotations", annotation.getId())
                 dataset.linkAnnotation(annotation)
             for role, conn in connections + [("admin", root)]:
                 conn.setGroupForSession(group_id)
@@ -169,6 +183,7 @@ def main():
         group.name, group.ldap = rstring(prefix + "-revocation"), rbool(False)
         group.details.permissions = PermissionsI("rwra--")
         group_id = admin.createGroup(group)
+        record("groups", group_id)
         group = admin.getGroup(group_id)
         groups.append(("revocation", group))
         for _, user in users:
@@ -178,11 +193,13 @@ def main():
         dataset = DatasetWrapper(owner, DatasetI())
         dataset.setName(prefix + "-revocation")
         dataset.save()
+        record("datasets", {"group": group_id, "id": dataset.getId()})
         datasets.append((group_id, dataset.getId()))
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "source.csv"
             path.write_bytes(b"id\n1\n")
             annotation = owner.createFileAnnfromLocalFile(str(path), mimetype="text/csv", ns=prefix)
+            record("annotations", annotation.getId())
             dataset.linkAnnotation(annotation)
         member.setGroupForSession(group_id)
         obj = member.getObject("Dataset", dataset.getId())
@@ -267,6 +284,16 @@ def main():
                     root.deleteObjects("Dataset", [dataset_id], wait=True)
             except Exception as exc:
                 cleanup_errors.append(str(getattr(exc, "message", type(exc).__name__)))
+        # Also clean annotations created before a failed link operation.
+        for identifier in created["annotations"]:
+            try:
+                root.setGroupForSession(-1)
+                annotation = root.getObject("Annotation", identifier)
+                if annotation is not None:
+                    root.setGroupForSession(annotation.getDetails().getGroup().getId())
+                    root.deleteObjects("Annotation", [identifier], wait=True)
+            except Exception as exc:
+                cleanup_errors.append(type(exc).__name__)
         for _, user in reversed(users):
             try:
                 # OMERO retains immutable session/event history for users who logged in.
@@ -274,6 +301,17 @@ def main():
                 admin.removeGroups(user, [admin.lookupGroup("user")])
             except Exception as exc:
                 cleanup_errors.append(str(getattr(exc, "message", type(exc).__name__)))
+        # Partial setup may have created an account before its wrapper/connection was recorded.
+        known = {user.id.val for _, user in users}
+        for identifier in created["users"]:
+            if identifier not in known:
+                try:
+                    admin.removeGroups(admin.getExperimenter(identifier), [admin.lookupGroup("user")])
+                except Exception as exc:
+                    cleanup_errors.append(type(exc).__name__)
+        created["cleanup_errors"] = cleanup_errors
+        created["teardown"] = "data cleanup attempted; accounts retained disabled; destroy disposable stack"
+        journal_path.write_text(json.dumps(created, indent=2))
         root.close()
         if cleanup_errors:
             raise RuntimeError(f"Fixture cleanup incomplete for {prefix}: {cleanup_errors}")

@@ -185,7 +185,9 @@ class Command(BaseCommand):
                 "schema": "nl.bioimaging.analysis.storage.settings.v1",
                 "userId": current_user, "groupId": options["group_id"], "items": local_settings,
             })
-            storage.garbage_collect()
+            # Canonical blobs may still be referenced by OMERO OriginalFiles
+            # outside the current manifests. Backfill cannot prove they are
+            # unused, so it must not garbage-collect them.
             report["settingsCompleted"] = True
             self._checkpoint(options, report)
         return report
