@@ -1,0 +1,2332 @@
+{
+  "deleted": {
+    "users": {},
+    "groups": {
+      "67": "dqw-test-c58d8bbc9c-read-only",
+      "68": "dqw-test-c58d8bbc9c-read-annotate",
+      "69": "dqw-test-c58d8bbc9c-read-write"
+    }
+  },
+  "retired": {
+    "users": {
+      "102": "dqw-test-f22e9d934a-owner",
+      "103": "dqw-test-ed2dce83e0-owner",
+      "104": "dqw-test-ed2dce83e0-member",
+      "105": "dqw-test-ed2dce83e0-pi",
+      "106": "dqw-test-16b6f88908-owner",
+      "107": "dqw-test-16b6f88908-member",
+      "108": "dqw-test-16b6f88908-pi",
+      "109": "dqw-test-c58d8bbc9c-owner",
+      "110": "dqw-test-c58d8bbc9c-member",
+      "111": "dqw-test-c58d8bbc9c-pi",
+      "112": "dqw-test-4af06c5076-owner",
+      "113": "dqw-test-4af06c5076-member",
+      "114": "dqw-test-4af06c5076-pi",
+      "115": "dqw-test-329b28512a-owner",
+      "116": "dqw-test-329b28512a-member",
+      "117": "dqw-test-329b28512a-pi",
+      "118": "dqw-test-4ba924d9f0-owner",
+      "119": "dqw-test-4ba924d9f0-member",
+      "120": "dqw-test-4ba924d9f0-pi",
+      "121": "dqw-test-b0548d0d5c-owner",
+      "122": "dqw-test-b0548d0d5c-member",
+      "123": "dqw-test-b0548d0d5c-pi",
+      "124": "dqw-test-351c7df3e5-owner",
+      "125": "dqw-test-351c7df3e5-member",
+      "126": "dqw-test-351c7df3e5-pi",
+      "127": "dqw-test-3f1d0b06c0-owner",
+      "128": "dqw-test-3f1d0b06c0-member",
+      "129": "dqw-test-3f1d0b06c0-pi",
+      "130": "dqw-test-3e34e883bd-owner",
+      "131": "dqw-test-3e34e883bd-member",
+      "132": "dqw-test-3e34e883bd-pi",
+      "133": "dqw-test-b2b23f757d-owner",
+      "134": "dqw-test-b2b23f757d-member",
+      "135": "dqw-test-b2b23f757d-pi"
+    },
+    "groups": {
+      "58": "dqw-test-ed2dce83e0-private",
+      "62": "dqw-test-16b6f88908-private",
+      "63": "dqw-test-16b6f88908-read-only",
+      "64": "dqw-test-16b6f88908-read-annotate",
+      "65": "dqw-test-16b6f88908-read-write",
+      "66": "dqw-test-c58d8bbc9c-private",
+      "70": "dqw-test-4af06c5076-private",
+      "71": "dqw-test-4af06c5076-read-only",
+      "72": "dqw-test-4af06c5076-read-annotate",
+      "73": "dqw-test-4af06c5076-read-write",
+      "74": "dqw-test-329b28512a-private",
+      "75": "dqw-test-329b28512a-read-only",
+      "76": "dqw-test-329b28512a-read-annotate",
+      "77": "dqw-test-329b28512a-read-write",
+      "78": "dqw-test-329b28512a-revocation",
+      "79": "dqw-test-4ba924d9f0-private",
+      "80": "dqw-test-4ba924d9f0-read-only",
+      "81": "dqw-test-4ba924d9f0-read-annotate",
+      "82": "dqw-test-4ba924d9f0-read-write",
+      "83": "dqw-test-4ba924d9f0-revocation",
+      "84": "dqw-test-b0548d0d5c-private",
+      "85": "dqw-test-b0548d0d5c-read-only",
+      "86": "dqw-test-b0548d0d5c-read-annotate",
+      "87": "dqw-test-b0548d0d5c-read-write",
+      "88": "dqw-test-b0548d0d5c-revocation",
+      "89": "dqw-test-351c7df3e5-private",
+      "90": "dqw-test-351c7df3e5-read-only",
+      "91": "dqw-test-351c7df3e5-read-annotate",
+      "92": "dqw-test-351c7df3e5-read-write",
+      "93": "dqw-test-351c7df3e5-revocation",
+      "94": "dqw-test-3f1d0b06c0-private",
+      "95": "dqw-test-3f1d0b06c0-read-only",
+      "96": "dqw-test-3f1d0b06c0-read-annotate",
+      "97": "dqw-test-3f1d0b06c0-read-write",
+      "98": "dqw-test-3f1d0b06c0-revocation",
+      "104": "dqw-test-3e34e883bd-private",
+      "105": "dqw-test-3e34e883bd-read-only",
+      "106": "dqw-test-3e34e883bd-read-annotate",
+      "107": "dqw-test-3e34e883bd-read-write",
+      "108": "dqw-test-3e34e883bd-revocation",
+      "109": "dqw-test-b2b23f757d-private",
+      "110": "dqw-test-b2b23f757d-read-only",
+      "111": "dqw-test-b2b23f757d-read-annotate",
+      "112": "dqw-test-b2b23f757d-read-write",
+      "113": "dqw-test-b2b23f757d-revocation"
+    }
+  },
+  "refusals": [
+    {
+      "kind": "users",
+      "id": 102,
+      "name": "dqw-test-f22e9d934a-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#102]; SQL [delete from experimenter where id=?]; constraint [fksession_owner_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#102]"
+    },
+    {
+      "kind": "users",
+      "id": 103,
+      "name": "dqw-test-ed2dce83e0-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#103]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#103]"
+    },
+    {
+      "kind": "users",
+      "id": 104,
+      "name": "dqw-test-ed2dce83e0-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#104]; SQL [delete from experimenter where id=?]; constraint [fksession_owner_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#104]"
+    },
+    {
+      "kind": "users",
+      "id": 105,
+      "name": "dqw-test-ed2dce83e0-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#105]; SQL [delete from experimenter where id=?]; constraint [fksession_owner_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#105]"
+    },
+    {
+      "kind": "users",
+      "id": 106,
+      "name": "dqw-test-16b6f88908-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#106]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#106]"
+    },
+    {
+      "kind": "users",
+      "id": 107,
+      "name": "dqw-test-16b6f88908-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#107]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#107]"
+    },
+    {
+      "kind": "users",
+      "id": 108,
+      "name": "dqw-test-16b6f88908-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#108]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#108]"
+    },
+    {
+      "kind": "users",
+      "id": 109,
+      "name": "dqw-test-c58d8bbc9c-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#109]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#109]"
+    },
+    {
+      "kind": "users",
+      "id": 110,
+      "name": "dqw-test-c58d8bbc9c-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#110]; SQL [delete from experimenter where id=?]; constraint [fksession_owner_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#110]"
+    },
+    {
+      "kind": "users",
+      "id": 111,
+      "name": "dqw-test-c58d8bbc9c-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#111]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#111]"
+    },
+    {
+      "kind": "users",
+      "id": 112,
+      "name": "dqw-test-4af06c5076-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#112]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#112]"
+    },
+    {
+      "kind": "users",
+      "id": 113,
+      "name": "dqw-test-4af06c5076-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#113]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#113]"
+    },
+    {
+      "kind": "users",
+      "id": 114,
+      "name": "dqw-test-4af06c5076-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#114]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#114]"
+    },
+    {
+      "kind": "users",
+      "id": 115,
+      "name": "dqw-test-329b28512a-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#115]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#115]"
+    },
+    {
+      "kind": "users",
+      "id": 116,
+      "name": "dqw-test-329b28512a-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#116]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#116]"
+    },
+    {
+      "kind": "users",
+      "id": 117,
+      "name": "dqw-test-329b28512a-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#117]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#117]"
+    },
+    {
+      "kind": "users",
+      "id": 118,
+      "name": "dqw-test-4ba924d9f0-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#118]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#118]"
+    },
+    {
+      "kind": "users",
+      "id": 119,
+      "name": "dqw-test-4ba924d9f0-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#119]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#119]"
+    },
+    {
+      "kind": "users",
+      "id": 120,
+      "name": "dqw-test-4ba924d9f0-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#120]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#120]"
+    },
+    {
+      "kind": "users",
+      "id": 121,
+      "name": "dqw-test-b0548d0d5c-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#121]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#121]"
+    },
+    {
+      "kind": "users",
+      "id": 122,
+      "name": "dqw-test-b0548d0d5c-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#122]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#122]"
+    },
+    {
+      "kind": "users",
+      "id": 123,
+      "name": "dqw-test-b0548d0d5c-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#123]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#123]"
+    },
+    {
+      "kind": "users",
+      "id": 124,
+      "name": "dqw-test-351c7df3e5-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#124]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#124]"
+    },
+    {
+      "kind": "users",
+      "id": 125,
+      "name": "dqw-test-351c7df3e5-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#125]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#125]"
+    },
+    {
+      "kind": "users",
+      "id": 126,
+      "name": "dqw-test-351c7df3e5-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#126]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#126]"
+    },
+    {
+      "kind": "users",
+      "id": 127,
+      "name": "dqw-test-3f1d0b06c0-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#127]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#127]"
+    },
+    {
+      "kind": "users",
+      "id": 128,
+      "name": "dqw-test-3f1d0b06c0-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#128]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#128]"
+    },
+    {
+      "kind": "users",
+      "id": 129,
+      "name": "dqw-test-3f1d0b06c0-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#129]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#129]"
+    },
+    {
+      "kind": "users",
+      "id": 130,
+      "name": "dqw-test-3e34e883bd-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#130]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#130]"
+    },
+    {
+      "kind": "users",
+      "id": 131,
+      "name": "dqw-test-3e34e883bd-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#131]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#131]"
+    },
+    {
+      "kind": "users",
+      "id": 132,
+      "name": "dqw-test-3e34e883bd-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#132]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#132]"
+    },
+    {
+      "kind": "users",
+      "id": 133,
+      "name": "dqw-test-b2b23f757d-owner",
+      "reason": "could not delete: [ome.model.meta.Experimenter#133]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#133]"
+    },
+    {
+      "kind": "users",
+      "id": 134,
+      "name": "dqw-test-b2b23f757d-member",
+      "reason": "could not delete: [ome.model.meta.Experimenter#134]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#134]"
+    },
+    {
+      "kind": "users",
+      "id": 135,
+      "name": "dqw-test-b2b23f757d-pi",
+      "reason": "could not delete: [ome.model.meta.Experimenter#135]; SQL [delete from experimenter where id=?]; constraint [fkevent_experimenter_experimenter]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.Experimenter#135]"
+    },
+    {
+      "kind": "groups",
+      "id": 58,
+      "name": "dqw-test-ed2dce83e0-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#58]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#58]"
+    },
+    {
+      "kind": "groups",
+      "id": 62,
+      "name": "dqw-test-16b6f88908-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#62]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#62]"
+    },
+    {
+      "kind": "groups",
+      "id": 63,
+      "name": "dqw-test-16b6f88908-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#63]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#63]"
+    },
+    {
+      "kind": "groups",
+      "id": 64,
+      "name": "dqw-test-16b6f88908-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#64]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#64]"
+    },
+    {
+      "kind": "groups",
+      "id": 65,
+      "name": "dqw-test-16b6f88908-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#65]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#65]"
+    },
+    {
+      "kind": "groups",
+      "id": 66,
+      "name": "dqw-test-c58d8bbc9c-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#66]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#66]"
+    },
+    {
+      "kind": "groups",
+      "id": 70,
+      "name": "dqw-test-4af06c5076-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#70]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#70]"
+    },
+    {
+      "kind": "groups",
+      "id": 71,
+      "name": "dqw-test-4af06c5076-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#71]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#71]"
+    },
+    {
+      "kind": "groups",
+      "id": 72,
+      "name": "dqw-test-4af06c5076-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#72]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#72]"
+    },
+    {
+      "kind": "groups",
+      "id": 73,
+      "name": "dqw-test-4af06c5076-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#73]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#73]"
+    },
+    {
+      "kind": "groups",
+      "id": 74,
+      "name": "dqw-test-329b28512a-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#74]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#74]"
+    },
+    {
+      "kind": "groups",
+      "id": 75,
+      "name": "dqw-test-329b28512a-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#75]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#75]"
+    },
+    {
+      "kind": "groups",
+      "id": 76,
+      "name": "dqw-test-329b28512a-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#76]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#76]"
+    },
+    {
+      "kind": "groups",
+      "id": 77,
+      "name": "dqw-test-329b28512a-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#77]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#77]"
+    },
+    {
+      "kind": "groups",
+      "id": 78,
+      "name": "dqw-test-329b28512a-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#78]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#78]"
+    },
+    {
+      "kind": "groups",
+      "id": 79,
+      "name": "dqw-test-4ba924d9f0-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#79]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#79]"
+    },
+    {
+      "kind": "groups",
+      "id": 80,
+      "name": "dqw-test-4ba924d9f0-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#80]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#80]"
+    },
+    {
+      "kind": "groups",
+      "id": 81,
+      "name": "dqw-test-4ba924d9f0-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#81]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#81]"
+    },
+    {
+      "kind": "groups",
+      "id": 82,
+      "name": "dqw-test-4ba924d9f0-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#82]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#82]"
+    },
+    {
+      "kind": "groups",
+      "id": 83,
+      "name": "dqw-test-4ba924d9f0-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#83]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#83]"
+    },
+    {
+      "kind": "groups",
+      "id": 84,
+      "name": "dqw-test-b0548d0d5c-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#84]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#84]"
+    },
+    {
+      "kind": "groups",
+      "id": 85,
+      "name": "dqw-test-b0548d0d5c-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#85]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#85]"
+    },
+    {
+      "kind": "groups",
+      "id": 86,
+      "name": "dqw-test-b0548d0d5c-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#86]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#86]"
+    },
+    {
+      "kind": "groups",
+      "id": 87,
+      "name": "dqw-test-b0548d0d5c-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#87]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#87]"
+    },
+    {
+      "kind": "groups",
+      "id": 88,
+      "name": "dqw-test-b0548d0d5c-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#88]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#88]"
+    },
+    {
+      "kind": "groups",
+      "id": 89,
+      "name": "dqw-test-351c7df3e5-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#89]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#89]"
+    },
+    {
+      "kind": "groups",
+      "id": 90,
+      "name": "dqw-test-351c7df3e5-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#90]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#90]"
+    },
+    {
+      "kind": "groups",
+      "id": 91,
+      "name": "dqw-test-351c7df3e5-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#91]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#91]"
+    },
+    {
+      "kind": "groups",
+      "id": 92,
+      "name": "dqw-test-351c7df3e5-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#92]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#92]"
+    },
+    {
+      "kind": "groups",
+      "id": 93,
+      "name": "dqw-test-351c7df3e5-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#93]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#93]"
+    },
+    {
+      "kind": "groups",
+      "id": 94,
+      "name": "dqw-test-3f1d0b06c0-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#94]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#94]"
+    },
+    {
+      "kind": "groups",
+      "id": 95,
+      "name": "dqw-test-3f1d0b06c0-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#95]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#95]"
+    },
+    {
+      "kind": "groups",
+      "id": 96,
+      "name": "dqw-test-3f1d0b06c0-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#96]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#96]"
+    },
+    {
+      "kind": "groups",
+      "id": 97,
+      "name": "dqw-test-3f1d0b06c0-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#97]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#97]"
+    },
+    {
+      "kind": "groups",
+      "id": 98,
+      "name": "dqw-test-3f1d0b06c0-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#98]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#98]"
+    },
+    {
+      "kind": "groups",
+      "id": 104,
+      "name": "dqw-test-3e34e883bd-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#104]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#104]"
+    },
+    {
+      "kind": "groups",
+      "id": 105,
+      "name": "dqw-test-3e34e883bd-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#105]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#105]"
+    },
+    {
+      "kind": "groups",
+      "id": 106,
+      "name": "dqw-test-3e34e883bd-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#106]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#106]"
+    },
+    {
+      "kind": "groups",
+      "id": 107,
+      "name": "dqw-test-3e34e883bd-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#107]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#107]"
+    },
+    {
+      "kind": "groups",
+      "id": 108,
+      "name": "dqw-test-3e34e883bd-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#108]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#108]"
+    },
+    {
+      "kind": "groups",
+      "id": 109,
+      "name": "dqw-test-b2b23f757d-private",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#109]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#109]"
+    },
+    {
+      "kind": "groups",
+      "id": 110,
+      "name": "dqw-test-b2b23f757d-read-only",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#110]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#110]"
+    },
+    {
+      "kind": "groups",
+      "id": 111,
+      "name": "dqw-test-b2b23f757d-read-annotate",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#111]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#111]"
+    },
+    {
+      "kind": "groups",
+      "id": 112,
+      "name": "dqw-test-b2b23f757d-read-write",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#112]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#112]"
+    },
+    {
+      "kind": "groups",
+      "id": 113,
+      "name": "dqw-test-b2b23f757d-revocation",
+      "reason": "could not delete: [ome.model.meta.ExperimenterGroup#113]; SQL [delete from experimentergroup where id=?]; constraint [fkevent_experimentergroup_experimentergroup]; nested exception is org.hibernate.exception.ConstraintViolationException: could not delete: [ome.model.meta.ExperimenterGroup#113]"
+    }
+  ],
+  "checks": {
+    "users:102": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [],
+      "safe": true
+    },
+    "users:103": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        58
+      ],
+      "safe": true
+    },
+    "users:104": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        58
+      ],
+      "safe": true
+    },
+    "users:105": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        58
+      ],
+      "safe": true
+    },
+    "users:106": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "safe": true
+    },
+    "users:107": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "safe": true
+    },
+    "users:108": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "safe": true
+    },
+    "users:109": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "safe": true
+    },
+    "users:110": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "safe": true
+    },
+    "users:111": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "safe": true
+    },
+    "users:112": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        70,
+        71,
+        72,
+        73
+      ],
+      "safe": true
+    },
+    "users:113": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        70,
+        71,
+        72,
+        73
+      ],
+      "safe": true
+    },
+    "users:114": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        70,
+        71,
+        72,
+        73
+      ],
+      "safe": true
+    },
+    "users:115": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        74,
+        75,
+        76,
+        77,
+        78
+      ],
+      "safe": true
+    },
+    "users:116": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        74,
+        75,
+        76,
+        77
+      ],
+      "safe": true
+    },
+    "users:117": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        74,
+        75,
+        76,
+        77,
+        78
+      ],
+      "safe": true
+    },
+    "users:118": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "safe": true
+    },
+    "users:119": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        79,
+        80,
+        81,
+        82
+      ],
+      "safe": true
+    },
+    "users:120": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "safe": true
+    },
+    "users:121": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        84,
+        85,
+        86,
+        87,
+        88
+      ],
+      "safe": true
+    },
+    "users:122": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        84,
+        85,
+        86,
+        87,
+        88
+      ],
+      "safe": true
+    },
+    "users:123": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        84,
+        85,
+        86,
+        87,
+        88
+      ],
+      "safe": true
+    },
+    "users:124": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "safe": true
+    },
+    "users:125": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "safe": true
+    },
+    "users:126": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "safe": true
+    },
+    "users:127": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        94,
+        95,
+        96,
+        97,
+        98
+      ],
+      "safe": true
+    },
+    "users:128": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        94,
+        95,
+        96,
+        97,
+        98
+      ],
+      "safe": true
+    },
+    "users:129": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        94,
+        95,
+        96,
+        97,
+        98
+      ],
+      "safe": true
+    },
+    "users:130": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        104,
+        105,
+        106,
+        107,
+        108
+      ],
+      "safe": true
+    },
+    "users:131": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        104,
+        105,
+        106,
+        107,
+        108
+      ],
+      "safe": true
+    },
+    "users:132": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        104,
+        105,
+        106,
+        107,
+        108
+      ],
+      "safe": true
+    },
+    "users:133": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "safe": true
+    },
+    "users:134": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "safe": true
+    },
+    "users:135": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "safe": true
+    },
+    "groups:58": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        103,
+        104,
+        105
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:62": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:63": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:64": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:65": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:66": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:67": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:68": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:69": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:70": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:71": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:72": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:73": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:74": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:75": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:76": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:77": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:78": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:79": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:80": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:81": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:82": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:83": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:84": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:85": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:86": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:87": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:88": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:89": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:90": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:91": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:92": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:93": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:94": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:95": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:96": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:97": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:98": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:104": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:105": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:106": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:107": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:108": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:109": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:110": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:111": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:112": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:113": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    }
+  }
+}

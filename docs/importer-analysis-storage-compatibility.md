@@ -44,11 +44,11 @@ biomero_importer.utils.ingest_tracker.IngestionTracking
 
 The initializer receives `{"ingest_tracking_db": <INGEST_TRACKING_DB_URL>}`. The environment variable remains authoritative inside BIOMERO.importer. Orders contain `Group`, `Username`, `DestinationID`, `DestinationType`, `UUID`, `Files`, `FileNames`, and `Description`. `Files` contains the absolute `.analysis` PNG path, `DestinationType` is `Dataset`, and `DestinationID` is the managed `+AnalysisWorkspaces` Dataset ID.
 
-OMERO.Analysis opens `get_ingest_tracker().Session()` and queries `IngestionTracking` by `uuid`, ordering by descending `timestamp` and `id`. It uses model fields `uuid`, `stage`, `destination_id`, `destination_type`, `files`, `file_names`, `description`, and `timestamp`. Only `STAGE_IMPORTED` is successful. `STAGE_INGEST_FAILED` is terminal for that attempt, but its journal is retained for explicit retry. Other stages and a missing row are pending. After success, the Image is found through the importer's `UUID` MapAnnotation and target Dataset membership.
+OMERO.Analysis opens `get_ingest_tracker().Session()` and queries `IngestionTracking` by `uuid`, ordering by descending `timestamp` and `id`. It uses model fields `uuid`, `stage`, `destination_id`, `destination_type`, `files`, `file_names`, `description`, and `timestamp`. Image existence, importer UUID, and target Dataset membership are authoritative. A completed Image repairs a missing terminal tracking event. Failed attempts remain retryable. Missing tracking rows and nonterminal stages expire after the configured timeout; an active, recent import remains pending.
 
 PNG orders are submitted in bounded concurrent batches per Workspace. The default is four active imports and administrators can set `omero.web.analysis.import_max_concurrency` or `OMERO_ANALYSIS_IMPORT_MAX_CONCURRENCY` between 1 and 32. OMERO.Analysis journals every submitted order and waits for capacity before submitting another batch; this provides parallel importer throughput without unbounded queue growth.
 
-A non-terminal tracking stage older than `OMERO_ANALYSIS_IMPORT_TIMEOUT_SECONDS` (default 120 seconds, minimum 30) is exposed as a retryable timeout. This also recovers when an importer process finishes but cannot persist its terminal tracking row.
+A non-terminal tracking stage older than `OMERO_ANALYSIS_IMPORT_TIMEOUT_SECONDS` (default 120 seconds, minimum 30) is exposed as a retryable timeout. Opening Analysis, requesting synchronization status, and planning a new synchronization reconcile the journals. Completed imports outside the published manifest move to recoverable history; a later sync reuses their Images. Superseded failed attempts leave the active queue without discarding their source files. A per-user filesystem lock serializes sync and maintenance across web processes. Busy saves retry automatically.
 
 ## Supported and validated versions
 
@@ -113,7 +113,7 @@ Any failed initial capability check selects legacy synchronization. Once a save 
 
 Blobs and manifests use same-directory temporary files, `fsync`, and atomic rename. Names, hashes, containment, and symlinks are validated. Workspace outputs, Methods, Pipelines, Notebooks, templates, snapshots, encrypted settings bytes, and user skills are durable blobs. Encryption occurs before settings bytes reach `.analysis`. New PNGs are importer-backed Images. Other managed files retain their FileAnnotations, but their OriginalFiles are symlink-backed by the durable `.analysis` blob when `omero-upload` is ready (`storageMode: inplace-annotation`). CSV/SVG FileAnnotations are linked after PNG reconciliation. Missing or disabled support retains a durable blob plus a copied FileAnnotation (`storageMode: hybrid`). In-place source blobs must not be removed while their FileAnnotations exist.
 
-Confirmed managed deletion removes its manifest and garbage-collects a blob only when no workspace, settings, or pending manifest references it. Deletion is constrained to `.analysis/users/<user-id>`.
+Automatic saves and managed deletion prune empty technical directories, but do not garbage-collect immutable source files: an OMERO OriginalFile or an interrupted import can still refer to them. Deletion removes only indexed browsing copies. Manual blob collection fails closed on unreadable manifests and includes pending/history references; operators must additionally verify OMERO references before using it.
 
 Existing content can be inspected or migrated idempotently:
 
@@ -125,6 +125,38 @@ python manage.py backfill_analysis_storage --apply --group-id 7 \
 ```
 
 Optional `--user-id` and `--workspace-id` filters are supported. Authenticate as the target user with `OMERO_USER`/`OMERO_PASSWORD` (or `ROOTPASS`). FileAnnotations are copied byte-for-byte. Existing Images are exported to lossless PNG archives marked `legacy-omero` and `archive-derived`; their Images and OMERO IDs are not replaced. Repeating the command safely deduplicates blobs and atomically replaces manifests.
+
+## Browseable workspace folders and multiple analyses
+
+The user-facing mirror is:
+
+```text
+<group-folder>/.analysis/<username>--<user-id>/+AnalysisWorkspaces/
+  <source-type>-<source-id> — <workspace-name>--<dataset-id>/
+    Input/
+    Methods/
+    Pipelines/
+    Notebooks/
+    Results/
+    Workspace/workspace.oa-workspace.zip
+    Recovered imports/
+    README.txt
+```
+
+Folders appear when they contain files. Names match the managed OMERO Dataset, with its numeric ID preventing collisions. Synchronization refreshes the mirror and removes previously indexed copies after a rename. These are detached browsing copies: editing them does not change OMERO, and the next sync replaces them. The `users/<id>` tree remains the immutable technical store, preserving existing in-place references. Recovered imports contain completed uploads that had not reached a published workspace manifest.
+
+Each source supports multiple workspaces. Choose **New workspace** in the source's Analysis panel or the Analysis header. Names include the readable source hierarchy, for example `SolHunt › Plate A › Field 1 — Analysis 2` or `Study › Measurements — Analysis 1`. **Rename** edits the final label and retains the source prefix. Unqualified existing `Analysis N` names gain their prefix when opened. For multiply linked objects, the readable parent path is chosen deterministically by name and ID. The header selector and source panel open individual workspaces. The browser remembers the last one for each source; explicit links carry `workspace_id`.
+
+Automatic synchronization includes a reusable-workspace snapshot. Resuming it preserves workspace, Method, Pipeline, Notebook, run, and file identities. Assistant conversations and private chat attachments stay browser-local; ordinary local input bytes must be reselected in another browser. Existing workspaces receive their first reusable snapshot on their next synchronization. An explicitly requested workspace without a snapshot reports this requirement instead of opening a different workspace.
+
+For existing data, authenticate with `OMERO_USER` and `OMERO_PASSWORD` in the process environment and run:
+
+```bash
+python manage.py maintain_analysis_storage --dry-run --group-id 0
+python manage.py maintain_analysis_storage --apply --group-id 0
+```
+
+The command operates on that user's managed Project in the selected group. It repairs finished import journals, rebuilds missing storage manifests from OMERO, publishes the readable tree, and removes empty technical directories. It never moves canonical import files. If synchronization is active, it exits with `sync_busy`; retry once the active save finishes. Back up `.analysis` before one-time maintenance.
 
 ## Required integration-test matrix and upgrades
 
