@@ -116,6 +116,24 @@ export function extractOutputNames(code: string): string[] {
   ));
 }
 
+/** Inspect saved pins without rebinding or changing the draft. */
+export function pipelineInputState(pipeline: PipelineRecord, methods: MethodRecord[], files: WorkspaceFile[]) {
+  const available = new Set(files.filter(file => file.state === "ready" && !file.deletedAt)
+    .map(file => file.name));
+  return pipeline.steps.map(step => {
+    const method = methods.find(item => item.id === step.methodId && !item.deletedAt);
+    const version = method?.versions.find(item => item.version === step.methodVersion);
+    const names = [...new Set([...extractInputNames(version?.code || ""), ...Object.keys(step.inputBindings)])];
+    const options = [...available].sort();
+    const bindings = names.map(from => {
+      const to = step.inputBindings[from] || from;
+      return { from, to, missing: !available.has(to) };
+    });
+    if (version) extractOutputNames(version.code).forEach(name => available.add(name));
+    return { stepId: step.id, missingMethod: !version, bindings, options };
+  });
+}
+
 function bindCodeWithCandidates(
   code: string,
   candidates: BindingCandidate[],
@@ -182,7 +200,8 @@ export function isInputBindingsCell(cell: NotebookCell): boolean {
 
 export function bindNotebookInputsStrict(
   document: NotebookDocument,
-  files: WorkspaceFile[]
+  files: WorkspaceFile[],
+  preferred: Record<string, string> = {}
 ): { document: NotebookDocument; bindings: InputBinding[] } {
   if (parseNotebookProtocol(document)) {
     return { document, bindings: [] };
@@ -193,7 +212,7 @@ export function bindNotebookInputsStrict(
     .filter((cell) => !isInputBindingsCell(cell))
     .map((cell) => {
       if (cell.cell_type !== "code") return { ...cell };
-      const rebound = bindCodeWithCandidates(sourceText(cell), candidates);
+      const rebound = bindCodeWithCandidates(sourceText(cell), candidates, preferred);
       bindings.push(...rebound.bindings);
       return { ...cell, source: rebound.code };
     });

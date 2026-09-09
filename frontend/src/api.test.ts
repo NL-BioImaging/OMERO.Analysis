@@ -6,7 +6,7 @@ import {
   providerEndpoint,
   validateProviderConnection
 } from "./api";
-import type { Bootstrap } from "./types";
+import type { Bootstrap, SyncInventory, SyncPlan } from "./types";
 
 const bootstrap: Bootstrap = {
   context: {
@@ -47,6 +47,26 @@ const bootstrap: Bootstrap = {
 };
 
 describe("OMERO capability renewal", () => {
+  it.each([undefined, "concat-v1"] as const)("preserves legacy uploads and supports one-file bundles (%s)", async payloadEncoding => {
+    const data = new Uint8Array([1, 2, 3]);
+    let form: FormData | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/token/") return new Response(JSON.stringify({ context_token: "test", operations: ["sync_apply"] }));
+      form = init?.body as FormData;
+      return new Response(JSON.stringify({ schema: "nl.bioimaging.analysis.sync.status.v1", canSync: true,
+        linked: true, remoteRevision: 1, inventoryDigest: "digest" }));
+    }));
+    const bridge = new OmeroBridge(bootstrap);
+    await bridge.connect();
+    const inventory = { workspace: { id: "one" }, items: [{ key: "a", name: "a.csv", mimetype: "text/csv" },
+      { key: "b", name: "b.csv", mimetype: "text/csv" }] } as SyncInventory;
+    await bridge.applyWorkspaceSync(inventory, { planToken: "signed", uploadKeys: ["a", "b"], payloadEncoding } as SyncPlan,
+      new Map([["a", data], ["b", data]]));
+    expect(form?.getAll("payload_bundle")).toHaveLength(payloadEncoding ? 1 : 0);
+    expect(form?.getAll("payloads")).toHaveLength(payloadEncoding ? 0 : 2);
+    expect(form?.get("payload_keys")).toBe('["a","b"]');
+    if (payloadEncoding) expect((form?.get("payload_bundle") as File).size).toBe(6);
+  });
   it("lists the supported attachments for the active OMERO object", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

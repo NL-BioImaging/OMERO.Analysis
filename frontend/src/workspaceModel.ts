@@ -1,4 +1,23 @@
-import type { AnalysisWorkspace, ChatRecord, WorkspaceFile } from "./types";
+import type { AnalysisWorkspace, ChatRecord, WorkspaceFile, OmeroContext } from "./types";
+
+export function workspaceSourcePrefix(context: OmeroContext | null): string {
+  if (!context) return "";
+  return (context.source_path?.length ? context.source_path.map(item => item.name) : [context.name])
+    .map(name => name.replace(/[\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim())
+    .join(" › ");
+}
+
+export function workspaceNameSuffix(context: OmeroContext | null, name: string): string {
+  const prefix = workspaceSourcePrefix(context);
+  return prefix && name.startsWith(`${prefix} — `) ? name.slice(prefix.length + 3) : name;
+}
+
+export function scopedWorkspaceName(context: OmeroContext | null, name: string): string {
+  const suffix = normalizeWorkspaceName(workspaceNameSuffix(context, name));
+  if (!suffix) throw new Error("Workspace name cannot be empty");
+  const prefix = workspaceSourcePrefix(context);
+  return prefix ? `${prefix} — ${suffix}` : suffix;
+}
 
 export function groupChatResults(
   files: WorkspaceFile[],
@@ -39,13 +58,16 @@ export function normalizeWorkspaceName(value: string): string {
 export function renameAnalysisWorkspace(
   workspace: AnalysisWorkspace,
   requestedName: string,
-  updatedAt: string
+  updatedAt: string,
+  context?: OmeroContext | null
 ): AnalysisWorkspace {
-  const name = normalizeWorkspaceName(requestedName);
+  const name = context ? scopedWorkspaceName(context, requestedName) : normalizeWorkspaceName(requestedName);
   if (!name) throw new Error("Workspace name cannot be empty");
   const previousRoot = workspace.workspace.rootPath;
   const objectRoot = previousRoot.split("--", 1)[0] || "OMERO/Local";
-  const rootPath = `${objectRoot}--${workspaceSlug(name)}`;
+  // The object ID already scopes this path. Keep the distinguishing label
+  // when a long source prefix would otherwise consume the entire slug.
+  const rootPath = `${objectRoot}--${workspaceSlug(context ? workspaceNameSuffix(context, name) : name)}`;
   const files = workspace.files.map((file) => ({
     ...file,
     logicalPath: file.logicalPath.startsWith(`${previousRoot}/`)

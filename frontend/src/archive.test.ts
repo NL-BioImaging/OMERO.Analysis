@@ -222,3 +222,22 @@ describe("workspace archive", () => {
     await expect(importWorkspace(asArrayBuffer(bomb))).rejects.toThrow(/512 MiB/);
   });
 });
+
+it("resumes a synchronized workspace without changing its identity or logical paths", async () => {
+  const original = await workspace();
+  const restored = await importWorkspace(asArrayBuffer(exportWorkspace(original, 1024 * 1024).data), {
+    object_type: "Screen", object_id: 101, name: "Test", user_id: 7, group_id: 4,
+    can_annotate: true, selected_attachments: []
+  }, "workspace");
+  expect(restored.workspace.id).toBe(original.workspace.id);
+  expect(restored.workspace.name).toBe(original.workspace.name);
+  expect(restored.files.map(item => item.id)).toEqual(original.files.map(item => item.id));
+  expect(restored.files.map(item => item.logicalPath)).toEqual(original.files.map(item => item.logicalPath));
+  expect(restored.chats[0].id).toBe(original.chats[0].id);
+  expect(restored.workspace.createdAt).toBe(original.workspace.createdAt);
+  expect(restored.pipelines.map(item => item.steps)).toEqual(original.pipelines.map(item => item.steps));
+  await expect(importWorkspace(asArrayBuffer(exportWorkspace(original, 1024 * 1024).data), {
+    object_type: "Screen", object_id: 101, name: "Test", user_id: 8, group_id: 4,
+    can_annotate: true, selected_attachments: []
+  }, "workspace")).rejects.toThrow(/identity/);
+});

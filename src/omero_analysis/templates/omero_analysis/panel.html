@@ -1,5 +1,6 @@
 <section class="oa-object"
          data-panel-kind="{{ context.panel_kind }}"
+         data-workspace-id="{{ context.workspace_summary.workspace_id }}"
          data-object-type="{{ context.object_type }}"
          data-object-id="{{ context.object_id }}"
          data-analysis-object-type="{% if context.workspace_summary %}{{ context.workspace_summary.source_type }}{% else %}{{ context.object_type }}{% endif %}"
@@ -15,7 +16,7 @@
         {% elif context.panel_kind == "workspace-library" %}Managed Analysis library
         {% elif context.panel_kind == "guidance" %}OMERO Analysis
         {% elif context.selection_count %}New selection Workspace
-        {% else %}New Analysis Workspace{% endif %}
+        {% else %}Analysis Workspaces{% endif %}
       </span>
       <h2>
         {% if context.panel_kind == "workspace" %}{{ context.workspace_summary.workspace_name }}
@@ -44,6 +45,15 @@
   </header>
 
   {% if context.panel_kind == "source" %}
+    <section class="oa-card">
+      <h3>Workspaces for this {{ context.object_type }}</h3>
+      <p>Keep separate analyses, inputs and results. Workspaces can be renamed in Analysis.</p>
+      {% for workspace in context.analysis_workspaces %}
+        <p><button class="oa-button oa-resume-workspace" type="button" data-workspace-id="{{ workspace.workspaceId }}">Open {{ workspace.workspaceName }}</button>
+        <small>Revision {{ workspace.revision }} · {{ workspace.syncStatus.syncState }}</small></p>
+      {% empty %}<p>No synchronized workspaces yet.</p>{% endfor %}
+      <button class="oa-button oa-new-workspace" type="button">New workspace</button>
+    </section>
     <div class="oa-actions">
       <button class="oa-button oa-button-primary oa-open-analysis" type="button">
         <span aria-hidden="true">&#8599;</span>

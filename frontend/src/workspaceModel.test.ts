@@ -3,6 +3,8 @@ import {
   groupChatResults,
   normalizeWorkspaceName,
   renameAnalysisWorkspace,
+  scopedWorkspaceName,
+  workspaceNameSuffix,
   trashWorkspaceOutputs
 } from "./workspaceModel";
 
@@ -60,6 +62,24 @@ const workspace = {
 } satisfies AnalysisWorkspace;
 
 describe("workspace renaming", () => {
+  it("keeps the full source path when naming and renaming an analysis", () => {
+    const context = { object_type: "Image" as const, object_id: 3, name: "Field 1",
+      user_id: 7, group_id: 4, can_annotate: true, selected_attachments: [],
+      source_path: [{ type: "Screen", id: 1, name: "SolHunt" },
+        { type: "Plate", id: 2, name: "Plate A" }, { type: "Image", id: 3, name: "Field 1" }] };
+    const name = scopedWorkspaceName(context, "Analysis 2");
+    expect(name).toBe("SolHunt › Plate A › Field 1 — Analysis 2");
+    expect(scopedWorkspaceName(context, name)).toBe(name);
+    expect(workspaceNameSuffix(context, name)).toBe("Analysis 2");
+    expect(scopedWorkspaceName({ ...context, source_path: [{ type: "Image", id: 3, name: "B/2/0" }] }, "Analysis 1"))
+      .toBe("B/2/0 — Analysis 1");
+    const renamed = renameAnalysisWorkspace(workspace, "Cell counts", "2026-09-09T12:00:00Z", context);
+    expect(renamed.workspace.name).toBe("SolHunt › Plate A › Field 1 — Cell counts");
+    const long = { ...context, source_path: [{ type: "Screen", id: 1, name: "S".repeat(110) }] };
+    expect(scopedWorkspaceName(long, "Analysis 1")).toBe(`${"S".repeat(110)} — Analysis 1`);
+    expect(renameAnalysisWorkspace(workspace, "Analysis 1", "now", long).workspace.rootPath)
+      .not.toBe(renameAnalysisWorkspace(workspace, "Analysis 2", "now", long).workspace.rootPath);
+  });
   it("normalizes unsafe names", () => {
     expect(normalizeWorkspaceName("  New / analysis\\workspace  ")).toBe(
       "New analysis workspace"

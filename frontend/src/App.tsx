@@ -1,3 +1,6 @@
+import { trashBlockers, purgeBlockers, pipelineRestoreBlockers, type TrashKind } from "./artifactLifecycle";
+import { editorDraft } from "./editorDraft";
+import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import {
   lazy,
   Suspense,
@@ -71,6 +74,7 @@ import {
   deleteNotebook as deleteStoredNotebook,
   getValue,
   listContextWorkspaces,
+  contextKey,
   loadOrCreateWorkspace,
   loadWorkspace,
   newChat,
@@ -249,6 +253,8 @@ import {
   groupChatResults,
   normalizeWorkspaceName,
   renameAnalysisWorkspace,
+  scopedWorkspaceName,
+  workspaceNameSuffix,
   trashWorkspaceOutputs
 } from "./workspaceModel";
 import {
@@ -818,6 +824,9 @@ export default function App() {
     else url.searchParams.delete("runId");
     window.history.replaceState({}, "", url);
     setSelectedRunId(runId);
+    const run = workspaceRef.current?.runs.find(item => item.id === runId);
+    if (run?.kind === "method") setHomeMethodId(run.artifactId);
+    if (run?.kind === "pipeline") setHomePipelineId(run.artifactId);
   }
 
   function toggleTheme() {
@@ -948,7 +957,22 @@ export default function App() {
   const trashedFiles = (analysisWorkspace?.files || []).filter((file) => Boolean(file.deletedAt));
   const activeMethods = (analysisWorkspace?.methods || []).filter((method) => !method.deletedAt);
   const activePipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => !pipeline.deletedAt);
-  const activeNotebooks = analysisWorkspace?.notebooks || [];
+  const activeNotebooks = (analysisWorkspace?.notebooks || []).filter(item => !item.deletedAt);
+  const trashedNotebooks = (analysisWorkspace?.notebooks || []).filter(item => item.deletedAt);
+  const [showTrash, setShowTrash] = useState(false);
+  const [browserSaving, setBrowserSaving] = useState(false);
+  const [browserSaveError, setBrowserSaveError] = useState("");
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ pending: number; error?: string }>).detail;
+      setBrowserSaving(detail.pending > 0);
+      if (detail.error) setBrowserSaveError(detail.error);
+    };
+    window.addEventListener("analysis-storage-state", listener);
+    return () => window.removeEventListener("analysis-storage-state", listener);
+  }, []);
+  const savingMethodExecutions = useRef(new Set<string>());
+  const restoringResults = useRef(new Map<string, Promise<WorkspaceFile>>());
   const activeRunKind = runKindForTab(activeTab);
   const visibleRuns = (analysisWorkspace?.runs || []).filter((run) =>
     !activeRunKind || run.kind === activeRunKind
@@ -965,6 +989,16 @@ export default function App() {
   const selectedRunFiles = selectedRun
     ? outputFiles.filter((file) => file.runId === selectedRun.id)
     : [];
+  useEffect(() => {
+    const wanted = (analysisWorkspace?.files || []).filter(file =>
+      file.id === selectedArtifactFileId || Boolean(selectedRun) && file.runId === selectedRun?.id && file.type.startsWith("image/"));
+    for (const file of wanted) {
+      if (!file.data && file.remoteResult && !file.error) void restoreResult(file).catch(error => {
+        if (workspaceRef.current?.workspace.id === file.workspaceId) upsertFiles([{ ...file, error: String(error) }]);
+        setStatus(`Result recovery failed: ${String(error)}`);
+      });
+    }
+  }, [analysisWorkspace?.files, selectedArtifactFileId, selectedRun?.id]);
   const trashedMethods = (analysisWorkspace?.methods || []).filter((method) => Boolean(method.deletedAt));
   const trashedPipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => Boolean(pipeline.deletedAt));
   const canChat =
@@ -1040,7 +1074,8 @@ export default function App() {
       )
     );
     return JSON.stringify({
-      workspace: [analysisWorkspace.workspace.id, analysisWorkspace.workspace.name],
+      workspace: [analysisWorkspace.workspace.id, analysisWorkspace.workspace.name, analysisWorkspace.workspace.revision,
+        analysisWorkspace.workspace.lifecycleRevision || 0, analysisWorkspace.workspace.deletedAt || null],
       methods: analysisWorkspace.methods.map((item) =>
         [item.id, item.currentVersion, item.updatedAt, item.deletedAt || null]
       ),
@@ -1048,7 +1083,7 @@ export default function App() {
         [item.id, item.version, item.updatedAt, item.deletedAt || null]
       ),
       notebooks: analysisWorkspace.notebooks.map((item) =>
-        [item.id, item.name, item.updatedAt]
+        [item.id, item.name, item.updatedAt, item.deletedAt || null]
       ),
       files: reusableFiles.map((item) => [
         item.id, item.name, item.logicalPath, item.sha256, item.size,
@@ -1076,31 +1111,40 @@ export default function App() {
     }
     let cancelled = false;
     const delay = workspaceSyncDeferredForRun.current ? 0 : 1000;
-    const timer = window.setTimeout(() => {
+    let timer: number;
+    let attempts = 0;
+    const check = () => {
       workspaceSyncDeferredForRun.current = false;
       void Promise.all([
         buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!),
         bridge.syncStatus(analysisWorkspace.workspace.id)
       ]).then(async ([payload, remote]) => {
         if (cancelled) return;
-        setLocalSyncDigest(payload.inventory.digest);
+        setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
         setRemoteSync(remote);
         setSyncError("");
+        await observeLifecycle(remote);
+        if (remote.lifecycle && !["active", "unavailable"].includes(remote.lifecycle)) return;
         if (remoteWorkspaceWasDeleted(analysisWorkspace.workspace, remote)) {
           await discardWorkspaceDeletedInOmero(analysisWorkspace.workspace);
           return;
         }
         if (remote.canSync && (payload.inventory.items.length > 0 || remote.linked) &&
           (!remote.linked || syncHasChanges(
-          payload.inventory.digest,
+          payload.contentDigest || payload.inventory.digest,
           remote.inventoryDigest
         ))) {
           await synchronizeWorkspace(payload);
         }
       }).catch((error) => {
-        if (!cancelled) setSyncError(String(error));
+        if (cancelled) return;
+        if (error instanceof OmeroApiError && error.code === "sync_busy" && attempts++ < 12) {
+          setStatus("Waiting for another workspace synchronization to finish…");
+          timer = window.setTimeout(check, 2500);
+        } else setSyncError(String(error));
       });
-    }, delay);
+    };
+    timer = window.setTimeout(check, delay);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -1113,22 +1157,40 @@ export default function App() {
     }
   }, []);
 
+  async function observeLifecycle(remote: SyncStatus) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const state = remote.lifecycle;
+    if (!state || state === "unavailable") return;
+    const deletedAt = state === "active" ? undefined : current.workspace.deletedAt || now();
+    const revision = remote.lifecycleRevision || 0;
+    if (revision < (current.workspace.lifecycleRevision || 0)) return;
+    if (current.workspace.lifecycleRevision === revision && current.workspace.deletedAt === deletedAt) return;
+    const next = { ...current, workspace: { ...current.workspace, deletedAt,
+      purgedAt: state === "purged" ? current.workspace.purgedAt || now() : undefined, lifecycleRevision: revision } };
+    workspaceRef.current = next; setWorkspace(next);
+    await saveWorkspaceRecord(next.workspace);
+    if (state !== "active") setStatus("Workspace lifecycle changed. Local work is preserved; review Manage workspaces.");
+  }
+
   useEffect(() => {
     const workspaceRecord = analysisWorkspace?.workspace;
-    if (!workspaceRecord?.omeroSync || !bootstrap.context) return;
+    if (!workspaceRecord) return;
     let disposed = false;
     let checking = false;
     const checkRemoteWorkspace = async () => {
-      if (disposed || checking || remoteDeletionInFlight.current) return;
+      if (disposed || checking || remoteDeletionInFlight.current || !workspaceRecord.omeroSync || !bootstrap.context) return;
       checking = true;
       try {
         const remote = await bridge.syncStatus(workspaceRecord.id);
         if (disposed) return;
+        await observeLifecycle(remote);
         if (remoteWorkspaceWasDeleted(workspaceRecord, remote)) {
           await discardWorkspaceDeletedInOmero(workspaceRecord);
           return;
         }
         setRemoteSync(remote);
+        await observeLifecycle(remote);
       } catch (error) {
         // A failed probe is not evidence of deletion. Keep all local data and
         // allow the normal sync status UI to report transport failures.
@@ -1141,12 +1203,31 @@ export default function App() {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") void checkRemoteWorkspace();
     };
+    const channel = new BroadcastChannel("omero-analysis-lifecycle");
+    channel.onmessage = event => {
+      if (event.data?.id !== workspaceRecord.id) return;
+      void (async () => {
+        const stored = await loadWorkspace(workspaceRecord.id);
+        const current = workspaceRef.current;
+        if (disposed || current?.workspace.id !== workspaceRecord.id) return;
+        // Apply local lifecycle changes as well, including workspaces never synced.
+        // An explicit purge closes editing without recreating the deleted record.
+        if (stored || event.data.action === "purge") {
+          const record = stored?.workspace || { ...current.workspace, deletedAt: now(), purgedAt: now() };
+          const next = { ...current, workspace: record };
+          workspaceRef.current = next; setWorkspace(next);
+        }
+        await checkRemoteWorkspace();
+      })();
+    };
+    void checkRemoteWorkspace();
     const timer = window.setInterval(() => void checkRemoteWorkspace(), 30_000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       disposed = true;
       window.clearInterval(timer);
+      channel.close();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
@@ -1192,7 +1273,16 @@ export default function App() {
       ]);
       let localWorkspacesAtStart = storedContextWorkspaces;
       setWorkspaceProgress({ percent: 15, message: "Loading the current Workspace record…" });
-      let baseWorkspace = await loadOrCreateWorkspace(bootstrap.context);
+      const launch = new URL(window.location.href);
+      const newId = launch.searchParams.get("new_workspace");
+      const activeWorkspaceKey = `active-workspace:${await contextKey(bootstrap.context)}`;
+      const requestedId = launch.searchParams.get("workspace_id") || (!newId ? await getValue<string>(activeWorkspaceKey) : null);
+      const names = storedContextWorkspaces.map(item => item.name);
+      let number = storedContextWorkspaces.length + 1;
+      while (names.includes(scopedWorkspaceName(bootstrap.context, `Analysis ${number}`))) number++;
+      const selectedLocal = !newId && storedContextWorkspaces.find(item => item.id === requestedId);
+      let baseWorkspace = selectedLocal ? (await loadWorkspace(selectedLocal.id))! :
+        await loadOrCreateWorkspace(bootstrap.context, newId || undefined, newId ? `Analysis ${number}` : undefined);
       if (!alive) return;
       if (!bootstrap.embeddedHost && (savedTheme === "dark" || savedTheme === "light")) {
         setTheme(savedTheme);
@@ -1291,10 +1381,19 @@ export default function App() {
           );
         }
       }
+      if (newId && !storedContextWorkspaces.some(item => item.contextKey.endsWith(`:workspace:${newId}`))) {
+        const remoteNames = (await bridge.workspaceLibrary()).filter(item =>
+          item.sourceObjectType === bootstrap.context?.object_type && item.sourceObjectId === bootstrap.context?.object_id
+        );
+        const used = new Set([...names, ...remoteNames.map(item => item.workspaceName)]);
+        number = Math.max(storedContextWorkspaces.length, remoteNames.length) + 1;
+        while (used.has(scopedWorkspaceName(bootstrap.context, `Analysis ${number}`))) number++;
+        baseWorkspace = await replaceWorkspace(renameAnalysisWorkspace(baseWorkspace, `Analysis ${number}`, now(), bootstrap.context));
+      }
       let initial = baseWorkspace;
       let automaticRestoreMessage = "";
       const requestedSnapshot = bootstrap.context?.selected_workspace_snapshot;
-      if (requestedSnapshot) {
+      if (requestedSnapshot && !newId && !localWorkspacesAtStart.some(item => item.id === requestedId)) {
         setWorkspaceProgress({ percent: 55, message: "Restoring the selected Analysis Workspace…" });
         const localWorkspaces = await listContextWorkspaces(bootstrap.context);
         const existing = localWorkspaces.find(
@@ -1323,20 +1422,24 @@ export default function App() {
         }
       } else if (
         bootstrap.context &&
-        localWorkspacesAtStart.length === 0
+        !newId && (Boolean(requestedId) || localWorkspacesAtStart.length === 0) &&
+        !localWorkspacesAtStart.some(item => item.id === requestedId)
       ) {
         try {
           const candidates = (await bridge.workspaceLibrary())
             .filter((dataset) =>
               dataset.sourceObjectType === bootstrap.context!.object_type &&
               dataset.sourceObjectId === bootstrap.context!.object_id &&
-              Boolean(dataset.snapshot)
+              Boolean(dataset.snapshot) && (!requestedId || dataset.workspaceId === requestedId)
             )
             .sort((left, right) =>
               Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
               right.revision - left.revision
             );
           const latest = candidates[0];
+          if (!latest?.snapshot && launch.searchParams.has("workspace_id")) {
+            throw new Error("This workspace has no saved snapshot. Open it in its original browser and synchronize it first.");
+          }
           if (latest?.snapshot) {
             setWorkspaceProgress({
               percent: 55,
@@ -1344,7 +1447,7 @@ export default function App() {
             });
             const imported = await importWorkspace(
               await bridge.downloadLibraryItem(latest.snapshot.annotationId),
-              bootstrap.context
+              bootstrap.context, latest.workspaceId
             );
             if (
               imported.workspace.objectType !== bootstrap.context.object_type ||
@@ -1353,16 +1456,26 @@ export default function App() {
               throw new Error("The synchronized Workspace belongs to a different OMERO object");
             }
             initial = await replaceWorkspace(imported);
-            if (baseWorkspace.workspace.id !== initial.workspace.id) {
+            if (baseWorkspace.workspace.id !== initial.workspace.id &&
+                !storedContextWorkspaces.some(item => item.id === baseWorkspace.workspace.id)) {
               await deleteWorkspaceCascade(baseWorkspace.workspace.id);
             }
             automaticRestoreMessage =
               `Restored the latest synchronized Workspace from ${latest.datasetName}`;
           }
         } catch (error) {
+          if (launch.searchParams.has("workspace_id")) {
+            if (!storedContextWorkspaces.some(item => item.id === baseWorkspace.workspace.id)) {
+              await deleteWorkspaceCascade(baseWorkspace.workspace.id);
+            }
+            throw error;
+          }
           console.warn("Automatic AnalysisWorkspace restore was skipped", error);
           automaticRestoreMessage = `Automatic Workspace restore was skipped: ${String(error)}`;
         }
+      }
+      if (/^Analysis \d+$/.test(initial.workspace.name)) {
+        initial = await replaceWorkspace(renameAnalysisWorkspace(initial, initial.workspace.name, now(), bootstrap.context));
       }
       setWorkspaceProgress({ percent: 68, message: "Loading attached Notebooks…" });
       for (const attached of bootstrap.context?.notebooks || []) {
@@ -1433,6 +1546,7 @@ export default function App() {
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
+      await setValue(activeWorkspaceKey, prepared.workspace.id);
       setWorkspaceProgress({ percent: 94, message: "Finishing the Analysis interface…" });
       setPipelineTemplates(await bridge.listPipelineTemplates());
       if (alive) {
@@ -3261,26 +3375,10 @@ export default function App() {
   }
 
   async function removeNotebook(record: NotebookRecord) {
-    if (!await dialogs.confirm(
-      "Delete notebook?",
-      `${record.name} and its browser-stored outputs will be removed from this Workspace. OMERO FileAnnotations are not deleted.`,
-      "Delete notebook",
-      true
-    )) return;
-    const current = workspaceRef.current;
-    if (!current) return;
-    const notebooks = current.notebooks.filter((notebook) => notebook.id !== record.id);
-    const next = { ...current, notebooks };
-    workspaceRef.current = next;
-    setWorkspace(next);
-    if (activeNotebookId === record.id) {
-      setActiveNotebookId(notebooks[0]?.id || null);
-    }
-    if (inspectorSelection?.kind === "notebook" && inspectorSelection.id === record.id) {
-      setInspectorSelection({ kind: "folder", id: "notebooks" });
-    }
-    await deleteStoredNotebook(record.id);
-    setStatus(`Deleted notebook ${record.name}`);
+    if (!await dialogs.confirm("Move Notebook to Trash?", `${record.name} and its history remain recoverable.`, "Move to Trash", true)) return;
+    await updateNotebook({ ...record, deletedAt: now(), updatedAt: now() });
+    setActiveNotebookId(null);
+    setStatus(`Moved ${record.name} to Trash`);
   }
 
   async function updateNotebook(record: NotebookRecord) {
@@ -3869,6 +3967,16 @@ export default function App() {
     window.addEventListener("mouseup", stop);
   }
 
+  function openAnalysisWorkspace(id?: string) {
+    if (syncing || busy || editorSession?.dirty) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("new_workspace");
+    url.searchParams.delete("workspace_id");
+    url.searchParams.delete("workspace_annotation");
+    url.searchParams.set(id ? "workspace_id" : "new_workspace", id || crypto.randomUUID());
+    window.location.assign(url);
+  }
+
   async function refreshWorkspace() {
     if (!workspace) return;
     setBrowserMenu(null);
@@ -3882,18 +3990,48 @@ export default function App() {
     await syncRuntimeIfStarted(prepared.files, "Workspace refreshed");
   }
 
+  async function changeWorkspaceLifecycle(identifier: string, action: "trash" | "restore" | "purge") {
+    const local = await loadWorkspace(identifier);
+    const name = local?.workspace.name || identifier;
+    if (action !== "restore" && !await dialogs.confirm(action === "trash" ? "Move workspace to Trash?" : "Delete workspace permanently?",
+      action === "trash" ? `${name} can be restored later.` : `${name}: managed results and reusable analyses will be removed. Unrelated OMERO content is preserved.`,
+      action === "trash" ? "Move to Trash" : "Delete permanently", true)) return;
+    const remote = bootstrap.context ? await bridge.syncStatus(identifier) : null;
+    let result = remote;
+    if (remote?.linked || (remote?.lifecycle && !["active", "unavailable"].includes(remote.lifecycle))) {
+      result = await bridge.changeWorkspaceLifecycle(identifier, action, remote.lifecycleRevision || 0);
+      if (result.cleanup && !result.cleanup.complete) throw new Error("Cleanup is incomplete. Its journal is retained; retry Delete permanently.");
+    } else if (local?.workspace.omeroSync) {
+      throw new Error("Remote workspace is unavailable. Local data is preserved; restore its access or linkage first.");
+    }
+    if (local) {
+      const record = { ...local.workspace, deletedAt: action === "restore" ? undefined : now(),
+        purgedAt: action === "purge" ? now() : undefined, lifecycleRevision: result?.lifecycleRevision || 0,
+        browserLifecycleRevision: (local.workspace.browserLifecycleRevision || 0) + 1 };
+      if (action === "purge") await deleteWorkspaceCascade(identifier, true);
+      else await saveWorkspaceRecord(record);
+      if (workspaceRef.current?.workspace.id === identifier) {
+        const current = { ...workspaceRef.current, workspace: record };
+        workspaceRef.current = current; setWorkspace(current);
+      }
+    }
+    const channel = new BroadcastChannel("omero-analysis-lifecycle");
+    channel.postMessage({ id: identifier, action }); channel.close();
+    setStatus(action === "restore" ? "Workspace restored" : action === "trash" ? "Workspace moved to Trash" : "Workspace permanently removed");
+  }
+
   async function renameWorkspace(target: WorkspaceRecord) {
     const requested = await dialogs.askText(
       "Rename workspace",
-      target.name,
-      "This changes the browser-local workspace name and logical workspace folder. OMERO object and attachment names are unchanged."
+      workspaceNameSuffix(bootstrap.context, target.name),
+      "Rename the analysis label. Its full source path stays as a fixed prefix. The name updates in OMERO and the disk browsing folder on the next synchronization."
     );
     if (requested == null) return;
-    const name = normalizeWorkspaceName(requested);
-    if (!name) {
+    if (!normalizeWorkspaceName(requested)) {
       setStatus("Workspace name cannot be empty");
       return;
     }
+    const name = scopedWorkspaceName(bootstrap.context, requested);
     if (name === target.name) return;
     const siblings = await listContextWorkspaces(bootstrap.context);
     if (siblings.some((item) =>
@@ -3911,7 +4049,7 @@ export default function App() {
       setStatus("The browser-local workspace could not be loaded");
       return;
     }
-    const renamed = renameAnalysisWorkspace(targetWorkspace, name, now());
+    const renamed = renameAnalysisWorkspace(targetWorkspace, name, now(), bootstrap.context);
     if (siblings.some((item) =>
       item.id !== target.id &&
       item.rootPath.toLocaleLowerCase() === renamed.workspace.rootPath.toLocaleLowerCase()
@@ -5663,6 +5801,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function saveAsMethod(execution: ExecutionRecord) {
+    if (savingMethodExecutions.current.has(execution.id)) return;
+    savingMethodExecutions.current.add(execution.id);
+    try { await saveAsMethodOnce(execution); }
+    catch (error) { setStatus(`Save Method failed: ${String(error)}`); }
+    finally { savingMethodExecutions.current.delete(execution.id); }
+  }
+
+  async function saveAsMethodOnce(execution: ExecutionRecord) {
     const current = workspaceRef.current;
     if (
       busy ||
@@ -5715,6 +5861,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const existing = current.methods.find((method) =>
       !method.deletedAt && method.name.toLowerCase() === safeName.toLowerCase()
     );
+    if (existing?.versions.some(version => version.executionId === execution.id && version.codeHash === scriptHash) &&
+        !await dialogs.confirm("Save another Method version?", "This execution is already saved in this Method. Create an additional version intentionally?", "Create version")) return;
+    if (workspaceRef.current?.workspace.id !== current.workspace.id) throw new Error("Workspace changed while saving");
     const zarrRequired = current.artifacts.some((artifact) =>
       artifact.chatId === execution.chatId &&
       artifact.promptId === execution.promptId &&
@@ -5926,6 +6075,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setEditorSession(null);
       editorRoute();
     }
+    setHomeMethodId(method.id);
     setActiveTab("methods");
     const version = method.versions.find((item) => item.version === requestedVersion);
     if (!version) return;
@@ -6088,10 +6238,16 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function removeMethod(method: MethodRecord) {
+    const blockers = workspaceRef.current ? trashBlockers(workspaceRef.current, "method", method.id) : [];
+    if (blockers.length) {
+      await dialogs.alert("Method is used by Pipelines", `Replace this Method or move these Pipelines to Trash first: ${blockers.join(", ")}`);
+      return;
+    }
+
     if (!await dialogs.confirm(
-      "Delete saved method?",
+      "Move Method to Trash?",
       `${method.name} and all of its versions will be moved out of the active workspace.`,
-      "Delete method",
+      "Move to Trash",
       true
     )) {
       return;
@@ -6279,6 +6435,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setEditorSession(null);
       editorRoute();
     }
+    setHomePipelineId(pipeline.id);
     setActiveTab("pipelines");
     setBusy(true);
     const runId = id();
@@ -6463,9 +6620,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
 
   async function removePipeline(pipeline: PipelineRecord) {
     if (!await dialogs.confirm(
-      "Delete pipeline?",
+      "Move Pipeline to Trash?",
       `${pipeline.name} will be moved to workspace trash. Its source methods remain available.`,
-      "Delete pipeline",
+      "Move to Trash",
       true
     )) return;
     const current = workspaceRef.current;
@@ -6479,6 +6636,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setWorkspace(updated);
     await savePipeline(deleted);
     setStatus(`Moved pipeline ${pipeline.name} to workspace trash`);
+  }
+
+  async function purgeArtifact(kind: TrashKind, identifier: string) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const blockers = purgeBlockers(current, kind, identifier);
+    if (blockers.length) { await dialogs.alert("Preserved for provenance", blockers.join(", ")); return; }
+    if (!await dialogs.confirm("Delete permanently?", "This item will no longer be recoverable from Trash.", "Delete permanently", true)) return;
+    const field = kind === "method" ? "methods" : kind === "pipeline" ? "pipelines" : kind === "notebook" ? "notebooks" : "files";
+    const updated = { ...current, [field]: current[field].filter(item => item.id !== identifier) };
+    const stored = await replaceWorkspace(updated);
+    workspaceRef.current = stored; setWorkspace(stored);
+    setStatus("Permanently removed unreferenced item");
   }
 
   async function restoreTrashedFile(file: WorkspaceFile) {
@@ -6504,6 +6674,11 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   async function restoreTrashedPipeline(pipeline: PipelineRecord) {
     const current = workspaceRef.current;
     if (!current) return;
+    const blockers = pipelineRestoreBlockers(current, pipeline.id);
+    if (blockers.length) {
+      await dialogs.alert("Restore required Methods first", blockers.join(", "));
+      return;
+    }
     const restored = { ...pipeline, deletedAt: undefined, updatedAt: now() };
     const updated = {
       ...current,
@@ -6577,8 +6752,25 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function downloadFile(file: WorkspaceFile) {
-    if (file.data) downloadBytes(file.name, file.data, file.type);
+  async function restoreResult(file: WorkspaceFile): Promise<WorkspaceFile> {
+    if (file.data || !file.remoteResult) return file;
+    const pending = restoringResults.current.get(file.id);
+    if (pending) return pending;
+    const task = bridge.downloadWorkspaceResult(file.remoteResult).then(data => {
+      const ready = { ...file, data, state: "ready" as const, error: undefined };
+      if (workspaceRef.current?.workspace.id === file.workspaceId) upsertFiles([ready]);
+      return ready;
+    }).finally(() => restoringResults.current.delete(file.id));
+    restoringResults.current.set(file.id, task);
+    return task;
+  }
+
+  async function downloadFile(file: WorkspaceFile) {
+    try {
+      const ready = await restoreResult(file);
+      if (!ready.data) throw new Error("Result bytes are unavailable");
+      downloadBytes(ready.name, ready.data, ready.type);
+    } catch (error) { setStatus(`Download failed: ${String(error)}`); }
   }
 
   function downloadMethod(method: MethodRecord) {
@@ -6671,7 +6863,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       "Attach result"
     )) return;
     try {
-      const result = await bridge.attach(file);
+      const result = await bridge.attach(await restoreResult(file));
       setStatus(`Attached ${result.name} as FileAnnotation ${result.annotation_id}`);
     } catch (error) {
       setStatus(`Attach failed: ${String(error)}`);
@@ -6681,10 +6873,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   async function createArchive() {
     const current = workspaceRef.current;
     if (!current) throw new Error("Workspace is not ready");
-    return exportWorkspace(
-      current,
-      bootstrap.context?.max_snapshot_bytes ?? DEFAULT_MAX_SNAPSHOT_BYTES
-    );
+    const limit = bootstrap.context?.max_snapshot_bytes ?? DEFAULT_MAX_SNAPSHOT_BYTES;
+    const required = current.files.filter(file => file.remoteResult && !file.data);
+    if (required.reduce((sum, file) => sum + file.size, 0) > limit) {
+      throw new Error("Portable download exceeds the configured size limit. Download individual results instead.");
+    }
+    const files = [];
+    for (const file of current.files) files.push(await restoreResult(file));
+    return exportWorkspace({ ...current, files }, limit);
   }
 
   async function downloadArchive() {
@@ -6702,26 +6898,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function discardWorkspaceDeletedInOmero(record: WorkspaceRecord) {
-    if (remoteDeletionInFlight.current) return;
-    remoteDeletionInFlight.current = true;
-    setWorkspacePreparing(true);
-    setWorkspaceProgress({
-      percent: 20,
-      message: `Removing ${record.name} because it was deleted in OMERO…`
-    });
-    setStatus(`Removing ${record.name}; its synchronized OMERO Workspace was deleted`);
-    try {
-      await deleteWorkspaceCascade(record.id);
-      if (workspaceRef.current?.workspace.id === record.id) {
-        workspaceRef.current = null;
-        setWorkspace(null);
-      }
-      window.location.reload();
-    } catch (error) {
-      remoteDeletionInFlight.current = false;
-      setWorkspacePreparing(false);
-      setSyncError(`Could not remove the deleted OMERO Workspace locally: ${String(error)}`);
-    }
+    setSyncError(`${record.name} is unavailable in OMERO. Its browser copy is preserved. Use workspace management to review recovery options.`);
+    setStatus("Automatic synchronization paused; browser data is preserved");
   }
 
   function scheduleWorkspaceSyncPoll(payload: SyncPayload) {
@@ -6765,7 +6943,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   async function synchronizeWorkspace(prepared?: SyncPayload) {
     const current = workspaceRef.current;
     const context = bootstrap.context;
-    if (!current || !context || remoteDeletionInFlight.current) return;
+    if (!current || !context || current.workspace.deletedAt || current.workspace.purgedAt || remoteDeletionInFlight.current) return;
     if (syncRunBarrierTokens.current.size > 0) {
       workspaceSyncDeferredForRun.current = true;
       return;
@@ -6784,7 +6962,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     try {
       if (current.workspace.omeroSync) {
         const remote = await bridge.syncStatus(current.workspace.id);
-        if (remoteWorkspaceWasDeleted(current.workspace, remote)) {
+        if (!remote.linked || (remote.lifecycle && remote.lifecycle !== "active")) {
           await discardWorkspaceDeletedInOmero(current.workspace);
           return;
         }
@@ -6827,9 +7005,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       workspaceRef.current = next;
       setWorkspace(next);
       await commitWorkspaceRecord(nextRecord);
-      setLocalSyncDigest(payload.inventory.digest);
-      setStatus(`Reusable Analysis items saved automatically to ${synced.projectName} / ${synced.datasetName}`);
+      setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
+      setStatus(synced.browseState === "failed" ? "Saved to OMERO; readable filesystem copy needs retry" : `Reusable Analysis items saved automatically to ${synced.projectName} / ${synced.datasetName}`);
+      if (synced.browseState === "failed") setSyncError("Readable filesystem copy failed. Retry synchronization to rebuild it.");
     } catch (error) {
+      if (error instanceof OmeroApiError && error.code === "sync_busy") {
+        setStatus("Waiting for another workspace synchronization to finish…");
+        workspaceSyncQueued.current = false;
+        workspaceSyncPollTimer.current = window.setTimeout(() => {
+          workspaceSyncPollTimer.current = null;
+          void synchronizeWorkspace();
+        }, IMPORT_SYNC_POLL_INTERVAL_MS);
+        return;
+      }
       const message = String(error);
       setSyncError(message);
       setStatus(`Workspace synchronization failed: ${message}`);
@@ -7198,67 +7386,34 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     window.history.replaceState({}, "", url);
   }
 
-  function preparedEditorSession(
-    kind: ArtifactEditorSession["kind"],
-    artifactId: string,
-    originTab: EditorOriginTab
-  ): ArtifactEditorSession {
+  function preparedEditorSession(kind: ArtifactEditorSession["kind"], artifactId: string,
+    originTab: EditorOriginTab): ArtifactEditorSession {
     const current = workspaceRef.current;
     if (!current) throw new Error("Workspace is not ready");
-    if (kind === "method") {
-      const method = current.methods.find((item) => item.id === artifactId && !item.deletedAt);
-      const version = method?.versions.find((item) => item.version === method.currentVersion);
-      if (!method || !version) throw new Error("Method is unavailable");
-      const portableCode = bindRemoteQueryCode(
-        version.code,
-        method.remoteQueryBindings || []
-      );
-      const rebound = bindPythonInputsStrict(portableCode, current.files);
-      return {
-        kind,
-        id: method.id,
-        name: method.name,
-        originTab,
-        original: method,
-        draftCode: rebound.code,
-        bindingCount: rebound.bindings.length,
-        dirty: rebound.code !== version.code
-      };
-    }
-    if (kind === "pipeline") {
-      const pipeline = current.pipelines.find((item) => item.id === artifactId && !item.deletedAt);
-      if (!pipeline) throw new Error("Pipeline is unavailable");
-      const rebound = bindPipelineInputsStrict(pipeline, current.methods, current.files);
-      return {
-        kind,
-        id: pipeline.id,
-        name: pipeline.name,
-        originTab,
-        original: pipeline,
-        draft: rebound.pipeline,
-        bindingCount: rebound.bindings.length,
-        dirty: JSON.stringify(rebound.pipeline.steps) !== JSON.stringify(pipeline.steps)
-      };
-    }
-    const notebook = current.notebooks.find((item) => item.id === artifactId);
-    if (!notebook) throw new Error("Notebook is unavailable");
-    const rebound = bindNotebookInputsStrict(notebook.document, current.files);
-    const draft = {
-      ...notebook,
-      document: rebound.document,
-      selectedDataFileIds: readyWorkspaceInputs(current.files).map((file) => file.id)
-    };
-    return {
-      kind,
-      id: notebook.id,
-      name: notebook.name,
-      originTab,
-      original: notebook,
-      draft,
-      bindingCount: rebound.bindings.length,
-      dirty: JSON.stringify(draft.document) !== JSON.stringify(notebook.document) ||
-        JSON.stringify(draft.selectedDataFileIds) !== JSON.stringify(notebook.selectedDataFileIds)
-    };
+    return editorDraft(current, kind, artifactId, originTab);
+  }
+
+  function applyEditorBindings(preferred: Record<string, string> = {}) {
+    const session = editorSession;
+    const current = workspaceRef.current;
+    if (!session || !current) return;
+    try {
+      if (session.kind === "method") {
+        const bound = bindPythonInputsStrict(session.draftCode, current.files, preferred);
+        setEditorSession({ ...session, draftCode: bound.code, bindingCount: bound.bindings.length,
+          dirty: session.dirty || bound.code !== session.draftCode, error: undefined });
+      } else if (session.kind === "pipeline") {
+        const bound = bindPipelineInputsStrict(session.draft, current.methods, current.files);
+        setEditorSession({ ...session, draft: bound.pipeline, bindingCount: bound.bindings.length,
+          dirty: session.dirty || JSON.stringify(bound.pipeline) !== JSON.stringify(session.draft), error: undefined });
+      } else {
+        const bound = bindNotebookInputsStrict(session.draft.document, current.files, preferred);
+        const draft = { ...session.draft, document: bound.document,
+          selectedDataFileIds: readyWorkspaceInputs(current.files).map(file => file.id) };
+        setEditorSession({ ...session, draft, bindingCount: bound.bindings.length,
+          dirty: session.dirty || JSON.stringify(draft) !== JSON.stringify(session.draft), error: undefined });
+      }
+    } catch (error) { setEditorSession({ ...session, error: String(error) }); }
   }
 
   async function openArtifactEditor(
@@ -7298,7 +7453,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setInspectorSelection({ kind, id: artifactId });
       editorRoute(kind, artifactId);
       setActiveTab("editor");
-      setStatus(`Editing ${prepared.name}; current inputs rebound successfully`);
+      setStatus(`Editing ${prepared.name}; saved content opened without changes`);
     } catch (error) {
       await dialogs.alert("Editor could not open", String(error));
       setStatus(`Editor could not open: ${String(error)}`);
@@ -7306,29 +7461,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   function changeEditorSession(next: ArtifactEditorSession) {
-    const current = workspaceRef.current;
-    if (next.kind !== "pipeline" || !current) {
-      setEditorSession(next);
-      return;
-    }
-    try {
-      const rebound = bindPipelineInputsStrict(next.draft, current.methods, current.files);
-      setEditorSession({
-        ...next,
-        draft: rebound.pipeline,
-        bindingCount: rebound.bindings.length,
-        error: undefined
-      });
-    } catch (error) {
-      setEditorSession({ ...next, error: String(error) });
-    }
+    setEditorSession({ ...next, error: undefined });
   }
 
   async function saveEditor(): Promise<MethodRecord | PipelineRecord | NotebookRecord | null> {
     const session = editorSession;
     const current = workspaceRef.current;
-    if (!session || !current || session.error) return null;
-    if (!session.dirty) {
+    if (!session || !current) return null;
+    if (!session.dirty && !session.isNew) {
       return session.kind === "method"
         ? current.methods.find((item) => item.id === session.id) || null
         : session.kind === "pipeline"
@@ -7338,14 +7478,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setEditorSaving(true);
     try {
       if (session.kind === "method") {
-        const source = current.methods.find((item) => item.id === session.id && !item.deletedAt);
+        const source = current.methods.find((item) => item.id === session.id && !item.deletedAt) || (session.isNew ? session.original : null);
         if (!source) throw new Error("Method is unavailable");
-        const rebound = bindPythonInputsStrict(session.draftCode, current.files);
+        const rebound = { code: session.draftCode, bindings: [] };
         const portableBindings = portableRemoteQueryBindings(
           source.remoteQueryBindings || [],
           current
         );
-        const nextVersion = source.currentVersion + 1;
+        const nextVersion = session.isNew ? 1 : source.currentVersion + 1;
         const updated: MethodRecord = {
           ...source,
           remoteQueryBindings: portableBindings,
@@ -7359,7 +7499,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             ...(portableBindings.length
               ? ["omero-data-query-v1"] : [])
           ],
-          versions: [...source.versions, {
+          versions: [...(session.isNew ? [] : source.versions), {
             version: nextVersion,
             code: rebound.code,
             codeHash: await sha256(rebound.code),
@@ -7371,13 +7511,15 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         };
         const nextWorkspace = {
           ...current,
-          methods: current.methods.map((item) => item.id === updated.id ? updated : item)
+          methods: session.isNew ? [...current.methods, updated] : current.methods.map((item) => item.id === updated.id ? updated : item)
         };
         workspaceRef.current = nextWorkspace;
         setWorkspace(nextWorkspace);
         await saveMethod(updated);
+        setHomeMethodId(updated.id);
         setEditorSession({
           ...session,
+          isNew: false,
           original: updated,
           draftCode: rebound.code,
           bindingCount: rebound.bindings.length,
@@ -7388,7 +7530,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       }
       if (session.kind === "pipeline") {
         if (!session.draft.steps.length) throw new Error("A Pipeline must contain at least one step");
-        const rebound = bindPipelineInputsStrict(session.draft, current.methods, current.files);
+        const rebound = { pipeline: session.draft, bindings: [] };
         const source = current.pipelines.find((item) => item.id === session.id && !item.deletedAt);
         if (!source) throw new Error("Pipeline is unavailable");
         const updated: PipelineRecord = {
@@ -7405,8 +7547,10 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         workspaceRef.current = nextWorkspace;
         setWorkspace(nextWorkspace);
         await savePipeline(updated);
+        setHomePipelineId(updated.id);
         setEditorSession({
           ...session,
+          isNew: false,
           original: updated,
           draft: updated,
           bindingCount: rebound.bindings.length,
@@ -7415,24 +7559,26 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         setStatus(`Saved ${updated.name} version ${updated.version}`);
         return updated;
       }
-      const source = current.notebooks.find((item) => item.id === session.id);
+      const source = current.notebooks.find((item) => item.id === session.id) || (session.isNew ? session.original : null);
       if (!source) throw new Error("Notebook is unavailable");
-      const rebound = bindNotebookInputsStrict(session.draft.document, current.files);
+      const rebound = { document: session.draft.document, bindings: [] };
       const updated: NotebookRecord = {
         ...source,
         document: clearNotebookOutputs(rebound.document),
-        selectedDataFileIds: readyWorkspaceInputs(current.files).map((file) => file.id),
+        selectedDataFileIds: session.draft.selectedDataFileIds,
         updatedAt: now()
       };
       const nextWorkspace = {
         ...current,
-        notebooks: current.notebooks.map((item) => item.id === updated.id ? updated : item)
+        notebooks: session.isNew ? [...current.notebooks, updated] : current.notebooks.map((item) => item.id === updated.id ? updated : item)
       };
       workspaceRef.current = nextWorkspace;
       setWorkspace(nextWorkspace);
       await saveNotebook(updated);
+      setActiveNotebookId(updated.id);
       setEditorSession({
         ...session,
+        isNew: false,
         original: updated,
         draft: updated,
         bindingCount: rebound.bindings.length,
@@ -7464,12 +7610,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   function revertEditor() {
     if (!editorSession) return;
     try {
+      if (editorSession.isNew) {
+        const original = editorSession.original;
+        setEditorSession(editorSession.kind === "method"
+          ? { ...editorSession, draftCode: editorSession.original.versions[0].code, dirty: false, error: undefined }
+          : { ...editorSession, draft: structuredClone(original), dirty: false, error: undefined } as ArtifactEditorSession);
+        return;
+      }
       setEditorSession(preparedEditorSession(
         editorSession.kind,
         editorSession.id,
         editorSession.originTab
       ));
-      setStatus(`Reverted ${editorSession.name} to its saved content and rebound current inputs`);
+      setStatus(`Reverted ${editorSession.name} to its saved content`);
     } catch (error) {
       void dialogs.alert("Editor could not revert", String(error));
     }
@@ -7495,6 +7648,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function createUntitledMethod() {
+    if (workspaceRef.current?.workspace.deletedAt) return;
     const current = workspaceRef.current;
     if (!current || !editorEnabled) return;
     const originTab = activeTab === "editor" ? editorSession?.originTab || "home" : activeTab;
@@ -7521,12 +7675,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    const nextWorkspace = { ...current, methods: [...current.methods, method] };
-    workspaceRef.current = nextWorkspace;
-    setWorkspace(nextWorkspace);
-    await saveMethod(method);
-    const prepared = preparedEditorSession("method", method.id, originTab);
-    setEditorSession(prepared);
+    const draft = editorDraft({ ...current, methods: [...current.methods, method] }, "method", method.id, originTab);
+    setEditorSession({ ...draft, isNew: true });
     setInspectorSelection({ kind: "method", id: method.id });
     editorRoute("method", method.id);
     setActiveTab("editor");
@@ -7534,6 +7684,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function createUntitledNotebook() {
+    if (workspaceRef.current?.workspace.deletedAt) return;
     const current = workspaceRef.current;
     if (!current || !editorEnabled) return;
     const originTab = activeTab === "editor" ? editorSession?.originTab || "home" : activeTab;
@@ -7551,13 +7702,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    const nextWorkspace = { ...current, notebooks: [...current.notebooks, notebook] };
-    workspaceRef.current = nextWorkspace;
-    setWorkspace(nextWorkspace);
-    setActiveNotebookId(notebook.id);
-    await saveNotebook(notebook);
-    const prepared = preparedEditorSession("notebook", notebook.id, originTab);
-    setEditorSession(prepared);
+    const draft = editorDraft({ ...current, notebooks: [...current.notebooks, notebook] }, "notebook", notebook.id, originTab);
+    setEditorSession({ ...draft, isNew: true });
     setInspectorSelection({ kind: "notebook", id: notebook.id });
     editorRoute("notebook", notebook.id);
     setActiveTab("editor");
@@ -7572,7 +7718,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("method", method.id) }] : []),
       { label: "Rename", run: () => void renameMethod(method) },
       { label: "Download", run: () => downloadMethod(method) },
-      { label: "Delete method", danger: true, run: () => void removeMethod(method) }
+      { label: "Move to Trash", danger: true, run: () => void removeMethod(method) }
     ];
   }
 
@@ -7582,7 +7728,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("pipeline", pipeline.id) }] : []),
       { label: "Rename", run: () => void renamePipeline(pipeline) },
       { label: "Download", run: () => downloadPipeline(pipeline) },
-      { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
+      { label: "Move to Trash", danger: true, run: () => void removePipeline(pipeline) }
     ];
   }
 
@@ -7593,7 +7739,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("notebook", notebook.id) }] : []),
       { label: "Rename", run: () => void renameNotebook(notebook) },
       { label: "Download", run: () => downloadNotebook(notebook) },
-      { label: "Delete notebook", danger: true, run: () => void removeNotebook(notebook) }
+      { label: "Move to Trash", danger: true, run: () => void removeNotebook(notebook) }
     ];
   }
 
@@ -7624,9 +7770,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   const catalogSkillCount = (workflowSkillCatalog?.workflows || [])
     .reduce((total, entry) => total + entry.skills.length, 0) +
     (zarrSkillCatalog?.skills.length || 0);
-  const activeNotebook = analysisWorkspace.notebooks.find(
+  const activeNotebook = activeNotebooks.find(
     (item) => item.id === activeNotebookId
-  ) || analysisWorkspace.notebooks[0] || null;
+  ) || activeNotebooks[0] || null;
   const selectedInspectorItem: InspectorItem = (() => {
     const selection = inspectorSelection;
     if (!selection || selection.kind === "workspace") {
@@ -7645,7 +7791,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           Results: outputFiles.length,
           Methods: activeMethods.length,
           Pipelines: analysisWorkspace.pipelines.filter((item) => !item.deletedAt).length,
-          Notebooks: analysisWorkspace.notebooks.length,
+          Notebooks: activeNotebooks.length,
           Updated: new Date(workspace.updatedAt).toLocaleString()
         }
       };
@@ -7829,7 +7975,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     remoteSync?.linked &&
     syncHasChanges(localSyncDigest, remoteSync.inventoryDigest)
   );
-  const syncButtonLabel = syncing
+  const syncButtonLabel = workspace.purgedAt ? "Remote workspace removed — local copy retained"
+    : workspace.deletedAt ? "In Trash — synchronization suspended"
+    : syncing
     ? "Saving reusable items…"
     : syncRunBarrierActive
       ? "Sync queued until run finishes"
@@ -7939,13 +8087,28 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     <main className="app-shell" data-theme={theme}
       data-embedded-host={bootstrap.embeddedHost}>
       {dialogs.element}
+      {showTrash && <div className="dialog-backdrop"><section role="dialog" aria-modal="true" aria-label="Workspace Trash" className="app-dialog trash-dialog">
+        <h2>Workspace Trash</h2><p>Items remain recoverable until permanently deleted. Referenced history is preserved.</p>
+        {([
+          ...trashedMethods.map(item => ({ item, kind: "method" as TrashKind, restore: () => restoreTrashedMethod(item) })),
+          ...trashedPipelines.map(item => ({ item, kind: "pipeline" as TrashKind, restore: () => restoreTrashedPipeline(item) })),
+          ...trashedNotebooks.map(item => ({ item, kind: "notebook" as TrashKind, restore: () => updateNotebook({ ...item, deletedAt: undefined, updatedAt: now() }) })),
+          ...trashedFiles.map(item => ({ item, kind: "file" as TrashKind, restore: () => restoreTrashedFile(item) }))
+        ]).map(({ item, kind, restore }) => <div className="trash-row" key={item.id}><span>{item.name} <small>{kind}</small></span>
+          <Button onClick={() => void restore()}>Restore</Button><Button onClick={() => void purgeArtifact(kind, item.id)}>Delete permanently</Button></div>)}
+        <Button onClick={() => setShowTrash(false)}>Close Trash</Button>
+      </section></div>}
       {showHelp && <HelpWindow onClose={() => setShowHelp(false)} />}
       <header className="workspace-header">
         <div className="header-brand">
           <h1>OMERO.Analysis</h1>
-          <p>{workspace.name}</p>
+          <small className="source-breadcrumb">{bootstrap.context?.source_path?.map(item => item.name).join(" / ")}</small><p title={workspace.name}>{workspace.name}</p>
         </div>
         <div className="header-actions">
+          <Button onClick={() => setShowTrash(true)}>Trash</Button>
+          <WorkspaceSwitcher workspace={workspace} context={bootstrap.context} bridge={bridge}
+            disabled={syncing || busy || Boolean(editorSession?.dirty)}
+            onOpen={openAnalysisWorkspace} onRename={() => void renameWorkspace(workspace)} onLifecycle={changeWorkspaceLifecycle} />
           <Button
             className="panel-visibility-toggle"
             aria-pressed={explorerVisible}
@@ -7989,6 +8152,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           </Button>
         </div>
       </header>
+      <div className="workspace-save-status" role="status">
+        <span>Browser: {browserSaveError ? "save failed — keep this tab open" : browserSaving ? "saving…" : "saved locally"}</span>
+        <span title={syncError || remoteSync?.reason}>OMERO: {syncButtonLabel}</span>
+        <span>Imports: {remoteSync?.pendingOrderCount || 0} pending</span>
+        <span>Filesystem: {remoteSync?.browseState === "failed" ? "copy failed" : remoteSync?.linked ? "available" : "not synchronized"}</span>
+        {Boolean((remoteSync as SyncStatus & { cleanupPending?: number })?.cleanupPending) && <span>Cleanup pending — retry synchronization</span>}
+        {browserSaveError && <Button onClick={() => void replaceWorkspace(analysisWorkspace).then(() => setBrowserSaveError("")).catch(error => setBrowserSaveError(String(error)))}>Retry browser save</Button>}
+        {syncError && <Button disabled={syncing} onClick={() => void synchronizeWorkspace()}>Retry OMERO sync</Button>}
+      </div>
+      {workspace.deletedAt && <section role="status" className="workspace-trash-banner"><h2>{workspace.purgedAt ? "Remote workspace permanently removed" : "This workspace is in Trash"}</h2>
+        <p>{workspace.purgedAt ? "This tab retains its local recovery copy. Results that were only stored remotely may no longer be available."
+          : "Restore it through Manage workspaces to edit or run analyses. Its saved content is retained."}</p>
+        <Button onClick={() => void downloadArchive()}>Download workspace</Button></section>}
 
       {showLibrary && (
         <div className="dialog-backdrop" role="presentation">
@@ -8516,15 +8692,15 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             >
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>Notebooks</strong><small>{analysisWorkspace.notebooks.length}</small>
+              <strong>Notebooks</strong><small>{activeNotebooks.length}</small>
             </summary>
             <div className="method-selection-toolbar notebook-folder-toolbar">
-              <span>{analysisWorkspace.notebooks.length} notebook{analysisWorkspace.notebooks.length === 1 ? "" : "s"}</span>
+              <span>{activeNotebooks.length} notebook{activeNotebooks.length === 1 ? "" : "s"}</span>
               {editorEnabled && <button aria-label="Create new Notebook" onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New Notebook</button>}
               <button aria-label="Upload Notebook" onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload Notebook</button>
             </div>
             <ul className="browser-list">
-              {analysisWorkspace.notebooks.filter((notebook) =>
+              {activeNotebooks.filter((notebook) =>
                 matchesExplorer(notebook.name)
               ).map((notebook) => (
                 <li key={notebook.id} className="browser-row"
@@ -8550,7 +8726,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                   </button>
                 </li>
               ))}
-              {!analysisWorkspace.notebooks.length &&
+              {!activeNotebooks.length &&
                 <li className="browser-empty">No notebooks</li>}
             </ul>
             {resultFolder("Notebooks results", "notebooks-results", notebookOutputFiles)}
@@ -8644,6 +8820,23 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onNewNotebook={() => void createUntitledNotebook()}
           />
         )}
+        {["methods", "pipelines", "notebooks"].includes(activeTab) && <div className="artifact-actions" role="toolbar" aria-label="Analysis item actions">
+          {activeTab === "methods" && <>
+            {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledMethod()}>New Method</Button>}
+            <Button disabled={busy || !activeMethods.length} onClick={() => void renameMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Rename</Button>
+            <Button disabled={busy || !activeMethods.length} onClick={() => void removeMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Move to Trash</Button>
+          </>}
+          {activeTab === "pipelines" && <>
+            <Button disabled={busy || !activePipelines.length} onClick={() => void renamePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Rename</Button>
+            <Button disabled={busy || !activePipelines.length} onClick={() => void removePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Move to Trash</Button>
+          </>}
+          {activeTab === "notebooks" && <>
+            {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledNotebook()}>New Notebook</Button>}
+            <Button disabled={busy || !activeNotebooks.length} onClick={() => void renameNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Rename</Button>
+            <Button disabled={busy || !activeNotebooks.length} onClick={() => void removeNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Move to Trash</Button>
+          </>}
+          <Button onClick={() => setShowTrash(true)}>Trash and Restore</Button>
+        </div>}
         {(activeTab === "methods" || activeTab === "pipelines") && (
           <AnalysisRunsView
             kind={activeTab === "methods" ? "method" : "pipeline"}
@@ -8674,6 +8867,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onRerun={(run) => void rerunAnalysisRun(run)}
             onSelectRun={selectRun}
             onInspectFile={(fileId) => setSelectedArtifactFileId(fileId)}
+            onDownloadFile={downloadFile}
           />
         )}
         {activeTab === "assistant" && (
@@ -8766,6 +8960,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                     relatedExecutions={executionsForPrompt(analysisWorkspace, execution)}
                     files={analysisWorkspace.files}
                     onSave={() => void saveAsMethod(execution)}
+                    onDownloadFile={downloadFile}
                     onRerun={() => void rerunExecution(execution)}
                     saveDisabled={busy}
                   />
@@ -8899,6 +9094,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               onSave={() => void saveEditor()}
               onSaveRun={() => void saveAndRunEditor()}
               onRevert={revertEditor}
+              onBindInputs={applyEditorBindings}
               onClose={() => void closeEditor()}
             />
           </Suspense>
@@ -8939,8 +9135,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                     <strong>Enable artifact editor</strong>
                     <small>
                       Show the Editor tab and Edit actions for Methods, Pipelines,
-                      and Notebooks. Inputs are rebound and validated before the
-                      editor opens. Default: off.
+                      and Notebooks. Apply input changes explicitly in the editor;
+                      execution validates required inputs. Default: off.
                     </small>
                   </span>
                 </label>

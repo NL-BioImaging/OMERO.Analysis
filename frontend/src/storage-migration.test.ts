@@ -34,7 +34,7 @@ describe("clean-break browser storage", () => {
       can_annotate: true,
       selected_attachments: []
     });
-    expect(created.workspace.name).toBe("Current");
+    expect(created.workspace.name).toBe("Current — Analysis 1");
     expect(created.workspace.id).not.toBe("legacy-project");
   });
 });

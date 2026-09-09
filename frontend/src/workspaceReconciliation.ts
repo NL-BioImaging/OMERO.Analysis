@@ -6,17 +6,14 @@ export interface WorkspaceReconciliationResult {
   errors: Array<{ workspaceId: string; error: unknown }>;
 }
 
-/**
- * A missing remote Dataset is authoritative only after this browser has
- * successfully synchronized the Workspace before. A new browser-local
- * Workspace has no omeroSync marker and must never be removed merely because
- * it has not been published yet.
- */
+/** Only an explicit lifecycle tombstone establishes that remote content was purged. */
 export function remoteWorkspaceWasDeleted(
   workspace: WorkspaceRecord,
   status: SyncStatus
 ): boolean {
-  return Boolean(workspace.omeroSync) && !status.linked;
+  // Absence is not proof of deletion: links and permissions may have changed.
+  // Even an explicit remote purge must not erase unsynchronized local work.
+  return Boolean(workspace.omeroSync) && status.lifecycle === "purged";
 }
 
 /**
@@ -26,7 +23,7 @@ export function remoteWorkspaceWasDeleted(
 export async function reconcileDeletedRemoteWorkspaces(
   workspaces: WorkspaceRecord[],
   readStatus: (workspaceId: string) => Promise<SyncStatus>,
-  removeLocal: (workspaceId: string) => Promise<void>
+  _removeLocal: (workspaceId: string) => Promise<void>
 ): Promise<WorkspaceReconciliationResult> {
   const retained: WorkspaceRecord[] = [];
   const deletedWorkspaceIds: string[] = [];
@@ -43,8 +40,9 @@ export async function reconcileDeletedRemoteWorkspaces(
         retained.push(workspace);
         continue;
       }
-      await removeLocal(workspace.id);
-      deletedWorkspaceIds.push(workspace.id);
+      retained.push(workspace);
+      errors.push({ workspaceId: workspace.id,
+        error: new Error("This workspace was purged in OMERO. Its browser copy is preserved for recovery.") });
     } catch (error) {
       retained.push(workspace);
       errors.push({ workspaceId: workspace.id, error });

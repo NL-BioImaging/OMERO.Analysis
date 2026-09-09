@@ -27,6 +27,7 @@ export interface OmeroContext {
   object_type: OmeroObjectType;
   object_id: number;
   name: string;
+  source_path?: Array<{ type: string; id: number; name: string }>;
   user_id: number;
   group_id: number;
   can_annotate: boolean;
@@ -202,6 +203,9 @@ export interface OmeroHierarchy {
 }
 
 export interface WorkspaceRecord {
+  browserLifecycleRevision?: number;
+  lifecycleRevision?: number;
+  purgedAt?: string;
   id: string;
   contextKey: string;
   rootPath: string;
@@ -250,6 +254,7 @@ export interface ChatRecord {
 }
 
 export interface WorkspaceFile {
+  remoteResult?: { workspaceId: string; key: string; sha256: string; size: number };
   id: string;
   workspaceId: string;
   chatId?: string;
@@ -796,6 +801,7 @@ export interface NotebookDocument {
 }
 
 export interface NotebookRecord {
+  deletedAt?: string;
   id: string;
   workspaceId: string;
   name: string;
@@ -890,6 +896,7 @@ export interface SyncInventoryItem {
 export interface SyncInventory {
   schema: "nl.bioimaging.analysis.sync.inventory.v1";
   workspace: {
+    lifecycleRevision?: number;
     id: string;
     name: string;
     sourceObjectType: OmeroObjectType;
@@ -903,11 +910,16 @@ export interface SyncInventory {
 }
 
 export interface SyncPayload {
+  contentDigest?: string;
   inventory: SyncInventory;
   bytes: Map<string, Uint8Array>;
 }
 
 export interface SyncStatus {
+  lifecycle?: "active" | "trashed" | "purging" | "purged" | "unavailable";
+  lifecycleRevision?: number;
+  browseState?: "ready" | "failed";
+  cleanup?: { complete: boolean; errors: unknown[] };
   schema: "nl.bioimaging.analysis.sync.status.v1";
   canSync: boolean;
   reason: string;
@@ -935,6 +947,7 @@ export interface SyncStatus {
 }
 
 export interface SyncPlan {
+  payloadEncoding?: "concat-v1";
   schema: "nl.bioimaging.analysis.sync.plan.v1";
   planToken: string;
   projectName: string;
@@ -966,6 +979,8 @@ export interface LibraryItem {
 }
 
 export interface LibraryDataset {
+  lifecycle?: string;
+  lifecycleRevision?: number;
   projectId: number;
   datasetId: number;
   datasetName: string;

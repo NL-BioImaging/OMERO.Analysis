@@ -1,4 +1,4 @@
-import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import manualMarkdown from "../../../docs/MANUAL.md?raw";
 import { MarkdownPreview } from "./WorkspacePanels";
 import { Button, Input } from "./BlueprintControls";
@@ -17,11 +17,22 @@ function manualSections(markdown: string) {
 }
 
 export function HelpWindow({ onClose }: { onClose: () => void }) {
+  const panel = useRef<HTMLElement>(null);
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState({
-    x: Math.max(24, window.innerWidth - 760),
-    y: 92
+    x: Math.max(8, window.innerWidth - Math.min(900, window.innerWidth - 48) - 24),
+    y: Math.min(92, Math.max(8, window.innerHeight - 328))
   });
+  useEffect(() => {
+    const clamp = () => setPosition(current => ({
+      x: Math.max(8, Math.min(current.x, window.innerWidth - (panel.current?.offsetWidth || 0) - 8)),
+      y: Math.max(8, Math.min(current.y, window.innerHeight - (panel.current?.offsetHeight || 0) - 8))
+    }));
+    const observer = new ResizeObserver(clamp);
+    if (panel.current) observer.observe(panel.current);
+    window.addEventListener("resize", clamp);
+    return () => { observer.disconnect(); window.removeEventListener("resize", clamp); };
+  }, []);
   const sections = useMemo(() => manualSections(manualMarkdown), []);
   const normalized = query.trim().toLowerCase();
   const visible = normalized
@@ -39,11 +50,11 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
     };
     const move = (next: PointerEvent) => setPosition({
       x: Math.max(0, Math.min(
-        window.innerWidth - 260,
+        window.innerWidth - (panel.current?.offsetWidth || 900) - 8,
         origin.left + next.clientX - origin.pointerX
       )),
       y: Math.max(0, Math.min(
-        window.innerHeight - 80,
+        window.innerHeight - (panel.current?.offsetHeight || 320) - 8,
         origin.top + next.clientY - origin.pointerY
       ))
     });
@@ -57,6 +68,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
 
   return (
     <aside
+      ref={panel}
       className="help-window"
       aria-label="OMERO Analysis manual"
       style={{ left: position.x, top: position.y }}

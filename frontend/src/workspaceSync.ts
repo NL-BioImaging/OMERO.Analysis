@@ -1,3 +1,5 @@
+import { samePlot } from "./plotGroups";
+import { exportWorkspace } from "./archive";
 import { sha256 } from "./storage";
 import type {
   AnalysisWorkspace,
@@ -28,6 +30,7 @@ export function withWorkspaceSyncStatus(
     ...workspace,
     workspace: {
       ...workspace.workspace,
+      lifecycleRevision: synced.lifecycleRevision || 0,
       omeroSync: {
         projectId: synced.projectId,
         datasetId: synced.datasetId,
@@ -77,21 +80,7 @@ function resultStem(path: string): string {
   return path.replace(/\\/g, "/").replace(/\.[^/.]+$/, "").toLowerCase();
 }
 
-function sameResultOrigin(
-  left: AnalysisWorkspace["files"][number],
-  right: AnalysisWorkspace["files"][number]
-): boolean {
-  const fields = ["executionId", "runId", "chatId", "methodId", "pipelineId", "notebookId"] as const;
-  return fields.some((field) => Boolean(left[field]) && left[field] === right[field]);
-}
-
-function isPlotPair(
-  companion: AnalysisWorkspace["files"][number],
-  image: AnalysisWorkspace["files"][number]
-): boolean {
-  if (resultStem(companion.logicalPath) === resultStem(image.logicalPath)) return true;
-  return resultStem(companion.name) === resultStem(image.name) && sameResultOrigin(companion, image);
-}
+const isPlotPair = samePlot;
 
 async function itemFromBytes(
   key: string,
@@ -140,35 +129,35 @@ export async function buildWorkspaceSyncPayload(
     kind: SyncItemKind;
     mimetype: string;
     sha256: string;
-    data: Uint8Array;
+    data?: Uint8Array;
+    size: number;
     files: typeof workspace.files;
   }>();
   for (const file of workspace.files
     .filter((entry) =>
       entry.source === "result" &&
-      !entry.deletedAt &&
       Boolean(entry.runId || entry.methodId || entry.pipelineId || entry.notebookId)
     )
     .sort((left, right) =>
       left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
     )) {
-    if (!file.data) {
-      throw new Error(`Result ${file.name} is unavailable in this browser`);
-    }
-    const data = new Uint8Array(file.data.slice(0));
+    if (!file.data && !file.remoteResult) throw new Error(`Result ${file.name} is unavailable in this browser`);
+    const data = file.data ? new Uint8Array(file.data.slice(0)) : undefined;
     const kind: SyncItemKind = file.type === "image/png" ? "png-image" : "result";
     const mimetype = file.type || "application/octet-stream";
-    const digest = await sha256(data.slice().buffer);
+    const digest = data ? await sha256(data.slice().buffer) : file.remoteResult!.sha256;
     const groupKey = `${kind}:${mimetype}:${digest}`;
     const group = resultGroups.get(groupKey);
     if (group) {
       group.files.push(file);
+      if (!group.data && data) group.data = data;
     } else {
       resultGroups.set(groupKey, {
         kind,
         mimetype,
         sha256: digest,
         data,
+        size: data?.byteLength ?? file.remoteResult!.size,
         files: [file]
       });
     }
@@ -184,6 +173,7 @@ export async function buildWorkspaceSyncPayload(
     const canonicalFile = group.files[0];
     const sources = group.files.map((file) => ({
       fileId: file.id,
+      deletedAt: file.deletedAt || null,
       name: file.name,
       logicalPath: file.logicalPath,
       runId: file.runId || null,
@@ -201,20 +191,18 @@ export async function buildWorkspaceSyncPayload(
           pngGroup.files.some((image) => isPlotPair(companion, image))
         )).map(resultKey).sort()
       : [];
-    await add(
-      resultKey(group),
-      group.kind,
-      canonicalFile.name,
-      group.mimetype,
-      `Results/${canonicalFile.name}`,
-      group.data,
-      {
-        contentAddressed: true,
-        sourceCount: sources.length,
-        sources,
-        ...(plotImageKeys.length ? { plotImageKeys } : {})
-      }
-    );
+    const metadata = {
+      contentAddressed: true, sourceCount: sources.length, sources,
+      ...(plotImageKeys.length ? { plotImageKeys } : {})
+    };
+    if (group.data) {
+      await add(resultKey(group), group.kind, canonicalFile.name, group.mimetype,
+        `Results/${canonicalFile.name}`, group.data, metadata);
+    } else {
+      items.push({ key: resultKey(group), kind: group.kind, name: canonicalFile.name,
+        mimetype: group.mimetype, logicalPath: `Results/${canonicalFile.name}`,
+        size: group.size, sha256: group.sha256, metadata });
+    }
   }
 
   for (const file of workspace.files
@@ -326,6 +314,7 @@ export async function buildWorkspaceSyncPayload(
   }
 
   for (const notebook of workspace.notebooks
+    .filter(item => !item.deletedAt)
     .sort((left, right) => left.id.localeCompare(right.id))) {
     await add(
       `notebook:${notebook.id}`,
@@ -341,10 +330,41 @@ export async function buildWorkspaceSyncPayload(
     );
   }
 
+  const executionIds = new Set([
+    ...workspace.runs.flatMap(run => run.executionIds),
+    ...workspace.methods.flatMap(method => method.versions.map(version => version.executionId))
+  ]);
+  // Automatic synchronization retains the existing reusable-analysis boundary.
+  // Assistant conversations and private Chat attachments stay browser-local.
+  const resultReferences = new Map(sortedResultGroups.flatMap(group => group.files.map(file =>
+    [file.id, { workspaceId: workspace.workspace.id, key: resultKey(group), sha256: group.sha256, size: group.size }] as const)));
+  const reusableSnapshot: AnalysisWorkspace = {
+    ...workspace,
+    chats: [{ id: workspace.workspace.activeChatId, workspaceId: workspace.workspace.id,
+      title: "Assistant", summary: "", messages: [],
+      createdAt: workspace.workspace.createdAt, updatedAt: workspace.workspace.createdAt }],
+    files: workspace.files.filter(file => file.role !== "chat-attachment" &&
+      (file.source !== "result" || Boolean(file.runId || file.methodId || file.pipelineId || file.notebookId)))
+      .map(file => file.source === "result" ? { ...file, data: undefined,
+        remoteResult: resultReferences.get(file.id) } : file)
+      .map(file => file.source === "local" && !/template/i.test(file.name)
+        ? { ...file, data: undefined, state: "missing" as const, error: "Reselect this browser-local input" } : file),
+    executions: workspace.executions.filter(item => executionIds.has(item.id)),
+    artifacts: workspace.artifacts.filter(item => item.runId || executionIds.has(item.executionId || "")),
+    evidence: [], audits: []
+  };
+  const snapshot = exportWorkspace(reusableSnapshot, context.max_snapshot_bytes ?? 64 * 1024 * 1024);
+  const { exportedAt: _exportedAt, ...state } = snapshot.manifest;
+  const { omeroSync: _sync, revision: _revision, updatedAt: _updated, ...record } = state.workspace;
+  const snapshotStateDigest = await sha256(canonicalJson({ ...state, workspace: record }));
+  await add(`workspace-snapshot:${workspace.workspace.id}`, "workspace-snapshot", "workspace.oa-workspace.zip",
+    "application/zip", "Workspace/workspace.oa-workspace.zip", snapshot.data,
+    { workspaceId: workspace.workspace.id, stateDigest: snapshotStateDigest });
   items.sort((left, right) => left.key.localeCompare(right.key));
   const unsigned = {
     schema: "nl.bioimaging.analysis.sync.inventory.v1" as const,
     workspace: {
+      lifecycleRevision: workspace.workspace.lifecycleRevision || 0,
       id: workspace.workspace.id,
       name: workspace.workspace.name,
       sourceObjectType: context.object_type,
@@ -359,7 +379,11 @@ export async function buildWorkspaceSyncPayload(
     ...unsigned,
     digest: await sha256(canonicalJson(unsigned))
   };
-  return { inventory, bytes };
+  const contentDigest = await sha256(canonicalJson({
+    ...unsigned, items: items.filter(item => item.kind !== "workspace-snapshot"),
+    snapshotStateDigest
+  }));
+  return { inventory, bytes, contentDigest };
 }
 
 export function syncHasChanges(

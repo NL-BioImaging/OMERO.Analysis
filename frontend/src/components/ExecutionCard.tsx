@@ -3,6 +3,7 @@ import { executionActivityText } from "../presentation";
 import type { ExecutionRecord, WorkspaceFile } from "../types";
 import { ActionIcon } from "./ActionIcon";
 import { Button, Input } from "./BlueprintControls";
+import { plotGroups } from "../plotGroups";
 
 export function executionOutputFiles(
   execution: ExecutionRecord,
@@ -40,6 +41,7 @@ export function ExecutionCard({
   supplementalOutputs = [],
   onSave,
   onRerun,
+  onDownloadFile,
   saveDisabled = false,
   showSaveAction = true,
   showRerunAction = true
@@ -50,6 +52,7 @@ export function ExecutionCard({
   supplementalOutputs?: WorkspaceFile[];
   onSave: () => void;
   onRerun: () => void;
+  onDownloadFile?: (file: WorkspaceFile) => void;
   saveDisabled?: boolean;
   showSaveAction?: boolean;
   showRerunAction?: boolean;
@@ -68,9 +71,7 @@ export function ExecutionCard({
       if (file.sha256) outputContent.add(contentKey);
     }
   }
-  const plots = outputs.filter((file) =>
-    file.type === "image/png" || file.type === "image/svg+xml"
-  );
+  const plots = plotGroups(outputs);
   const purpose = execution.purpose || "analysis";
   const showReusableActions =
     ["success", "reused"].includes(execution.status);
@@ -162,7 +163,7 @@ export function ExecutionCard({
       {execution.missingPlotCsv.length > 0 && (
         <p className="plot-warning">Source CSV missing: {execution.missingPlotCsv.join(", ")}</p>
       )}
-      {plots.map((file) => <Artifact key={file.id} file={file} />)}
+      {plots.map(({ preview, files }) => <Artifact key={preview.id} file={preview} companions={files} onDownload={onDownloadFile} />)}
     </article>
   );
 }
@@ -196,7 +197,7 @@ export function Preview({ value }: { value: unknown }) {
   return <pre className="preview">{JSON.stringify(value, null, 2)}</pre>;
 }
 
-export function Artifact({ file }: { file: WorkspaceFile }) {
+export function Artifact({ file, companions = [file], onDownload }: { file: WorkspaceFile; companions?: WorkspaceFile[]; onDownload?: (file: WorkspaceFile) => void }) {
   const [zoomed, setZoomed] = useState(false);
   const url = useMemo(
     () => file.data ? URL.createObjectURL(new Blob([file.data], { type: file.type })) : "",
@@ -209,7 +210,15 @@ export function Artifact({ file }: { file: WorkspaceFile }) {
         {zoomed ? "Close full view" : "Open full view"}
       </Button>
       <img src={url} alt={file.name} onDoubleClick={() => setZoomed(true)} />
-      <figcaption>{file.name}</figcaption>
+      <figcaption>{file.name}<span className="plot-downloads">{companions.map(item =>
+        <Button key={item.id} disabled={!item.data && !onDownload} title={`Download ${item.name}`} onClick={() => {
+          if (onDownload) { onDownload(item); return; }
+          if (!item.data) return;
+          const href = URL.createObjectURL(new Blob([item.data], { type: item.type }));
+          const link = document.createElement("a"); link.href = href; link.download = item.name;
+          link.click(); window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+        }}>{item.name.split(".").at(-1)?.toUpperCase()}</Button>
+      )}</span></figcaption>
     </figure>
   ) : null;
 }

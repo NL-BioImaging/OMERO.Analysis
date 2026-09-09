@@ -1341,7 +1341,7 @@ th { position: sticky; top: 0; background: #183040; }
   background: #101a22; border: 1px solid #456479; border-radius: 10px;
   box-shadow: 0 20px 70px #000c;
   height: min(720px, calc(100vh - 110px)); max-height: calc(100vh - 16px);
-  max-width: calc(100vw - 16px); min-height: 320px; min-width: 520px;
+  max-width: calc(100vw - 16px); min-height: min(320px, calc(100vh - 16px)); min-width: min(520px, calc(100vw - 16px));
   overflow: hidden; position: fixed; resize: both;
   width: min(900px, calc(100vw - 48px)); z-index: 80;
 }
@@ -1708,6 +1708,42 @@ th { position: sticky; top: 0; background: #183040; }
 
 
 
+
+.workspace-switcher { display: flex; align-items: center; gap: .35rem; }
+.workspace-switcher select {
+  min-width: 150px; max-width: 240px; min-height: var(--control-height);
+  padding: .4rem .6rem; border: 1px solid var(--theme-border); border-radius: 6px;
+  background: var(--theme-control); color: var(--theme-text); font: inherit;
+}
+
+/* Shared lifecycle and result controls use the existing theme palette. */
+.trash-dialog { width: min(900px, 94vw); max-height: 85vh; overflow: auto; }
+.trash-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .7rem 0; border-bottom: 1px solid var(--border); }
+.trash-row > span { flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+.trash-row small { display: block; }
+.plot-downloads { display: inline-flex; gap: .3rem; margin-left: 1rem; }
+.result-file-group { display: flex; flex-wrap: wrap; gap: .35rem; }
+.header-brand { min-width: 0; }
+.header-brand p, .source-breadcrumb { overflow-wrap: anywhere; }
+.workspace-switcher { flex-wrap: wrap; }
+.workspace-trash-banner { padding: 1rem; background: var(--panel); }
+.app-shell:has(.workspace-trash-banner) > .workspace { display: none; }
+
+.workspace-switcher .dialog-backdrop { z-index: 1100; }
+.dialog-backdrop:has(> form.app-dialog) { z-index: 1200; }
+
+.artifact-actions { display:flex; flex-wrap:wrap; gap:.4rem; padding:.5rem; border-bottom:1px solid var(--border); }
+.editor-bindings { padding:.7rem; background:var(--panel); }
+.editor-bindings label { display:flex; align-items:center; gap:1rem; margin:.4rem 0; }
+.editor-bindings span { overflow-wrap:anywhere; }
+.workspace-save-status { display:flex; flex-wrap:wrap; gap:1rem; padding:.35rem 1rem; font-size:.8rem; background:var(--panel); border-bottom:1px solid var(--border); }
+.app-shell:has(> .workspace-save-status) { grid-template-rows:auto auto minmax(0, 1fr); }
+.center-pane:has(> .artifact-actions) { grid-template-rows:42px auto minmax(0, 1fr); }
+.center-pane.runtime-loading:has(> .artifact-actions) { grid-template-rows:42px auto auto minmax(0, 1fr); }
+.header-brand:has(.source-breadcrumb) { grid-template-rows:auto auto auto; }
+.header-brand .source-breadcrumb { grid-row:2; grid-column:1; }
+.header-brand:has(.source-breadcrumb) p { grid-row:3; }
+.generated-files .result-file-group { display:flex; flex-wrap:wrap; gap:.35rem; }
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,
    or positioning here. Those remain identical to the dark Analysis layout. */

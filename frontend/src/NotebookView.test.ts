@@ -16,6 +16,33 @@ function bytes(value: unknown): ArrayBuffer {
 }
 
 describe("run-only notebook validation", () => {
+  it("does not resume after Stop while asynchronous input preparation finishes", async () => {
+    let finishPreparation!: () => void;
+    const onBeforeRun = vi.fn(() => new Promise<void>(resolve => { finishPreparation = resolve; }));
+    const runNotebookCell = vi.fn();
+    const stop = vi.fn();
+    const notebook = {
+      id: "stop-test", workspaceId: "workspace", name: "stop.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: { nbformat: 4, nbformat_minor: 5, metadata: {},
+        cells: [{ id: "cell", cell_type: "code", metadata: {}, source: "print('must not execute')", outputs: [] }] },
+      createdAt: "2026-09-09", updatedAt: "2026-09-09"
+    } as NotebookRecord;
+    const view = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime: { reset: async () => undefined, stop, runNotebookCell } as unknown as PythonRuntime,
+      runRequest: null, workspaceActions: null, onBeforeRun,
+      onChange: async () => undefined, onFiles: async () => undefined
+    }));
+    fireEvent.click(view.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(onBeforeRun).toHaveBeenCalled());
+    fireEvent.click(view.getByRole("button", { name: "Stop" }));
+    finishPreparation();
+    await waitFor(() => expect(view.getByText("Notebook stopped.")).toBeTruthy());
+    expect(stop).toHaveBeenCalledOnce();
+    expect(runNotebookCell).not.toHaveBeenCalled();
+    expect((view.getByRole("button", { name: "Run" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("clears only code-cell outputs and execution counts", () => {
     const document = {
       nbformat: 4, nbformat_minor: 5, metadata: {},

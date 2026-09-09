@@ -613,8 +613,8 @@ export function ComposerPanel({
       )}
       <div className="status" role="status">{status}</div>
       <div className="usage-status">
-        <span>Ordinary workspace inputs remain browser-local. For selected Assistant attachments, extracted text or metadata-stripped image pixels are sent to the configured AI provider; original PDF and DOCX bytes are never sent.</span>
-        <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
+        <span>Conversations stay in this browser. The configured AI provider receives your messages, bounded analysis summaries, and selected attachment text or image pixels. Original PDF and DOCX bytes are not sent. Reusable analyses save separately to OMERO.</span>
+        <details><summary>Assistant diagnostics</summary><span>{usageSummary(usage, settings.contextWindow || 0)}</span></details>
       </div>
       {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
       {providerMissing ? (

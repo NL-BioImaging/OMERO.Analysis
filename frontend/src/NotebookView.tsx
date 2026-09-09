@@ -333,6 +333,11 @@ export default function NotebookView(props: Props) {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
   const lastRunRequest = useRef(0);
+  const stopRequested = useRef(false);
+
+  function checkStopped() {
+    if (stopRequested.current) throw new Error("Notebook stopped");
+  }
 
   async function executeCell(
     index: number,
@@ -344,6 +349,7 @@ export default function NotebookView(props: Props) {
     if (cell.cell_type !== "code") return base;
     try {
       const result = await runtime.runNotebookCell(sourceText(cell));
+      checkStopped();
       const changed: NotebookRecord = {
         ...base,
         document: {
@@ -394,7 +400,7 @@ export default function NotebookView(props: Props) {
         updatedAt: new Date().toISOString()
       };
       await onChange(failed);
-      setStatus(`Stopped at cell ${index + 1}: ${message}`);
+      setStatus(stopRequested.current ? "Notebook stopped." : `Stopped at cell ${index + 1}: ${message}`);
       return null;
     }
   }
@@ -404,8 +410,10 @@ export default function NotebookView(props: Props) {
     startRuntime = true,
     preparedInputs?: WorkspaceFile[]
   ): Promise<NotebookRecord> {
+    if (startRuntime && !running) stopRequested.current = false;
     setStatus("Attaching current Workspace input data…");
     const preparation = startRuntime ? await onBeforeRun(record) : undefined;
+    checkStopped();
     const preparedRecord = preparation && !Array.isArray(preparation)
       ? preparation.notebook
       : record;
@@ -413,6 +421,7 @@ export default function NotebookView(props: Props) {
       ? Array.isArray(preparation) ? preparation : preparation?.inputs || inputs
       : preparedInputs || inputs;
     await runtime.syncInputs(currentInputs);
+    checkStopped();
     const readyInputs = currentInputs.filter(
       (file) => file.source !== "result" && file.state === "ready" &&
         !file.deletedAt && Boolean(file.data)
@@ -433,6 +442,7 @@ export default function NotebookView(props: Props) {
 
   async function runAll() {
     if (!notebook || running) return;
+    stopRequested.current = false;
     setRunning(true);
     onRunStateChange?.(true);
     try {
@@ -447,13 +457,16 @@ export default function NotebookView(props: Props) {
       // /remote-query. Resetting afterward would delete those files before the
       // first notebook cell can consume them.
       await runtime.reset();
+      checkStopped();
       const preparation = await onBeforeRun(working);
+      checkStopped();
       if (preparation && !Array.isArray(preparation)) working = preparation.notebook;
       const preparedInputs = Array.isArray(preparation)
         ? preparation
         : preparation?.inputs || inputs;
       working = await attachInputs(working, false, preparedInputs);
       if (onPrepareProtocol) working = await onPrepareProtocol(working);
+      checkStopped();
       if (parseNotebookProtocol(working.document)) {
         const run = {
           startedAt: new Date().toISOString(),
@@ -475,6 +488,7 @@ export default function NotebookView(props: Props) {
       }
       let count = 1;
       for (let index = 0; working && index < working.document.cells.length; index += 1) {
+        checkStopped();
         if (working.document.cells[index].cell_type !== "code") continue;
         setStatus(`Running cell ${index + 1}…`);
         working = await executeCell(index, count++, working);
@@ -492,9 +506,9 @@ export default function NotebookView(props: Props) {
         };
         await onChange(working);
       }
-      setStatus((value) => value.startsWith("Stopped") ? value : "Notebook run completed.");
+      setStatus((value) => stopRequested.current ? "Notebook stopped." : value.startsWith("Stopped") ? value : "Notebook run completed.");
     } catch (error) {
-      setStatus(`Notebook could not start: ${String(error)}`);
+      setStatus(stopRequested.current ? "Notebook stopped." : `Notebook could not start: ${String(error)}`);
     } finally {
       setRunning(false);
       onRunStateChange?.(false);
@@ -518,11 +532,9 @@ export default function NotebookView(props: Props) {
   }
 
   async function stopReset() {
+    stopRequested.current = true;
     runtime.stop();
-    setRunning(false);
-    setStatus("Execution stopped; restoring the isolated Python kernel…");
-    await runtime.start(inputs);
-    setStatus("Execution stopped. The kernel is ready.");
+    setStatus("Stopping Notebook…");
   }
 
   async function clearOutputs() {

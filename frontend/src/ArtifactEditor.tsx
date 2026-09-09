@@ -12,7 +12,7 @@ import { parseMixed } from "@lezer/common";
 import { tags } from "@lezer/highlight";
 import { ActionIcon } from "./components/ActionIcon";
 import { Button, Input } from "./components/BlueprintControls";
-import { extractOutputNames, isInputBindingsCell } from "./artifactBindings";
+import { extractInputNames, isInputBindingsCell, pipelineInputState } from "./artifactBindings";
 import type {
   MethodRecord,
   NotebookCell,
@@ -31,6 +31,7 @@ export type EditorOriginTab =
   | "settings";
 
 interface EditorSessionBase {
+  isNew?: boolean;
   id: string;
   name: string;
   originTab: EditorOriginTab;
@@ -228,6 +229,7 @@ export default function ArtifactEditor({
   onSave,
   onSaveRun,
   onRevert,
+  onBindInputs,
   onClose
 }: {
   session: ArtifactEditorSession | null;
@@ -240,9 +242,12 @@ export default function ArtifactEditor({
   onSave: () => void;
   onSaveRun: () => void;
   onRevert: () => void;
+  onBindInputs?: (preferred?: Record<string, string>) => void;
   onClose: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [inputChoices, setInputChoices] = useState<Record<string, string>>({});
+  useEffect(() => setInputChoices({}), [session?.id]);
   useEffect(() => {
     if (session?.kind === "notebook") {
       const editableIndex = session.draft.document.cells.findIndex(
@@ -262,7 +267,13 @@ export default function ArtifactEditor({
     );
   }
 
-  const version = session.kind === "method"
+  const referencedInputs = session.kind === "method" ? extractInputNames(session.draftCode)
+    : session.kind === "notebook" ? [...new Set(session.draft.document.cells.filter(cell => !isInputBindingsCell(cell)).flatMap(cell => extractInputNames(sourceText(cell))))] : [];
+  const missingInputs = referencedInputs.filter(name => !inputs.some(file => file.name === name && !file.deletedAt && file.state === "ready"));
+  const pipelineIssues = session.kind === "pipeline" ? pipelineInputState(session.draft, methods, inputs)
+    .flatMap((step, index) => step.missingMethod ? [`Step ${index + 1}: pinned Method is unavailable`]
+      : step.bindings.filter(binding => binding.missing).map(binding => `Step ${index + 1}: ${binding.to} is unavailable`)) : [];
+  const version = session.isNew ? 1 : session.kind === "method"
     ? session.original.currentVersion + (session.dirty ? 1 : 0)
     : session.kind === "pipeline"
       ? session.original.version + (session.dirty ? 1 : 0)
@@ -276,21 +287,35 @@ export default function ArtifactEditor({
           <small>
             {version == null ? "Notebook" : `Version ${version}`}
             {` · ${session.bindingCount} input binding${session.bindingCount === 1 ? "" : "s"}`}
-            {session.dirty ? " · Unsaved" : " · Saved"}
+            {session.isNew ? " · New draft" : session.dirty ? " · Unsaved" : " · Saved"}
           </small>
         </div>
-        <Button disabled={saving || !session.dirty || Boolean(session.error)} onClick={onSave}>
+        <Button disabled={saving || (!session.dirty && !session.isNew)} onClick={onSave}>
           <ActionIcon name="save" />Save
         </Button>
-        <Button disabled={saving || Boolean(session.error)} onClick={onSaveRun}>
+        <Button disabled={saving || Boolean(session.error) || missingInputs.length > 0 || pipelineIssues.length > 0} title={missingInputs.length || pipelineIssues.length ? "Resolve missing inputs below before running" : undefined} onClick={onSaveRun}>
           <ActionIcon name="run" />Save and Run
         </Button>
         <Button disabled={saving || !session.dirty} onClick={onRevert}>
           <ActionIcon name="reset" />Revert
         </Button>
+        {onBindInputs && <Button disabled={saving} onClick={() => onBindInputs(inputChoices)}>Apply input bindings</Button>}
         <Button disabled={saving} onClick={onClose}>Close</Button>
       </div>
       {session.error && <div className="editor-error" role="alert">{session.error}</div>}
+      {pipelineIssues.length > 0 && <div className="editor-error" role="alert">
+        <strong>Repair these inputs before running. You can still edit and save this Pipeline.</strong>
+        <ul>{pipelineIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>
+      </div>}
+      {referencedInputs.length > 0 && <details className="editor-bindings" open={missingInputs.length > 0}>
+        <summary>Input bindings{missingInputs.length ? ` — ${missingInputs.length} unresolved` : ""}</summary>
+        <p>Choose replacements, then Apply input bindings. Opening this editor does not change saved inputs.</p>
+        {referencedInputs.map(name => <label key={name}><span>{name}{missingInputs.includes(name) ? " (missing)" : ""}</span>
+          <select aria-label={`Replacement for ${name}`} value={inputChoices[name] || name} onChange={event => setInputChoices(current => ({ ...current, [name]: event.target.value }))}>
+            {missingInputs.includes(name) && <option value={name}>Choose an available input</option>}
+            {inputs.filter(file => !file.deletedAt && file.state === "ready").map(file => <option key={file.id} value={file.name}>{file.name}</option>)}
+          </select></label>)}
+      </details>}
       <div className={`editor-workspace editor-${session.kind}`}>
         {session.kind === "method" && (
           <CodeEditor
@@ -346,18 +371,8 @@ function PipelineEditor({
   const steps = session.draft.steps;
   const active = steps[activeIndex] || null;
   const activeMethod = methods.find((method) => method.id === active?.methodId);
-  const bindingOptions = useMemo(() => {
-    const names = new Set(inputs.filter((file) => file.state === "ready" && !file.deletedAt)
-      .map((file) => file.name));
-    for (let index = 0; index < activeIndex; index += 1) {
-      const step = steps[index];
-      const method = methods.find((item) => item.id === step.methodId);
-      const version = method?.versions.find((item) => item.version === step.methodVersion);
-      if (version) extractOutputNames(version.code).forEach((name) => names.add(name));
-    }
-    Object.values(active?.inputBindings || {}).forEach((name) => names.add(name));
-    return Array.from(names).sort();
-  }, [active?.id, activeIndex, inputs, methods, steps]);
+  const inputState = pipelineInputState(session.draft, methods, inputs)[activeIndex];
+  const bindingOptions = inputState?.options || [];
 
   const updateSteps = (nextSteps: PipelineRecord["steps"]) => {
     onChange({
@@ -463,12 +478,13 @@ function PipelineEditor({
             </label>
             <fieldset>
               <legend>Input bindings</legend>
-              {!Object.keys(active.inputBindings).length && <small>This step has no external inputs.</small>}
-              {Object.entries(active.inputBindings).map(([from, to]) => (
-                <label key={from}>{from}
+              {!inputState?.bindings.length && <small>{inputState?.missingMethod ? "The pinned Method version is unavailable." : "This step has no external inputs."}</small>}
+              {inputState?.bindings.map(({ from, to, missing }) => (
+                <label key={from}>{from}{missing ? " (missing)" : ""}
                   <select value={to} onChange={(event) => replaceActive({
                     inputBindings: { ...active.inputBindings, [from]: event.target.value }
                   })}>
+                    {missing && <option value={to}>Unavailable: {to}</option>}
                     {bindingOptions.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
                 </label>

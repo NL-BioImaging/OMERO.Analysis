@@ -47,12 +47,12 @@ function status(linked: boolean): SyncStatus {
 
 describe("remote Workspace deletion reconciliation", () => {
   it("recognizes a confirmed deletion only for a previously synced Workspace", () => {
-    expect(remoteWorkspaceWasDeleted(workspace("synced"), status(false))).toBe(true);
+    expect(remoteWorkspaceWasDeleted(workspace("synced"), { ...status(false), lifecycle: "purged" })).toBe(true);
     expect(remoteWorkspaceWasDeleted(workspace("local", false), status(false))).toBe(false);
     expect(remoteWorkspaceWasDeleted(workspace("linked"), status(true))).toBe(false);
   });
 
-  it("deletes missing synced Workspaces but preserves new local Workspaces", async () => {
+  it("preserves missing synced Workspaces as well as new local Workspaces", async () => {
     const removed: string[] = [];
     const result = await reconcileDeletedRemoteWorkspaces(
       [workspace("deleted"), workspace("local", false), workspace("linked")],
@@ -60,9 +60,9 @@ describe("remote Workspace deletion reconciliation", () => {
       async (workspaceId) => { removed.push(workspaceId); }
     );
 
-    expect(removed).toEqual(["deleted"]);
-    expect(result.deletedWorkspaceIds).toEqual(["deleted"]);
-    expect(result.retained.map((item) => item.id)).toEqual(["local", "linked"]);
+    expect(removed).toEqual([]);
+    expect(result.deletedWorkspaceIds).toEqual([]);
+    expect(result.retained.map((item) => item.id)).toEqual(["deleted", "local", "linked"]);
   });
 
   it("keeps local data when the OMERO status check fails", async () => {

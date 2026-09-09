@@ -1,3 +1,4 @@
+import { scopedWorkspaceName } from "./workspaceModel";
 import type {
   ChatRecord,
   ExecutionRecord,
@@ -39,11 +40,26 @@ function requestValue<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
+let pendingWrites = 0;
+function storageState(error?: unknown) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("analysis-storage-state", {
+    detail: { pending: pendingWrites, error: error ? String(error) : undefined }
+  }));
+}
 function transactionDone(transaction: IDBTransaction): Promise<void> {
+  const writing = transaction.mode === "readwrite";
+  if (writing) { pendingWrites++; storageState(); }
   return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error("Storage transaction aborted"));
+    let settled = false;
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (writing) { pendingWrites--; storageState(error); }
+      if (error) reject(error); else resolve();
+    };
+    transaction.oncomplete = () => finish();
+    transaction.onerror = () => finish(transaction.error || new Error("Browser save failed"));
+    transaction.onabort = () => finish(transaction.error || new Error("Storage transaction aborted"));
   });
 }
 
@@ -131,12 +147,25 @@ async function entitiesForWorkspace<T>(store: Exclude<EntityStore, "workspaces">
   return requestValue(tx.objectStore(store).index("workspaceId").getAll(workspaceId)) as Promise<T[]>;
 }
 
+function checkLifecycleWrite(persisted: WorkspaceRecord | undefined, value: WorkspaceRecord) {
+  if (!persisted) return;
+  const server = value.lifecycleRevision || 0, savedServer = persisted.lifecycleRevision || 0;
+  const local = value.browserLifecycleRevision || 0, savedLocal = persisted.browserLifecycleRevision || 0;
+  if (server < savedServer || local < savedLocal ||
+      (server === savedServer && local === savedLocal &&
+       (Boolean(value.deletedAt) !== Boolean(persisted.deletedAt) || Boolean(value.purgedAt) !== Boolean(persisted.purgedAt)))) {
+    throw new Error("Workspace lifecycle changed in another tab. Reload before saving.");
+  }
+}
+
 export const saveWorkspaceRecord = (value: WorkspaceRecord): Promise<WorkspaceRecord> =>
   serializedWrite(async () => {
     const db = await database();
-    const tx = db.transaction("workspaces", "readwrite");
+    const tx = db.transaction(["workspaces", "values"], "readwrite");
     const store = tx.objectStore("workspaces");
     const persisted = await requestValue(store.get(value.id)) as WorkspaceRecord | undefined;
+    if (await requestValue(tx.objectStore("values").get(`workspace-purged:${value.id}`))) throw new Error("Workspace was permanently removed");
+    checkLifecycleWrite(persisted, value);
     const updated = {
       ...value,
       revision: Math.max(persisted?.revision || 0, value.revision || 0) + 1
@@ -208,10 +237,11 @@ export async function deleteChatCascade(chatId: string): Promise<void> {
   });
 }
 
-export async function deleteWorkspaceCascade(workspaceId: string): Promise<void> {
+export async function deleteWorkspaceCascade(workspaceId: string, permanently = false): Promise<void> {
   await serializedWrite(async () => {
     const db = await database();
-    const tx = db.transaction([...STORES], "readwrite");
+    const tx = db.transaction([...STORES, "values"], "readwrite");
+    if (permanently) tx.objectStore("values").put(true, `workspace-purged:${workspaceId}`);
     for (const storeName of STORES) {
       const store = tx.objectStore(storeName);
       if (storeName === "workspaces") {
@@ -296,10 +326,12 @@ async function findWorkspace(key: string): Promise<WorkspaceRecord | undefined> 
 export async function replaceWorkspace(workspace: AnalysisWorkspace): Promise<AnalysisWorkspace> {
   return serializedWrite(async () => {
     const db = await database();
-    const tx = db.transaction([...STORES], "readwrite");
+    const tx = db.transaction([...STORES, "values"], "readwrite");
     const existing = await requestValue(
       tx.objectStore("workspaces").get(workspace.workspace.id)
     ) as WorkspaceRecord | undefined;
+    if (await requestValue(tx.objectStore("values").get(`workspace-purged:${workspace.workspace.id}`))) throw new Error("Workspace was permanently removed");
+    checkLifecycleWrite(existing, workspace.workspace);
     const workspaceRecord = {
       ...workspace.workspace,
       revision: Math.max(existing?.revision || 0, workspace.workspace.revision || 0) + 1
@@ -333,8 +365,11 @@ export async function replaceWorkspace(workspace: AnalysisWorkspace): Promise<An
   });
 }
 
-export async function loadOrCreateWorkspace(context: OmeroContext | null): Promise<AnalysisWorkspace> {
-  const key = await contextKey(context);
+export async function loadOrCreateWorkspace(
+  context: OmeroContext | null, instanceId?: string, name?: string
+): Promise<AnalysisWorkspace> {
+  const baseKey = await contextKey(context);
+  const key = instanceId ? `${baseKey}:workspace:${instanceId}` : baseKey;
   let workspaceRecord = await findWorkspace(key);
   if (!workspaceRecord) {
     const now = new Date().toISOString();
@@ -342,8 +377,8 @@ export async function loadOrCreateWorkspace(context: OmeroContext | null): Promi
     workspaceRecord = {
       id: chat.workspaceId,
       contextKey: key,
-      rootPath: workspaceRoot(context),
-      name: context?.name || "Local workspace",
+      rootPath: name ? `${workspaceRoot(context)}--${slug(name)}` : workspaceRoot(context),
+      name: scopedWorkspaceName(context, name || (context ? "Analysis 1" : "Local workspace")),
       objectType: context?.object_type,
       objectId: context?.object_id,
       userId: context?.user_id || 0,
@@ -409,7 +444,8 @@ export async function listContextWorkspaces(context: OmeroContext | null): Promi
   const values = await requestValue(tx.objectStore("workspaces").getAll()) as WorkspaceRecord[];
   return values
     .filter((workspace) =>
-      workspace.contextKey === key || workspace.contextKey.startsWith(`${key}:import:`)
+      workspace.contextKey === key || workspace.contextKey.startsWith(`${key}:import:`) ||
+      workspace.contextKey.startsWith(`${key}:workspace:`)
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }

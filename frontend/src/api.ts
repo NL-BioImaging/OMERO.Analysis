@@ -38,7 +38,7 @@ function workspaceRoute(
 }
 
 export class OmeroApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
   }
 }
@@ -298,17 +298,20 @@ export class OmeroBridge {
     form.append("inventory", JSON.stringify(inventory));
     form.append("plan_token", plan.planToken);
     const payloadKeys: string[] = [];
+    const bundle: BlobPart[] = [];
     for (const key of plan.uploadKeys) {
       const data = bytes.get(key);
       const item = inventory.items.find((entry) => entry.key === key);
       if (!data || !item) throw new Error(`Missing synchronization payload ${key}`);
       payloadKeys.push(key);
-      form.append(
+      if (plan.payloadEncoding === "concat-v1") bundle.push(data as BlobPart);
+      else form.append(
         "payloads",
         new Blob([data as BlobPart], { type: item.mimetype }),
         item.name
       );
     }
+    if (plan.payloadEncoding === "concat-v1") form.append("payload_bundle", new Blob(bundle), "workspace-payloads.bin");
     form.append("payload_keys", JSON.stringify(payloadKeys));
     const response = await this.authorizedFetch(workspaceRoute(
       this.bootstrap.workspaceSyncApplyTemplate,
@@ -320,7 +323,47 @@ export class OmeroBridge {
       headers: { "X-CSRFToken": csrfToken() },
       body: form
     });
+    return syncStatusFrom(await readJson(response));
+  }
+
+  async downloadWorkspaceResult(reference: { workspaceId: string; key: string; sha256: string; size: number }): Promise<ArrayBuffer> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("An OMERO context is required to restore this result");
+    const url = workspaceRoute(this.bootstrap.workspaceSyncStatusTemplate, context.object_type,
+      context.object_id, reference.workspaceId) + "result/?key=" + encodeURIComponent(reference.key);
+    const response = await this.authorizedFetch(url);
     if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
+    if (!Number.isSafeInteger(reference.size) || reference.size < 0 || !response.body) throw new Error("Invalid saved result size");
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        size += part.value.byteLength;
+        if (size > reference.size) throw new Error("Restored result exceeds its declared size");
+        chunks.push(part.value);
+      }
+    } finally { await reader.cancel(); reader.releaseLock(); }
+    const buffer = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.byteLength; }
+    const data = buffer.buffer;
+    if (data.byteLength !== reference.size) throw new Error("Restored result size mismatch");
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data))).map(b => b.toString(16).padStart(2, "0")).join("");
+    if (digest !== reference.sha256) throw new Error("Restored result checksum mismatch");
+    return data;
+  }
+
+  async changeWorkspaceLifecycle(workspaceId: string, action: "trash" | "restore" | "purge", revision: number): Promise<SyncStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for workspace management");
+    const url = workspaceRoute(this.bootstrap.workspaceSyncStatusTemplate,
+      context.object_type, context.object_id, workspaceId) + "lifecycle/";
+    const response = await this.authorizedFetch(url, { method: "POST",
+      headers: { "X-CSRFToken": csrfToken(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action, revision }) });
     return syncStatusFrom(await readJson(response));
   }
 
@@ -636,7 +679,7 @@ async function errorText(response: Response): Promise<string> {
 async function readJson(response: Response): Promise<any> {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error?.message || `${response.status} ${response.statusText}`);
+    throw new OmeroApiError(body.error?.message || `${response.status} ${response.statusText}`, response.status, body.error?.code);
   }
   return body;
 }

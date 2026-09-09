@@ -319,7 +319,7 @@ $(function () {
     if (root) filterLibrary(root, event.currentTarget.value);
   });
 
-  panel.on("click", ".oa-open-analysis", function (event) {
+  panel.on("click", ".oa-open-analysis, .oa-new-workspace, .oa-resume-workspace", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (!root) return;
     var launchArguments = [
@@ -330,12 +330,22 @@ $(function () {
       selectedLibraryIds(root),
       selectedSourceIds(root)
     ];
+    var create = event.currentTarget.classList.contains("oa-new-workspace");
+    var workspace = event.currentTarget.dataset.workspaceId || root.dataset.workspaceId;
+    if (workspace || create) launchArguments[3] = null;
+    function targetUrl(integrated) {
+      var url = new URL((integrated ? biomeroAnalysisUrl : analysisUrl).apply(null, launchArguments), window.location.origin);
+      var prefix = integrated ? "analysis_" : "";
+      if (create) url.searchParams.set(prefix + "new_workspace", crypto.randomUUID());
+      else if (workspace) url.searchParams.set(prefix + "workspace_id", workspace);
+      return url.toString();
+    }
     if (root.dataset.integratedDataAnalysis === "true") {
-      window.location.assign(biomeroAnalysisUrl.apply(null, launchArguments));
+      window.location.assign(targetUrl(true));
       return;
     }
     window.open(
-      analysisUrl.apply(null, launchArguments),
+      targetUrl(false),
       "_blank",
       "noopener"
     );

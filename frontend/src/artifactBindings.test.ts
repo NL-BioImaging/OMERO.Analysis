@@ -7,6 +7,7 @@ import {
   extendPipelineInputs,
   isInputBindingsCell
 } from "./artifactBindings";
+import { pipelineInputState } from "./artifactBindings";
 import type {
   ExecutionRecord,
   MethodRecord,
@@ -16,6 +17,25 @@ import type {
 } from "./types";
 
 const createdAt = "2026-08-03T10:00:00Z";
+
+it("inspects missing Pipeline bindings without rebinding and respects ordered pinned outputs", () => {
+  const first = method("first", 'read("/input/missing.csv"); write("/output/first.csv")');
+  first.versions.push({ ...first.versions[0], version: 2, code: 'write("/output/other.csv")' });
+  const second = method("second", 'read("/input/first.csv")');
+  const pipeline = { steps: [
+    { id: "one", methodId: "first", methodVersion: 1, inputBindings: {} },
+    { id: "two", methodId: "second", methodVersion: 1, inputBindings: {} }
+  ] } as PipelineRecord;
+  const before = JSON.stringify(pipeline);
+  const states = pipelineInputState(pipeline, [first, second], [input("replacement.csv")]);
+  expect(states[0].bindings).toEqual([{from: "missing.csv", to: "missing.csv", missing: true}]);
+  expect(states[1].bindings[0].missing).toBe(false);
+  expect(states[1].options).not.toContain("other.csv");
+  expect(JSON.stringify(pipeline)).toBe(before);
+  pipeline.steps[0].inputBindings["missing.csv"] = "replacement.csv";
+  expect(pipelineInputState(pipeline, [first, second], [input("replacement.csv")])[0].bindings[0].missing).toBe(false);
+  expect(pipelineInputState(pipeline, [first], [])[1].missingMethod).toBe(true);
+});
 
 function input(name: string, state: WorkspaceFile["state"] = "ready"): WorkspaceFile {
   return {

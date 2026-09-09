@@ -1,3 +1,4 @@
+import { groupedResultFiles } from "./plotGroups";
 import { primaryExecutionForPrompt } from "./executionPresentation";
 import type { AnalysisWorkspace, WorkspaceFile } from "./types";
 
@@ -42,12 +43,9 @@ export function evidenceLinks(
   const seen = new Set<string>();
   const links: EvidenceLink[] = [];
   for (const execution of executions) {
-    for (const fileId of execution.outputFileIds) {
-      const file = workspace.files.find((candidate) =>
-        candidate.id === fileId && !candidate.deletedAt
-      );
-      if (!file) continue;
-      const key = `${file.sha256}:${file.type}`;
+    const groups = groupedResultFiles(workspace.files.filter(candidate => execution.outputFileIds.includes(candidate.id)));
+    for (const file of groups.flatMap(files => [files[0], ...files.slice(1).filter(file => !file.type.startsWith("image/"))])) {
+      const key = `${execution.id}:${file.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
       links.push({
