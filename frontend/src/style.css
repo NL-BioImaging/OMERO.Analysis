@@ -1707,9 +1707,6 @@ th { position: sticky; top: 0; background: #183040; }
 }
 
 
-.query-result-saves { padding: .6rem; border-bottom: 1px solid var(--line); }
-.query-result-saves > div { display: grid; gap: .35rem; padding: .5rem 0; }
-.query-result-saves small { overflow-wrap: anywhere; }
 
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,
@@ -2173,3 +2170,155 @@ th { position: sticky; top: 0; background: #183040; }
   border-color: rgba(200, 118, 25, .7);
   color: #a66315;
 }
+
+/* Secondary panels and status text share the same light palette as the main
+   views. Keep these scoped to the shell so dark mode and notebook plots retain
+   their own colors. */
+.app-shell[data-theme="light"] .notebook-parameters,
+.app-shell[data-theme="light"] .data-query-policy,
+.app-shell[data-theme="light"] .settings-card,
+.app-shell[data-theme="light"] .method-inspector-narrative,
+.app-shell[data-theme="light"] .pipeline-inspector-preview > li,
+.app-shell[data-theme="light"] .pipeline-step-heading,
+.app-shell[data-theme="light"] .help-window-layout > nav,
+.app-shell[data-theme="light"] .table-filter,
+.app-shell[data-theme="light"] .message.execution.inspection {
+  background: var(--theme-control);
+  border-color: var(--line);
+  color: var(--theme-text);
+}
+.app-shell[data-theme="light"] .library-item-icon,
+.app-shell[data-theme="light"] .pipeline-inspector-step-number,
+.app-shell[data-theme="light"] .pipeline-outline .pipeline-step-number,
+.app-shell[data-theme="light"] .pipeline-method-order,
+.app-shell[data-theme="light"] .editor-managed-note {
+  background: #e8f1fb;
+  border-color: #8eb5de;
+  color: var(--theme-accent);
+}
+.app-shell[data-theme="light"] .notebook-parameters small,
+.app-shell[data-theme="light"] .notebook-parameter small,
+.app-shell[data-theme="light"] .notebook-code > summary,
+.app-shell[data-theme="light"] .notebook-cell-gutter,
+.app-shell[data-theme="light"] .notebook-duckdb-output > summary small,
+.app-shell[data-theme="light"] .notebook-duckdb-progress span,
+.app-shell[data-theme="light"] .notebook-duckdb-progress small,
+.app-shell[data-theme="light"] .notebook-empty,
+.app-shell[data-theme="light"] .notebook-inspector-cell-heading span,
+.app-shell[data-theme="light"] .database-schema-preview summary small,
+.app-shell[data-theme="light"] .workspace-header p,
+.app-shell[data-theme="light"] .workspace-actions .menu-heading,
+.app-shell[data-theme="light"] .browser-context-menu .context-title,
+.app-shell[data-theme="light"] .method-selection-toolbar span,
+.app-shell[data-theme="light"] .library-tree-dataset > summary span:nth-child(3) small,
+.app-shell[data-theme="light"] .pipeline-inspector-preview small,
+.app-shell[data-theme="light"] .pipeline-inspector-preview em,
+.app-shell[data-theme="light"] .pipeline-inspector-empty,
+.app-shell[data-theme="light"] .pipeline-binding-list dt,
+.app-shell[data-theme="light"] .pipeline-parameter-list dt,
+.app-shell[data-theme="light"] .editor-empty,
+.app-shell[data-theme="light"] .editor-title small,
+.app-shell[data-theme="light"] .editor-outline li button span,
+.app-shell[data-theme="light"] .pipeline-step-summary small,
+.app-shell[data-theme="light"] .pipeline-step-heading small,
+.app-shell[data-theme="light"] .pipeline-step-editor > label,
+.app-shell[data-theme="light"] .pipeline-step-editor fieldset label,
+.app-shell[data-theme="light"] .notebook-add-cell small,
+.app-shell[data-theme="light"] .message-citations > span,
+.app-shell[data-theme="light"] .activity-timing,
+.app-shell[data-theme="light"] .message-activity,
+.app-shell[data-theme="light"] .inspection-note,
+.app-shell[data-theme="light"] .table-filter span,
+.app-shell[data-theme="light"] .message figcaption,
+.app-shell[data-theme="light"] .supporting-executions > p,
+.app-shell[data-theme="light"] .pipeline-builder > header span,
+.app-shell[data-theme="light"] .pipeline-method-picker label small,
+.app-shell[data-theme="light"] .pipeline-builder-actions > span,
+.app-shell[data-theme="light"] .run-history h3,
+.app-shell[data-theme="light"] .run-history button time,
+.app-shell[data-theme="light"] .run-empty,
+.app-shell[data-theme="light"] .run-steps li > span,
+.app-shell[data-theme="light"] .run-bindings dt,
+.app-shell[data-theme="light"] .run-files h3,
+.app-shell[data-theme="light"] .run-files button small,
+.app-shell[data-theme="light"] .settings-sync-toolbar span,
+.app-shell[data-theme="light"] .local-ai-heading small,
+.app-shell[data-theme="light"] .local-ai-help,
+.app-shell[data-theme="light"] .local-ai-status,
+.app-shell[data-theme="light"] .local-ai-server label span,
+.app-shell[data-theme="light"] .provider-validation small,
+.app-shell[data-theme="light"] .skill-card span,
+.app-shell[data-theme="light"] .skill-settings-row span,
+.app-shell[data-theme="light"] .help-window-search small,
+.app-shell[data-theme="light"] .help-window-layout > nav strong { color: var(--muted); }
+.app-shell[data-theme="light"] .app-dialog p,
+.app-shell[data-theme="light"] .app-dialog label,
+.app-shell[data-theme="light"] .pipeline-binding-list dd,
+.app-shell[data-theme="light"] .pipeline-parameter-list dd,
+.app-shell[data-theme="light"] .execution-content h4,
+.app-shell[data-theme="light"] .supporting-execution h5 { color: var(--theme-text); }
+.app-shell[data-theme="light"] .skill-badge,
+.app-shell[data-theme="light"] .method-source-preview[open] summary,
+.app-shell[data-theme="light"] .pipeline-inspector-preview details summary,
+.app-shell[data-theme="light"] .pipeline-binding-list dd span,
+.app-shell[data-theme="light"] .pipeline-step-heading span,
+.app-shell[data-theme="light"] .pipeline-step-editor legend,
+.app-shell[data-theme="light"] .assistant-method-code > summary,
+.app-shell[data-theme="light"] .message-citations button,
+.app-shell[data-theme="light"] .ai-live-response > strong,
+.app-shell[data-theme="light"] .ai-question > strong,
+.app-shell[data-theme="light"] .execution-heading,
+.app-shell[data-theme="light"] .execution-actions .detail-toggle,
+.app-shell[data-theme="light"] .supporting-executions > summary,
+.app-shell[data-theme="light"] .analysis-start-card > .action-icon,
+.app-shell[data-theme="light"] .run-summary span { color: var(--theme-accent); }
+.app-shell[data-theme="light"] .privacy-badge,
+.app-shell[data-theme="light"] .compatibility,
+.app-shell[data-theme="light"] .reuse-note,
+.app-shell[data-theme="light"] .model-payload summary,
+.app-shell[data-theme="light"] .workspace-sync-bar > span { color: #237344; }
+.app-shell[data-theme="light"] .ai-activity-log li.completed .ai-activity-marker { color: #237344; }
+.app-shell[data-theme="light"] .ai-question-answer { color: #237344 !important; }
+.app-shell[data-theme="light"] .skill-badge.warning,
+.app-shell[data-theme="light"] .compatibility.needs-setup,
+.app-shell[data-theme="light"] .attachment-chip em,
+.app-shell[data-theme="light"] .workspace-sync-bar.changes > span,
+.app-shell[data-theme="light"] .warning,
+.app-shell[data-theme="light"] .settings-warning,
+.app-shell[data-theme="light"] .composer-state.waiting { color: #8a520f; }
+.app-shell[data-theme="light"] .notebook-error,
+.app-shell[data-theme="light"] .notebook-stream.stderr,
+.app-shell[data-theme="light"] .notebook-inspector-output.error,
+.app-shell[data-theme="light"] .execution-error,
+.app-shell[data-theme="light"] .workspace-preparation-error,
+.app-shell[data-theme="light"] .workspace-sync-bar.error > span,
+.app-shell[data-theme="light"] .run-summary pre,
+.app-shell[data-theme="light"] .run-steps li p { color: #b52f35; }
+.app-shell[data-theme="light"] .quota-warning,
+.app-shell[data-theme="light"] .plot-warning,
+.app-shell[data-theme="light"] .blocker,
+.app-shell[data-theme="light"] .notebook-portability-warning {
+  background: #fff4df;
+  border-color: #c99748;
+  color: #8a520f;
+}
+.app-shell[data-theme="light"] .editor-error {
+  background: #fff0ef;
+  border-color: #ce7777;
+  color: #b52f35;
+}
+.app-shell[data-theme="light"] .icon-root,
+.app-shell[data-theme="light"] .icon-file,
+.app-shell[data-theme="light"] .folder-chevron,
+.app-shell[data-theme="light"] .cell-type-icon {
+  color: #516675;
+}
+.app-shell[data-theme="light"] .browser-icon.notebook::before { color: #6f3f91; }
+.app-shell[data-theme="light"] .browser-icon.pipeline::before { color: #17658b; }
+.app-shell[data-theme="light"] .cell-type-icon.code::before { color: #7b5d00; }
+.app-shell[data-theme="light"] .cell-type-icon.markdown::before { color: #17658b; }
+.app-shell[data-theme="light"] .cell-type-icon.raw::before { color: #516675; }
+.app-shell[data-theme="light"] .cell-type-icon.bindings::before { color: #237344; }
+.app-shell[data-theme="light"] .file-browser-toolbar button:hover,
+.app-shell[data-theme="light"] .browser-more:hover { background: #edf0f2 !important; }
+.app-shell[data-theme="light"] .library-tree-group > summary:hover { background: #e8f1fb; }

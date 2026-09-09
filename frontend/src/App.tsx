@@ -169,7 +169,6 @@ import { HelpWindow } from "./components/HelpWindow";
 import { AnalysisHome } from "./components/AnalysisHome";
 import { AnalysisNavigation } from "./components/AnalysisNavigation";
 import { AnalysisRunsView } from "./components/AnalysisRunsView";
-import { QueryResultSaves } from "./components/QueryResultSaves";
 import { WorkspacePreparationScreen } from "./components/WorkspacePreparationScreen";
 import { ActionIcon, type ActionIconName } from "./components/ActionIcon";
 import {
@@ -8108,10 +8107,6 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               </small>
             )}
           </div>
-          <QueryResultSaves bridge={bridge}
-            enabled={Boolean(dataQueryCapabilities?.features?.result_promotion_v1)}
-            contextKey={workspace.id} canAnnotate={Boolean(bootstrap.context?.can_annotate)}
-            ttlSeconds={dataQueryCapabilities?.result_ttl_seconds || 600} />
           <div className="file-browser-toolbar" role="toolbar" aria-label="Workspace file actions">
             <button title="Add files" aria-label="Add files" onClick={() => addFilesInput.current?.click()}><Icon name="upload" /></button>
             <button title="Refresh workspace" aria-label="Refresh workspace" onClick={() => void refreshWorkspace()}><Icon name="refresh" /></button>

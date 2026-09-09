@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const stylesheet = readFileSync(resolve(process.cwd(), "src/style.css"), "utf8");
+const stylesheet = readFileSync(resolve(process.cwd(), "src/style.css"), "utf8").replace(/\r\n/g, "\n");
 
 describe("dark theme typography", () => {
   it("takes ownership of Blueprint bare-element colors", () => {

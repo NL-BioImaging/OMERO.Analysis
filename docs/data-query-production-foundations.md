@@ -1,6 +1,6 @@
 # Data query production foundations
 
-Candidate pair: **Analysis 0.14.0**, based on `analysis_integration` commit `4db7f8b`, with **DataQueryWorker 0.2.0**, based on `2115594`. Existing notebook results, manual saving, Methods v1/v2 and local/remote query selection are retained. The new worker can be deployed first; the new Analysis broker accepts workers without provenance capability and hides direct saving for those results.
+Candidate pair: **Analysis 0.14.0**, based on `analysis_integration` commit `4db7f8b`, with **DataQueryWorker 0.2.0**, based on `2115594`. Existing notebook results, manual saving, Methods v1/v2 and local/remote query selection are retained. The new worker can be deployed first; the new Analysis broker accepts workers without provenance capability and keeps query/download behavior compatible.
 
 ## Authorization and exact CSV saving
 
@@ -8,9 +8,9 @@ Schema, execution, download and promotion use one authorization function. It che
 
 Fresh membership rows are checked because OMERO's session membership can lag group removal. Users must still belong to the built-in `user` group and the data group, or have current system-group membership. Save authorization additionally uses OMERO's effective `canAnnotate()` result; it does not reconstruct annotation permission from a role matrix. Permission behavior is based on [OMERO's documented group permissions](https://omero.readthedocs.io/en/stable/sysadmins/server-permissions.html). The locally tested private-group PI/admin could read another owner's source but could not annotate it; the implementation follows that effective server decision.
 
-An enhanced query response includes an encrypted/authenticated `provenance_receipt` alongside the existing result token. The receipt binds the exact token, browser session, user/group, context, original source parent/file/annotation, source revision, SQL, typed parameters and worker execution metadata. Receipts expire on the result-token schedule. They remain in browser memory, are cleared on workspace changes and never enter portable Methods, notebook contracts or exports. Hiding Explorer preserves the mounted receipt state.
+An enhanced query response includes an encrypted/authenticated `provenance_receipt` alongside the existing result token. The receipt binds the exact token, browser session, user/group, context, original source parent/file/annotation, source revision, SQL, typed parameters and worker execution metadata. Receipts expire on the result-token schedule. Receipts never enter portable Methods, notebook contracts or exports. The Explorer Recent query results panel and its save buttons were removed on 2026-09-09; ordinary notebook/Method result saving remains available.
 
-The **Save query result to OMERO** action calls `POST /api/data-query-result/promote/` with `result_token`, `receipt` and optional `.csv` filename in the JSON body. The destination is always the original context. The server reauthorizes before downloading and immediately before writing, streams within the direct-promotion limit (defaulting to the existing upload limit), and verifies exact byte count and SHA-256. An expired/missing result requires a rerun; saving never reruns SQL implicitly.
+The optional provenance promotion API accepts `POST /api/data-query-result/promote/` with `result_token`, `receipt` and optional `.csv` filename in the JSON body. The destination is always the original context. The server reauthorizes before downloading and immediately before writing, streams within the direct-promotion limit (defaulting to the existing upload limit), and verifies exact byte count and SHA-256. An expired/missing result requires a rerun; saving never reruns SQL implicitly.
 
 Promotion creates and links three annotations in the destination's group:
 

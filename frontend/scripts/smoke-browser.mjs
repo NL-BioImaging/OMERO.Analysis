@@ -211,7 +211,6 @@ try {
     }
   }
   await page.getByRole("button", { name: "Hide Explorer" }).click();
-  // Receipt subscriptions stay mounted while Explorer is hidden.
   if (await page.locator(".workspace-tree").isVisible()) {
     throw new Error("Explorer remained visible after using its header toggle");
   }
