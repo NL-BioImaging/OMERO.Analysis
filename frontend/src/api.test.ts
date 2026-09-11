@@ -631,3 +631,20 @@ describe("AI completion requests", () => {
     vi.unstubAllGlobals();
   });
 });
+
+
+it("saves notebook artifacts only through an explicitly scoped workspace route", async () => {
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    if (String(input) === "/token/") return new Response(JSON.stringify({ context_token: "test", operations: ["workspace_artifact"] }));
+    return new Response(JSON.stringify({ attachment: { annotation_id: 99, file_id: 100,
+      name: "own.ipynb", mimetype: "application/x-ipynb+json", size: 2, kind: "notebook", supported: false } }));
+  }));
+  const bridge = new OmeroBridge(bootstrap);
+  await bridge.connect();
+  expect(bridge.canUpload).toBe(true);
+  await bridge.uploadNotebook("own.ipynb", new Uint8Array([123, 125]), "my-workspace");
+  expect(calls).toContain("/workspace-sync/Dataset/42/my-workspace/artifact/");
+  expect(calls).not.toContain("/notebooks/Dataset/42/upload/");
+});

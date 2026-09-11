@@ -46,22 +46,15 @@
 
   {% if context.panel_kind == "source" %}
     <section class="oa-card">
-      <h3>Workspaces for this {{ context.object_type }}</h3>
-      <p>Keep separate analyses, inputs and results. Workspaces can be renamed in Analysis.</p>
+      <h3>Continue an existing workspace</h3>
+      <p class="oa-help">Open a workspace below to continue with its saved inputs, analyses and results.</p>
       {% for workspace in context.analysis_workspaces %}
-        <p><button class="oa-button oa-resume-workspace" type="button" data-workspace-id="{{ workspace.workspaceId }}">Open {{ workspace.workspaceName }}</button>
-        <small>Revision {{ workspace.revision }} · {{ workspace.syncStatus.syncState }}</small></p>
-      {% empty %}<p>No synchronized workspaces yet.</p>{% endfor %}
-      <button class="oa-button oa-new-workspace" type="button">New workspace</button>
+        <p><button class="oa-button oa-resume-workspace" type="button" data-workspace-id="{{ workspace.workspaceId }}">Continue {{ workspace.workspaceName }}</button></p>
+      {% empty %}<p>No saved workspaces for this source yet.</p>{% endfor %}
     </section>
-    <div class="oa-actions">
-      <button class="oa-button oa-button-primary oa-open-analysis" type="button">
-        <span aria-hidden="true">&#8599;</span>
-        {% if context.selection_count %}Open selection in Analysis{% else %}Open Analysis{% endif %}
-      </button>
-    </div>
-    <p class="oa-panel-status" role="status" aria-live="polite"></p>
-
+    <section class="oa-card oa-create-workspace">
+      <h3>Start a new workspace</h3>
+      <p class="oa-help">Choose inputs below, then create a separate workspace for your analysis. These choices apply only to the new workspace.</p>
     {% if context.selection_count %}
       <section class="oa-card oa-selection-card">
         <div class="oa-section-heading">
@@ -81,12 +74,12 @@
     {% else %}
       <section class="oa-card">
         <div class="oa-section-heading">
-          <div><span class="oa-step">1</span><h3>Select data attachments</h3></div>
+          <div><span class="oa-step">1</span><h3>Choose data for the new workspace</h3></div>
           <span class="oa-selected-count">0 selected</span>
         </div>
         <p class="oa-help">
           Choose one or more directly attached databases, workbooks, or tables.
-          They are downloaded into the browser before an analysis is run.
+          Remote analysis uses DataQueryWorker: the database stays on the server and only query results reach your browser. Browser analysis downloads the selected file.
         </p>
         {% if context.can_annotate %}
           <div class="oa-attachment-upload-row">
@@ -103,6 +96,7 @@
                 <span class="oa-file-icon" aria-hidden="true">DATA</span>
                 <span class="oa-file-details">
                   <strong>{{ attachment.name }}</strong>
+                  <small>{% if attachment.default_mode == "remote" %}{% if attachment.worker_ready %}DataQueryWorker · remote analysis{% else %}DataQueryWorker unavailable · remote analysis cannot start{% endif %}{% else %}Browser analysis · file downloaded{% endif %}</small>
                   <small>{{ attachment.mimetype }} · {{ attachment.size }} bytes
                     <span class="oa-annotation-id">Annotation {{ attachment.annotation_id }}</span>
                     {% if not attachment.direct %}
@@ -125,12 +119,20 @@
       </section>
     {% endif %}
 
-    {% include "omero_analysis/analysis_library_tree.html" %}
+    <p class="oa-panel-status" role="status" aria-live="polite"></p>
+    <div class="oa-actions">
+      <button class="oa-button oa-button-primary oa-new-workspace" type="button" disabled>Start new Workspace</button>
+    </div>
+    <details class="oa-optional-library">
+      <summary>Add reusable analyses (optional)</summary>
+      {% include "omero_analysis/analysis_library_tree.html" %}
+    </details>
+    </section>
 
     {% if context.workspace_snapshots and not context.selection_count %}
       <section class="oa-card">
         <div class="oa-section-heading">
-          <div><span class="oa-step">2</span><h3>Open a saved workspace</h3></div>
+          <div><span class="oa-step">2</span><h3>Restore an attached workspace snapshot</h3></div>
           <span class="oa-workspace-count">{{ context.workspace_snapshots|length }} saved</span>
         </div>
         <p class="oa-help">
@@ -141,8 +143,7 @@
           {% for snapshot in context.workspace_snapshots %}
             <li class="oa-data-card oa-workspace-card">
               <label>
-                <input type="radio" name="oa-workspace-snapshot"
-                       class="oa-workspace-snapshot" value="{{ snapshot.annotation_id }}">
+                <button class="oa-button oa-restore-snapshot" type="button" data-snapshot-id="{{ snapshot.annotation_id }}">Restore {{ snapshot.name }}</button>
                 <span class="oa-file-icon oa-workspace-icon" aria-hidden="true">ZIP</span>
                 <span class="oa-file-details">
                   <strong>{{ snapshot.name }}</strong>

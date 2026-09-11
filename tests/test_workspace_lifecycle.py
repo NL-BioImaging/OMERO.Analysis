@@ -17,7 +17,7 @@ def environment(monkeypatch, tmp_path):
     monkeypatch.setattr("omero_analysis.sync_lock.object_group_id", lambda obj: 4)
     monkeypatch.setattr(lifecycle, "user_id", lambda conn: 7)
     monkeypatch.setattr("omero_analysis.sync_lock.user_id", lambda conn: 7)
-    monkeypatch.setattr(lifecycle, "can_annotate", lambda obj: True)
+    monkeypatch.setattr(lifecycle, "require_workspace_access", lambda conn, obj: None)
     monkeypatch.setattr(sync, "_managed_project", lambda *a: object())
     return storage
 
@@ -81,3 +81,34 @@ def test_purge_requires_trash_and_matching_revision(environment):
         lifecycle.change_lifecycle(None, None, "one", "purge", 0)
     with pytest.raises(AnalysisError, match="changed"):
         lifecycle.change_lifecycle(None, None, "one", "trash", 7)
+
+
+def test_owned_dataset_management_does_not_require_reading_original_source(monkeypatch):
+    from types import SimpleNamespace
+    from omero_analysis import workspace_sync as ws
+    from .conftest import FakeConnection, FakeObject
+    dataset = FakeObject(object_id=42)
+    conn = FakeConnection(dataset)
+    monkeypatch.setattr(ws, "_owner_id", lambda obj: conn.user_id)
+    monkeypatch.setattr(ws, "_marker", lambda *args: (None, {"workspace_id": "mine", "source_object_type": "Plate", "source_object_id": "303"}))
+    monkeypatch.setattr(ws, "_managed_project", lambda *args: object())
+    monkeypatch.setattr(ws, "_managed_dataset", lambda *args: dataset)
+    source, wid = lifecycle.owned_workspace_context(conn, dataset)
+    assert wid == "mine" and source.OMERO_CLASS == "Plate" and source.getId() == 303
+    assert conn.getObject("Plate", 303) is None
+
+
+def test_workspace_membership_is_rechecked_after_revocation(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from omero_analysis.workspace_access import require_workspace_access
+    from omero_analysis.errors import PermissionDenied
+    from .conftest import FakeConnection, FakeObject
+    class Parameters:
+        def addLong(self, *args): return self
+    monkeypatch.setitem(sys.modules, "omero.sys", SimpleNamespace(ParametersI=Parameters))
+    obj = FakeObject()
+    conn = FakeConnection(obj)
+    conn.getQueryService = lambda: SimpleNamespace(projection=lambda *args: [])
+    with pytest.raises(PermissionDenied, match="revoked"):
+        require_workspace_access(conn, obj)

@@ -5,8 +5,32 @@ from pathlib import Path
 from .errors import AnalysisError, InvalidObject, PermissionDenied
 from .inplace_storage import storage_for
 from .managed_omero import user_id
-from .services import can_annotate, object_group_id
+from .services import object_group_id
+from .workspace_access import require_workspace_access
 from .sync_lock import serialized_sync
+
+
+def owned_workspace_context(conn, dataset):
+    """Management remains possible when the original source is no longer readable."""
+    from types import SimpleNamespace
+    from . import workspace_sync as ws
+    require_workspace_access(conn, dataset)
+    if ws._owner_id(dataset) != user_id(conn):
+        raise PermissionDenied("This workspace belongs to another user")
+    _, values = ws._marker(dataset, "dataset")
+    wid = values.get("workspace_id")
+    managed = ws._managed_dataset(ws._managed_project(conn, object_group_id(dataset)), wid)
+    if managed is None or managed.getId() != dataset.getId():
+        raise PermissionDenied("This Dataset is not in your managed workspace library")
+    source_type = values.get("source_object_type")
+    source_id = int(values.get("source_object_id", 0))
+    if source_type not in {"Image", "Dataset", "Screen", "Plate"} or source_id <= 0:
+        raise InvalidObject("The workspace source identity is invalid")
+    # Only lifecycle/status code receives this identity. Query/download endpoints
+    # continue to resolve the real source through OMERO's read authorization.
+    source = SimpleNamespace(OMERO_CLASS=source_type, getId=lambda: source_id,
+                             getDetails=dataset.getDetails)
+    return source, wid
 
 
 def conflict(message):
@@ -34,8 +58,7 @@ def require_active(conn, obj, inventory):
 @serialized_sync
 def change_lifecycle(conn, obj, workspace_id, action, expected_revision):
     from . import workspace_sync as ws
-    if not can_annotate(obj):
-        raise PermissionDenied("You cannot change this workspace")
+    require_workspace_access(conn, obj)
     storage, state = state_for(conn, obj, workspace_id)
     if storage is None:
         raise InvalidObject("Workspace lifecycle requires configured durable Analysis storage")
@@ -144,8 +167,7 @@ def cleanup_replaced(conn, obj, workspace_id, dataset, refs, revision):
 @serialized_sync
 def purge_workspace(conn, obj, workspace_id):
     from . import workspace_sync as ws
-    if not can_annotate(obj):
-        raise PermissionDenied("You cannot remove this workspace")
+    require_workspace_access(conn, obj)
     storage, _ = state_for(conn, obj, workspace_id)
     dataset = ws._managed_dataset(ws._managed_project(conn, object_group_id(obj)), workspace_id)
     path = Path("workspaces") / workspace_id / "cleanup.json"
@@ -208,9 +230,6 @@ def purge_workspace(conn, obj, workspace_id):
                 if not unmanaged:
                     ws._delete(conn, "Dataset", journal["datasetId"])
                     journal["datasetDeleted"] = True
-            marker, _ = ws._marker(obj, "source-link", {"workspace_id": workspace_id})
-            if marker:
-                ws._delete(conn, "Annotation", marker.getId())
         except Exception as exc:
             journal["errors"].append({"type": "metadata", "reason": type(exc).__name__})
     complete = not journal["pending"] and not journal["errors"]

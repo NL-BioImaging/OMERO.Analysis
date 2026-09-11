@@ -28,4 +28,8 @@ RUN set -eu; \
     && chmod 0755 /startup/51-omero-analysis-navigation.py \
     && chmod 0644 /opt/omero/web/config/90-omero-analysis.omero
 
+# Apply after all package installation; owned by deployment, not OMERO.web source.
+COPY docker/filter-analysis-attachments.py /script/filter-analysis-attachments.py
+RUN /opt/omero/web/venv3/bin/python /script/filter-analysis-attachments.py && \
+    /opt/omero/web/venv3/bin/python /script/filter-analysis-attachments.py --check
 USER omero-web

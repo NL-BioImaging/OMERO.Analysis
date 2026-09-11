@@ -1,0 +1,24 @@
+{
+  "user": "user2",
+  "source": 302,
+  "workspace": "72e3da93-ffcf-4440-9a37-1b4237edf65b",
+  "http_status": 201,
+  "result": {
+    "attachment": {
+      "annotation_id": 4241,
+      "file_id": 9194,
+      "name": "manual-save-test.csv",
+      "mimetype": "text/csv",
+      "size": 13,
+      "namespace": "nl.bioimaging.analysis.result.v1",
+      "kind": "result",
+      "supported": true,
+      "object_type": null,
+      "object_id": null,
+      "object_name": null,
+      "direct": true,
+      "owner_id": 137,
+      "owner_name": "user2"
+    }
+  }
+}

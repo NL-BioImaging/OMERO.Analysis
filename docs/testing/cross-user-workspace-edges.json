@@ -1,0 +1,13 @@
+{
+  "other_workspace": "denied",
+  "deleted_source_workspace": {
+    "trash_restore_purge": "passed",
+    "dataset": 698
+  },
+  "private_source": {
+    "result": "denied to other member",
+    "temporary_group_id": 116,
+    "removed": true,
+    "cleanup": "OMERO removed the test Dataset and memberships; the remaining one Event and EventLog and exact empty group were removed transactionally after IAdmin.deleteGroup rejected the event foreign key."
+  }
+}

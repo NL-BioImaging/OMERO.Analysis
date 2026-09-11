@@ -88,6 +88,7 @@ def test_context_token_reports_permissions():
         "library_download",
         "settings_read",
         "data_query",
+        "sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact",
     ]
 
 
@@ -418,7 +419,7 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
         "Image", 11, conn=SelectionConnection(source)
     )
     assert single_response.status_code == 200
-    assert b"Select data attachments" in single_response.content
+    assert b"Choose data for the new workspace" in single_response.content
     assert b'data-integrated-data-analysis="false"' in single_response.content
 
     settings.INTEGRATE_DATA_ANALYSIS = " TRUE "
@@ -434,7 +435,7 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
     )
     assert multiple_response.status_code == 200
     assert b"2 selected Images" in multiple_response.content
-    assert b"Open selection in Analysis" in multiple_response.content
+    assert b"Start new Workspace" in multiple_response.content
 
     project_response = views.panel(
         RequestFactory().get("/panel/Project/11/"),
@@ -442,7 +443,7 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
     )
     assert project_response.status_code == 200
     assert b"Select an analysis source" in project_response.content
-    assert b"Select data attachments" not in project_response.content
+    assert b"Choose data for the new workspace" not in project_response.content
 
 
 def test_notebook_upload_download_and_bootstrap_selection():

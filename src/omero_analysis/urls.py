@@ -35,6 +35,7 @@ urlpatterns = [
         views.data_query_capabilities,
         name="omero_analysis_data_query_capabilities",
     ),
+    re_path(r"^api/data-source/(?P<annotation_id>\d+)/progress/$", views.data_source_progress),
     re_path(
         r"^api/data-source/(?P<annotation_id>\d+)/schema/$",
         views.data_source_schema,
@@ -112,6 +113,12 @@ urlpatterns = [
     ),
     re_path(
         r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
+        r"(?P<workspace_id>[-\w]+)/artifact/$",
+        views.workspace_artifact,
+        name="omero_analysis_workspace_artifact",
+    ),
+    re_path(
+        r"^api/workspace-sync/(?P<object_type>\w+)/(?P<object_id>\d+)/"
         r"(?P<workspace_id>[-\w]+)/$",
         views.workspace_sync_status,
         name="omero_analysis_workspace_sync_status",
@@ -155,6 +162,11 @@ urlpatterns = [
         r"^api/workspace-dataset/(?P<dataset_id>\d+)/$",
         views.workspace_dataset,
         name="omero_analysis_workspace_dataset",
+    ),
+    re_path(
+        r"^api/workspace-dataset/(?P<dataset_id>\d+)/lifecycle/$",
+        views.workspace_dataset_lifecycle,
+        name="omero_analysis_workspace_dataset_lifecycle",
     ),
     re_path(
         r"^api/workspace-library/item/(?P<annotation_id>\d+)/download/$",

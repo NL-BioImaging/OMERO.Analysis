@@ -316,3 +316,22 @@ def test_tls_settings_apply_to_health_and_worker_requests(settings):
     settings.OMERO_ANALYSIS_DATA_QUERY_WORKER_URL = "http://worker"
     with pytest.raises(Exception, match="HTTPS"):
         DataQueryBroker()
+
+
+def test_workspace_promotion_from_read_only_source_is_scoped_and_idempotent(query_case, monkeypatch):
+    request, conn, payload, _, _ = query_case
+    source = conn.obj
+    source.annotatable = False
+    monkeypatch.setattr(source, "canAnnotate", lambda: False)
+    targets = {wid: FakeObject(object_id=number) for wid, number in (("mine-1", 21), ("mine-2", 22))}
+    from omero_analysis import workspace_sync
+    monkeypatch.setattr(workspace_sync, "workspace_destination", lambda c, obj, wid: targets[wid])
+    for wid, target in targets.items():
+        saved = provenance.promote_result(request, conn, {**payload, "workspace_id": wid})
+        assert not saved["reused"]
+        assert len(target.linked) == 3
+        assert provenance.promote_result(request, conn, {**payload, "workspace_id": wid})["reused"]
+    assert not source.linked
+    recipes = [json.loads(a.data) for a in conn.created_all if a.getNs() == provenance.NAMESPACE]
+    assert {recipe["destination"]["workspace_id"] for recipe in recipes} == set(targets)
+    assert all(recipe["context"]["object_id"] == source.getId() for recipe in recipes)

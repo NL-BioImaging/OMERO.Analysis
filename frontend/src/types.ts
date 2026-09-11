@@ -9,6 +9,8 @@ export type FileState = "loading" | "ready" | "failed" | "missing";
 
 export interface Attachment {
   annotation_id: number;
+  owner_id?: number;
+  owner_name?: string;
   file_id: number;
   name: string;
   mimetype: string;
@@ -27,10 +29,15 @@ export interface OmeroContext {
   object_type: OmeroObjectType;
   object_id: number;
   name: string;
+  source_owner_id?: number;
+  source_owner_name?: string;
   source_path?: Array<{ type: string; id: number; name: string }>;
   user_id: number;
   group_id: number;
   can_annotate: boolean;
+  can_read_source?: boolean;
+  can_annotate_source?: boolean;
+  can_manage_workspace?: boolean;
   max_snapshot_bytes?: number;
   selected_attachments: Attachment[];
   selected_workspace_snapshot?: Attachment | null;
@@ -742,6 +749,8 @@ export interface RuntimeOutput {
 }
 
 export interface RuntimeProgress {
+  indeterminate?: boolean;
+  detail?: string;
   percent: number;
   message: string;
 }

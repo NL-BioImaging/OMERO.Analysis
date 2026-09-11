@@ -24,3 +24,15 @@ configuration.
 No Nginx template changes or storage mounts are required. Data attachments are
 authorized and streamed through OMERO.web; Pyodide assets are public,
 immutable application files and contain no credentials or source data.
+
+## Managed Analysis attachments
+
+Also copy `docker/filter-analysis-attachments.py` into the remote build context as
+`filter-analysis-attachments.py`. The Dockerfile fragment applies and verifies it
+after installing packages. It excludes known Analysis file namespaces from the
+standard OMERO.web existing-attachment chooser, without deleting files or changing
+permissions. Run the step after any later OMERO.web pip installation too.
+The patch is idempotent and fails on an unexpected upstream exclusion list.
+Verify with `python /script/filter-analysis-attachments.py --check` using the web
+virtualenv. Roll back by deploying an unpatched image. Prebuilt images must be
+rebuilt to include this change; upgrading the Analysis wheel alone is insufficient.

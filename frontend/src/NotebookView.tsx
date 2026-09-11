@@ -452,12 +452,13 @@ export default function NotebookView(props: Props) {
         updatedAt: new Date().toISOString()
       };
       await onChange(working);
-      setStatus("Preparing the notebook and current input data…");
+      setStatus("Starting browser Python (the first run can take a minute)...");
       // Reset first: onBeforeRun may materialize remote-query CSV bindings in
       // /remote-query. Resetting afterward would delete those files before the
       // first notebook cell can consume them.
       await runtime.reset();
       checkStopped();
+      setStatus("Loading source data and checking query access...");
       const preparation = await onBeforeRun(working);
       checkStopped();
       if (preparation && !Array.isArray(preparation)) working = preparation.notebook;
@@ -465,6 +466,7 @@ export default function NotebookView(props: Props) {
         ? preparation
         : preparation?.inputs || inputs;
       working = await attachInputs(working, false, preparedInputs);
+      setStatus("Binding notebook inputs and preparing queries...");
       if (onPrepareProtocol) working = await onPrepareProtocol(working);
       checkStopped();
       if (parseNotebookProtocol(working.document)) {

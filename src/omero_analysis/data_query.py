@@ -40,7 +40,9 @@ CAPABILITY = "omero-data-query-v1"
 class ChunkReader:
     """Bounded file-like adapter over the OMERO chunk iterator."""
 
-    def __init__(self, chunks: Any, size: int) -> None:
+    def __init__(self, chunks: Any, size: int, progress=None) -> None:
+        self._progress = progress
+        self._size = size
         self._chunks = iter(chunks)
         self._buffer = b""
         self._remaining = size
@@ -67,6 +69,8 @@ class ChunkReader:
                 raise RemoteQueryFailed("Source ended before its declared size") from None
         value, self._buffer = self._buffer[:target], self._buffer[target:]
         self._remaining -= len(value)
+        if self._progress:
+            self._progress(self._size - self._remaining)
         return value
 
 
@@ -108,7 +112,8 @@ def query_policy(info: Any, worker_ready: bool) -> dict[str, Any]:
 
 
 class DataQueryBroker:
-    def __init__(self, session: requests.Session | None = None, request_id: str | None = None) -> None:
+    def __init__(self, session: requests.Session | None = None, request_id: str | None = None, progress=None) -> None:
+        self.progress = progress
         self.url = data_query_worker_url()
         self.token = data_query_worker_token()
         self.session = session or requests.Session()
@@ -210,7 +215,7 @@ class DataQueryBroker:
         cached = self._request("POST", "/v1/sources/resolve", json=resolve)
         if cached.get("cached") and isinstance(cached.get("source"), dict):
             return cached["source"]
-        reader = ChunkReader(annotation.getFileInChunks(), info.size)
+        reader = ChunkReader(annotation.getFileInChunks(), info.size, self.progress)
         encoder = MultipartEncoder(
             fields={
                 "scope_id": scope,

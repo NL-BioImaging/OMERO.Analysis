@@ -38,7 +38,8 @@ from .managed_omero import (
     set_marker,
     user_id as _user_id,
 )
-from .services import can_annotate, object_group_id, safe_filename, validate_notebook
+from .workspace_access import can_manage_workspace, require_workspace_access
+from .services import object_group_id, safe_filename, validate_notebook
 from .settings import (
     context_ttl_seconds,
     import_max_concurrency,
@@ -175,13 +176,18 @@ def _managed_project(conn, group_id, create=False):
             marker.get("owner_user_id") == str(_user_id(conn))
             and marker.get("group_id") == str(group_id)
         ):
+            if create and str(_plain(project.getDescription())) == (
+                    "Private, managed OMERO Analysis workspace library. "
+                    "Content is updated only by explicit synchronization."):
+                project.setDescription("User-owned OMERO Analysis workspace library; group permissions apply.")
+                project.save()
             return project
     if not create:
         return None
     project = create_project(
         conn,
         PROJECT_NAME,
-        "Private, managed OMERO Analysis workspace library. "
+        "User-owned OMERO Analysis workspace library; group permissions apply. "
         "Content is updated only by explicit synchronization."
     )
     _set_marker(conn, project, {
@@ -198,6 +204,9 @@ def _managed_dataset(project, workspace_id):
     for dataset in _project_datasets(project):
         _, marker = _marker(dataset, "dataset")
         if marker.get("workspace_id") == workspace_id:
+            if (_owner_id(dataset) != _owner_id(project) or
+                    object_group_id(dataset) != object_group_id(project)):
+                raise PermissionDenied("Workspace ownership or group does not match its library")
             return dataset
     return None
 
@@ -399,8 +408,8 @@ def sync_status(conn, obj, workspace_id):
         "schema": STATUS_SCHEMA,
         "lifecycle": lifecycle["state"] if dataset is not None or lifecycle["state"] != "active" else "unavailable",
         "lifecycleRevision": lifecycle["revision"],
-        "canSync": can_annotate(obj),
-        "reason": "" if can_annotate(obj) else "You cannot annotate the selected OMERO object.",
+        "canSync": can_manage_workspace(conn, obj),
+        "reason": "" if can_manage_workspace(conn, obj) else "Your workspace group access is unavailable.",
         "linked": dataset is not None,
         "projectId": int(project.getId()) if project is not None else None,
         "projectName": str(_plain(project.getName())) if project is not None else PROJECT_NAME,
@@ -550,7 +559,7 @@ def _active_workspace_import_orders(storage, workspace_id):
     for journal_path in pending_root.glob("*.json"):
         try:
             journal = json.loads(journal_path.read_text(encoding="utf-8"))
-            if journal.get("workspaceId") != workspace_id:
+            if workspace_id is not None and journal.get("workspaceId") != workspace_id:
                 continue
             order_uuid = journal.get("orderUuid")
             if not order_uuid:
@@ -564,6 +573,16 @@ def _active_workspace_import_orders(storage, workspace_id):
         _journal_event(journals[key], event)["state"] == "pending"
         for key, event in events.items()
     )
+
+
+def _import_capacity(storage, project, workspace_id):
+    # Concurrent first imports can race while OMERO registers the user's
+    # ManagedRepository directory. Start one across all workspaces until a
+    # plot exists, then restore the configured per-workspace throughput.
+    initialized = any(next(iter(candidate.listChildren()), None) is not None
+                      for candidate in _project_datasets(project))
+    return (_active_workspace_import_orders(storage, workspace_id if initialized else None),
+            import_max_concurrency() if initialized else 1)
 
 
 def _username(conn):
@@ -601,11 +620,15 @@ def _pending_status(conn, obj, workspace_id, state, count, detail=""):
 def plan_sync(request, conn, obj, inventory):
     from .workspace_lifecycle import require_active
     require_active(conn, obj, inventory)
-    if not can_annotate(obj):
-        raise PermissionDenied("The selected OMERO object cannot be synchronized")
+    require_workspace_access(conn, obj)
     sync_status(conn, obj, inventory["workspace"]["id"])
     project = _managed_project(conn, object_group_id(obj))
     dataset = _managed_dataset(project, inventory["workspace"]["id"])
+    if dataset is not None:
+        _, source_identity = _marker(dataset, "dataset")
+        if (source_identity.get("source_object_type") != inventory["workspace"]["sourceObjectType"] or
+                int(source_identity.get("source_object_id", 0)) != int(obj.getId())):
+            raise PermissionDenied("This workspace belongs to another source")
     _, manifest = _read_manifest(dataset)
     _, storage = storage_for(object_group_id(obj), _user_id(conn), initialize=False)
     if storage is not None:
@@ -1080,8 +1103,7 @@ def _delete_ref(conn, ref):
 def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads):
     from .workspace_lifecycle import require_active
     require_active(conn, obj, inventory)
-    if not can_annotate(obj):
-        raise PermissionDenied("The selected OMERO object cannot be synchronized")
+    require_workspace_access(conn, obj)
     claims = _validate_plan_token(request, conn, obj, inventory, plan_token)
     if list(payload_keys) != list(claims.get("upload_keys") or []):
         raise InvalidObject("Uploaded synchronization keys do not match the plan")
@@ -1098,6 +1120,11 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
 
     project = _managed_project(conn, object_group_id(obj), create=True)
     dataset = _managed_dataset(project, inventory["workspace"]["id"])
+    if dataset is not None:
+        _, source_identity = _marker(dataset, "dataset")
+        if (source_identity.get("source_object_type") != inventory["workspace"]["sourceObjectType"] or
+                int(source_identity.get("source_object_id", 0)) != int(obj.getId())):
+            raise PermissionDenied("This workspace belongs to another source")
     dataset_created = dataset is None
     if dataset is None:
         dataset = _create_dataset(conn, project, inventory)
@@ -1142,10 +1169,7 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             )
         pending_count = 0
         failed_count = 0
-        active_orders = _active_workspace_import_orders(
-            storage, inventory["workspace"]["id"]
-        )
-        concurrency_limit = import_max_concurrency()
+        active_orders, concurrency_limit = _import_capacity(storage, project, inventory["workspace"]["id"])
         for item in inventory["items"]:
             if item["kind"] != "png-image" or item["key"] not in payload:
                 continue
@@ -1334,13 +1358,14 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         new_items = [new_items_by_key[item["key"]] for item in inventory["items"]]
         revision = int((old_manifest or {}).get("revision") or 0) + 1
         manifest = _manifest_for(inventory, revision, new_items)
+        details = obj.getDetails()
+        event = getattr(details, "getUpdateEvent", lambda: None)()
+        manifest["source"] = {"object_type": inventory["workspace"]["sourceObjectType"],
+                              "object_id": int(obj.getId()), "owner_id": _owner_id(obj),
+                              "group_id": object_group_id(obj),
+                              "revision": _plain(event.getId()) if event is not None else None}
         manifest_annotation = _write_manifest(conn, dataset, manifest)
         staged.append(("Annotation", int(manifest_annotation.getId())))
-        _set_marker(conn, obj, {
-            "workspace_id": inventory["workspace"]["id"],
-            "project_id": project.getId(),
-            "dataset_id": dataset.getId(),
-        }, "source-link", {"workspace_id": inventory["workspace"]["id"]})
         _sync_content_markers(
             conn,
             dataset,
@@ -1596,3 +1621,23 @@ def library_annotation(conn, obj, annotation_id):
                 raise UnsupportedMedia("Library item SHA-256 does not match its manifest")
             return annotation, item
     raise AttachmentNotFound("The library item is not in your current-group Analysis library")
+
+
+def workspace_destination(conn, source, workspace_id):
+    """Resolve only this user's existing, active workspace; never accept a Dataset ID."""
+    from .workspace_lifecycle import state_for
+    require_workspace_access(conn, source)
+    workspace_id = _workspace_id(workspace_id)
+    _, state = state_for(conn, source, workspace_id)
+    if state["state"] != "active":
+        raise PermissionDenied("This workspace is not active")
+    dataset = _managed_dataset(_managed_project(conn, object_group_id(source)), workspace_id)
+    if dataset is None:
+        raise InvalidObject("Synchronize this workspace before saving additional artifacts")
+    if _owner_id(dataset) != _user_id(conn) or object_group_id(dataset) != object_group_id(source):
+        raise PermissionDenied("The workspace must belong to the active user and group")
+    _, identity = _marker(dataset, "dataset")
+    if (int(identity.get("source_object_id", 0)) != int(source.getId()) or
+            identity.get("source_object_type") != getattr(source, "OMERO_CLASS", None)):
+        raise PermissionDenied("The workspace belongs to another source")
+    return dataset

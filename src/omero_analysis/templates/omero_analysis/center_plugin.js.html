@@ -1,5 +1,5 @@
 {% load analysis_assets %}
-<link rel="stylesheet" href="{% analysis_static 'omero_analysis/panel.css' %}">
+<link rel="stylesheet" href="{% analysis_static 'omero_analysis/panel.css' %}&amp;layout=workspace-choices-2">
 <script>
 $(function () {
   "use strict";
@@ -179,35 +179,20 @@ $(function () {
     var countBadge = root.querySelector(".oa-selected-count");
     var libraryBadge = root.querySelector(".oa-library-selected-count");
     var status = root.querySelector(".oa-panel-status");
-    var button = root.querySelector(".oa-open-analysis");
-    if (countBadge) countBadge.textContent = count + " selected";
+    var button = root.querySelector(".oa-new-workspace");
+    if (countBadge) countBadge.textContent = (selectionCount || count) + " selected";
     if (libraryBadge) libraryBadge.textContent = libraryCount + " selected";
     if (status) {
-      status.textContent = workspaceId
-        ? "The saved workspace will be restored locally and its OMERO inputs synchronized."
-        : count
-        ? count + " attachment" + (count === 1 ? "" : "s") +
-          " will be downloaded into the Analysis Workspace."
-        : libraryCount
-        ? libraryCount + " reusable item" + (libraryCount === 1 ? "" : "s") +
-          " will be imported into Analysis automatically."
+      status.textContent = count
+        ? count + " data attachment" + (count === 1 ? "" : "s") + " selected for the new workspace."
         : selectionCount > 1
-        ? selectionCount + " selected " + root.dataset.objectType +
-          "s will define one Analysis Workspace."
-        : "No OMERO data selected; you can add local files after opening Analysis.";
+        ? selectionCount + " selected objects will define the new workspace."
+        : "Select at least one data attachment to start a new workspace.";
+      if (libraryCount) status.textContent += " " + libraryCount + " reusable item" + (libraryCount === 1 ? "" : "s") + " selected for import.";
     }
     if (button) {
-      button.innerHTML = workspaceId
-        ? '<span aria-hidden="true">&#8635;</span> Open selected workspace'
-        : count
-        ? '<span aria-hidden="true">&#8599;</span> Open with ' + count +
-          " attachment" + (count === 1 ? "" : "s")
-        : libraryCount
-        ? '<span aria-hidden="true">&#8599;</span> Open with library selection'
-        : selectionCount > 1
-        ? '<span aria-hidden="true">&#8599;</span> Open ' + selectionCount +
-          '-' + root.dataset.objectType.toLowerCase() + ' Workspace'
-        : '<span aria-hidden="true">&#8599;</span> Open Analysis';
+      button.textContent = "Start new Workspace";
+      button.disabled = count === 0 && selectionCount < 2;
     }
   }
 
@@ -319,7 +304,7 @@ $(function () {
     if (root) filterLibrary(root, event.currentTarget.value);
   });
 
-  panel.on("click", ".oa-open-analysis, .oa-new-workspace, .oa-resume-workspace", function (event) {
+  panel.on("click", ".oa-open-analysis, .oa-new-workspace, .oa-resume-workspace, .oa-restore-snapshot", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (!root) return;
     var launchArguments = [
@@ -331,8 +316,17 @@ $(function () {
       selectedSourceIds(root)
     ];
     var create = event.currentTarget.classList.contains("oa-new-workspace");
+    if (create && !selectedAnnotationIds(root).length && selectedSourceIds(root).length < 2) return;
     var workspace = event.currentTarget.dataset.workspaceId || root.dataset.workspaceId;
     if (workspace || create) launchArguments[3] = null;
+    var snapshot = event.currentTarget.dataset.snapshotId;
+    if (workspace || snapshot) {
+      // Resuming a workspace must not import choices from the new-workspace form.
+      launchArguments[2] = [];
+      launchArguments[4] = [];
+      launchArguments[5] = [];
+    }
+    if (snapshot) launchArguments[3] = snapshot;
     function targetUrl(integrated) {
       var url = new URL((integrated ? biomeroAnalysisUrl : analysisUrl).apply(null, launchArguments), window.location.origin);
       var prefix = integrated ? "analysis_" : "";

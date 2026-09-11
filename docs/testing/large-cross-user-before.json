@@ -1,0 +1,58 @@
+{
+  "Screen": [
+    {
+      "id": 4245,
+      "owner": 136,
+      "ns": null,
+      "file": 9198,
+      "size": 828125184,
+      "sha256": "9cdc9a5a60ae7ab824b5a1a35f6b4f7f65dd75e5dbc83c97383073b61e0d3636",
+      "value": null
+    }
+  ],
+  "Plate": [
+    {
+      "id": 4246,
+      "owner": 136,
+      "ns": "biomero.import",
+      "value": [
+        [
+          "UUID",
+          "df7bee0f-0eb6-4946-a1c8-f86f56627d9c"
+        ],
+        [
+          "Filepath",
+          "/data/Project B/20250502_BvS_STQ97_1025_16hDox_Trial5__cisegmentation.ome.zarr"
+        ],
+        [
+          "Group",
+          "TestGroup"
+        ],
+        [
+          "Username",
+          "user1"
+        ],
+        [
+          "DestinationID",
+          "204"
+        ],
+        [
+          "DestinationType",
+          "Screen"
+        ],
+        [
+          "Files",
+          "['/data/Project B/20250502_BvS_STQ97_1025_16hDox_Trial5__cisegmentation.ome.zarr']"
+        ],
+        [
+          "FileNames",
+          "['20250502_BvS_STQ97_1025_16hDox_Trial5__cisegmentation.ome.zarr']"
+        ],
+        [
+          "Import_Timestamp",
+          "2026-09-11T14:41:56.190705"
+        ]
+      ]
+    }
+  ]
+}

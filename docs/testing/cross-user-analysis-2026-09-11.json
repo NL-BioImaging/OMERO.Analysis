@@ -1,0 +1,112 @@
+[
+  {
+    "user": "user1",
+    "plate": 302,
+    "annotation": 4050,
+    "query_status": 200,
+    "download_status": 200,
+    "csv": "objects_count,images_count,intensity_count\n173,1,519\n"
+  },
+  {
+    "user": "user1",
+    "plate": 303,
+    "annotation": 4052,
+    "query_status": 200,
+    "download_status": 200,
+    "csv": "objects_count,images_count,intensity_count\n173,1,519\n",
+    "promotion_status": 200,
+    "promotion": {
+      "result": {
+        "annotation_id": 4108,
+        "file_id": 9094,
+        "name": "cross-user-test-user1-plate-303.csv",
+        "mimetype": "text/csv",
+        "size": 53,
+        "namespace": "nl.bioimaging.analysis.result.v1",
+        "kind": "result",
+        "supported": true,
+        "object_type": null,
+        "object_id": null,
+        "object_name": null,
+        "direct": true
+      },
+      "provenance": {
+        "annotation_id": 4109,
+        "file_id": 9095,
+        "name": "query-provenance.json",
+        "mimetype": "application/json",
+        "size": 2262,
+        "namespace": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "kind": "attachment",
+        "supported": true,
+        "object_type": null,
+        "object_id": null,
+        "object_name": null,
+        "direct": true
+      },
+      "reused": false
+    },
+    "promotion_retry_status": 200,
+    "promotion_retry_reused": true
+  },
+  {
+    "user": "user2",
+    "plate": 302,
+    "annotation": 4050,
+    "query_status": 200,
+    "download_status": 200,
+    "csv": "objects_count,images_count,intensity_count\n173,1,519\n",
+    "promotion_status": 200,
+    "promotion": {
+      "result": {
+        "annotation_id": 4111,
+        "file_id": 9096,
+        "name": "cross-user-test-user2-plate-302.csv",
+        "mimetype": "text/csv",
+        "size": 53,
+        "namespace": "nl.bioimaging.analysis.result.v1",
+        "kind": "result",
+        "supported": true,
+        "object_type": null,
+        "object_id": null,
+        "object_name": null,
+        "direct": true
+      },
+      "provenance": {
+        "annotation_id": 4112,
+        "file_id": 9097,
+        "name": "query-provenance.json",
+        "mimetype": "application/json",
+        "size": 2262,
+        "namespace": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "kind": "attachment",
+        "supported": true,
+        "object_type": null,
+        "object_id": null,
+        "object_name": null,
+        "direct": true
+      },
+      "reused": false
+    },
+    "promotion_retry_status": 200,
+    "promotion_retry_reused": true
+  },
+  {
+    "user": "user2",
+    "plate": 303,
+    "annotation": 4052,
+    "query_status": 200,
+    "download_status": 200,
+    "csv": "objects_count,images_count,intensity_count\n173,1,519\n"
+  },
+  {
+    "test": "user1 cannot reuse user2 context token",
+    "status": 403,
+    "error": {
+      "error": {
+        "code": "invalid_context_token",
+        "message": "The analysis context belongs to another user"
+      }
+    }
+  }
+]

@@ -7,7 +7,7 @@ import json
 import os
 import re
 import tempfile
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -151,16 +151,24 @@ def _create_map(conn, values, description=None):
 
 
 def promote_result(request, conn, payload):
-    if not isinstance(payload, dict) or set(payload) - {"result_token", "receipt", "filename"}:
+    if not isinstance(payload, dict) or set(payload) - {"result_token", "receipt", "filename", "workspace_id"}:
         raise RemoteQueryFailed("Unsupported result-save fields")
     token, receipt = payload.get("result_token"), payload.get("receipt")
     if not isinstance(token, str):
         raise InvalidToken("A result token is required")
     record = read_receipt(receipt, token)
     claims, obj, _, info, _, _ = authorize_query_source(request, conn, result_token=token)
-    if not can_annotate(obj):
+    workspace_id = payload.get("workspace_id")
+    if workspace_id is not None:
+        from .workspace_sync import workspace_destination
+        obj = workspace_destination(conn, obj, workspace_id)
+        record["destination"] = {"object_type": "Dataset", "object_id": int(obj.getId()),
+                                 "workspace_id": workspace_id}
+    elif not can_annotate(obj):
         raise PermissionDenied("The active user cannot annotate the selected object")
-    receipt_hash = hashlib.sha256(receipt.encode()).hexdigest()
+    identity = receipt if workspace_id is None else json.dumps(
+        [receipt, int(conn.getUserId()), record["group_id"], workspace_id], separators=(",", ":"))
+    receipt_hash = hashlib.sha256(identity.encode()).hexdigest()
     filename = safe_filename(payload.get("filename") or "data-query-result.csv")
     if not filename.lower().endswith(".csv"):
         raise UnsupportedMedia("Saved query results must use a .csv filename")
@@ -170,7 +178,14 @@ def promote_result(request, conn, payload):
     request.data_query_audit["result_sha256"] = result["execution"]["result_sha256"]
     if result["byte_count"] > data_query_promotion_max_bytes():
         raise RemoteQueryFailed("Query result exceeds the Analysis upload limit")
-    with promotion_lock(receipt_hash):
+    if workspace_id is not None:
+        from .inplace_storage import storage_for
+        from .sync_lock import storage_lock
+        _, storage = storage_for(record["group_id"], int(conn.getUserId()))
+        workspace_lock = storage_lock(storage)
+    else:
+        workspace_lock = nullcontext()
+    with workspace_lock, promotion_lock(receipt_hash):
         journal = recovery.PromotionJournal(receipt_hash)
         existing = _complete_promotion(obj, receipt_hash)
         if existing:
@@ -203,6 +218,8 @@ def promote_result(request, conn, payload):
                 raise RemoteQueryFailed("Query result checksum changed; rerun the query")
             # Recheck after the transfer, immediately before OMERO writes.
             _, obj, _, _, _, _ = authorize_query_source(request, conn, result_token=token)
+            if workspace_id is not None:
+                obj = workspace_destination(conn, obj, workspace_id)
             if not can_annotate(obj):
                 raise PermissionDenied("The destination is no longer annotatable")
             record = {key: value for key, value in record.items() if key != "result_token_sha256"}

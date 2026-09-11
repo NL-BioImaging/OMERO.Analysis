@@ -807,19 +807,11 @@ def context_token(request, conn=None, **kwargs):
         "settings_read",
         "data_query",
     ]
+    from .workspace_access import can_manage_workspace
     if can_annotate(obj):
-        operations.extend(
-            [
-                "upload",
-                "workspace_upload",
-                "pipeline_upload",
-                "notebook_upload",
-                "sync_plan",
-                "sync_apply",
-                "sync_remove",
-                "settings_sync",
-            ]
-        )
+        operations.extend(["upload", "workspace_upload", "pipeline_upload", "notebook_upload"])
+    if can_manage_workspace(conn, obj):
+        operations.extend(["sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact"])
     token, expires_at = make_context_token(
         request, conn, object_type, object_id, obj, operations
     )
@@ -853,9 +845,31 @@ def data_source_schema(request, annotation_id, conn=None, **kwargs):
     _, _, annotation, info, scope, source_ref = _data_query_attachment(
         request, conn, annotation_id
     )
-    return JsonResponse(
-        DataQueryBroker(request_id=request_correlation(request)).schema(annotation, info, scope, source_ref)
-    )
+    from .query_progress import Progress
+    progress = Progress(scope, source_ref, request.GET.get("progress_id", ""))
+    progress.update("checking", 0, info.size)
+    try:
+        result = DataQueryBroker(
+            request_id=request_correlation(request),
+            progress=lambda sent: progress.update(
+                "transferring" if sent < info.size else "inspecting", sent, info.size),
+        ).schema(annotation, info, scope, source_ref)
+        progress.update("ready", info.size, info.size)
+        return JsonResponse(result)
+    except Exception:
+        progress.update("failed", 0, info.size)
+        raise
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def data_source_progress(request, annotation_id, conn=None, **kwargs):
+    from .query_progress import Progress
+    _, _, _, _, scope, source_ref = _data_query_attachment(request, conn, annotation_id)
+    response = JsonResponse(Progress(scope, source_ref, request.GET.get("progress_id", "")).read())
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_POST
@@ -1146,6 +1160,9 @@ def download_notebook(request, annotation_id, conn=None, **kwargs):
 def _sync_context(request, conn, operation, object_type, object_id):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, operation, object_type, object_id, obj)
+    if operation in {"sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact"}:
+        from .workspace_access import require_workspace_access
+        require_workspace_access(conn, obj)
     return object_type, object_id, obj
 
 
@@ -1342,3 +1359,42 @@ def analysis_settings(request, object_type, object_id, conn=None, **kwargs):
 
         raise InvalidObject("Settings request body must be valid JSON") from exc
     return JsonResponse(save_settings(conn, group_id, payload), status=201)
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_artifact(request, object_type, object_id, workspace_id, conn=None, **kwargs):
+    from .workspace_sync import workspace_destination
+    from .sync_lock import serialized_sync
+    from .errors import InvalidObject
+    _, _, source = _sync_context(request, conn, "workspace_artifact", object_type, object_id)
+    uploaders = {"result": upload_result_annotation, "notebook": upload_notebook_annotation,
+                 "pipeline": upload_pipeline_annotation, "snapshot": upload_workspace_snapshot_annotation}
+    kind = request.POST.get("kind")
+    if kind not in uploaders:
+        raise InvalidObject("Unknown workspace artifact kind")
+    @serialized_sync
+    def save(conn, obj, workspace_id):
+        target = workspace_destination(conn, obj, workspace_id)
+        return uploaders[kind](conn, target, request.FILES.get("file"))
+    return JsonResponse({"attachment": save(conn, source, workspace_id)}, status=201)
+
+
+@require_http_methods(["GET", "POST"])
+@login_required(setGroupContext=True)
+@api_errors
+def workspace_dataset_lifecycle(request, dataset_id, conn=None, **kwargs):
+    from .workspace_lifecycle import owned_workspace_context, change_lifecycle
+    from .errors import InvalidObject
+    _, _, dataset = _sync_context(request, conn, "sync_remove" if request.method == "POST" else "context", "Dataset", dataset_id)
+    source, wid = owned_workspace_context(conn, dataset)
+    if request.method == "GET":
+        return JsonResponse(sync_status(conn, source, wid))
+    try:
+        payload = json.loads(request.body)
+        if not isinstance(payload, dict):
+            raise ValueError
+    except (ValueError, TypeError) as exc:
+        raise InvalidObject("Workspace action must be a JSON object") from exc
+    return JsonResponse(change_lifecycle(conn, source, wid, payload.get("action"), payload.get("revision")))

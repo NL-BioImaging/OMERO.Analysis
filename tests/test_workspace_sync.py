@@ -553,3 +553,38 @@ def test_sync_uses_concrete_omero_container_and_link_models(monkeypatch):
     assert project._obj is not None
     assert dataset._obj is not None
     assert link.__class__.__name__ == "ProjectDatasetLinkI"
+
+
+def test_read_only_source_can_plan_own_workspace_without_source_mutations():
+    obj = FakeObject(can_annotate=False)
+    conn = FakeConnection(obj)
+    plan = plan_sync(request(), conn, obj, inventory(obj, conn))
+    assert plan["planToken"]
+    assert sync_status(conn, obj, "workspace-1")["canSync"]
+    assert not obj.linked
+
+
+def test_workspace_destination_rejects_other_owner(monkeypatch):
+    from omero_analysis import workspace_sync as ws
+    source = FakeObject()
+    source.OMERO_CLASS = "Image"
+    target = FakeObject(object_id=20)
+    conn = FakeConnection(source)
+    monkeypatch.setattr(ws, "_managed_project", lambda *args: object())
+    monkeypatch.setattr(ws, "_managed_dataset", lambda *args: target)
+    monkeypatch.setattr(ws, "_owner_id", lambda obj: conn.user_id + 1)
+    with pytest.raises(PermissionDenied, match="active user"):
+        ws.workspace_destination(conn, source, "workspace-1")
+
+
+def test_first_plot_import_is_serialized_across_workspaces(monkeypatch):
+    from omero_analysis import workspace_sync as ws
+    calls = []
+    monkeypatch.setattr(ws, "_active_workspace_import_orders", lambda storage, wid: calls.append(wid) or 1)
+    monkeypatch.setattr(ws, "import_max_concurrency", lambda: 4)
+    monkeypatch.setattr(ws, "_project_datasets", lambda project: [SimpleNamespace(listChildren=lambda: [])])
+    assert ws._import_capacity(None, None, "mine") == (1, 1)
+    assert calls == [None]
+    monkeypatch.setattr(ws, "_project_datasets", lambda project: [SimpleNamespace(listChildren=lambda: [object()])])
+    assert ws._import_capacity(None, None, "mine") == (1, 4)
+    assert calls == [None, "mine"]

@@ -86,7 +86,7 @@ class PromotionJournal:
         elif record is not None:
             self.value = {"schema": SALT, "operation": uuid.uuid4().hex,
                           "receipt_sha256": receipt_hash, "user_id": record["user_id"],
-                          "group_id": record["group_id"], "context": record["context"],
+                          "group_id": record["group_id"], "context": record.get("destination", record["context"]),
                           "result_sha256": record["result"]["execution"]["result_sha256"],
                           "byte_count": record["result"]["byte_count"], "state": "pending",
                           "artifacts": {}, "created_at": time.time()}

@@ -713,9 +713,9 @@ export function RuntimeProgressPanel({
   const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
   return (
     <div className="runtime-progress" role="status" aria-live="polite">
-      <div><strong>{progress.message}</strong><span>{percent}%</span></div>
-      <progress max="100" value={percent} aria-label={label} />
-      <small>{detail}</small>
+      <div><strong>{progress.message}</strong><span>{progress.indeterminate ? "" : `${percent}%`}</span></div>
+      <progress max="100" value={progress.indeterminate ? undefined : percent} aria-label={label} />
+      <small>{progress.detail || detail}</small>
     </div>
   );
 }
@@ -841,7 +841,7 @@ export function ArtifactInspector({
                   </a>
                 )}
                 <Button onClick={() => onDownload(file)}><ActionIcon name="download" />Download</Button>
-                {canUpload && <Button onClick={() => onAttach(file)}><ActionIcon name="attach" />Attach to OMERO</Button>}
+                {canUpload && <Button onClick={() => onAttach(file)}><ActionIcon name="attach" />Save to my workspace</Button>}
               </div>
             </>
           ) : (

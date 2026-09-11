@@ -1477,36 +1477,7 @@ export default function App() {
       if (/^Analysis \d+$/.test(initial.workspace.name)) {
         initial = await replaceWorkspace(renameAnalysisWorkspace(initial, initial.workspace.name, now(), bootstrap.context));
       }
-      setWorkspaceProgress({ percent: 68, message: "Loading attached Notebooks…" });
-      for (const attached of bootstrap.context?.notebooks || []) {
-        if (initial.notebooks.some(
-          (item) => item.sourceAnnotationId === attached.annotation_id
-        )) continue;
-        try {
-          const timestamp = now();
-          const preparedNotebook = importedNotebookProtocol(
-            parseNotebook(await bridge.downloadNotebook(attached))
-          );
-          const notebook: NotebookRecord = {
-            id: id(),
-            workspaceId: initial.workspace.id,
-            name: attached.name,
-            ...preparedNotebook,
-            sourceAnnotationId: attached.annotation_id,
-            attachmentIds: [attached.annotation_id],
-            selectedDataFileIds: [],
-            createdAt: timestamp,
-            updatedAt: timestamp
-          };
-          initial = {
-            ...initial,
-            notebooks: [...initial.notebooks, notebook]
-          };
-          await saveNotebook(notebook);
-        } catch (error) {
-          console.warn(`Skipped invalid attached notebook ${attached.name}`, error);
-        }
-      }
+      // Source notebooks are imported only after an explicit user selection.
       const requestedNotebook = bootstrap.context?.selected_notebook;
       if (requestedNotebook) {
         let notebook = initial.notebooks.find(
@@ -1741,7 +1712,19 @@ export default function App() {
       };
       if (selectedMode === "remote") {
         try {
-          const schema = await bridge.remoteSchema(attachment.annotation_id);
+          const started = Date.now();
+          const describe = (value: Record<string, any> = {}) => {
+            const sent = Number(value.sent || 0);
+            const transferring = value.stage === "transferring";
+            setWorkspaceProgress({
+              percent: transferring ? sent / Math.max(1, attachment.size) * 100 : 0,
+              indeterminate: !transferring,
+              message: `${transferring ? "Transferring to DataQueryWorker" : value.stage === "inspecting" ? "Checking database on DataQueryWorker" : "Preparing DataQueryWorker source"}: ${attachment.name}`,
+              detail: `${transferring ? `${bytesLabel(sent)} of ` : ""}${bytesLabel(attachment.size)} · ${Math.floor((Date.now() - started) / 1000)} seconds elapsed. The database stays on the server; only query results are returned to your browser.`
+            });
+          };
+          describe();
+          const schema = await bridge.remoteSchema(attachment.annotation_id, describe);
           file.remoteSchemaDigest = String(schema.schema_digest || "");
         } catch (error) {
           file.state = "failed";
@@ -1769,6 +1752,12 @@ export default function App() {
     }
     for (let index = 0; index < candidates.length; index += 1) {
       const file = candidates[index];
+      setWorkspaceProgress({
+        percent: 0,
+        indeterminate: true,
+        message: `Downloading browser input ${index + 1} of ${candidates.length}: ${file.name}`,
+        detail: `${bytesLabel(file.size)} · Browser analysis downloads this file into your workspace.`
+      });
       setRuntimeProgress({
         percent: Math.round(index / Math.max(1, candidates.length) * 90),
         message: `Downloading ${index + 1} of ${candidates.length} OMERO inputs…`
@@ -2740,18 +2729,15 @@ export default function App() {
       const parsed = parseNotebook(data);
       const protocol = parseNotebookProtocol(parsed);
       const document = protocol ? sanitizeProtocolNotebook(parsed) : parsed;
-      const uploadData = serializeNotebook(document);
-      const attachment = bootstrap.context && bridge.canUpload
-        ? await bridge.uploadNotebook(file.name, uploadData)
-        : null;
+      // Automatic sync persists this notebook in the user-owned workspace.
       const timestamp = now();
       const record: NotebookRecord = {
         id: id(),
         workspaceId: current.workspace.id,
-        name: attachment?.name || file.name,
+        name: file.name,
         document,
-        sourceAnnotationId: attachment?.annotation_id,
-        attachmentIds: attachment ? [attachment.annotation_id] : [],
+        sourceAnnotationId: undefined,
+        attachmentIds: [],
         selectedDataFileIds: current.files
           .filter((item) => item.source !== "result" && item.role !== "chat-attachment" && !item.deletedAt)
           .map((item) => item.id),
@@ -2769,15 +2755,7 @@ export default function App() {
       setInspectorSelection({ kind: "notebook", id: record.id });
       setActiveTab("notebooks");
       await saveNotebook(record);
-      setStatus(
-        protocol
-          ? attachment
-            ? `Validated, sanitized, uploaded, and attached portable notebook ${record.name}`
-            : `Validated and uploaded portable notebook ${record.name} to this browser workspace`
-          : attachment
-            ? `Uploaded and attached legacy notebook ${record.name}; portability warning added`
-            : `Uploaded legacy notebook ${record.name}; portability warning added`
-      );
+      setStatus(`Imported ${record.name} into your workspace${protocol ? "" : "; legacy portability warning added"}`);
     } catch (error) {
       setStatus(`Notebook upload failed: ${String(error)}`);
     }
@@ -3456,14 +3434,14 @@ export default function App() {
       };
       const attachment = await bridge.uploadNotebook(
         `${stem}-executed-${timestamp}.ipynb`,
-        serializeNotebook(document)
+        serializeNotebook(document), current.workspace.id
       );
       await updateNotebook({
         ...record,
         attachmentIds: [...record.attachmentIds, attachment.annotation_id],
         updatedAt: now()
       });
-      setStatus(`Attached executed copy as FileAnnotation ${attachment.annotation_id}`);
+      setStatus(`Saved executed copy in your workspace as FileAnnotation ${attachment.annotation_id}`);
     } catch (error) {
       setStatus(`Executed notebook attachment failed: ${String(error)}`);
     }
@@ -3996,10 +3974,12 @@ export default function App() {
     if (action !== "restore" && !await dialogs.confirm(action === "trash" ? "Move workspace to Trash?" : "Delete workspace permanently?",
       action === "trash" ? `${name} can be restored later.` : `${name}: managed results and reusable analyses will be removed. Unrelated OMERO content is preserved.`,
       action === "trash" ? "Move to Trash" : "Delete permanently", true)) return;
-    const remote = bootstrap.context ? await bridge.syncStatus(identifier) : null;
+    const datasetId = local?.workspace.omeroSync?.datasetId;
+    const remote = bootstrap.context ? (datasetId ? await bridge.manageWorkspaceDataset(datasetId) : await bridge.syncStatus(identifier)) : null;
     let result = remote;
     if (remote?.linked || (remote?.lifecycle && !["active", "unavailable"].includes(remote.lifecycle))) {
-      result = await bridge.changeWorkspaceLifecycle(identifier, action, remote.lifecycleRevision || 0);
+      result = datasetId ? await bridge.manageWorkspaceDataset(datasetId, action, remote.lifecycleRevision || 0)
+        : await bridge.changeWorkspaceLifecycle(identifier, action, remote.lifecycleRevision || 0);
       if (result.cleanup && !result.cleanup.complete) throw new Error("Cleanup is incomplete. Its journal is retained; retry Delete permanently.");
     } else if (local?.workspace.omeroSync) {
       throw new Error("Remote workspace is unavailable. Local data is preserved; restore its access or linkage first.");
@@ -6858,12 +6838,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
 
   async function attach(file: WorkspaceFile) {
     if (!await dialogs.confirm(
-      "Attach result to OMERO?",
-      `${file.name} will be uploaded and linked directly to the selected OMERO object.`,
-      "Attach result"
+      "Save result in my workspace?",
+      `${file.name} will be saved in your own Analysis workspace. Group permissions apply.`,
+      "Save result"
     )) return;
     try {
-      const result = await bridge.attach(await restoreResult(file));
+      const current = workspaceRef.current;
+      if (!current) return;
+      const result = await bridge.attach(await restoreResult(file), current.workspace.id);
       setStatus(`Attached ${result.name} as FileAnnotation ${result.annotation_id}`);
     } catch (error) {
       setStatus(`Attach failed: ${String(error)}`);
@@ -7352,7 +7334,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       { label: "Rename", run: () => void renameWorkspaceFile(file) },
       { label: "Download", run: () => downloadFile(file) },
       ...(bridge.canUpload
-        ? [{ label: "Attach to OMERO", run: () => void attach(file) }]
+        ? [{ label: "Save to my workspace", run: () => void attach(file) }]
         : []),
       {
         label: selected.length > 1
@@ -8102,7 +8084,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       <header className="workspace-header">
         <div className="header-brand">
           <h1>OMERO.Analysis</h1>
-          <small className="source-breadcrumb">{bootstrap.context?.source_path?.map(item => item.name).join(" / ")}</small><p title={workspace.name}>{workspace.name}</p>
+          <small className="source-breadcrumb">Source: {bootstrap.context?.source_owner_name || ""} / {bootstrap.context?.source_path?.map(item => item.name).join(" / ")} · Saved in your workspace (user {bootstrap.context?.user_id}; group permissions apply)</small><p title={workspace.name}>{workspace.name}</p>
         </div>
         <div className="header-actions">
           <Button onClick={() => setShowTrash(true)}>Trash</Button>
@@ -8698,6 +8680,18 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               <span>{activeNotebooks.length} notebook{activeNotebooks.length === 1 ? "" : "s"}</span>
               {editorEnabled && <button aria-label="Create new Notebook" onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New Notebook</button>}
               <button aria-label="Upload Notebook" onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload Notebook</button>
+              {!!bootstrap.context?.notebooks?.length && <select aria-label="Import notebook from source" value=""
+                onChange={(event) => {
+                  const selected = bootstrap.context?.notebooks?.find(item => String(item.annotation_id) === event.target.value);
+                  if (selected) void bridge.downloadNotebook(selected).then(data =>
+                    uploadNotebookFile(new File([data], selected.name))).catch(error => setStatus(`Import failed: ${String(error)}`));
+                }}>
+                <option value="">Import notebook from source...</option>
+                {bootstrap.context.notebooks.map(item => <option key={item.annotation_id} value={item.annotation_id}>
+                  {item.name} ({item.owner_name || `owner ${item.owner_id ?? "unknown"}`}; annotation {item.annotation_id})
+                </option>)}
+              </select>}
+
             </div>
             <ul className="browser-list">
               {activeNotebooks.filter((notebook) =>

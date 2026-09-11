@@ -8,4 +8,8 @@ RUN /opt/omero/web/venv3/bin/python -m pip install --no-deps \
     && rm -f /tmp/omero_analysis-*.whl \
     && chmod 0755 /startup/49-omero-analysis-cleanup.py \
     && chmod 0755 /startup/51-omero-analysis-navigation.py
+# Apply after all package installation; owned by deployment, not OMERO.web source.
+COPY filter-analysis-attachments.py /script/filter-analysis-attachments.py
+RUN /opt/omero/web/venv3/bin/python /script/filter-analysis-attachments.py && \
+    /opt/omero/web/venv3/bin/python /script/filter-analysis-attachments.py --check
 USER omero-web

@@ -59,13 +59,13 @@ export class OmeroBridge {
     return () => { this.queryResultListeners.delete(listener); };
   }
 
-  async promoteRemoteResult(result: QuerySaveReceipt): Promise<Record<string, any>> {
+  async promoteRemoteResult(result: QuerySaveReceipt, workspaceId: string): Promise<Record<string, any>> {
     const url = this.bootstrap.dataQueryResultPromoteUrl;
     if (!url) throw new Error("Saving verified query results is unavailable");
     return readJson(await this.authorizedFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-      body: JSON.stringify({ result_token: result.resultToken, receipt: result.receipt })
+      body: JSON.stringify({ result_token: result.resultToken, receipt: result.receipt, workspace_id: workspaceId })
     }));
   }
   private readonly transport: OmeroContextTransport;
@@ -75,7 +75,7 @@ export class OmeroBridge {
   }
 
   get canUpload(): boolean {
-    return this.transport.has("upload");
+    return this.transport.has("workspace_artifact");
   }
 
   get canSync(): boolean {
@@ -118,27 +118,21 @@ export class OmeroBridge {
     return attachmentList(body.attachments);
   }
 
-  async attach(file: WorkspaceFile): Promise<Attachment> {
+  private async uploadWorkspaceArtifact(workspaceId: string, kind: string, name: string, data: Blob): Promise<Attachment> {
     const context = this.bootstrap.context;
-    if (!context || !file.data) throw new Error("No OMERO target or result data");
+    if (!context || !workspaceId) throw new Error("An active workspace is required");
     const form = new FormData();
-    form.append("file", new Blob([file.data], { type: file.type }), file.name);
-    const response = await this.authorizedFetch(
-      route(
-        this.bootstrap.uploadTemplate,
-        context.object_type,
-        context.object_id
-      ),
-      {
-        method: "POST",
-        headers: {
-          "X-CSRFToken": csrfToken()
-        },
-        body: form
-      }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.attachment);
+    form.append("kind", kind);
+    form.append("file", data, name);
+    const response = await this.authorizedFetch(workspaceRoute(
+      this.bootstrap.workspaceSyncStatusTemplate, context.object_type, context.object_id, workspaceId
+    ) + "artifact/", { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form });
+    return attachmentFrom((await readJson(response)).attachment);
+  }
+
+  async attach(file: WorkspaceFile, workspaceId: string): Promise<Attachment> {
+    if (!file.data) throw new Error("No result data");
+    return this.uploadWorkspaceArtifact(workspaceId, "result", file.name, new Blob([file.data], { type: file.type }));
   }
 
   async listSnapshots(): Promise<Attachment[]> {
@@ -163,27 +157,9 @@ export class OmeroBridge {
     return hierarchyFrom(await readJson(response));
   }
 
-  async uploadSnapshot(name: string, data: Uint8Array): Promise<Attachment> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the workspace snapshot");
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([data as BlobPart], { type: "application/zip" }),
-      name
-    );
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.snapshotUploadTemplate, context.object_type, context.object_id),
-      {
-        method: "POST",
-        headers: {
-          "X-CSRFToken": csrfToken()
-        },
-        body: form
-      }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.snapshot);
+  async uploadSnapshot(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
+    return this.uploadWorkspaceArtifact(workspaceId, "snapshot", name,
+      new Blob([data as BlobPart], { type: "application/zip" }));
   }
 
   async downloadSnapshot(snapshot: Attachment): Promise<ArrayBuffer> {
@@ -206,17 +182,9 @@ export class OmeroBridge {
     return attachmentList(body.pipelines);
   }
 
-  async uploadPipelineTemplate(name: string, data: Uint8Array): Promise<Attachment> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the pipeline template");
-    const form = new FormData();
-    form.append("file", new Blob([data as BlobPart], { type: "application/json" }), name);
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.pipelineTemplatesTemplate, context.object_type, context.object_id),
-      { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.pipeline);
+  async uploadPipelineTemplate(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
+    return this.uploadWorkspaceArtifact(workspaceId, "pipeline", name,
+      new Blob([data as BlobPart], { type: "application/json" }));
   }
 
   async downloadPipelineTemplate(template: Attachment): Promise<ArrayBuffer> {
@@ -239,21 +207,9 @@ export class OmeroBridge {
     return response.arrayBuffer();
   }
 
-  async uploadNotebook(name: string, data: Uint8Array): Promise<Attachment> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the notebook");
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([data as BlobPart], { type: "application/x-ipynb+json" }),
-      name
-    );
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.notebookUploadTemplate, context.object_type, context.object_id),
-      { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.notebook);
+  async uploadNotebook(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
+    return this.uploadWorkspaceArtifact(workspaceId, "notebook", name,
+      new Blob([data as BlobPart], { type: "application/x-ipynb+json" }));
   }
 
   async syncStatus(workspaceId: string): Promise<SyncStatus> {
@@ -354,6 +310,20 @@ export class OmeroBridge {
     const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data))).map(b => b.toString(16).padStart(2, "0")).join("");
     if (digest !== reference.sha256) throw new Error("Restored result checksum mismatch");
     return data;
+  }
+
+  async manageWorkspaceDataset(datasetId: number, action?: "trash" | "restore" | "purge", revision?: number): Promise<SyncStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO group for workspace management");
+    const transport = new OmeroContextTransport({ ...this.bootstrap,
+      context: { ...context, object_type: "Dataset", object_id: datasetId } });
+    await transport.connect();
+    const base = this.bootstrap.workspaceSyncStatusTemplate.split("workspace-sync/")[0];
+    const response = await transport.fetch(`${base}workspace-dataset/${datasetId}/lifecycle/`, action ? {
+      method: "POST", headers: { "X-CSRFToken": csrfToken(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action, revision })
+    } : {});
+    return syncStatusFrom(await readJson(response));
   }
 
   async changeWorkspaceLifecycle(workspaceId: string, action: "trash" | "restore" | "purge", revision: number): Promise<SyncStatus> {
@@ -482,12 +452,27 @@ export class OmeroBridge {
     return body as unknown as DataQueryCapabilities;
   }
 
-  async remoteSchema(annotationId: number): Promise<Record<string, any>> {
+  async remoteSchema(annotationId: number, onProgress?: (value: Record<string, any>) => void): Promise<Record<string, any>> {
     const url = (this.bootstrap.dataSourceSchemaTemplate || "").replace(
-      "/1/schema/",
-      `/${annotationId}/schema/`
+      "/1/schema/", `/${annotationId}/schema/`
     );
-    return await readJson(await this.authorizedFetch(url));
+    if (!onProgress) return await readJson(await this.authorizedFetch(url));
+    const progressId = crypto.randomUUID();
+    const suffix = `?progress_id=${progressId}`;
+    let finished = false;
+    let polling = false;
+    const poll = async () => {
+      if (finished || polling) return;
+      polling = true;
+      try {
+        const value = await readJson(await this.authorizedFetch(url.replace("/schema/", "/progress/") + suffix));
+        if (!finished) onProgress(value);
+      } catch { /* Status availability must not block the query. */ }
+      finally { polling = false; }
+    };
+    const timer = window.setInterval(() => { void poll(); }, 1000);
+    try { return await readJson(await this.authorizedFetch(url + suffix)); }
+    finally { finished = true; window.clearInterval(timer); }
   }
 
   async remoteQuery(
