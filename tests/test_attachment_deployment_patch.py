@@ -33,6 +33,20 @@ def test_patch_is_idempotent_and_preserves_existing_exclusions():
     assert namespace["BaseContainer"]().getFilesByObject() == ["companion", "photo", *patch.NAMESPACES]
 
 
+def test_patch_upgrades_a_recognized_older_analysis_namespace_list():
+    first = patch.patched_source(SOURCE)
+    older = first.replace(
+        ", rstring('nl.bioimaging.analysis.payload.v1'), rstring('nl.bioimaging.analysis.workspace.state.v1')",
+        "",
+    )
+
+    upgraded = patch.patched_source(older)
+
+    assert "nl.bioimaging.analysis.payload.v1" in upgraded
+    assert "nl.bioimaging.analysis.workspace.state.v1" in upgraded
+    assert patch.patched_source(upgraded) == upgraded
+
+
 def test_upstream_changes_fail_instead_of_silently_overwriting():
     with pytest.raises(RuntimeError, match="exclusion list differs"):
         patch.patched_source(SOURCE.replace('rstring(omero.constants.namespaces.NSEXPERIMENTERPHOTO)', 'rstring("another-namespace")'))

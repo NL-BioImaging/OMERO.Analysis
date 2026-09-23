@@ -276,6 +276,18 @@ def get_scoped_attachment(obj, annotation_id):
     )
 
 
+def get_analysis_attachment(conn, obj, annotation_id):
+    """Resolve a source attachment or a staged input adopted by its workspace."""
+    try:
+        return get_scoped_attachment(obj, annotation_id)
+    except AttachmentNotFound:
+        if conn is None:
+            raise
+        from .staged_attachments import workspace_input_attachment
+
+        return workspace_input_attachment(conn, obj, annotation_id)
+
+
 def get_direct_attachment(obj, annotation_id):
     annotation_id = canonical_object_id(annotation_id)
     for annotation, info in direct_file_annotations(obj):
@@ -432,8 +444,8 @@ def object_hierarchy(object_type, object_id, obj):
     }
 
 
-def checked_download(obj, annotation_id):
-    annotation, info = get_scoped_attachment(obj, annotation_id)
+def checked_download(obj, annotation_id, conn=None):
+    annotation, info = get_analysis_attachment(conn, obj, annotation_id)
     if not info.supported:
         raise UnsupportedMedia(f"{info.name} is not a supported analysis input")
     if info.size > max_download_bytes():

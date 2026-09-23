@@ -5,6 +5,15 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_synced_library_panel_keeps_content_outside_its_summary():
+    source = (ROOT / "src/omero_analysis/templates/omero_analysis/analysis_library_tree.html").read_text(encoding="utf-8")
+    heading, content = source.split('</summary>', 1)
+    assert 'oa-library-selected-count' in heading
+    assert 'oa-library-tree' not in heading
+    assert 'oa-library-tree' in content
+    assert source.rstrip().endswith('</div>\n</details>')
+
+
 def load_script(name):
     path = ROOT / "docker" / name
     spec = importlib.util.spec_from_file_location(name.replace("-", "_"), path)
@@ -24,6 +33,9 @@ def test_center_panel_supports_expected_omero_objects():
     assert "plugin_enabled" in source
     assert "selection_id=" in source
     assert "data_annotation=" in source
+    assert "staged_attachment=" in source
+    assert "analysis_staged_attachment=" in source
+    assert "selectedStagedIds" in source
     assert "workspace_annotation=" in source
     assert "library_item=" in source
     assert "open_library=1" in source
@@ -50,6 +62,8 @@ def test_center_panel_supports_expected_omero_objects():
     assert "analysis_library_tree.html" in panel
     assert "Upload Attachment" in panel
     assert "oa-attachment-upload-input" in panel
+    assert "oa-staged-attachment" in panel
+    assert "Staged securely" in panel
     assert 'context.panel_kind == "workspace"' in panel
     assert 'context.panel_kind == "result"' in panel
     assert 'context.panel_kind == "settings"' in panel

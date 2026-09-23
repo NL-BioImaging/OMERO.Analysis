@@ -92,6 +92,69 @@ def test_context_token_reports_permissions():
     ]
 
 
+def test_omero_only_upload_attaches_to_source_and_returns_discriminator(monkeypatch):
+    obj = FakeObject(object_id=1)
+    conn = FakeConnection(obj)
+    uploaded = {
+        "annotation_id": 91,
+        "name": "measurements.csv",
+        "mimetype": "text/csv",
+        "size": 5,
+    }
+    monkeypatch.setattr(
+        views,
+        "storage_policy",
+        lambda *args, **kwargs: SimpleNamespace(
+            operation_mode="omero", writable=True
+        ),
+    )
+    monkeypatch.setattr(
+        views, "upload_result_annotation", lambda *args, **kwargs: uploaded
+    )
+    request = with_session(RequestFactory().post(
+        "/api/attachments/Image/1/upload/",
+        {"file": SimpleUploadedFile("measurements.csv", b"a\n1\n")},
+    ))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token_for(
+        conn, obj, ["upload"]
+    )
+
+    response = views.upload_result(request, "Image", 1, conn=conn)
+
+    assert response.status_code == 201
+    assert json.loads(response.content) == {
+        "mode": "source", "attachment": uploaded
+    }
+
+
+def test_importer_upload_keeps_staging_response(monkeypatch):
+    obj = FakeObject(object_id=1)
+    conn = FakeConnection(obj)
+    staged = {"staging_id": "abc", "name": "measurements.csv"}
+    monkeypatch.setattr(
+        views,
+        "storage_policy",
+        lambda *args, **kwargs: SimpleNamespace(
+            operation_mode="inplace", writable=True
+        ),
+    )
+    monkeypatch.setattr(views, "stage_attachment", lambda *args, **kwargs: staged)
+    request = with_session(RequestFactory().post(
+        "/api/attachments/Image/1/upload/",
+        {"file": SimpleUploadedFile("measurements.csv", b"a\n1\n")},
+    ))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token_for(
+        conn, obj, ["upload"]
+    )
+
+    response = views.upload_result(request, "Image", 1, conn=conn)
+
+    assert response.status_code == 201
+    assert json.loads(response.content) == {
+        "mode": "staged", "staged_attachment": staged
+    }
+
+
 def test_download_checks_direct_link_and_returns_private_stream():
     obj = FakeObject(annotations=[FakeAnnotation(11, "data.csv", b"a\n1\n")])
     conn = FakeConnection(obj)
@@ -175,6 +238,82 @@ def test_attachment_listing_includes_remote_query_policy(monkeypatch):
     assert attachment["query_format"] == "duckdb"
     assert attachment["allowed_modes"] == ["local", "remote"]
     assert attachment["worker_ready"] is True
+
+
+def test_assign_staged_uploads_uses_authenticated_source_context(monkeypatch):
+    obj = FakeObject(object_id=1)
+    conn = FakeConnection(obj)
+    captured = {}
+    monkeypatch.setattr(
+        views,
+        "storage_policy",
+        lambda *args, **kwargs: SimpleNamespace(
+            operation_mode="inplace", writable=True
+        ),
+    )
+    monkeypatch.setattr(
+        views,
+        "assign_staged_attachments",
+        lambda passed_conn, passed_obj, workspace_id, staging_ids: captured.update({
+            "conn": passed_conn,
+            "obj": passed_obj,
+            "workspace_id": workspace_id,
+            "staging_ids": staging_ids,
+        }) or staging_ids,
+    )
+    request = with_session(RequestFactory().post(
+        "/api/attachments/Image/1/staged/assign/",
+        data=json.dumps({
+            "workspace_id": "workspace-1",
+            "staging_ids": ["3eea86b9-2e44-499e-82ae-5cd78d60fc12"],
+        }),
+        content_type="application/json",
+    ))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token_for(conn, obj, ["upload"])
+
+    response = views.assign_staged_uploads(request, "Image", 1, conn=conn)
+
+    assert response.status_code == 200
+    assert captured == {
+        "conn": conn,
+        "obj": obj,
+        "workspace_id": "workspace-1",
+        "staging_ids": ["3eea86b9-2e44-499e-82ae-5cd78d60fc12"],
+    }
+
+
+def test_analysis_recovers_and_adopts_staged_upload_assignment(monkeypatch):
+    obj = FakeObject(object_id=1)
+    conn = FakeConnection(obj)
+    staging_id = "3eea86b9-2e44-499e-82ae-5cd78d60fc12"
+    monkeypatch.setattr(
+        views,
+        "assigned_staging_ids",
+        lambda *_args: [staging_id],
+    )
+    monkeypatch.setattr(
+        views,
+        "adopt_staged_attachment",
+        lambda _conn, _obj, workspace_id, passed_staging_id: {
+            "annotation_id": 901,
+            "name": "measurements.csv",
+            "mimetype": "text/csv",
+            "size": 12,
+            "workspace_id": workspace_id,
+            "staging_id": passed_staging_id,
+        },
+    )
+
+    response = views.analysis(
+        with_session(RequestFactory().get(
+            "/?type=Image&id=1&new_workspace=workspace-1"
+        )),
+        conn=conn,
+    )
+
+    assert response.status_code == 200
+    assert b'"annotation_id": 901' in response.content
+    assert b'"staging_id": "3eea86b9-2e44-499e-82ae-5cd78d60fc12"' in response.content
 
 
 def test_workspace_snapshot_list_upload_and_download_are_separate_from_inputs():
@@ -407,6 +546,7 @@ def test_workspace_marker_wins_over_result_indexes_in_any_annotation_order(monke
 
 
 def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
+    settings.INTEGRATE_DATA_ANALYSIS = False
     source = FakeObject(object_id=11, name="Field 11")
     second = FakeObject(object_id=12, name="Field 12")
 

@@ -10,6 +10,8 @@ import type {
   WorkflowSkillPackage,
   AnalysisSkillProviderCatalog,
   LibraryDataset,
+  SharedLibraryCatalogue,
+  SharedLibraryItem,
   SyncInventory,
   SyncPlan,
   SyncStatus,
@@ -382,6 +384,47 @@ export class OmeroBridge {
     const response = await this.authorizedFetch(url);
     if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
     return response.arrayBuffer();
+  }
+
+  private sharedLibraryUrl(): string {
+    const context = this.bootstrap.context;
+    if (!context || !this.bootstrap.sharedLibraryTemplate) throw new Error("Shared library is unavailable");
+    return route(this.bootstrap.sharedLibraryTemplate, context.object_type, context.object_id);
+  }
+
+  async sharedLibrary(refresh = false): Promise<SharedLibraryCatalogue> {
+    const empty = { available: false, libraryId: "", canPublish: false, items: [] };
+    if (!this.bootstrap.sharedLibraryTemplate || !this.bootstrap.context) return { ...empty, disabled: true };
+    const response = await this.authorizedFetch(this.sharedLibraryUrl() + (refresh ? "?refresh=1" : ""));
+    if (!response.ok) {
+      const body = await response.json();
+      return { ...empty, disabled: body.error?.code === "shared_library_disabled", error: body.error?.message || "Shared library unavailable" };
+    }
+    return readJson(response) as Promise<SharedLibraryCatalogue>;
+  }
+
+  async downloadSharedItem(itemId: string, revision: string): Promise<ArrayBuffer> {
+    const response = await this.authorizedFetch(this.sharedLibraryUrl() + `${encodeURIComponent(itemId)}/${encodeURIComponent(revision)}/download/`);
+    if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
+    return response.arrayBuffer();
+  }
+
+  async sharedItemHistory(itemId: string): Promise<{ revisions: Array<{ revision: string; observedAt: number; origin: string }> }> {
+    return readJson(await this.authorizedFetch(this.sharedLibraryUrl() + `${encodeURIComponent(itemId)}/history/`));
+  }
+
+  async publishSharedItem(catalogue: SharedLibraryCatalogue, file: File, kind: SharedLibraryItem["kind"], name: string,
+    expectedRevision?: string): Promise<{ item: SharedLibraryItem }> {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("name", name);
+    body.append("kind", kind);
+    body.append("library_id", catalogue.libraryId);
+    body.append("destination_revision", catalogue.destinationRevision || "");
+    body.append("expected_revision", expectedRevision || "");
+    return readJson(await this.authorizedFetch(this.sharedLibraryUrl(), {
+      method: "POST", headers: { "X-CSRFToken": csrfToken() }, body
+    }));
   }
 
   async analysisSettings(): Promise<AnalysisSettingsStatus> {

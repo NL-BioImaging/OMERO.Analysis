@@ -13,6 +13,12 @@ import type {
 
 const encoder = new TextEncoder();
 
+export function syncAlreadyCurrent(digest: string, remote: SyncStatus): boolean {
+  return Boolean(digest && remote.linked && remote.syncState !== "pending" && remote.syncState !== "failed" &&
+    remote.browseState !== "failed" && !remote.cleanupPending &&
+    !syncHasChanges(digest, remote.inventoryDigest));
+}
+
 export function withWorkspaceSyncStatus(
   workspace: AnalysisWorkspace,
   synced: SyncStatus,
@@ -211,12 +217,18 @@ export async function buildWorkspaceSyncPayload(
       entry.role !== "chat-attachment" &&
       !entry.deletedAt &&
       entry.state === "ready" &&
-      /template/i.test(entry.name)
+      (entry.role === "template-input" || /template/i.test(entry.name))
     )
     .sort((left, right) => left.id.localeCompare(right.id))) {
-    if (!file.data) {
-      throw new Error(`Template input ${file.name} is unavailable in this browser`);
+    const metadata = { fileId: file.id, source: file.source, sourceAnnotationId: file.annotationId || null,
+      role: file.role, libraryOrigin: file.libraryOrigin, originalLogicalPath: file.logicalPath };
+    if (!file.data && file.remoteResult?.key === `template-input:${file.id}`) {
+      items.push({ key: file.remoteResult.key, kind: "template-input", name: file.name,
+        mimetype: file.type || "application/octet-stream", logicalPath: `Templates/${file.name}`,
+        sha256: file.remoteResult.sha256, size: file.remoteResult.size, metadata });
+      continue;
     }
+    if (!file.data) throw new Error(`Template input ${file.name} is unavailable in this browser`);
     await add(
       `template-input:${file.id}`,
       "template-input",
@@ -224,12 +236,7 @@ export async function buildWorkspaceSyncPayload(
       file.type || "application/octet-stream",
       `Templates/${file.name}`,
       new Uint8Array(file.data.slice(0)),
-      {
-        fileId: file.id,
-        source: file.source,
-        sourceAnnotationId: file.annotationId || null,
-        originalLogicalPath: file.logicalPath
-      }
+      metadata
     );
   }
 
@@ -338,6 +345,10 @@ export async function buildWorkspaceSyncPayload(
   // Assistant conversations and private Chat attachments stay browser-local.
   const resultReferences = new Map(sortedResultGroups.flatMap(group => group.files.map(file =>
     [file.id, { workspaceId: workspace.workspace.id, key: resultKey(group), sha256: group.sha256, size: group.size }] as const)));
+  for (const item of items.filter(item => item.kind === "template-input")) {
+    resultReferences.set(String(item.metadata.fileId), { workspaceId: workspace.workspace.id,
+      key: item.key, sha256: item.sha256, size: item.size });
+  }
   const reusableSnapshot: AnalysisWorkspace = {
     ...workspace,
     chats: [{ id: workspace.workspace.activeChatId, workspaceId: workspace.workspace.id,
@@ -345,9 +356,9 @@ export async function buildWorkspaceSyncPayload(
       createdAt: workspace.workspace.createdAt, updatedAt: workspace.workspace.createdAt }],
     files: workspace.files.filter(file => file.role !== "chat-attachment" &&
       (file.source !== "result" || Boolean(file.runId || file.methodId || file.pipelineId || file.notebookId)))
-      .map(file => file.source === "result" ? { ...file, data: undefined,
+      .map(file => resultReferences.has(file.id) ? { ...file, data: undefined,
         remoteResult: resultReferences.get(file.id) } : file)
-      .map(file => file.source === "local" && !/template/i.test(file.name)
+      .map(file => file.source === "local" && file.role !== "template-input" && !/template/i.test(file.name)
         ? { ...file, data: undefined, state: "missing" as const, error: "Reselect this browser-local input" } : file),
     executions: workspace.executions.filter(item => executionIds.has(item.id)),
     artifacts: workspace.artifacts.filter(item => item.runId || executionIds.has(item.executionId || "")),

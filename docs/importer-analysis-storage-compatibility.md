@@ -1,6 +1,6 @@
 # BIOMERO importer and `.analysis` storage compatibility
 
-OMERO.Analysis can preserve managed data in the same group-mapped filesystem used by the BIOMERO importer. This is an optional runtime integration: `omero-biomero`, `biomero-importer`, and `omero-upload` are deliberately not mandatory `omero-analysis` package dependencies. If the complete capability is unavailable, OMERO.Analysis retains its existing OMERO Image/FileAnnotation synchronization.
+OMERO.Analysis can preserve managed data in the same group-mapped filesystem used by the BIOMERO importer. This is an optional runtime integration: `omero-biomero`, `biomero-importer`, and `omero-upload` are deliberately not mandatory `omero-analysis` package dependencies. Mode selection is explicit: `IMPORTER_ENABLED=false` uses OMERO-only Image/FileAnnotation synchronization, while `IMPORTER_ENABLED=true` requires the complete importer capability and blocks affected writes when it is unavailable.
 
 ## Ownership and rationale
 
@@ -74,6 +74,12 @@ OMERO_BIOMERO_GROUP_MAPPINGS_FILE=<readable group-mappings.json path>
 
 OMERO.Web must contain compatible installed versions of all optional packages. Its account needs read/write access to each mapped group folder and permission to create `<group-folder>/.analysis`. BIOMERO.importer must share the tracking database and filesystem.
 
+For OMERO-only operation, configure `IMPORTER_ENABLED=false`. Group Folder
+Mappings, BIOMERO.importer, the tracking database, and `.analysis` are then not
+required. Configure `OMERO_ANALYSIS_STATE_DIR` to a persistent, locking-capable
+OMERO.Web volume when the default `<OMERO.web BASE_DIR>/var/analysis-state` is
+not suitable. Every OMERO.Web host must share this directory.
+
 True in-place FileAnnotations additionally require `USE_INPLACE_ATTACHMENTS=true`, `OMERO_DATA_DIR=/OMERO`, the OMERO repository mounted at `/OMERO`, and permission to replace OMERO-created placeholders below `/OMERO/Files`. NL-BIOMERO applies an inheritable ACL for the standard OMERO.Web UID 999 and also supplies the repository group. Deployments with another web UID must set `OMERO_ANALYSIS_INPLACE_UID` accordingly.
 
 The attachment adapter validates and calls `omero_upload.upload_ln_s(client, file_path, omero_data_dir, mimetype)`, then creates an `omero.model.FileAnnotationI` around the returned OriginalFile. A missing, disabled, unsupported, or incompatible integration selects the copied FileAnnotation path and records `storageMode: hybrid`. A runtime registration failure after a ready check aborts synchronization instead of publishing a misleading manifest.
@@ -99,7 +105,30 @@ Synchronization status exposes `storage.mode`, `storage.ready`, dependency versi
 | `tracking_db_unavailable` | Tracker initialization, connectivity, or model query failed. |
 | `analysis_root_not_writable` | `.analysis` cannot be created and atomically written safely. |
 
-Any failed initial capability check selects legacy synchronization. Once a save starts in ready importer-backed mode, a submit, import, lookup, or reconciliation problem remains visibly `pending` or `failed`; PNGs do not silently fall back to gateway-created Images. Journals under `.analysis/users/<user-id>/pending` survive browser and OMERO.Web restarts.
+Synchronization status exposes `operationalMode` as `omero`, `inplace`, or
+`blocked`. Only an explicit `IMPORTER_ENABLED=false` selects OMERO-only mode.
+When importer mode is requested, a failed capability check selects `blocked`:
+reads of existing OMERO content remain available, but importer-dependent writes
+fail with `analysis_storage_unavailable`. Once a save starts in ready
+importer-backed mode, a submit, import, lookup, or reconciliation problem remains
+visibly `pending` or `failed`; PNGs do not silently fall back to gateway-created
+Images. Journals under `.analysis/users/<user-id>/pending` survive browser and
+OMERO.Web restarts.
+
+In OMERO-only mode, PNGs are created as OMERO Images and their original bytes
+are also stored as managed FileAnnotations under
+`nl.bioimaging.analysis.payload.v1`. Signed lifecycle, cleanup, and tombstone
+records are linked to the user's managed Project under
+`nl.bioimaging.analysis.workspace.state.v1`. These records make replacement,
+trash, restore, and retryable purge independent of `.analysis`. Existing older
+PNG manifests without payload annotations remain viewable, but exact-byte
+download requires regeneration or synchronization from source bytes.
+
+The middle-pane upload endpoint also follows this policy. OMERO-only mode
+creates a copied Analysis-result FileAnnotation on the selected source object;
+importer-backed mode durably stages the bytes for adoption by one Workspace.
+`USE_INPLACE_ATTACHMENTS` affects only the adopted importer-backed
+FileAnnotation and never changes operating-mode selection.
 
 ## Storage, deletion, and backfill
 
@@ -123,6 +152,9 @@ python manage.py backfill_analysis_storage --apply --group-id 7 \
   --checkpoint /data/backfill-checkpoint.json \
   --report /data/backfill-report.json
 ```
+
+These backfill and maintenance commands are importer-only and report an
+explicit configuration error when `IMPORTER_ENABLED=false`.
 
 Optional `--user-id` and `--workspace-id` filters are supported. Authenticate as the target user with `OMERO_USER`/`OMERO_PASSWORD` (or `ROOTPASS`). FileAnnotations are copied byte-for-byte. Existing Images are exported to lossless PNG archives marked `legacy-omero` and `archive-derived`; their Images and OMERO IDs are not replaced. Repeating the command safely deduplicates blobs and atomically replaces manifests.
 

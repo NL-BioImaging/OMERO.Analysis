@@ -10,6 +10,9 @@ $(function () {
   var biomeroBase = "/omero_biomero/biomero/";
   var tokenUrl = "{% url 'omero_analysis_token' %}";
   var attachmentUploadPattern = "{% url 'omero_analysis_upload' 'Image' 1 %}";
+  var stagedAssignPattern = "{% url 'omero_analysis_staged_assign' 'Image' 1 %}";
+  var sharedLibraryPattern = "{% url 'omero_analysis_shared_library' 'Image' 1 %}";
+  var sharedLibraryModule = "{% analysis_static 'omero_analysis/shared-library-panel.js' %}";
   var typeMap = {
     image: "Image",
     dataset: "Dataset",
@@ -31,7 +34,9 @@ $(function () {
 
   function uploadAttachment(root, file) {
     var status = root.querySelector(".oa-panel-status");
-    status.textContent = "Uploading and attaching " + file.name + "…";
+    var uploadMode = root.dataset.attachmentUploadMode;
+    var uploaded;
+    status.textContent = (uploadMode === "source" ? "Attaching " : "Staging ") + file.name + " securely…";
     return fetch(tokenUrl, {
       method: "POST", credentials: "same-origin",
       headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
@@ -62,7 +67,8 @@ $(function () {
         if (!response.ok) {
           throw new Error((body.error && body.error.message) || "Attachment upload failed");
         }
-        return body.attachment;
+        uploaded = body;
+        return body;
       }); })
       .then(function () {
         return renderSelection(
@@ -71,11 +77,67 @@ $(function () {
           root.dataset.objectId
         );
       })
+      .then(function () {
+        var refreshed = panel[0].querySelector("[data-object-type]");
+        if (!refreshed) return;
+        if (uploaded.mode === "source" && uploaded.attachment) {
+          var input = refreshed.querySelector(
+            '.oa-data-attachment[value="' + uploaded.attachment.annotation_id + '"]'
+          );
+          if (input) input.checked = true;
+        }
+        updateSelection(refreshed);
+        var refreshedStatus = refreshed.querySelector(".oa-panel-status");
+        if (refreshedStatus) {
+          refreshedStatus.textContent = uploaded.mode === "source"
+            ? file.name + " is attached to this source and selected."
+            : file.name + " is staged and selected.";
+        }
+      })
       .catch(function (error) { status.textContent = error.message; });
+  }
+
+  function assignStagedAttachments(root, workspaceId, stagingIds) {
+    if (!stagingIds.length) return Promise.resolve();
+    return fetch(tokenUrl, {
+      method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
+      body: JSON.stringify({
+        object_type: root.dataset.objectType,
+        object_id: Number(root.dataset.objectId)
+      })
+    })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) throw new Error((body.error && body.error.message) || "Could not authorize staged upload");
+        return body.context_token;
+      }); })
+      .then(function (token) {
+        return fetch(
+          objectUrl(stagedAssignPattern, root.dataset.objectType, root.dataset.objectId),
+          {
+            method: "POST", credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": csrfToken(),
+              "X-OMERO-Analysis-Context": token
+            },
+            body: JSON.stringify({workspace_id: workspaceId, staging_ids: stagingIds})
+          }
+        );
+      })
+      .then(function (response) { return response.json().then(function (body) {
+        if (!response.ok) throw new Error((body.error && body.error.message) || "Could not assign staged upload");
+        return body;
+      }); });
   }
 
   function selectedAnnotationIds(root) {
     return Array.from(root.querySelectorAll(".oa-data-attachment:checked"))
+      .map(function (input) { return input.value; });
+  }
+
+  function selectedStagedIds(root) {
+    return Array.from(root.querySelectorAll(".oa-staged-attachment:checked"))
       .map(function (input) { return input.value; });
   }
 
@@ -125,7 +187,7 @@ $(function () {
       .filter(function (value) { return Number.isInteger(value) && value > 0; });
   }
 
-  function analysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds, selectionIds) {
+  function analysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds, selectionIds, stagedIds) {
     var url = analysisBase + "?type=" + encodeURIComponent(type) +
       "&id=" + encodeURIComponent(id);
     (selectionIds || []).forEach(function (selectionId) {
@@ -144,10 +206,13 @@ $(function () {
         url += "&library_item=" + encodeURIComponent(annotationId);
       });
     }
+    (stagedIds || []).forEach(function (stagingId) {
+      url += "&staged_attachment=" + encodeURIComponent(stagingId);
+    });
     return url;
   }
 
-  function biomeroAnalysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds, selectionIds) {
+  function biomeroAnalysisUrl(type, id, annotationIds, workspaceAnnotationId, libraryIds, selectionIds, stagedIds) {
     var url = biomeroBase + "?tab=data-analysis" +
       "&analysis_type=" + encodeURIComponent(type) +
       "&analysis_id=" + encodeURIComponent(id);
@@ -167,12 +232,16 @@ $(function () {
         url += "&analysis_library_item=" + encodeURIComponent(annotationId);
       });
     }
+    (stagedIds || []).forEach(function (stagingId) {
+      url += "&analysis_staged_attachment=" + encodeURIComponent(stagingId);
+    });
     return url;
   }
 
   function updateSelection(root) {
     if (root.dataset.panelKind !== "source") return;
     var count = selectedAnnotationIds(root).length;
+    var stagedCount = selectedStagedIds(root).length;
     var workspaceId = selectedWorkspaceId(root);
     var libraryCount = selectedLibraryIds(root).length;
     var selectionCount = selectedSourceIds(root).length;
@@ -180,11 +249,11 @@ $(function () {
     var libraryBadge = root.querySelector(".oa-library-selected-count");
     var status = root.querySelector(".oa-panel-status");
     var button = root.querySelector(".oa-new-workspace");
-    if (countBadge) countBadge.textContent = (selectionCount || count) + " selected";
+    if (countBadge) countBadge.textContent = (selectionCount || count + stagedCount) + " selected";
     if (libraryBadge) libraryBadge.textContent = libraryCount + " selected";
     if (status) {
-      status.textContent = count
-        ? count + " data attachment" + (count === 1 ? "" : "s") + " selected for the new workspace."
+      status.textContent = count + stagedCount
+        ? (count + stagedCount) + " data attachment" + (count + stagedCount === 1 ? "" : "s") + " selected for the workspace."
         : selectionCount > 1
         ? selectionCount + " selected objects will define the new workspace."
         : "Select at least one data attachment to start a new workspace.";
@@ -192,7 +261,7 @@ $(function () {
     }
     if (button) {
       button.textContent = "Start new Workspace";
-      button.disabled = count === 0 && selectionCount < 2;
+      button.disabled = count + stagedCount === 0 && selectionCount < 2;
     }
   }
 
@@ -257,7 +326,16 @@ $(function () {
       .then(function (html) {
         panel.html(html);
         var root = panel[0].querySelector("[data-object-type]");
-        if (root) updateSelection(root);
+        if (root) {
+          updateSelection(root);
+          if (root.querySelector('.oa-shared-library')) {
+            import(sharedLibraryModule).then(function (module) {
+              return module.mountSharedLibrary(root, objectUrl(sharedLibraryPattern, type, oid), tokenUrl);
+            }).catch(function (error) {
+              root.querySelector('.oa-shared-library').textContent = 'Shared library unavailable: ' + error.message;
+            });
+          }
+        }
       })
       .catch(function (error) {
         panel.html('<p class="oa-panel-error"></p>');
@@ -274,7 +352,7 @@ $(function () {
     }
   });
 
-  panel.on("change", ".oa-data-attachment", function (event) {
+  panel.on("change", ".oa-data-attachment, .oa-staged-attachment", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (root) {
       root.querySelectorAll(".oa-workspace-snapshot").forEach(function (input) {
@@ -313,10 +391,11 @@ $(function () {
       selectedAnnotationIds(root),
       selectedWorkspaceId(root),
       selectedLibraryIds(root),
-      selectedSourceIds(root)
+      selectedSourceIds(root),
+      selectedStagedIds(root)
     ];
     var create = event.currentTarget.classList.contains("oa-new-workspace");
-    if (create && !selectedAnnotationIds(root).length && selectedSourceIds(root).length < 2) return;
+    if (create && !selectedAnnotationIds(root).length && !selectedStagedIds(root).length && selectedSourceIds(root).length < 2) return;
     var workspace = event.currentTarget.dataset.workspaceId || root.dataset.workspaceId;
     if (workspace || create) launchArguments[3] = null;
     var snapshot = event.currentTarget.dataset.snapshotId;
@@ -325,17 +404,43 @@ $(function () {
       launchArguments[2] = [];
       launchArguments[4] = [];
       launchArguments[5] = [];
+      // Staged uploads remain selected: opening this workspace adopts them
+      // into its managed Dataset instead of attaching them to the source.
     }
-    if (snapshot) launchArguments[3] = snapshot;
+    if (snapshot) {
+      launchArguments[3] = snapshot;
+      // A detached snapshot does not expose its workspace ID until it has
+      // opened, so it cannot safely claim staged uploads from this panel.
+      launchArguments[6] = [];
+    }
+    var targetWorkspaceId = create ? crypto.randomUUID() : workspace;
+    if (create && root.dataset.sharedSelection) {
+      try {
+        var sharedItems = JSON.parse(root.dataset.sharedSelection);
+        if (sharedItems.length) {
+          var handoffKey = 'omero-analysis-shared:' + [root.dataset.userId, root.dataset.groupId,
+            root.dataset.analysisObjectType || root.dataset.objectType,
+            root.dataset.analysisObjectId || root.dataset.objectId, targetWorkspaceId].join(':');
+          localStorage.setItem(handoffKey, JSON.stringify({expires: Date.now() + 900000, items: sharedItems}));
+        }
+      } catch (error) {
+        root.querySelector('.oa-panel-status').textContent = 'Could not preserve shared library selection: ' + error.message;
+        return;
+      }
+    }
     function targetUrl(integrated) {
       var url = new URL((integrated ? biomeroAnalysisUrl : analysisUrl).apply(null, launchArguments), window.location.origin);
       var prefix = integrated ? "analysis_" : "";
-      if (create) url.searchParams.set(prefix + "new_workspace", crypto.randomUUID());
+      if (create) url.searchParams.set(prefix + "new_workspace", targetWorkspaceId);
       else if (workspace) url.searchParams.set(prefix + "workspace_id", workspace);
       return url.toString();
     }
     if (root.dataset.integratedDataAnalysis === "true") {
-      window.location.assign(targetUrl(true));
+      var status = root.querySelector(".oa-panel-status");
+      if (status && selectedStagedIds(root).length) status.textContent = "Assigning staged uploads to the Workspace…";
+      assignStagedAttachments(root, targetWorkspaceId, selectedStagedIds(root))
+        .then(function () { window.location.assign(targetUrl(true)); })
+        .catch(function (error) { if (status) status.textContent = error.message; });
       return;
     }
     window.open(

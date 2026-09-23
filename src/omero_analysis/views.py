@@ -52,10 +52,12 @@ from .services import (
     checked_notebook_download,
     checked_workspace_snapshot_download,
     checked_pipeline_download,
+    get_analysis_attachment,
     get_context_object,
     get_direct_attachment,
     get_scoped_attachment,
     list_attachment_dicts,
+    object_group_id,
     object_hierarchy,
     object_context,
     upload_notebook_annotation,
@@ -64,8 +66,16 @@ from .services import (
     upload_pipeline_annotation,
 )
 from .tokens import make_context_token, validate_context_token
+from .staged_attachments import (
+    adopt_staged_attachment,
+    assign_staged_attachments,
+    assigned_staging_ids,
+    list_staged_attachments,
+    stage_attachment,
+)
 from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
 from .settings import integrated_data_analysis, notebook_cell_timeout_seconds
+from .storage_policy import require_storage_write, storage_policy
 from .workspace_sync import (
     SYNC_NAMESPACE,
     apply_sync,
@@ -315,8 +325,31 @@ def analysis(request, conn=None, **kwargs):
             )
             selected = []
             seen = set()
+            workspace_id = (
+                request.GET.get("new_workspace")
+                or request.GET.get("workspace_id")
+            )
+            staged_values = request.GET.getlist("staged_attachment")
+            if workspace_id:
+                staged_values = list(dict.fromkeys([
+                    *staged_values,
+                    *assigned_staging_ids(conn, obj, workspace_id),
+                ]))
+            if staged_values:
+                if not workspace_id:
+                    raise ValueError(
+                        "Staged attachments require a new or existing workspace"
+                    )
+                for staging_id in staged_values:
+                    value = adopt_staged_attachment(
+                        conn, obj, workspace_id, staging_id
+                    )
+                    annotation_id = int(value["annotation_id"])
+                    if annotation_id not in seen:
+                        selected.append(value)
+                        seen.add(annotation_id)
             for value in request.GET.getlist("data_annotation"):
-                _, info = get_scoped_attachment(obj, value)
+                _, info = get_analysis_attachment(conn, obj, value)
                 if info.annotation_id not in seen:
                     selected.append(info.to_dict())
                     seen.add(info.annotation_id)
@@ -533,6 +566,16 @@ def _configure_panel_context(conn, obj, context):
         return context
 
     if object_type in {"Image", "Dataset", "Plate", "Screen"}:
+        policy = storage_policy(context["group_id"], context["user_id"])
+        context["attachment_upload_mode"] = policy.operation_mode
+        context["attachment_upload_enabled"] = (
+            policy.operation_mode == "inplace" and context["can_manage_workspace"]
+        ) or (
+            policy.operation_mode == "omero" and context["can_annotate_source"]
+        )
+        context["attachment_upload_error"] = (
+            policy.capability.detail if policy.operation_mode == "blocked" else ""
+        )
         context["analysis_workspaces"] = [
             item for item in library_datasets(conn, obj)
             if item["sourceObjectType"] == object_type and item["sourceObjectId"] == context["object_id"]
@@ -545,6 +588,11 @@ def _configure_panel_context(conn, obj, context):
                     raise
                 item["syncStatus"] = {"syncState": "syncing"}
         context["panel_kind"] = "source"
+        context["staged_attachments"] = (
+            list_staged_attachments(conn, obj)
+            if policy.operation_mode == "inplace"
+            else []
+        )
         context["analysis_library_datasets"] = _panel_library_datasets(conn, obj)
         return context
 
@@ -808,10 +856,20 @@ def context_token(request, conn=None, **kwargs):
         "data_query",
     ]
     from .workspace_access import can_manage_workspace
+    policy = storage_policy(object_group_id(obj), int(conn.getUserId()))
     if can_annotate(obj):
-        operations.extend(["upload", "workspace_upload", "pipeline_upload", "notebook_upload"])
+        operations.extend(["workspace_upload", "pipeline_upload", "notebook_upload"])
+    if (
+        policy.operation_mode == "inplace" and can_manage_workspace(conn, obj)
+    ) or (
+        policy.operation_mode == "omero" and can_annotate(obj)
+    ):
+        operations.append("upload")
     if can_manage_workspace(conn, obj):
         operations.extend(["sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact"])
+    from .shared_library import full_admin
+    if policy.operation_mode == "inplace" and full_admin(conn):
+        operations.append("shared_library_publish")
     token, expires_at = make_context_token(
         request, conn, object_type, object_id, obj, operations
     )
@@ -1003,7 +1061,7 @@ def download_attachment(request, annotation_id, conn=None, **kwargs):
         claims["object_id"],
         obj,
     )
-    annotation, info = checked_download(obj, annotation_id)
+    annotation, info = checked_download(obj, annotation_id, conn=conn)
     response = ConnCleaningHttpResponse(
         annotation.getFileInChunks(), content_type=info.mimetype
     )
@@ -1023,8 +1081,44 @@ def download_attachment(request, annotation_id, conn=None, **kwargs):
 def upload_result(request, object_type, object_id, conn=None, **kwargs):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, "upload", object_type, object_id, obj)
-    result = upload_result_annotation(conn, obj, request.FILES.get("file"))
-    return JsonResponse({"attachment": result}, status=201)
+    policy = storage_policy(object_group_id(obj), int(conn.getUserId()))
+    require_storage_write(policy, "Uploading an Analysis attachment")
+    if policy.operation_mode == "omero":
+        result = upload_result_annotation(conn, obj, request.FILES.get("file"))
+        return JsonResponse({"mode": "source", "attachment": result}, status=201)
+    result = stage_attachment(conn, obj, request.FILES.get("file"))
+    return JsonResponse(
+        {"mode": "staged", "staged_attachment": result}, status=201
+    )
+
+
+@require_POST
+@login_required(setGroupContext=True)
+@api_errors
+def assign_staged_uploads(request, object_type, object_id, conn=None, **kwargs):
+    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
+    validate_context_token(request, conn, "upload", object_type, object_id, obj)
+    policy = storage_policy(object_group_id(obj), int(conn.getUserId()))
+    require_storage_write(policy, "Assigning a staged attachment")
+    if policy.operation_mode != "inplace":
+        error = AnalysisError(
+            "Staged attachment assignment is available only in importer-backed mode"
+        )
+        error.code, error.status = "staging_not_available", 409
+        raise error
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        from .errors import InvalidObject
+
+        raise InvalidObject("Staged attachment assignment must be valid JSON") from exc
+    assigned = assign_staged_attachments(
+        conn,
+        obj,
+        payload.get("workspace_id"),
+        payload.get("staging_ids"),
+    )
+    return JsonResponse({"workspace_id": payload.get("workspace_id"), "staging_ids": assigned})
 
 
 @require_http_methods(["GET", "POST"])
@@ -1300,6 +1394,67 @@ def workspace_library(request, object_type, object_id, conn=None, **kwargs):
         request, conn, "library_list", object_type, object_id
     )
     return JsonResponse({"datasets": library_datasets(conn, obj)})
+
+
+@require_http_methods(["GET", "POST"])
+@login_required(setGroupContext=True)
+@api_errors
+def shared_library(request, object_type, object_id, conn=None, **kwargs):
+    from .shared_library import library_for, full_admin, shared_groups, failure
+    from .settings import max_upload_bytes, max_notebook_bytes
+    operation = "shared_library_publish" if request.method == "POST" else "library_list"
+    _, _, obj = _sync_context(request, conn, operation, object_type, object_id)
+    library = library_for(conn, obj)
+    administrator = full_admin(conn)
+    if request.method == "POST":
+        if not administrator:
+            from .errors import PermissionDenied
+            raise PermissionDenied("Only full OMERO administrators can publish shared items")
+        if request.POST.get("library_id") != library.identity:
+            raise failure("Group Folder Mapping changed; refresh before publishing", "shared_library_conflict", 409)
+        uploaded = request.FILES.get("file")
+        if uploaded is None:
+            from .errors import UnsupportedMedia
+            raise UnsupportedMedia("Multipart field 'file' is required")
+        kind = request.POST.get("kind")
+        limit = max_notebook_bytes() if kind == "notebook" else max_upload_bytes()
+        if uploaded.size > limit:
+            from .errors import FileTooLarge
+            raise FileTooLarge("Shared item exceeds the configured size limit")
+        # Require a complete destination review, including all shared groups.
+        groups = shared_groups(conn, library)
+        destination_revision = hashlib.sha256(json.dumps(groups, sort_keys=True).encode()).hexdigest()
+        if request.POST.get("destination_revision") != destination_revision:
+            raise failure("Destination groups changed; review the destination again", "shared_library_conflict", 409)
+        item = library.publish(kind, request.POST.get("name") or uploaded.name,
+                               uploaded.read(limit + 1), request.POST.get("expected_revision") or None,
+                               int(conn.getUserId()))
+        return JsonResponse({"libraryId": library.identity, "item": item}, status=201)
+    result = library.catalogue(refresh=request.GET.get("refresh") == "1")
+    result.update(available=True, canPublish=administrator)
+    if administrator:
+        groups = shared_groups(conn, library)
+        result.update(destination=str(library.root), groups=groups,
+                      destinationRevision=hashlib.sha256(json.dumps(groups, sort_keys=True).encode()).hexdigest())
+    return JsonResponse(result)
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
+def shared_library_item(request, object_type, object_id, item_id, revision=None, conn=None, **kwargs):
+    from .shared_library import library_for
+    _, _, obj = _sync_context(request, conn, "library_download", object_type, object_id)
+    library = library_for(conn, obj)
+    if revision is None:
+        return JsonResponse(library.history(item_id))
+    data, item = library.download(item_id, revision)
+    response = HttpResponse(data, content_type=item["mimetype"])
+    response["Content-Disposition"] = "attachment; filename*=UTF-8''" + quote(item["name"], safe="")
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    response["ETag"] = '"' + item["sha256"] + '"'
+    return response
 
 
 @require_GET

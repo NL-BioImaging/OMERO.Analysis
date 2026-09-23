@@ -1744,6 +1744,40 @@ th { position: sticky; top: 0; background: #183040; }
 .header-brand .source-breadcrumb { grid-row:2; grid-column:1; }
 .header-brand:has(.source-breadcrumb) p { grid-row:3; }
 .generated-files .result-file-group { display:flex; flex-wrap:wrap; gap:.35rem; }
+.shared-library {
+  border: 1px solid var(--theme-border); border-radius: 8px;
+  padding: 16px; margin: 0 0 20px; background: var(--theme-surface);
+}
+.shared-library .library-panel-body > label, .shared-publish > label { display: block; margin: 10px 0; }
+.shared-library input[type="search"], .shared-library input:not([type]), .shared-library select { max-width: 100%; }
+.shared-library input[type="checkbox"] { width: auto; margin-right: 6px; }
+.shared-library li { overflow-wrap: anywhere; }
+.shared-library li p, .shared-library small { color: var(--theme-muted); font-size: .85em; }
+.shared-library li button { font-size: .8em; min-height: 28px; }
+.shared-publish { border-top: 1px solid var(--theme-border); margin-top: 16px; padding-top: 12px; }
+.shared-library summary { cursor: pointer; font-weight: 600; }
+.shared-library [role="alert"] { color: var(--theme-text); border-left: 3px solid var(--danger); padding-left: 10px; }
+.library-panel { border: 1px solid var(--line); border-radius: 9px; margin-bottom: 12px; }
+.library-panel > summary { display: flex; align-items: center; gap: 10px; padding: 12px; cursor: pointer; list-style: none; }
+.library-panel > summary::-webkit-details-marker { display: none; }
+.library-panel > summary strong { flex: 1; }
+.library-panel > summary small { color: var(--muted); white-space: nowrap; }
+.library-panel-toggle { border-radius: 50%; background: var(--theme-accent); color: white; width: 22px; height: 22px; text-align: center; flex-shrink: 0; }
+.library-panel-toggle::after { content: '+'; }
+.library-panel[open] > summary .library-panel-toggle::after { content: '−'; }
+.library-panel-body { padding: 0 12px 12px; }
+.library-panel-body > p { color: var(--muted); font-size: .8rem; }
+.shared-library { border: 0; padding: 0; margin: 0; }
+.shared-library .analysis-library-tree { border: 1px solid var(--line); border-radius: 7px; margin: 12px 0; padding: 6px; }
+.shared-library .library-item-copy .shared-item-compatibility { white-space: normal; }
+.shared-library li > button, .shared-library li > ul { margin-left: 58px; }
+.shared-library .library-panel-body > label input[type="search"] { display: block; width: 100%; margin-top: 6px; }
+.notebook-folder-toolbar { flex-wrap: wrap; }
+.explorer-libraries { display: flex; align-items: center; gap: 6px; margin: 6px 8px; }
+.shared-library-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.shared-library-controls .library-search { flex: 1 1 260px; margin: 0; }
+.shared-library-controls label { font-size: .8rem; }
+
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,
    or positioning here. Those remain identical to the dark Analysis layout. */

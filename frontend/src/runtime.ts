@@ -321,7 +321,9 @@ async function ensureNotebookRequirements(requirements) {
     .map((item) => String(item).split(/[<>=!~]/, 1)[0].toLowerCase().replace(/[_.]/g, "-"))
     .filter((name) => approved.has(name))));
   const missing = requested.filter((name) => !loadedPackages.has(name));
-  if (!missing.length) return;
+  const constrained = (requirements || []).filter((item) => /[<>=!~]/.test(item));
+  if (constrained.length && !loadedPackages.has("packaging")) missing.push("packaging");
+  if (!missing.length && !constrained.length) return;
   progress(55, "Loading notebook requirement" + (missing.length === 1 ? "" : "s") + ": " + missing.join(", "));
   globalThis.fetch = runtimeFetch;
   try {
@@ -329,6 +331,19 @@ async function ensureNotebookRequirements(requirements) {
     missing.forEach((name) => loadedPackages.add(name));
   } finally {
     globalThis.fetch = denyNetwork;
+  }
+  if (constrained.length) {
+    pyodide.globals.set("_oa_requirements_json", JSON.stringify(constrained));
+    await pyodide.runPythonAsync(\`
+import json as _req_json
+from importlib.metadata import version as _req_version
+from packaging.requirements import Requirement as _Requirement
+for _raw_requirement in _req_json.loads(_oa_requirements_json):
+    _requirement = _Requirement(_raw_requirement)
+    _installed = _req_version(_requirement.name)
+    if not _requirement.specifier.contains(_installed, prereleases=True):
+        raise RuntimeError(f"Notebook requires {_raw_requirement}; runtime provides {_installed}")
+\`);
   }
 }
 const ready = boot();

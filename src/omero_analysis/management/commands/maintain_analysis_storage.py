@@ -6,6 +6,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from ...inplace_storage import storage_for
+from ...storage_policy import importer_requested
 from ...managed_omero import user_id
 from ...sync_lock import storage_lock
 from ...workspace_sync import (
@@ -29,6 +30,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from omero.gateway import BlitzGateway
+        if not importer_requested():
+            raise CommandError(
+                "This maintenance command is importer-only; IMPORTER_ENABLED=false selects OMERO-only mode"
+            )
         if not options['password']:
             raise CommandError('Set OMERO_PASSWORD in the process environment')
         conn = BlitzGateway(options['username'], options['password'], host=options['host'], port=4064)

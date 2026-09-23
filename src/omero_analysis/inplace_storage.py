@@ -342,6 +342,52 @@ class AnalysisStorage:
             "path": str(target), "relativePath": target.relative_to(self.analysis_root).as_posix(),
         }
 
+    def store_blob_chunks(self, chunks, filename):
+        """Atomically persist an upload without buffering the whole file in RAM."""
+        filename = _safe_name(filename)
+        # Keep the in-progress file outside ``blobs`` so concurrent garbage
+        # collection cannot mistake it for an unreferenced completed blob.
+        staging = self._ensure_directory(self.user_root / ".upload-staging")
+        fd, temporary = tempfile.mkstemp(prefix=".upload.", dir=str(staging))
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                for chunk in chunks:
+                    chunk = bytes(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
+                    stream.write(chunk)
+                stream.flush()
+                os.fsync(stream.fileno())
+            value = digest.hexdigest()
+            target = (
+                self.user_root / "blobs" / "sha256" / value[:2] / value / filename
+            )
+            self._ensure_directory(target.parent)
+            if target.exists():
+                if target.is_symlink() or target.stat().st_size != size:
+                    raise ValueError("Existing .analysis blob is unsafe or corrupt")
+                current = hashlib.sha256()
+                with target.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        current.update(chunk)
+                if current.hexdigest() != value:
+                    raise ValueError("Existing .analysis blob is unsafe or corrupt")
+            else:
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, target)
+            return {
+                "sha256": value,
+                "size": size,
+                "filename": filename,
+                "path": str(target),
+                "relativePath": target.relative_to(self.analysis_root).as_posix(),
+            }
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
     def write_json(self, relative, value):
         data = (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
         return self.atomic_write(self.user_root / relative, data)
@@ -365,7 +411,13 @@ class AnalysisStorage:
 
     def garbage_collect(self):
         referenced = set()
-        for folder in (self.user_root / "workspaces", self.user_root / "settings", self.user_root / "pending", self.user_root / "history"):
+        for folder in (
+            self.user_root / "workspaces",
+            self.user_root / "settings",
+            self.user_root / "pending",
+            self.user_root / "history",
+            self.user_root / "staged-attachments",
+        ):
             if not folder.exists():
                 continue
             for manifest in folder.rglob("*.json"):
@@ -376,6 +428,9 @@ class AnalysisStorage:
                 except (OSError, ValueError):
                     # An unreadable manifest may protect a live source file.
                     return 0
+                blob = value.get("blob") or {}
+                if blob.get("relativePath"):
+                    referenced.add(blob["relativePath"])
                 for item in value.get("items", []):
                     blob = item.get("blob") or {}
                     if blob.get("relativePath"):
@@ -403,6 +458,18 @@ class AnalysisStorage:
                 except OSError:
                     pass
         return removed
+
+    def prune_empty_parents(self, directories):
+        """Prune only ancestors of removed browsing copies, never whole trees."""
+        for directory in set(directories):
+            path = self._ensure_inside(directory)
+            while path != self.user_root:
+                self._ensure_inside(path)
+                try:
+                    path.rmdir()
+                except OSError:
+                    break  # Non-empty (or absent): nothing further to prune.
+                path = path.parent
 
     def publish_workspace(self, manifest, username):
         """Publish a detached, human-readable mirror of a committed manifest.
@@ -470,18 +537,20 @@ class AnalysisStorage:
             f'Workspace: {workspace_id}\nDataset: {manifest["datasetId"]}\n'
         ).encode())
         published.append((destination / 'README.txt').relative_to(self.analysis_root).as_posix())
+        stale_parents = set()
         for relative in set(old.get('files', [])) - set(published):
             stale = publisher._ensure_inside(self.analysis_root / relative)
             if stale.is_file():
                 stale.unlink()
-        publisher.prune_empty_directories()
+                stale_parents.add(stale.parent)
+        publisher.prune_empty_parents(stale_parents)
         self.write_json(index_path, {'files': published})
 
     def remove_workspace_view(self, workspace_id):
         """Remove only indexed browsing copies; retain immutable import sources."""
         index_path = Path('workspaces') / _safe_name(workspace_id) / 'browse.json'
         index = self.read_json(index_path) or {}
-        roots = set()
+        parents = {}
         for relative in index.get('files', []):
             parts = Path(relative).parts
             if len(parts) < 3 or not parts[0].endswith('--' + self.user_root.name) or parts[1] != '+AnalysisWorkspaces':
@@ -493,10 +562,10 @@ class AnalysisStorage:
             target = publisher._ensure_inside(self.analysis_root / relative)
             if target.is_file():
                 target.unlink()
-            roots.add(publisher.user_root)
-        for root in roots:
+            parents.setdefault(publisher.user_root, set()).add(target.parent)
+        for root, directories in parents.items():
             publisher.user_root = root
-            publisher.prune_empty_directories()
+            publisher.prune_empty_parents(directories)
         self.delete_json(index_path)
 
 

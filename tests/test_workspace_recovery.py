@@ -28,8 +28,11 @@ def test_completed_tracking_without_image_eventually_fails(monkeypatch):
     assert result["state"] == "timeout"
 
 
-def test_browsing_tree_rename_preserves_canonical_bytes(tmp_path):
+def test_browsing_tree_rename_preserves_canonical_bytes(tmp_path, monkeypatch):
     storage = AnalysisStorage(ready_capability(tmp_path), 7)
+    def forbid_global_scan(*args):
+        raise AssertionError("Saving a workspace must not scan the whole user tree")
+    monkeypatch.setattr(AnalysisStorage, "prune_empty_directories", forbid_global_scan)
     blob = storage.store_blob(b"plot", "plot.png")
     manifest = {"workspaceId": "one", "datasetId": 42, "datasetName": "Screen-1 - Analysis 1",
                 "items": [{"kind": "png-image", "name": "plot.png", "blob": blob}]}
@@ -45,6 +48,18 @@ def test_browsing_tree_rename_preserves_canonical_bytes(tmp_path):
     storage.remove_workspace_view('one')
     assert not (tmp_path / '.analysis/alice--7/+AnalysisWorkspaces').exists()
     assert Path(blob['path']).read_bytes() == b"plot"
+
+
+def test_scoped_pruning_leaves_unrelated_directories_and_files(tmp_path):
+    storage = AnalysisStorage(ready_capability(tmp_path), 7)
+    empty = storage.user_root / "unrelated" / "empty"
+    empty.mkdir(parents=True)
+    target = storage.user_root / "changed" / "empty"
+    target.mkdir(parents=True)
+    storage.prune_empty_parents([target])
+    assert not target.parent.exists()
+    assert empty.exists()
+    assert storage.user_root.exists()
 
 
 def test_corrupt_manifest_prevents_garbage_collection(tmp_path):

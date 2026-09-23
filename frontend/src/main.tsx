@@ -31,6 +31,7 @@ window.OMERO_ANALYSIS = existing?.runtimeBase ? existing : {
   workspaceSyncRemoveTemplate: value("workspaceSyncRemoveTemplate"),
   workspaceLibraryTemplate: value("workspaceLibraryTemplate"),
   workspaceLibraryDownloadTemplate: value("workspaceLibraryDownloadTemplate"),
+  sharedLibraryTemplate: value("sharedLibraryTemplate"),
   analysisSettingsTemplate: value("analysisSettingsTemplate"),
   workflowSkillsUrl: value("workflowSkillsUrl"),
   dataQueryCapabilitiesUrl: value("dataQueryCapabilitiesUrl"),

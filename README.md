@@ -242,6 +242,7 @@ GET  /omero_analysis/api/context/<object_type>/<object_id>/
 GET  /omero_analysis/api/attachments/<object_type>/<object_id>/
 GET  /omero_analysis/api/attachment/<annotation_id>/download/
 POST /omero_analysis/api/attachments/<object_type>/<object_id>/upload/
+POST /omero_analysis/api/attachments/<object_type>/<object_id>/staged/assign/
 
 GET|POST /omero_analysis/api/workspaces/<object_type>/<object_id>/snapshots/
 GET      /omero_analysis/api/workspace-snapshot/<annotation_id>/download/
@@ -261,5 +262,25 @@ GET    /omero_analysis/api/workspace-library/<object_type>/<object_id>/
 GET    /omero_analysis/api/workspace-library/item/<annotation_id>/download/
 ```
 
-All object-bound endpoints require an OMERO login, active group context,
-short-lived context capability, and direct FileAnnotation membership checks.
+All object-bound endpoints require an OMERO login, active group context, and
+short-lived context capability. File download endpoints additionally enforce
+source or managed-Workspace FileAnnotation membership.
+Middle-pane upload behavior follows the configured operating mode. With
+`IMPORTER_ENABLED=false`, the upload is a conventional copied OMERO
+FileAnnotation linked to the selected Dataset, Image, Screen, or Plate under
+the Analysis result namespace. It remains reusable from that source. With
+`IMPORTER_ENABLED=true`, the endpoint first writes a content-addressed staging
+blob to mapped `.analysis` storage and opening or creating a Workspace adopts
+it into the managed Workspace Dataset. `USE_INPLACE_ATTACHMENTS` independently
+selects a symlink-backed or copied FileAnnotation for that adoption. A requested
+but unavailable importer configuration blocks writes instead of silently
+changing storage mode.
+
+Importer-ready deployments also support a mapping-scoped **Shared library** of
+notebooks and plate templates. Full administrators can publish through Analysis;
+filesystem writers can copy files into the shared folders. Imports are independent,
+revisioned workspace copies. Open **Libraries** in the Analysis Explorer, or expand
+**Shared notebooks and plate templates** in the middle pane. The shared-folder
+and synced `+AnalysisWorkspaces` libraries have separate collapsible panels.
+See [Shared library setup and usage](docs/shared-library.md)
+for layout, permissions, compatibility checks and multi-host requirements.

@@ -2,10 +2,24 @@ import {
   buildWorkspaceSyncPayload,
   canonicalJson,
   syncHasChanges,
+  syncAlreadyCurrent,
   withWorkspaceSyncStatus
 } from "./workspaceSync";
 import type { AnalysisWorkspace, OmeroContext, SyncStatus } from "./types";
 import { unzipSync, strFromU8 } from "fflate";
+
+it("skips redundant saves but never skips import, mirror, or cleanup recovery", () => {
+  const remote = { linked: true, inventoryDigest: "digest", syncState: "complete", browseState: "ready" } as SyncStatus;
+  expect(syncAlreadyCurrent("digest", remote)).toBe(true);
+  expect(syncAlreadyCurrent("new", remote)).toBe(false);
+  expect(syncAlreadyCurrent("", remote)).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, linked: false })).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, syncState: "pending" })).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, syncState: "failed" })).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, browseState: "failed" })).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, cleanupPending: 1 })).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, operationalMode: "omero", browseState: "unavailable" })).toBe(true);
+});
 
 const context: OmeroContext = {
   object_type: "Screen",

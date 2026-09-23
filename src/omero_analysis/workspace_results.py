@@ -21,7 +21,7 @@ def result_payload(conn, obj, workspace_id, key):
         raise PermissionDenied("This result belongs to a different source")
     _, manifest = ws._read_manifest(dataset)
     item = ws._remote_items(manifest).get(key)
-    if not item or item.get("kind") not in {"result", "png-image"}:
+    if not item or item.get("kind") not in {"result", "png-image", "template-input"}:
         raise AttachmentNotFound("Result is not in this workspace manifest")
     remote = item.get("remote", {})
     kind = remote.get("object_type")
@@ -47,7 +47,7 @@ def result_payload(conn, obj, workspace_id, key):
     if not linked:
         raise AttachmentNotFound("Result was unlinked from this workspace")
     blob = (item.get("storage") or {}).get("blob") or {}
-    if storage and blob.get("relativePath"):
+    if storage and not getattr(storage, "is_omero_state", False) and blob.get("relativePath"):
         path = storage._ensure_inside(storage.analysis_root / Path(blob["relativePath"]))
         if not path.resolve().is_relative_to((storage.user_root / "blobs").resolve()):
             raise PermissionDenied("Result bytes are outside this user's canonical blob storage")
@@ -68,4 +68,19 @@ def result_payload(conn, obj, workspace_id, key):
     if kind == "Annotation":
         # The browser verifies the declared size and digest while restoring.
         return item, None, asset.getFileInChunks()
+    payload = item.get("payload") or {}
+    if kind == "Image" and payload.get("object_type") == "Annotation":
+        annotation = conn.getObject("FileAnnotation", payload.get("object_id"))
+        if annotation is None or object_group_id(annotation) != object_group_id(obj):
+            raise AttachmentNotFound("The exact PNG payload is no longer readable")
+        original = conn.getObject("OriginalFile", annotation.getFile().getId())
+        if original is None or object_group_id(original) != object_group_id(obj):
+            raise AttachmentNotFound("The PNG payload OriginalFile is no longer readable")
+        payload_linked = any(
+            link.getParent().getId() == asset.getId()
+            for link in annotation.getParentLinks("Image")
+        )
+        if not payload_linked:
+            raise AttachmentNotFound("The exact PNG payload was unlinked from its Image")
+        return item, None, annotation.getFileInChunks()
     raise AttachmentNotFound("Original result bytes are unavailable; retain the browser copy")

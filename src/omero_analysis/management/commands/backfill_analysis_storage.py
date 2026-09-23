@@ -10,6 +10,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from ...inplace_storage import AnalysisStorage, storage_capability
+from ...storage_policy import importer_requested
 from ...managed_omero import user_id
 from ...settings_store import (
     SETTINGS_FILE_NAMESPACE,
@@ -69,6 +70,10 @@ class Command(BaseCommand):
         parser.add_argument("--password", default=os.environ.get("OMERO_PASSWORD") or os.environ.get("ROOTPASS"))
 
     def handle(self, *args, **options):
+        if not importer_requested():
+            raise CommandError(
+                "This backfill command is importer-only; IMPORTER_ENABLED=false selects OMERO-only mode"
+            )
         if not options["password"]:
             raise CommandError("Set OMERO_PASSWORD/ROOTPASS or pass --password through a protected environment")
         capability = storage_capability(options["group_id"])

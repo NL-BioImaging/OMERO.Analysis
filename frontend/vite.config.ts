@@ -38,9 +38,9 @@ export default defineConfig({
     emptyOutDir: false,
     sourcemap: false,
     lib: {
-      entry: resolve(__dirname, "src/main.tsx"),
+      entry: { app: resolve(__dirname, "src/main.tsx"), "shared-library-panel": resolve(__dirname, "src/sharedLibraryPanel.ts") },
       formats: ["es"],
-      fileName: () => "app.js"
+      fileName: (_format, name) => `${name}.js`
     },
     cssCodeSplit: false,
     rollupOptions: {

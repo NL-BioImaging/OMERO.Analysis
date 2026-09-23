@@ -1,6 +1,9 @@
 import { trashBlockers, purgeBlockers, pipelineRestoreBlockers, type TrashKind } from "./artifactLifecycle";
 import { editorDraft } from "./editorDraft";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
+import { SharedLibrary } from "./components/SharedLibrary";
+import { bindSharedHandoff, prepareSharedImports, readSharedHandoff, sharedHandoffKey } from "./sharedLibrary";
+import { inputCompatibility, type CompatibilitySource } from "./notebookCompatibility";
 import {
   lazy,
   Suspense,
@@ -136,6 +139,7 @@ import type {
   LibraryDataset,
   LibraryItem,
   LibraryOrigin,
+  SharedLibraryItem,
   SyncStatus,
   SyncPayload,
   AiProfileStore,
@@ -259,6 +263,7 @@ import {
 } from "./workspaceModel";
 import {
   buildWorkspaceSyncPayload,
+  syncAlreadyCurrent,
   syncHasChanges,
   withWorkspaceSyncStatus
 } from "./workspaceSync";
@@ -708,6 +713,7 @@ export default function App() {
   const [remoteSync, setRemoteSync] = useState<SyncStatus | null>(null);
   const [localSyncDigest, setLocalSyncDigest] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [syncPhase, setSyncPhase] = useState<"checking" | "saving" | "waiting" | "">("");
   const [syncError, setSyncError] = useState("");
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -725,6 +731,7 @@ export default function App() {
   const [openLibraryDatasets, setOpenLibraryDatasets] = useState<Set<number>>(new Set());
   const [libraryLoading, setLibraryLoading] = useState(false);
   const initialLibraryRequestHandled = useRef(false);
+  const sharedHandoffOpened = useRef("");
   const initialEditorRequestHandled = useRef(false);
   const remoteSettingsLoaded = useRef(false);
   const workspaceSyncInFlight = useRef(false);
@@ -991,7 +998,8 @@ export default function App() {
     : [];
   useEffect(() => {
     const wanted = (analysisWorkspace?.files || []).filter(file =>
-      file.id === selectedArtifactFileId || Boolean(selectedRun) && file.runId === selectedRun?.id && file.type.startsWith("image/"));
+      !file.deletedAt && (file.remoteResult?.key.startsWith("template-input:") ||
+      file.id === selectedArtifactFileId || Boolean(selectedRun) && file.runId === selectedRun?.id && file.type.startsWith("image/")));
     for (const file of wanted) {
       if (!file.data && file.remoteResult && !file.error) void restoreResult(file).catch(error => {
         if (workspaceRef.current?.workspace.id === file.workspaceId) upsertFiles([{ ...file, error: String(error) }]);
@@ -1070,7 +1078,7 @@ export default function App() {
           file.runId || file.methodId || file.pipelineId || file.notebookId
         )) ||
         (file.source !== "result" && file.role !== "chat-attachment" &&
-          file.state === "ready" && /template/i.test(file.name))
+          file.state === "ready" && (file.role === "template-input" || /template/i.test(file.name)))
       )
     );
     return JSON.stringify({
@@ -1123,6 +1131,7 @@ export default function App() {
         setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
         setRemoteSync(remote);
         setSyncError("");
+        setSyncPhase(phase => phase === "waiting" ? "" : phase);
         await observeLifecycle(remote);
         if (remote.lifecycle && !["active", "unavailable"].includes(remote.lifecycle)) return;
         if (remoteWorkspaceWasDeleted(analysisWorkspace.workspace, remote)) {
@@ -1138,10 +1147,11 @@ export default function App() {
         }
       }).catch((error) => {
         if (cancelled) return;
-        if (error instanceof OmeroApiError && error.code === "sync_busy" && attempts++ < 12) {
+        if (error instanceof OmeroApiError && error.code === "sync_busy") {
+          setSyncPhase("waiting");
           setStatus("Waiting for another workspace synchronization to finish…");
-          timer = window.setTimeout(check, 2500);
-        } else setSyncError(String(error));
+          timer = window.setTimeout(check, Math.min(30000, 2500 * ++attempts));
+        } else { setSyncPhase(""); setSyncError(String(error)); }
       });
     };
     timer = window.setTimeout(check, delay);
@@ -1253,6 +1263,12 @@ export default function App() {
   }, [analysisWorkspace?.workspace.id]);
 
   useEffect(() => {
+    if (!analysisWorkspace || !bootstrap.context || sharedHandoffOpened.current === analysisWorkspace.workspace.id) return;
+    sharedHandoffOpened.current = analysisWorkspace.workspace.id;
+    if (readSharedHandoff(bootstrap.context, analysisWorkspace.workspace.id).length) void openWorkspaceLibrary();
+  }, [analysisWorkspace?.workspace.id]);
+
+  useEffect(() => {
     let alive = true;
     (async () => {
       setWorkspacePreparing(true);
@@ -1284,6 +1300,7 @@ export default function App() {
       let baseWorkspace = selectedLocal ? (await loadWorkspace(selectedLocal.id))! :
         await loadOrCreateWorkspace(bootstrap.context, newId || undefined, newId ? `Analysis ${number}` : undefined);
       if (!alive) return;
+      if (bootstrap.context) bindSharedHandoff(bootstrap.context, newId, baseWorkspace.workspace);
       if (!bootstrap.embeddedHost && (savedTheme === "dark" || savedTheme === "light")) {
         setTheme(savedTheme);
       }
@@ -1963,6 +1980,22 @@ export default function App() {
     }
     setProfiles(discovered);
     return discovered;
+  }
+
+  async function inspectSharedLocalInputs(): Promise<Record<string, CompatibilitySource["schema"]>> {
+    const files = workspaceRef.current?.files.filter(f => !f.deletedAt && f.state === "ready" && f.data && f.source !== "result" && f.role !== "chat-attachment") || [];
+    if (!files.length) return {};
+    await ensureRuntime(files);
+    // Explicit inspection only: no notebook cells or remote database downloads.
+    const inspected = await runtime.profileInputs();
+    setProfiles(inspected);
+    return Object.fromEntries(files.map(file => {
+      const profile = inspected.find(p => p.path === `/input/${notebookRuntimeName(file.name)}`);
+      if (!profile || profile.error) return [file.id, undefined];
+      const summary = profile.summary;
+      return [file.id, Array.isArray(summary.tables) ? summary : Array.isArray(summary.columns)
+        ? { tables: [{ name: "data", columns: summary.columns }] } : undefined];
+    })) as Record<string, CompatibilitySource["schema"]>;
   }
 
   function portableRemoteQueryBindings(
@@ -3025,24 +3058,19 @@ export default function App() {
     }
     let schemaDigest = source.remoteSchemaDigest;
     let sourceDigest: string | undefined = source.sha256;
-    if (input.kind === "query" && source.annotationId) {
+    if (input.kind === "query" && mode === "remote" && source.annotationId) {
       const schema = await bridge.remoteSchema(source.annotationId);
       schemaDigest = String(schema.schema_digest || schemaDigest || "") || undefined;
       sourceDigest = String(schema.source_sha256 || sourceDigest || "") || undefined;
       if (input.schema?.tables?.length) {
-        const available = new Map(
-          (Array.isArray(schema.tables) ? schema.tables : []).map((table: any) => [
-            String(table.name),
-            new Set((Array.isArray(table.columns) ? table.columns : []).map((column: any) => String(column.name)))
-          ])
-        );
-        for (const table of input.schema.tables) {
-          const columns = available.get(table.name);
-          if (!columns || table.columns?.some((column) => !columns.has(column.name))) {
-            throw new Error(`Notebook input ${source.name} does not satisfy the declared schema for ${input.id}`);
-          }
-        }
+        const match = inputCompatibility(input, { id: source.id, name: source.name, schema });
+        if (match.status !== "compatible") throw new Error(match.reasons.join("; "));
       }
+    }
+    if (input.kind === "query" && mode === "local" && input.schema?.tables?.length) {
+      const schemas = await inspectSharedLocalInputs();
+      const match = inputCompatibility(input, { id: source.id, name: source.name, schema: schemas[source.id] });
+      if (match.status !== "compatible") throw new Error(match.reasons.join("; "));
     }
     return {
       inputId: input.id,
@@ -6900,6 +6928,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     try {
       const remote = await bridge.syncStatus(current.workspace.id);
       setRemoteSync(remote);
+      if (!remote.canSync) { setSyncError(remote.reason || "OMERO synchronization is unavailable"); return; }
       if (remote.syncState === "pending") {
         setStatus(
           `${remote.pendingOrderCount || 1} plot import(s) pending in BIOMERO.importer`
@@ -6940,24 +6969,43 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       workspaceSyncPollTimer.current = null;
     }
     setSyncing(true);
+    setSyncPhase("checking");
     setSyncError("");
     try {
+      const payload = prepared || await buildWorkspaceSyncPayload(current, context);
+      const remote = await bridge.syncStatus(current.workspace.id);
+      setRemoteSync(remote);
+      if (!remote.canSync) { setSyncError(remote.reason || "OMERO synchronization is unavailable"); return; }
       if (current.workspace.omeroSync) {
-        const remote = await bridge.syncStatus(current.workspace.id);
         if (!remote.linked || (remote.lifecycle && remote.lifecycle !== "active")) {
           await discardWorkspaceDeletedInOmero(current.workspace);
           return;
         }
       }
-      const payload = prepared || await buildWorkspaceSyncPayload(current, context);
+      // A queued save (or another browser tab) may already have saved these
+      // bytes. Do not create a new plan/revision just to refresh sync metadata.
+      if (syncAlreadyCurrent(payload.contentDigest || payload.inventory.digest, remote)) {
+        const latest = workspaceRef.current;
+        if (!latest || latest.workspace.id !== current.workspace.id) return;
+        const next = withWorkspaceSyncStatus(latest, remote, now());
+        if (JSON.stringify(next.workspace.omeroSync) !== JSON.stringify(latest.workspace.omeroSync) ||
+            next.workspace.lifecycleRevision !== latest.workspace.lifecycleRevision) {
+          workspaceRef.current = next;
+          setWorkspace(next);
+          await commitWorkspaceRecord(next.workspace);
+        }
+        setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
+        return;
+      }
       let plan = await bridge.planWorkspaceSync(payload.inventory);
       let synced: SyncStatus;
+      setSyncPhase("saving");
       try {
         synced = await bridge.applyWorkspaceSync(
           payload.inventory, plan, payload.bytes
         );
       } catch (error) {
-        if (!(error instanceof OmeroApiError) || error.status !== 409) throw error;
+        if (!(error instanceof OmeroApiError) || error.status !== 409 || error.code === "sync_busy") throw error;
         plan = await bridge.planWorkspaceSync(payload.inventory);
         synced = await bridge.applyWorkspaceSync(
           payload.inventory, plan, payload.bytes
@@ -6992,12 +7040,13 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       if (synced.browseState === "failed") setSyncError("Readable filesystem copy failed. Retry synchronization to rebuild it.");
     } catch (error) {
       if (error instanceof OmeroApiError && error.code === "sync_busy") {
+        setSyncPhase("waiting");
         setStatus("Waiting for another workspace synchronization to finish…");
         workspaceSyncQueued.current = false;
         workspaceSyncPollTimer.current = window.setTimeout(() => {
           workspaceSyncPollTimer.current = null;
           void synchronizeWorkspace();
-        }, IMPORT_SYNC_POLL_INTERVAL_MS);
+        }, 5000);
         return;
       }
       const message = String(error);
@@ -7006,11 +7055,34 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     } finally {
       workspaceSyncInFlight.current = false;
       setSyncing(false);
+      setSyncPhase(phase => phase === "waiting" ? phase : "");
       if (workspaceSyncQueued.current) {
         workspaceSyncQueued.current = false;
         window.setTimeout(() => void synchronizeWorkspace(), 0);
       }
     }
+  }
+
+  async function importSharedLibraryItems(libraryId: string, items: SharedLibraryItem[]) {
+    const current = workspaceRef.current;
+    if (!current) throw new Error("Open a Workspace before importing shared items");
+    const next = await prepareSharedImports(current, libraryId, items, (item, revision) => bridge.downloadSharedItem(item, revision));
+    if (workspaceRef.current !== current) throw new Error("Workspace changed during import; retry");
+    if (workspaceBytes(next) > MAX_WORKSPACE_BYTES) throw new Error("Shared imports exceed the browser Workspace size limit");
+    await Promise.all([
+      ...next.files.filter(item => !current.files.some(old => old.id === item.id)).map(saveFile),
+      ...next.notebooks.filter(item => !current.notebooks.some(old => old.id === item.id)).map(saveNotebook)
+    ]);
+    workspaceRef.current = next;
+    setWorkspace(next);
+    if (bootstrap.context) {
+      const remaining = readSharedHandoff(bootstrap.context, next.workspace.id).filter(ref =>
+        ref.libraryId !== libraryId || !items.some(item => item.id === ref.id && item.revision === ref.revision));
+      const key = sharedHandoffKey(bootstrap.context, next.workspace.id);
+      if (remaining.length) localStorage.setItem(key, JSON.stringify({ expires: Date.now() + 900_000, items: remaining }));
+      else localStorage.removeItem(key);
+    }
+    setStatus(`Imported ${items.length} shared item(s) into this Workspace`);
   }
 
   async function openWorkspaceLibrary(
@@ -7120,6 +7192,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       for (const { dataset, item } of ordered) {
         const origin = libraryOrigin(dataset, item);
         const existingOrigin = (record: { libraryOrigin?: LibraryOrigin }) =>
+          record.libraryOrigin?.source !== "shared" &&
           record.libraryOrigin?.datasetId === dataset.datasetId &&
           record.libraryOrigin?.itemKey === item.key;
         const exact = (record: { libraryOrigin?: LibraryOrigin }) =>
@@ -7959,12 +8032,18 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   );
   const syncButtonLabel = workspace.purgedAt ? "Remote workspace removed — local copy retained"
     : workspace.deletedAt ? "In Trash — synchronization suspended"
+    : syncPhase === "waiting"
+    ? "Waiting for another synchronization…"
     : syncing
-    ? "Saving reusable items…"
+    ? syncPhase === "checking" ? "Checking for changes…" : "Saving to OMERO…"
     : syncRunBarrierActive
       ? "Sync queued until run finishes"
     : syncError
       ? "Automatic sync paused"
+      : remoteSync?.operationalMode === "blocked"
+        ? "Blocked — storage configuration required"
+      : remoteSync?.syncState === "pending"
+        ? "Waiting for plot imports…"
       : !remoteSync?.linked
         ? "Automatic sync ready"
         : syncChanged
@@ -7976,7 +8055,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     { label: "Rename current Assistant Chat", run: () => void renameChat(activeChat) },
     { label: "Rename workspace", run: () => void renameWorkspace(workspace) },
     {
-      label: "Reuse from +AnalysisWorkspaces",
+      label: "Reuse analyses and plate templates",
       run: () => void openWorkspaceLibrary()
     },
     { label: "Refresh", run: () => void refreshWorkspace() }
@@ -7992,7 +8071,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         <span className="menu-heading">OMERO synchronization</span>
         <span className="menu-note">Methods, Pipelines, Notebooks, direct run results, and settings save automatically. Assistant content stays browser-local.</span>
         <button onClick={() => void openWorkspaceLibrary()}>
-          <ActionIcon name="import" />Reuse from +AnalysisWorkspaces
+          <ActionIcon name="import" />Reuse analyses and plate templates
         </button>
       </div>
     </details>
@@ -8138,7 +8217,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         <span>Browser: {browserSaveError ? "save failed — keep this tab open" : browserSaving ? "saving…" : "saved locally"}</span>
         <span title={syncError || remoteSync?.reason}>OMERO: {syncButtonLabel}</span>
         <span>Imports: {remoteSync?.pendingOrderCount || 0} pending</span>
-        <span>Filesystem: {remoteSync?.browseState === "failed" ? "copy failed" : remoteSync?.linked ? "available" : "not synchronized"}</span>
+        <span>Filesystem: {remoteSync?.browseState === "unavailable" || remoteSync?.operationalMode === "omero" ? "unavailable (OMERO-only)" : remoteSync?.browseState === "failed" ? "copy failed" : remoteSync?.linked ? "available" : "not synchronized"}</span>
         {Boolean((remoteSync as SyncStatus & { cleanupPending?: number })?.cleanupPending) && <span>Cleanup pending — retry synchronization</span>}
         {browserSaveError && <Button onClick={() => void replaceWorkspace(analysisWorkspace).then(() => setBrowserSaveError("")).catch(error => setBrowserSaveError(String(error)))}>Retry browser save</Button>}
         {syncError && <Button disabled={syncing} onClick={() => void synchronizeWorkspace()}>Retry OMERO sync</Button>}
@@ -8158,7 +8237,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           >
             <header>
               <div>
-                <h2 id="workspace-library-title">Reuse from +AnalysisWorkspaces</h2>
+                <h2 id="workspace-library-title">Reuse analyses and plate templates</h2>
                 <p>
                   Reusable Methods, Pipelines, and Notebooks are copied into this
                   browser Workspace. Their library originals remain unchanged.
@@ -8166,6 +8245,13 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               </div>
               <Button aria-label="Close library" onClick={() => setShowLibrary(false)}>×</Button>
             </header>
+            <div className="library-datasets">
+              {analysisWorkspace && <SharedLibrary bridge={bridge} workspace={analysisWorkspace}
+                onImport={importSharedLibraryItems}
+                inspectLocal={inspectSharedLocalInputs}
+                initialSelection={bootstrap.context ? readSharedHandoff(bootstrap.context, analysisWorkspace.workspace.id) : []} />}
+              <details className="library-panel" open><summary><span className="library-panel-toggle" /><strong>Synced +AnalysisWorkspaces library</strong><small>{selectedLibraryItems.size} selected</small></summary>
+              <div className="library-panel-body">
             <label className="library-search">
               <span className="sr-only">Filter AnalysisWorkspaces library</span>
               <Input
@@ -8175,7 +8261,6 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                 onChange={(event) => setLibraryQuery(event.target.value)}
               />
             </label>
-            <div className="library-datasets">
               {libraryLoading && !libraryDatasets.length && <p>Loading library…</p>}
               {!libraryLoading && (
                 <WorkspaceLibraryTree
@@ -8202,13 +8287,15 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                 />
               )}
             </div>
+              </details>
+            </div>
             <div className="dialog-actions">
               <Button onClick={() => setShowLibrary(false)}>Cancel</Button>
               <Button
                 disabled={!selectedLibraryItems.size || libraryLoading}
                 onClick={() => void importSelectedLibraryItems()}
               >
-                {libraryLoading ? "Importing…" : `Import ${selectedLibraryItems.size} selected`}
+                {libraryLoading ? "Please wait…" : `Import ${selectedLibraryItems.size} synced items`}
               </Button>
             </div>
           </section>
@@ -8294,6 +8381,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             ><Icon name="expand" /></button>
             <input ref={addFilesInput} hidden type="file" multiple onChange={(event) => void addLocalFiles(event.target.files)} />
           </div>
+          <button className="explorer-libraries" onClick={() => void openWorkspaceLibrary()} title="Copy shared notebooks, plate templates, and synced Workspace analyses"><ActionIcon name="import" />Libraries</button>
           <label className="explorer-search">
             <span className="sr-only">Search workspace files</span>
             <input
@@ -8680,17 +8768,6 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               <span>{activeNotebooks.length} notebook{activeNotebooks.length === 1 ? "" : "s"}</span>
               {editorEnabled && <button aria-label="Create new Notebook" onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New Notebook</button>}
               <button aria-label="Upload Notebook" onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload Notebook</button>
-              {!!bootstrap.context?.notebooks?.length && <select aria-label="Import notebook from source" value=""
-                onChange={(event) => {
-                  const selected = bootstrap.context?.notebooks?.find(item => String(item.annotation_id) === event.target.value);
-                  if (selected) void bridge.downloadNotebook(selected).then(data =>
-                    uploadNotebookFile(new File([data], selected.name))).catch(error => setStatus(`Import failed: ${String(error)}`));
-                }}>
-                <option value="">Import notebook from source...</option>
-                {bootstrap.context.notebooks.map(item => <option key={item.annotation_id} value={item.annotation_id}>
-                  {item.name} ({item.owner_name || `owner ${item.owner_id ?? "unknown"}`}; annotation {item.annotation_id})
-                </option>)}
-              </select>}
 
             </div>
             <ul className="browser-list">

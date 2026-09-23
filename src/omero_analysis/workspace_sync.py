@@ -54,14 +54,14 @@ from .inplace_storage import (
     latest_ingest_events,
     retry_order_uuid,
     record_import_completion,
-    storage_capability,
-    storage_for,
     submit_png_order,
 )
+from .storage_policy import require_storage_write, storage_policy
 
 SYNC_NAMESPACE = "nl.bioimaging.analysis.sync.v1"
 SYNC_MANIFEST_NAMESPACE = "nl.bioimaging.analysis.sync.manifest.v1"
 WORKSPACE_SNAPSHOT_NAMESPACE = "nl.bioimaging.analysis.workspace.v1"
+PAYLOAD_NAMESPACE = "nl.bioimaging.analysis.payload.v1"
 INVENTORY_SCHEMA = "nl.bioimaging.analysis.sync.inventory.v1"
 PLAN_SCHEMA = "nl.bioimaging.analysis.sync.plan.v1"
 STATUS_SCHEMA = "nl.bioimaging.analysis.sync.status.v1"
@@ -261,6 +261,43 @@ def _create_dataset(conn, project, inventory):
     return dataset
 
 
+def ensure_workspace_destination(conn, source, workspace_id, workspace_name=None):
+    """Return/create this user's managed Dataset before the first full sync.
+
+    Durable staged inputs need a destination as the Analysis application opens.
+    The later canonical synchronization updates the provisional name and writes
+    the first manifest.
+    """
+    require_workspace_access(conn, source)
+    workspace_id = _workspace_id(workspace_id)
+    group_id = object_group_id(source)
+    project = _managed_project(conn, group_id, create=True)
+    dataset = _managed_dataset(project, workspace_id)
+    source_type = getattr(source, "OMERO_CLASS", None) or source.__class__.__name__.replace("Wrapper", "")
+    source_type = str(source_type).split(".")[-1].removeprefix("BlitzGateway")
+    if dataset is None:
+        inventory = {
+            "workspace": {
+                "id": workspace_id,
+                "name": str(workspace_name or "Analysis"),
+                "sourceObjectType": source_type,
+                "sourceObjectId": int(source.getId()),
+                "sourceObjectName": str(_plain(source.getName()) or ""),
+            }
+        }
+        dataset = _create_dataset(conn, project, inventory)
+    else:
+        _, identity = _marker(dataset, "dataset")
+        if (
+            identity.get("source_object_type") != source_type
+            or int(identity.get("source_object_id", 0)) != int(source.getId())
+        ):
+            raise PermissionDenied("The workspace belongs to another source")
+    if _owner_id(dataset) != _user_id(conn) or object_group_id(dataset) != group_id:
+        raise PermissionDenied("The workspace must belong to the active user and group")
+    return dataset
+
+
 def _manifest_annotation(dataset):
     candidates = []
     for annotation in _annotations(dataset):
@@ -398,9 +435,10 @@ def sync_status(conn, obj, workspace_id):
     annotation, manifest = _read_manifest(dataset)
     from .workspace_lifecycle import state_for
     _, lifecycle = state_for(conn, obj, workspace_id)
-    capability = storage_capability(object_group_id(obj))
-    storage_status = capability.public()
-    if capability.ready:
+    policy = storage_policy(object_group_id(obj), _user_id(conn))
+    capability = policy.capability
+    storage_status = policy.public()
+    if policy.operation_mode == "inplace":
         from .inplace_annotations import attachment_capability
 
         storage_status["attachments"] = attachment_capability().public()
@@ -408,8 +446,13 @@ def sync_status(conn, obj, workspace_id):
         "schema": STATUS_SCHEMA,
         "lifecycle": lifecycle["state"] if dataset is not None or lifecycle["state"] != "active" else "unavailable",
         "lifecycleRevision": lifecycle["revision"],
-        "canSync": can_manage_workspace(conn, obj),
-        "reason": "" if can_manage_workspace(conn, obj) else "Your workspace group access is unavailable.",
+        "canSync": can_manage_workspace(conn, obj) and policy.writable,
+        "reason": (
+            "Your workspace group access is unavailable."
+            if not can_manage_workspace(conn, obj)
+            else (capability.detail if not policy.writable else "")
+        ),
+        "operationalMode": policy.operation_mode,
         "linked": dataset is not None,
         "projectId": int(project.getId()) if project is not None else None,
         "projectName": str(_plain(project.getName())) if project is not None else PROJECT_NAME,
@@ -426,16 +469,17 @@ def sync_status(conn, obj, workspace_id):
         "lastSyncedAt": (manifest or {}).get("updated_at"),
         "storage": storage_status,
         "syncState": "complete",
-        "browseState": lifecycle.get("browseState", "ready"),
+        "browseState": (
+            "unavailable" if policy.operation_mode == "omero"
+            else lifecycle.get("browseState", "ready")
+        ),
     }
-    if capability.ready:
-        _, journal_storage = storage_for(object_group_id(obj), _user_id(conn), initialize=False)
+    if policy.operation_mode == "inplace":
+        journal_storage = policy.storage
         cleanup = journal_storage.read_json(Path("workspaces") / workspace_id / "pending-cleanup.json") if journal_storage else None
         status["cleanupPending"] = len((cleanup or {}).get("pending", []))
         status["cleanupErrors"] = (cleanup or {}).get("errors", [])
-        _, storage = storage_for(
-            object_group_id(obj), _user_id(conn), initialize=False
-        )
+        storage = policy.storage
         if storage is not None:
             journal_status = _reconcile_workspace_journals(
                 conn, dataset, manifest, storage, workspace_id
@@ -621,6 +665,8 @@ def plan_sync(request, conn, obj, inventory):
     from .workspace_lifecycle import require_active
     require_active(conn, obj, inventory)
     require_workspace_access(conn, obj)
+    policy = storage_policy(object_group_id(obj), _user_id(conn))
+    require_storage_write(policy, "Workspace synchronization")
     sync_status(conn, obj, inventory["workspace"]["id"])
     project = _managed_project(conn, object_group_id(obj))
     dataset = _managed_dataset(project, inventory["workspace"]["id"])
@@ -630,7 +676,7 @@ def plan_sync(request, conn, obj, inventory):
                 int(source_identity.get("source_object_id", 0)) != int(obj.getId())):
             raise PermissionDenied("This workspace belongs to another source")
     _, manifest = _read_manifest(dataset)
-    _, storage = storage_for(object_group_id(obj), _user_id(conn), initialize=False)
+    storage = policy.storage
     if storage is not None:
         current = {(item['key'], item['sha256']) for item in inventory['items']}
         for path in (storage.user_root / 'pending').glob('*.json'):
@@ -642,7 +688,8 @@ def plan_sync(request, conn, obj, inventory):
             if all((item.get('key'), item.get('sha256')) not in current for item in journal.get('items', [])):
                 storage.write_json(Path('history') / path.name, {**journal, 'archivedReason': 'Superseded by a new synchronization'})
                 storage.delete_json(path.relative_to(storage.user_root))
-        storage.prune_empty_directories()
+        # Global empty-directory housekeeping belongs to maintenance, not a
+        # latency-sensitive save under the per-user synchronization lock.
     remote = _remote_items(manifest)
     upload_keys = []
     create = update = unchanged = 0
@@ -853,8 +900,37 @@ def _item_namespace(kind):
     }.get(kind, "nl.bioimaging.analysis.result.v1")
 
 
-def _upload_bytes(conn, dataset, item, data, stored=None):
-    description = f"OMERO Analysis synchronized item {item['key']}"
+def _operation_identity(workspace_id, item, role="content"):
+    value = f"{workspace_id}\0{item['key']}\0{item.get('sha256', '')}\0{role}"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _operation_annotation(parent, namespace, operation_id):
+    marker = f"Operation {operation_id}."
+    for annotation in _annotations(parent):
+        if not hasattr(annotation, "getFile"):
+            continue
+        if str(_plain(getattr(annotation, "getNs", lambda: None)()) or "") != namespace:
+            continue
+        description = str(
+            _plain(getattr(annotation, "getDescription", lambda: None)()) or ""
+        )
+        if marker in description:
+            return annotation
+    return None
+
+
+def _upload_bytes(conn, dataset, item, data, stored=None, workspace_id=""):
+    operation_id = _operation_identity(workspace_id, item)
+    existing = _operation_annotation(
+        dataset, _item_namespace(item["kind"]), operation_id
+    )
+    if existing is not None:
+        return existing, "inplace-annotation" if stored is not None else "omero"
+    description = (
+        f"OMERO Analysis synchronized item {item['key']}. "
+        f"Operation {operation_id}."
+    )
     if stored is not None:
         from .inplace_annotations import create_file_annotation
 
@@ -876,6 +952,27 @@ def _upload_bytes(conn, dataset, item, data, stored=None):
         storage_mode = "omero"
     dataset.linkAnnotation(annotation)
     return annotation, storage_mode
+
+
+def _upload_png_payload(conn, image, item, data, workspace_id):
+    operation_id = _operation_identity(workspace_id, item, "png-payload")
+    existing = _operation_annotation(image, PAYLOAD_NAMESPACE, operation_id)
+    if existing is not None:
+        return existing
+    with tempfile.TemporaryDirectory(prefix="omero-analysis-payload-") as temp_dir:
+        path = Path(temp_dir) / safe_filename(item["name"])
+        path.write_bytes(data)
+        annotation = conn.createFileAnnfromLocalFile(
+            str(path),
+            mimetype=item["mimetype"],
+            ns=PAYLOAD_NAMESPACE,
+            desc=(
+                f"Exact OMERO Analysis PNG payload for {item['key']}. "
+                f"Operation {operation_id}."
+            ),
+        )
+    image.linkAnnotation(annotation)
+    return annotation
 
 
 def _remote_object(conn, remote):
@@ -934,7 +1031,7 @@ def _reconcile_result_attachments(
             _link_annotation(dataset, annotation)
 
 
-def _import_png(conn, dataset, item, data):
+def _import_png(conn, dataset, item, data, workspace_id=""):
     try:
         import numpy
         from PIL import Image, ImageFile
@@ -968,9 +1065,18 @@ def _import_png(conn, dataset, item, data):
     else:
         planes = tuple(array[:, :, channel] for channel in range(3))
         channels = 3
+    operation_id = _operation_identity(workspace_id, item, "image")
+    operation_marker = f"Operation {operation_id}."
+    for image in getattr(dataset, "listChildren", lambda: [])():
+        description = str(
+            _plain(getattr(image, "getDescription", lambda: None)()) or ""
+        )
+        if operation_marker in description:
+            return image
     description = (
         f"OMERO Analysis synchronized item {item['key']}. "
-        f"Source SHA-256 {item['sha256']}."
+        f"Source SHA-256 {item['sha256']}. "
+        f"{operation_marker}"
     )
     if conversion:
         description += f" Conversion: {conversion}."
@@ -1104,6 +1210,9 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
     from .workspace_lifecycle import require_active
     require_active(conn, obj, inventory)
     require_workspace_access(conn, obj)
+    group_id = object_group_id(obj)
+    policy = storage_policy(group_id, _user_id(conn))
+    require_storage_write(policy, "Workspace synchronization")
     claims = _validate_plan_token(request, conn, obj, inventory, plan_token)
     if list(payload_keys) != list(claims.get("upload_keys") or []):
         raise InvalidObject("Uploaded synchronization keys do not match the plan")
@@ -1152,14 +1261,27 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         conflict.status = 409
         raise conflict
 
+    if policy.operation_mode == "omero":
+        from .workspace_lifecycle import state_for
+
+        lifecycle_storage, lifecycle_state = state_for(
+            conn, obj, inventory["workspace"]["id"]
+        )
+        lifecycle_path = (
+            Path("workspaces")
+            / inventory["workspace"]["id"]
+            / "lifecycle.json"
+        )
+        if lifecycle_storage.read_json(lifecycle_path) is None:
+            lifecycle_storage.write_json(lifecycle_path, lifecycle_state)
+
     if _inventory_matches_manifest(inventory, old_manifest):
         return sync_status(conn, obj, inventory["workspace"]["id"])
 
     # When all runtime capabilities are present, every changed byte first gets
     # a durable content-addressed copy. PNGs are then handed to the importer and
     # this request remains pending until their imported Images can be located.
-    group_id = object_group_id(obj)
-    capability, storage = storage_for(group_id, _user_id(conn))
+    capability, storage = policy.capability, policy.storage
     stored_payload = {}
     if storage is not None:
         for key, data in payload.items():
@@ -1304,6 +1426,7 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                 remote_objects[item["key"]] = remote_obj
                 new_items_by_key[item["key"]] = {
                     **item, "remote": prior["remote"],
+                    **({"payload": prior["payload"]} if prior.get("payload") else {}),
                     **({"storage": prior["storage"]} if prior.get("storage") else {}),
                 }
                 continue
@@ -1323,12 +1446,23 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     object_type = "Image"
                     created_here = False
                 else:
-                    remote_obj = _import_png(conn, dataset, item, payload[item["key"]])
+                    remote_obj = _import_png(
+                        conn,
+                        dataset,
+                        item,
+                        payload[item["key"]],
+                        inventory["workspace"]["id"],
+                    )
                     object_type = "Image"
             else:
                 stored = stored_payload.get(item["key"])
                 remote_obj, annotation_storage_mode = _upload_bytes(
-                    conn, dataset, item, payload[item["key"]], stored=stored
+                    conn,
+                    dataset,
+                    item,
+                    payload[item["key"]],
+                    stored=stored,
+                    workspace_id=inventory["workspace"]["id"],
                 )
                 object_type = "Annotation"
             if created_here:
@@ -1347,8 +1481,22 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             remote = _remote_ref(remote_obj, item)
             remote_objects[item["key"]] = remote_obj
             stored = stored_payload.get(item["key"])
+            payload_ref = None
+            if item["kind"] == "png-image" and storage is None:
+                payload_annotation = _upload_png_payload(
+                    conn,
+                    remote_obj,
+                    item,
+                    payload[item["key"]],
+                    inventory["workspace"]["id"],
+                )
+                staged.append(("Annotation", int(payload_annotation.getId())))
+                payload_ref = _remote_ref(
+                    payload_annotation, {**item, "kind": "result"}
+                )
             new_items_by_key[item["key"]] = {
                 **item, "remote": remote,
+                **({"payload": payload_ref} if payload_ref else {}),
                 **({"storage": {"mode": annotation_storage_mode if object_type == "Annotation" else "importer", "blob": stored}}
                    if stored is not None else {}),
             }
@@ -1418,7 +1566,6 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                 import logging
                 logging.getLogger(__name__).exception("Workspace browsing copy needs refresh")
             storage.write_json(Path("workspaces") / inventory["workspace"]["id"] / "lifecycle.json", lifecycle_state)
-            storage.prune_empty_directories()
     except Exception:
         from .workspace_lifecycle import cleanup_replaced
         # Keep the Dataset and recovery journal until all failed staging is resolved.
@@ -1435,6 +1582,12 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             remote = prior.get("remote") or {}
             if remote.get("object_id"):
                 replaced.append((remote["object_type"], remote["object_id"]))
+        prior_payload = prior.get("payload") or {}
+        replacement_payload = (replacement or {}).get("payload") or {}
+        if prior_payload.get("object_id") and prior_payload != replacement_payload:
+            replaced.append(
+                (prior_payload["object_type"], prior_payload["object_id"])
+            )
     if old_manifest_annotation is not None:
         replaced.append(("Annotation", old_manifest_annotation.getId()))
     from .workspace_lifecycle import cleanup_replaced

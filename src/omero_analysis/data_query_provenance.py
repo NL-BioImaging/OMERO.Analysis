@@ -179,9 +179,12 @@ def promote_result(request, conn, payload):
     if result["byte_count"] > data_query_promotion_max_bytes():
         raise RemoteQueryFailed("Query result exceeds the Analysis upload limit")
     if workspace_id is not None:
-        from .inplace_storage import storage_for
+        from .omero_state import OmeroStateStorage
+        from .storage_policy import require_storage_write, storage_policy
         from .sync_lock import storage_lock
-        _, storage = storage_for(record["group_id"], int(conn.getUserId()))
+        policy = storage_policy(record["group_id"], int(conn.getUserId()))
+        require_storage_write(policy, "Promoting a query result")
+        storage = policy.storage or OmeroStateStorage(conn, obj)
         workspace_lock = storage_lock(storage)
     else:
         workspace_lock = nullcontext()

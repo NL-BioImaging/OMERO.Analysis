@@ -16,7 +16,7 @@ from django.conf import settings as django_settings
 from requests_toolbelt import MultipartEncoder
 
 from .errors import InvalidToken, RemoteQueryFailed, RemoteQueryUnavailable, UnsupportedMedia
-from .services import object_group_id, get_context_object, get_scoped_attachment
+from .services import object_group_id, get_context_object, get_analysis_attachment
 from .tokens import validate_context_token
 from .data_query_audit import correlation_id
 from .settings import (
@@ -445,7 +445,9 @@ def authorize_query_source(request, conn, annotation_id=None, result_token=None)
         current_roles = {str(_plain(row[1])) for row in memberships}
         if "user" not in current_roles or (object_group_id(obj) not in current_groups and "system" not in current_roles):
             raise PermissionDenied("The active user's group access has been revoked")
-    annotation, info = get_scoped_attachment(obj, claims.get("annotation_id") if result_token else annotation_id)
+    annotation, info = get_analysis_attachment(
+        conn, obj, claims.get("annotation_id") if result_token else annotation_id
+    )
     request.data_query_audit.update(annotation_id=info.annotation_id, file_id=info.file_id)
     original = conn.getObject("OriginalFile", info.file_id)
     if original is None:

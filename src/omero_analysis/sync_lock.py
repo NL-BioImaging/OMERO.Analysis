@@ -6,9 +6,9 @@ import os
 import threading
 
 from .errors import AnalysisError
-from .inplace_storage import storage_for
 from .managed_omero import user_id
 from .services import object_group_id
+from .storage_policy import storage_policy
 
 _held = threading.local()
 
@@ -23,8 +23,11 @@ def storage_lock(storage):
     if str(path) in held:
         yield
         return
-    storage._ensure_inside(path)
-    with path.open('a+b') as handle:
+    ensure_inside = getattr(storage, "_ensure_inside", None)
+    if ensure_inside is not None:
+        ensure_inside(path)
+    open_lock = getattr(storage, "open_lock", lambda: path.open('a+b'))
+    with open_lock() as handle:
         if os.name == 'nt':
             import msvcrt
             if not path.stat().st_size:
@@ -57,7 +60,12 @@ def serialized_sync(function):
     def wrapped(*args, **kwargs):
         bound = parameters.bind(*args, **kwargs).arguments
         conn, obj = bound['conn'], bound['obj']
-        _, storage = storage_for(object_group_id(obj), user_id(conn))
+        policy = storage_policy(object_group_id(obj), user_id(conn))
+        storage = policy.storage
+        if storage is None:
+            from .omero_state import OmeroStateStorage
+
+            storage = OmeroStateStorage(conn, obj)
         with storage_lock(storage):
             return function(*args, **kwargs)
     return wrapped

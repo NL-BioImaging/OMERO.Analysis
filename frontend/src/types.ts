@@ -69,6 +69,7 @@ export interface Bootstrap {
   workspaceSyncRemoveTemplate: string;
   workspaceLibraryTemplate: string;
   workspaceLibraryDownloadTemplate: string;
+  sharedLibraryTemplate?: string;
   analysisSettingsTemplate: string;
   workflowSkillsUrl: string;
   dataQueryCapabilitiesUrl?: string;
@@ -276,7 +277,8 @@ export interface WorkspaceFile {
   size: number;
   sha256: string;
   source: FileSource;
-  role?: "chat-attachment";
+  role?: "chat-attachment" | "template-input";
+  libraryOrigin?: LibraryOrigin;
   attachment?: {
     origin: "upload" | "url";
     sourceUrl?: string;
@@ -872,13 +874,50 @@ export interface RemoteQueryBindingV2 {
 
 export type RemoteQueryBinding = RemoteQueryBindingV1 | RemoteQueryBindingV2;
 
-export interface LibraryOrigin {
+export interface WorkspaceLibraryOrigin {
+  source?: "workspace";
   projectId: number;
   datasetId: number;
   workspaceId: string;
   itemKey: string;
   revision: number;
   sha256: string;
+}
+
+export interface SharedLibraryOrigin {
+  source: "shared";
+  libraryId: string;
+  itemId: string;
+  revision: string;
+  sha256: string;
+}
+
+export type LibraryOrigin = WorkspaceLibraryOrigin | SharedLibraryOrigin;
+
+export interface SharedLibraryItem {
+  id: string;
+  kind: "notebook" | "template";
+  name: string;
+  available: boolean;
+  error: string;
+  revision?: string;
+  sha256?: string;
+  size?: number;
+  mimetype?: string;
+  contract?: import("./notebookProtocol").NotebookProtocolContract | null;
+  revisionCount: number;
+}
+
+export interface SharedLibraryCatalogue {
+  available: boolean;
+  disabled?: boolean;
+  error?: string;
+  libraryId: string;
+  canPublish: boolean;
+  destination?: string;
+  destinationRevision?: string;
+  groups?: Array<{ id: number; name: string }>;
+  items: SharedLibraryItem[];
 }
 
 export type SyncItemKind =
@@ -927,7 +966,9 @@ export interface SyncPayload {
 export interface SyncStatus {
   lifecycle?: "active" | "trashed" | "purging" | "purged" | "unavailable";
   lifecycleRevision?: number;
-  browseState?: "ready" | "failed";
+  browseState?: "ready" | "failed" | "unavailable";
+  operationalMode?: "omero" | "inplace" | "blocked";
+  cleanupPending?: number;
   cleanup?: { complete: boolean; errors: unknown[] };
   schema: "nl.bioimaging.analysis.sync.status.v1";
   canSync: boolean;

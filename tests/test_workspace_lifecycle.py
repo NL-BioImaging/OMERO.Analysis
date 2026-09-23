@@ -11,8 +11,9 @@ from .test_inplace_storage import ready_capability
 @pytest.fixture
 def environment(monkeypatch, tmp_path):
     storage = AnalysisStorage(ready_capability(tmp_path), 7)
-    monkeypatch.setattr(lifecycle, "storage_for", lambda *a, **k: (None, storage))
-    monkeypatch.setattr("omero_analysis.sync_lock.storage_for", lambda *a, **k: (None, storage))
+    policy = SimpleNamespace(storage=storage, writable=True)
+    monkeypatch.setattr(lifecycle, "storage_policy", lambda *a, **k: policy)
+    monkeypatch.setattr("omero_analysis.sync_lock.storage_policy", lambda *a, **k: policy)
     monkeypatch.setattr(lifecycle, "object_group_id", lambda obj: 4)
     monkeypatch.setattr("omero_analysis.sync_lock.object_group_id", lambda obj: 4)
     monkeypatch.setattr(lifecycle, "user_id", lambda conn: 7)
@@ -112,3 +113,31 @@ def test_workspace_membership_is_rechecked_after_revocation(monkeypatch):
     conn.getQueryService = lambda: SimpleNamespace(projection=lambda *args: [])
     with pytest.raises(PermissionDenied, match="revoked"):
         require_workspace_access(conn, obj)
+
+
+def test_staged_workspace_input_is_included_in_purge_journal(environment, monkeypatch):
+    from .conftest import FakeAnnotation, FakeObject
+    from omero_analysis.staged_attachments import STAGED_INPUT_NAMESPACE
+
+    staged_input = FakeAnnotation(
+        901, "measurements.csv", b"x\n1\n", namespace=STAGED_INPUT_NAMESPACE
+    )
+    dataset = FakeObject(object_id=10, annotations=[staged_input])
+    dataset.OMERO_CLASS = "Dataset"
+    monkeypatch.setattr(sync, "_managed_dataset", lambda *_args: dataset)
+    monkeypatch.setattr(sync, "_read_manifest", lambda *_args: (None, None))
+    deleted = []
+    monkeypatch.setattr(sync, "_delete", lambda _conn, kind, identifier: deleted.append((kind, identifier)))
+
+    class Connection:
+        def getObject(self, kind, identifier):
+            if kind == "Annotation" and int(identifier) == 901:
+                return SimpleNamespace(getParentLinks=lambda parent_kind: [])
+            if kind == "Dataset" and int(identifier) == 10:
+                return None
+            return None
+
+    result = lifecycle.purge_workspace(Connection(), None, "one")
+
+    assert result["complete"] is True
+    assert ("Annotation", 901) in deleted

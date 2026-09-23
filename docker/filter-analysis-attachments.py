@@ -19,6 +19,8 @@ NAMESPACES = (
     "nl.bioimaging.analysis.template.v1",
     "nl.bioimaging.analysis.result.v1",
     "nl.bioimaging.analysis.data-query.provenance.v1",
+    "nl.bioimaging.analysis.payload.v1",
+    "nl.bioimaging.analysis.workspace.state.v1",
 )
 
 
@@ -39,10 +41,43 @@ def patched_source(source):
     desired = ast.dump(ast.parse(replacement, mode="eval").body)
     current = ast.dump(node.value)
     if current not in (expected, desired):
-        raise RuntimeError("Unsupported OMERO.web: exclusion list differs; review deployment patch before upgrading")
+        baseline = ast.parse(original, mode="eval").body.args[0].elts
+        try:
+            values = node.value.args[0].elts
+            baseline_matches = all(
+                ast.dump(value) == ast.dump(expected_value)
+                for value, expected_value in zip(values[:2], baseline)
+            )
+            prior_namespaces = [
+                value.args[0].value
+                for value in values[2:]
+                if (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Name)
+                    and value.func.id == "rstring"
+                    and len(value.args) == 1
+                    and isinstance(value.args[0], ast.Constant)
+                    and isinstance(value.args[0].value, str)
+                )
+            ]
+            recognized_prior_patch = (
+                isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id == "rlist"
+                and len(node.value.args) == 1
+                and isinstance(node.value.args[0], ast.List)
+                and len(values) >= 2
+                and baseline_matches
+                and len(prior_namespaces) == len(values) - 2
+                and set(prior_namespaces).issubset(NAMESPACES)
+            )
+        except (AttributeError, IndexError, TypeError):
+            recognized_prior_patch = False
+        if not recognized_prior_patch:
+            raise RuntimeError("Unsupported OMERO.web: exclusion list differs; review deployment patch before upgrading")
     lines = source.splitlines(keepends=True)
     indent = " " * node.col_offset
-    if current == expected:
+    if current != desired:
         lines[node.lineno - 1:node.end_lineno] = [
         indent + "# Deployment policy: keep managed Analysis files out of the attachment chooser.\n",
         indent + "ns_to_exclude = " + replacement + "\n",

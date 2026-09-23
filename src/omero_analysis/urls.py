@@ -3,6 +3,12 @@ from django.urls import re_path
 from . import views
 
 urlpatterns = [
+    re_path(r"^api/shared-library/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
+            views.shared_library, name="omero_analysis_shared_library"),
+    re_path(r"^api/shared-library/(?P<object_type>\w+)/(?P<object_id>\d+)/(?P<item_id>[a-f0-9]{64})/history/$",
+            views.shared_library_item, name="omero_analysis_shared_history"),
+    re_path(r"^api/shared-library/(?P<object_type>\w+)/(?P<object_id>\d+)/(?P<item_id>[a-f0-9]{64})/(?P<revision>[a-f0-9]{64})/download/$",
+            views.shared_library_item, name="omero_analysis_shared_download"),
     re_path(r"^$", views.analysis, name="omero_analysis_index"),
     re_path(
         r"^runtime-sandbox/$",
@@ -80,6 +86,11 @@ urlpatterns = [
         r"^api/attachments/(?P<object_type>\w+)/(?P<object_id>\d+)/upload/$",
         views.upload_result,
         name="omero_analysis_upload",
+    ),
+    re_path(
+        r"^api/attachments/(?P<object_type>\w+)/(?P<object_id>\d+)/staged/assign/$",
+        views.assign_staged_uploads,
+        name="omero_analysis_staged_assign",
     ),
     re_path(
         r"^api/workspaces/(?P<object_type>\w+)/(?P<object_id>\d+)/snapshots/$",

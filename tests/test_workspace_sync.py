@@ -3,6 +3,7 @@ import io
 import json
 import sys
 import zipfile
+from pathlib import Path
 from types import ModuleType
 from types import SimpleNamespace
 
@@ -19,6 +20,7 @@ from omero_analysis.workspace_sync import (
     _active_workspace_import_orders,
     _reconcile_workspace_journals,
     _upload_bytes,
+    _upload_png_payload,
     _validate_payload,
     _reconcile_result_attachments,
     plan_sync,
@@ -410,6 +412,78 @@ def test_status_does_not_adopt_an_unmarked_same_name_project():
     status = sync_status(Connection(obj), obj, "workspace-1")
     assert status["linked"] is False
     assert status["projectId"] is None
+    assert status["operationalMode"] == "omero"
+    assert status["browseState"] == "unavailable"
+
+
+def test_enabled_but_unavailable_importer_blocks_sync_status(monkeypatch):
+    from omero_analysis import workspace_sync as ws
+
+    obj = FakeObject(object_id=151)
+    capability = StorageCapability(
+        mode="legacy",
+        ready=False,
+        failure_code="group_mapping_missing",
+        detail="No Group Folder Mapping",
+    )
+    monkeypatch.setattr(
+        ws,
+        "storage_policy",
+        lambda *args, **kwargs: SimpleNamespace(
+            operation_mode="blocked",
+            capability=capability,
+            storage=None,
+            writable=False,
+            public=lambda: {
+                **capability.public(),
+                "operationMode": "blocked",
+                "importerRequested": True,
+            },
+        ),
+    )
+
+    status = sync_status(FakeConnection(obj), obj, "workspace-1")
+
+    assert status["operationalMode"] == "blocked"
+    assert status["canSync"] is False
+    assert status["reason"] == "No Group Folder Mapping"
+
+
+def test_omero_png_payload_is_copied_linked_and_deduplicated(tmp_path):
+    class Annotation(FakeAnnotation):
+        def __init__(self, annotation_id, name, data, namespace, description):
+            super().__init__(annotation_id, name, data, namespace)
+            self.description = description
+
+        def getDescription(self):
+            return self.description
+
+    class Connection(FakeConnection):
+        def createFileAnnfromLocalFile(self, path, mimetype, ns, desc):
+            self.created = Annotation(
+                901, Path(path).name, Path(path).read_bytes(), ns, desc
+            )
+            self.created.file.mimetype = mimetype
+            return self.created
+
+    image = FakeObject()
+    conn = Connection(image)
+    data = b"\x89PNG\r\nexact"
+    item = {
+        "key": "result:plot",
+        "kind": "png-image",
+        "name": "plot.png",
+        "mimetype": "image/png",
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+    first = _upload_png_payload(conn, image, item, data, "workspace-1")
+    second = _upload_png_payload(conn, image, item, data, "workspace-1")
+
+    assert first is second
+    assert first.getNs() == "nl.bioimaging.analysis.payload.v1"
+    assert b"".join(first.getFileInChunks()) == data
+    assert image.linked == [first]
 
 
 def test_identical_content_inventory_is_a_noop():

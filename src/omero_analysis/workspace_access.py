@@ -6,7 +6,10 @@ from .services import object_group_id, _plain
 def require_workspace_access(conn, obj):
     user_id = int(conn.getUserId())
     group_id = object_group_id(obj)
-    if user_id <= 0:
+    # OMERO reserves experimenter id 0 for the authenticated root account.
+    # Only negative ids are invalid here; treating zero as anonymous prevents
+    # root from managing Analysis workspaces in the system group.
+    if user_id < 0:
         raise PermissionDenied("An authenticated workspace owner is required")
     if hasattr(conn, "getEventContext") and int(conn.getEventContext().groupId) != group_id:
         raise PermissionDenied("The active OMERO group has changed")

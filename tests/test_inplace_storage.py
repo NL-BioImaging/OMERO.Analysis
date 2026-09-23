@@ -87,6 +87,33 @@ def test_content_addressed_atomic_storage_and_gc(tmp_path):
     assert store.garbage_collect() == 1
 
 
+def test_staged_attachment_record_protects_blob_from_gc(tmp_path):
+    root = tmp_path / "group"
+    root.mkdir()
+    store = storage.AnalysisStorage(ready_capability(root), 42)
+    blob = store.store_blob(b"pending upload", "pending.csv")
+    store.write_json(
+        Path("staged-attachments") / "3eea86b9-2e44-499e-82ae-5cd78d60fc12.json",
+        {"schema": "test", "blob": blob},
+    )
+
+    assert store.garbage_collect() == 0
+    assert Path(blob["path"]).is_file()
+
+
+def test_chunked_blob_storage_is_atomic_and_content_addressed(tmp_path):
+    root = tmp_path / "group"
+    root.mkdir()
+    store = storage.AnalysisStorage(ready_capability(root), 42)
+
+    blob = store.store_blob_chunks([b"pending ", b"upload"], "pending.csv")
+
+    assert blob["size"] == 14
+    assert blob["sha256"] == hashlib.sha256(b"pending upload").hexdigest()
+    assert Path(blob["path"]).read_bytes() == b"pending upload"
+    assert not list((store.user_root / ".upload-staging").iterdir())
+
+
 def test_storage_rejects_traversal_hash_and_symlink(tmp_path):
     root = tmp_path / "group"
     root.mkdir()

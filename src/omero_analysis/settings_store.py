@@ -29,7 +29,7 @@ from .managed_omero import (
     set_marker,
     user_id,
 )
-from .inplace_storage import storage_for
+from .storage_policy import require_storage_write, storage_policy
 
 _delete = delete_object
 _plain = plain
@@ -259,6 +259,8 @@ def load_settings(conn, group_id):
 
 def save_settings(conn, group_id, value):
     payload = _validated_payload(value)
+    policy = storage_policy(group_id, _user_id(conn))
+    require_storage_write(policy, "Saving Analysis settings")
     project = _project(conn, group_id, create=True)
     ai_dataset = _dataset(project, "ai-settings") or _create_dataset(
         conn, project, "ai-settings", AI_DATASET_NAME
@@ -267,7 +269,7 @@ def save_settings(conn, group_id, value):
         conn, project, "skills", SKILLS_DATASET_NAME
     )
     encrypted = _encrypted_bundle(conn, group_id, payload)
-    _, storage = storage_for(group_id, _user_id(conn))
+    storage = policy.storage
     durable_items = []
     if storage is not None:
         durable_items.append({
@@ -347,7 +349,7 @@ def save_settings(conn, group_id, value):
             "updatedAt": datetime.now(timezone.utc).isoformat(),
             "items": durable_items,
         })
-        storage.prune_empty_directories()
+        # Empty-directory housekeeping is handled by explicit maintenance.
     return {
         "schema": SETTINGS_SCHEMA,
         "synced": True,

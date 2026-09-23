@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .errors import AnalysisError, InvalidObject, PermissionDenied
-from .inplace_storage import storage_for
 from .managed_omero import user_id
+from .omero_state import OmeroStateStorage
 from .services import object_group_id
+from .storage_policy import require_storage_write, storage_policy
 from .workspace_access import require_workspace_access
 from .sync_lock import serialized_sync
 
@@ -42,8 +43,9 @@ def conflict(message):
 def state_for(conn, obj, workspace_id):
     from .workspace_sync import _workspace_id
     wid = _workspace_id(workspace_id)
-    _, storage = storage_for(object_group_id(obj), user_id(conn), initialize=False)
-    state = storage.read_json(Path("workspaces") / wid / "lifecycle.json") if storage else None
+    policy = storage_policy(object_group_id(obj), user_id(conn), initialize=False)
+    storage = policy.storage or OmeroStateStorage(conn, obj)
+    state = storage.read_json(Path("workspaces") / wid / "lifecycle.json")
     return storage, state or {"state": "active", "revision": 0}
 
 
@@ -59,6 +61,10 @@ def require_active(conn, obj, inventory):
 def change_lifecycle(conn, obj, workspace_id, action, expected_revision):
     from . import workspace_sync as ws
     require_workspace_access(conn, obj)
+    require_storage_write(
+        storage_policy(object_group_id(obj), user_id(conn)),
+        "Changing workspace lifecycle",
+    )
     storage, state = state_for(conn, obj, workspace_id)
     if storage is None:
         raise InvalidObject("Workspace lifecycle requires configured durable Analysis storage")
@@ -103,7 +109,7 @@ def change_lifecycle(conn, obj, workspace_id, action, expected_revision):
             storage.write_json(Path("workspaces") / workspace_id / "lifecycle.json", state)
         return {**ws.sync_status(conn, obj, workspace_id), "cleanup": result}
     manifest = storage.read_json(storage.workspace_manifest_path(workspace_id))
-    if manifest:
+    if manifest and not getattr(storage, "is_omero_state", False):
         manifest["lifecycle"] = target
         manifest["datasetName"] = str(ws._plain(dataset.getName()))
         storage.write_json(storage.workspace_manifest_path(workspace_id), manifest)
@@ -149,6 +155,21 @@ def cleanup_replaced(conn, obj, workspace_id, dataset, refs, revision):
     _, manifest = ws._read_manifest(conn.getObject("Dataset", dataset.getId()))
     active = {(item["remote"]["object_type"], item["remote"]["object_id"])
               for item in ws._remote_items(manifest).values() if item.get("remote")}
+    active.update(
+        (item["payload"]["object_type"], item["payload"]["object_id"])
+        for item in ws._remote_items(manifest).values()
+        if item.get("payload")
+    )
+    managed_images = {
+        int(identifier)
+        for kind, identifier in journal["pending"]
+        if kind == "Image"
+    }
+    managed_annotations = {
+        int(identifier)
+        for kind, identifier in journal["pending"]
+        if kind == "Annotation"
+    }
     journal["errors"] = []
     for ref in list(journal["pending"]):
         kind, identifier = ref
@@ -156,7 +177,15 @@ def cleanup_replaced(conn, obj, workspace_id, dataset, refs, revision):
             if tuple(ref) not in active:
                 remote = conn.getObject(kind, identifier)
                 # Companions of any surviving Image remain protected.
-                if remote is not None and not _shared(conn, remote, kind, identifier, dataset.getId(), set()):
+                if remote is not None and not _shared(
+                    conn,
+                    remote,
+                    kind,
+                    identifier,
+                    dataset.getId(),
+                    managed_images,
+                    managed_annotations,
+                ):
                     ws._delete(conn, kind, identifier)
             journal["pending"].remove(ref)
         except Exception as exc:
@@ -168,6 +197,10 @@ def cleanup_replaced(conn, obj, workspace_id, dataset, refs, revision):
 def purge_workspace(conn, obj, workspace_id):
     from . import workspace_sync as ws
     require_workspace_access(conn, obj)
+    require_storage_write(
+        storage_policy(object_group_id(obj), user_id(conn)),
+        "Purging a workspace",
+    )
     storage, _ = state_for(conn, obj, workspace_id)
     dataset = ws._managed_dataset(ws._managed_project(conn, object_group_id(obj)), workspace_id)
     path = Path("workspaces") / workspace_id / "cleanup.json"
@@ -182,6 +215,18 @@ def purge_workspace(conn, obj, workspace_id):
         _, manifest = ws._read_manifest(dataset)
         refs = {(str(item["remote"]["object_type"]), int(item["remote"]["object_id"]))
                 for item in ws._remote_items(manifest).values() if item.get("remote", {}).get("object_id")}
+        refs.update(
+            (str(item["payload"]["object_type"]), int(item["payload"]["object_id"]))
+            for item in ws._remote_items(manifest).values()
+            if item.get("payload", {}).get("object_id")
+        )
+        from .staged_attachments import STAGED_INPUT_NAMESPACE
+        refs.update(
+            ("Annotation", int(annotation.getId()))
+            for annotation in ws._annotations(dataset)
+            if hasattr(annotation, "getFile")
+            and str(ws._plain(annotation.getNs()) or "") == STAGED_INPUT_NAMESPACE
+        )
         # Retain manifest and markers until payload cleanup completes.
         journal = {"datasetId": dataset.getId(), "pending": [list(ref) for ref in sorted(refs)],
                    "done": [], "preserved": [], "errors": []}
@@ -238,7 +283,10 @@ def purge_workspace(conn, obj, workspace_id):
     if complete and storage:
         storage.remove_workspace_view(workspace_id)
         storage.delete_json(storage.workspace_manifest_path(workspace_id))
-        storage.prune_empty_directories()
+        if journal.get("datasetDeleted") and not getattr(storage, "is_omero_state", False):
+            from .staged_attachments import delete_workspace_staging_records
+            delete_workspace_staging_records(storage, workspace_id)
+        # Preserve the tombstone; global housekeeping runs via maintenance.
     return {"complete": complete, "removed": len(journal["done"]) - len(journal["preserved"]),
             "dataset_deleted": bool(journal.get("datasetDeleted")),
             "preserved_unmanaged": journal.get("unmanaged", 0), "errors": journal["errors"]}

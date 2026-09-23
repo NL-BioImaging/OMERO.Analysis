@@ -126,7 +126,7 @@ function literalConfiguration(source: string): unknown {
   }
 }
 
-export function validateNotebookContract(value: unknown): NotebookProtocolContract {
+export function validateNotebookContract(value: unknown, allowUnsupportedPackages = false): NotebookProtocolContract {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Notebook configuration must be an object");
   const raw = value as Record<string, any>;
   if (raw.schema !== NOTEBOOK_PROTOCOL_SCHEMA) throw new Error(`schema must equal ${NOTEBOOK_PROTOCOL_SCHEMA}`);
@@ -204,19 +204,19 @@ export function validateNotebookContract(value: unknown): NotebookProtocolContra
   const unsupported = requirements
     .map((item) => item.split(/[<>=!~]/, 1)[0].toLowerCase().replace(/[_.]/g, "-"))
     .filter((item) => !APPROVED_NOTEBOOK_PACKAGES.has(item));
-  if (unsupported.length) {
+  if (unsupported.length && !allowUnsupportedPackages) {
     throw new Error(`Unsupported package requirement(s): ${Array.from(new Set(unsupported)).sort().join(", ")}`);
   }
   return { ...raw, schema: NOTEBOOK_PROTOCOL_SCHEMA, inputs, results, parameters, requirements };
 }
 
-export function parseNotebookProtocol(document: NotebookDocument): NotebookProtocolContract | null {
+export function parseNotebookProtocol(document: NotebookDocument, allowUnsupportedPackages = false): NotebookProtocolContract | null {
   const marked = document.cells.filter((cell) =>
     cell.cell_type === "code" && Array.isArray(cell.metadata?.tags) && cell.metadata.tags.includes(NOTEBOOK_CONFIG_TAG)
   );
   if (!marked.length) return null;
   if (marked.length !== 1 || document.cells[0] !== marked[0]) throw new Error("The configuration cell must be the first cell and uniquely tagged omero-analysis-config");
-  const contract = validateNotebookContract(literalConfiguration(sourceText(marked[0])));
+  const contract = validateNotebookContract(literalConfiguration(sourceText(marked[0])), allowUnsupportedPackages);
   const requirements = document.metadata?.omero_analysis?.schema_requirements;
   if (!requirements || typeof requirements !== "object" || Array.isArray(requirements)) return contract;
   return {

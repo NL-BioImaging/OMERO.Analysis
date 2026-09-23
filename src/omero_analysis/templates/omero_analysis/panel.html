@@ -3,9 +3,12 @@
          data-workspace-id="{{ context.workspace_summary.workspace_id }}"
          data-object-type="{{ context.object_type }}"
          data-object-id="{{ context.object_id }}"
+         data-user-id="{{ context.user_id }}"
+         data-group-id="{{ context.group_id }}"
          data-analysis-object-type="{% if context.workspace_summary %}{{ context.workspace_summary.source_type }}{% else %}{{ context.object_type }}{% endif %}"
          data-analysis-object-id="{% if context.workspace_summary %}{{ context.workspace_summary.source_id }}{% else %}{{ context.object_id }}{% endif %}"
          data-integrated-data-analysis="{{ integrated_data_analysis|yesno:'true,false' }}"
+         data-attachment-upload-mode="{% if context.attachment_upload_mode == 'omero' %}source{% else %}{{ context.attachment_upload_mode }}{% endif %}"
          data-selection-ids="{% if context.selection_ids %}{{ context.selection_ids|join:',' }}{% endif %}">
   <header class="oa-panel-header">
     <div>
@@ -81,14 +84,40 @@
           Choose one or more directly attached databases, workbooks, or tables.
           Remote analysis uses DataQueryWorker: the database stays on the server and only query results reach your browser. Browser analysis downloads the selected file.
         </p>
-        {% if context.can_annotate %}
+        {% if context.attachment_upload_enabled %}
           <div class="oa-attachment-upload-row">
-            <button class="oa-button oa-upload-attachment" type="button">Upload Attachment</button>
+            <button class="oa-button oa-upload-attachment" type="button">
+              {% if context.attachment_upload_mode == "omero" %}Attach to {{ context.object_type }}{% else %}Upload Attachment{% endif %}
+            </button>
             <input class="oa-attachment-upload-input" type="file" hidden>
-            <span>Attach a supported data or result file to this OMERO object.</span>
+            <span>
+              {% if context.attachment_upload_mode == "omero" %}
+                Upload a conventional OMERO attachment to this {{ context.object_type }}. It remains attached to the source and can be reused by multiple Workspaces.
+              {% else %}
+                Stage a supported file securely, then attach it to the Workspace you create or open.
+              {% endif %}
+            </span>
+          </div>
+        {% elif context.attachment_upload_mode == "blocked" %}
+          <div class="oa-attachment-upload-row oa-panel-error">
+            <span>Importer-backed attachment upload is unavailable: {{ context.attachment_upload_error }}</span>
           </div>
         {% endif %}
         <ul class="oa-attachments">
+          {% for attachment in context.staged_attachments %}
+            <li class="oa-data-card oa-staged-card">
+              <label>
+                <input type="checkbox" class="oa-staged-attachment" value="{{ attachment.staging_id }}" checked>
+                <span class="oa-file-icon" aria-hidden="true">NEW</span>
+                <span class="oa-file-details">
+                  <strong>{{ attachment.name }}</strong>
+                  <small>Staged securely · will be attached only to the selected Workspace</small>
+                  <small>{{ attachment.mimetype }} · {{ attachment.size }} bytes</small>
+                </span>
+                <span class="oa-checkmark" aria-hidden="true">&#10003;</span>
+              </label>
+            </li>
+          {% endfor %}
           {% for attachment in context.supported_attachments %}
             <li class="oa-data-card">
               <label>
@@ -109,12 +138,13 @@
                 <span class="oa-checkmark" aria-hidden="true">&#10003;</span>
               </label>
             </li>
-          {% empty %}
+          {% endfor %}
+          {% if not context.supported_attachments and not context.staged_attachments %}
             <li class="oa-empty-state">
               <strong>No supported data attachments yet</strong>
-              <span>Open an empty Analysis Workspace to add browser-local files.</span>
+              <span>{% if context.attachment_upload_mode == "omero" %}Attach a file to this {{ context.object_type }} to use it in a Workspace.{% elif context.attachment_upload_mode == "blocked" %}Resolve the importer storage configuration before uploading.{% else %}Upload a file to stage it for a new or existing Workspace.{% endif %}</span>
             </li>
-          {% endfor %}
+          {% endif %}
         </ul>
       </section>
     {% endif %}
@@ -123,10 +153,11 @@
     <div class="oa-actions">
       <button class="oa-button oa-button-primary oa-new-workspace" type="button" disabled>Start new Workspace</button>
     </div>
-    <details class="oa-optional-library">
-      <summary>Add reusable analyses (optional)</summary>
+    <div class="oa-optional-library">
+      <h3>Add reusable analyses (optional)</h3>
+      <div class="oa-shared-library"></div>
       {% include "omero_analysis/analysis_library_tree.html" %}
-    </details>
+    </div>
     </section>
 
     {% if context.workspace_snapshots and not context.selection_count %}

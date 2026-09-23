@@ -1,12 +1,12 @@
 {% load static %}
-<section class="oa-card oa-library-card">
-  <div class="oa-section-heading">
+<details class="oa-card oa-library-card oa-library-panel" open>
+  <summary class="oa-section-heading">
     <div>
       <span class="oa-step">{{ context.analysis_library_step|default:"+" }}</span>
       <h3>Synced +AnalysisWorkspaces library</h3>
     </div>
     <span class="oa-library-selected-count">0 selected</span>
-    </div>
+  </summary>
     <p class="oa-help">
       {% if context.analysis_library_notebooks_only %}
         Browse synchronized Datasets and select reusable Notebooks. Methods and
@@ -98,4 +98,4 @@
       </div>
     </details>
   </div>
-</section>
+</details>
