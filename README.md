@@ -1,5 +1,11 @@
 # OMERO.Analysis
 
+For paired DataQueryWorker upgrades, verified CSV saving, authorization, audit,
+mTLS, test commands and rollback, see the
+[production foundations guide](docs/data-query-production-foundations.md).
+
+Administrators enabling BIOMERO.importer-backed storage should read the [`.analysis` storage compatibility contract](docs/importer-analysis-storage-compatibility.md). It documents the optional runtime APIs, capability checks, versions, deployment, fallback rules, and integration-test matrix.
+
 The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
 and through the modeless **Help** window in OMERO.Analysis.
 Hardware-specific offline model guidance is available in
@@ -51,7 +57,9 @@ when **Enable artifact editor** is turned on in Analysis Settings.
 Data and notebook code execute in an opaque, no-network Pyodide sandbox.
 Notebook execution never calls the AI provider or loads Agent Skill packages.
 Raw notebook HTML and JavaScript are never rendered. Magics, shell commands,
-widgets, non-Python kernels, and arbitrary package downloads are rejected.
+widget JavaScript, non-Python kernels, and arbitrary package downloads are
+rejected. Portable protocol parameters render as native Analysis controls;
+optional ipywidgets are offline-only.
 
 Each Assistant conversation can keep up to ten browser-local TXT, searchable PDF, DOCX, PNG,
 JPEG, or WebP attachments (25 MiB each). PDF and DOCX text is extracted in the
@@ -116,7 +124,9 @@ Workspaces and temporary connection failures are preserved. Synchronization
 does not build or upload a complete Workspace ZIP. PNG outputs from direct
 Method, Pipeline, and Notebook runs become real grayscale or RGB OMERO Images;
 their other outputs, complete Method history, Pipelines, and validated Python
-notebooks are stored as typed FileAnnotations. Source inputs are excluded,
+notebooks are stored as typed FileAnnotations. Same-stem CSV and SVG plot
+companions are linked directly to the corresponding PNG Image instead of the
+managed Dataset. Source inputs are excluded,
 except that ready inputs containing `template` anywhere in their filename are
 synchronized under Templates for reuse. Assistant conversations, attachments,
 and Assistant validation results always remain browser-local and are never
@@ -139,6 +149,8 @@ Default synchronization limits can be overridden with OMERO.web settings:
 - `omero.web.analysis.remote_query_threshold_bytes`: 104,857,600 (100 MiB;
   set to `0` to force every supported OMERO attachment remote)
 - `omero.web.analysis.data_query_result_ttl_seconds`: 600
+- `omero.web.analysis.data_query_request_timeout_seconds`: 40 seconds
+- `omero.web.analysis.data_query_source_upload_timeout_seconds`: 120 seconds
 
 Remote DuckDB, SQLite, and CSV queries additionally require the secret-only
 `OMERO_ANALYSIS_DATA_QUERY_WORKER_URL` and
@@ -165,6 +177,15 @@ migrated.
 
 Old `.oa.zip`, `.oac.zip`, `.oa-workflow.json`, legacy manifests, and old
 browser databases are not read or deleted automatically.
+
+## Portable offline-first notebooks
+
+Developers can create ordinary Jupyter projects with local `input/` and
+`results/` folders, then upload the same notebook and rebind it to compatible
+Local or Remote DuckDB, SQLite, SQLite3, or CSV attachments. See the
+[portable notebook developer guide](docs/portable-notebooks.md). The separate
+`omero-analysis-notebook` SDK lives under `notebook-sdk/`, and the root Agent
+Plugin contains the `create-omero-analysis-notebook` skill.
 
 ## Development
 

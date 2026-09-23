@@ -13,6 +13,7 @@ await pyodide.loadPackage([
   "pandas",
   "matplotlib",
   "scipy",
+  "scikit-image",
   "duckdb",
   "pyarrow",
   "python-calamine",
@@ -40,6 +41,17 @@ try {
 } catch (error) {
   throw new Error(`Could not install vendored pypdf wheel: ${error?.message || error}`);
 }
+await pyodide.runPythonAsync(`
+import re as _oa_re
+_oa_notebook_config_json = "{}"
+def _oa_validate_query(sql):
+    clean = _oa_re.sub(r"--[^\\n]*|/\\*.*?\\*/", " ", str(sql), flags=_oa_re.S).strip()
+    if not _oa_re.match(r"^(select|with)\\b", clean, _oa_re.I) or ";" in clean.rstrip(";"):
+        raise ValueError("Notebook queries must contain one SELECT or WITH SELECT statement")
+    if _oa_re.search(r"\\b(attach|copy|pragma|install|load|create|alter|drop|insert|update|delete|merge|call|set|reset)\\b", clean, _oa_re.I):
+        raise ValueError("Notebook query contains a prohibited operation")
+`);
+await pyodide.runPythonAsync(`_oa_validate_query("SELECT 1")`);
 const result = await pyodide.runPythonAsync(`
 import json, sqlite3, zipfile
 from pathlib import Path
@@ -50,6 +62,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy
+import skimage
 import seaborn as sns
 import pypdf
 
@@ -109,6 +122,7 @@ plt.savefig(root / "plot.png")
 assert (root / "plot.png").stat().st_size > 100
 sns.set_theme()
 assert scipy.__version__
+assert skimage.__version__
 assert pypdf.__version__ == "6.14.2"
 json.dumps({"rows": len(frame), "sum": float(frame["value"].sum())})
 `);
@@ -116,5 +130,5 @@ const parsed = JSON.parse(result);
 if (parsed.rows !== 3 || parsed.sum !== 7) throw new Error(`Unexpected result: ${result}`);
 console.log(
   `Runtime smoke passed on Pyodide ${manifest.pyodide}: CSV, JSON, SQLite, ` +
-  "DuckDB, Excel, Parquet, NPY, NPZ, pandas, Matplotlib, SciPy, seaborn, and pypdf"
+  "DuckDB, Excel, Parquet, NPY, NPZ, pandas, Matplotlib, SciPy, scikit-image, seaborn, and pypdf"
 );

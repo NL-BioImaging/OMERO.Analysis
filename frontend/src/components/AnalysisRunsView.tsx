@@ -9,6 +9,7 @@ import type {
 import { ActionIcon } from "./ActionIcon";
 import { Button } from "./BlueprintControls";
 import { ExecutionCard, executionOutputFiles } from "./ExecutionCard";
+import { groupedResultFiles } from "../plotGroups";
 
 function bytesLabel(value: number): string {
   if (value < 1024) return `${value} bytes`;
@@ -72,6 +73,7 @@ interface AnalysisRunsViewProps {
   onRerun: (run: AnalysisRunRecord) => void;
   onSelectRun: (id: string) => void;
   onInspectFile: (id: string) => void;
+  onDownloadFile?: (file: WorkspaceFile) => void;
 }
 
 export function AnalysisRunsView({
@@ -102,7 +104,8 @@ export function AnalysisRunsView({
   onStop,
   onRerun,
   onSelectRun,
-  onInspectFile
+  onInspectFile,
+  onDownloadFile
 }: AnalysisRunsViewProps) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -131,7 +134,9 @@ export function AnalysisRunsView({
         <div className="runs-launchers">
           {kind === "method" ? (
             <>
-              <select aria-label="Method" value={methodId || methods[0]?.id || ""}
+              <select aria-label="Method"
+                title={selectedMethod ? `${selectedMethod.name} · v${selectedMethod.currentVersion}` : undefined}
+                value={methodId || methods[0]?.id || ""}
                 disabled={!methods.length || busy}
                 onChange={(event) => onMethodIdChange(event.target.value)}>
                 {methods.map((method) => <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>)}
@@ -147,7 +152,9 @@ export function AnalysisRunsView({
             </>
           ) : (
             <>
-              <select aria-label="Pipeline" value={pipelineId || pipelines[0]?.id || ""}
+              <select aria-label="Pipeline"
+                title={selectedPipeline ? `${selectedPipeline.name} · v${selectedPipeline.version}` : undefined}
+                value={pipelineId || pipelines[0]?.id || ""}
                 disabled={!pipelines.length || busy}
                 onChange={(event) => onPipelineIdChange(event.target.value)}>
                 {pipelines.map((pipeline) => <option key={pipeline.id} value={pipeline.id}>{pipeline.name} · v{pipeline.version}</option>)}
@@ -264,7 +271,7 @@ export function AnalysisRunsView({
               )}
               <div className="run-executions">
                 {selectedRunExecutions.map((execution, index) => (
-                  <ExecutionCard key={execution.id} execution={execution} files={allFiles}
+                  <ExecutionCard key={execution.id} execution={execution} files={allFiles} onDownloadFile={onDownloadFile}
                     supplementalOutputs={index === selectedRunExecutions.length - 1
                       ? supplementalImages
                       : []}
@@ -275,11 +282,11 @@ export function AnalysisRunsView({
               {selectedRunFiles.length > 0 && (
                 <section className="run-files" aria-label="Generated files">
                   <h3>Generated files</h3>
-                  <div>{selectedRunFiles.map((file) => (
-                    <button key={file.id} onClick={() => onInspectFile(file.id)}>
+                  <div>{groupedResultFiles(selectedRunFiles).map((group) => (
+                    <div className="result-file-group" key={group[0].id}>{group.map(file => <button key={file.id} onClick={() => onInspectFile(file.id)}>
                       <ActionIcon name="download" />
                       <span><strong>{file.name}</strong><small>{bytesLabel(file.size)} · inspect or download</small></span>
-                    </button>
+                    </button>)}</div>
                   ))}</div>
                 </section>
               )}

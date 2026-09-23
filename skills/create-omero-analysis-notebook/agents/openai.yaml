@@ -1,0 +1,6 @@
+interface:
+  display_name: "Create OMERO.Analysis Notebook"
+  short_description: "Create and convert portable Analysis notebooks"
+  default_prompt: "Use $create-omero-analysis-notebook to create or convert a portable OMERO.Analysis notebook."
+policy:
+  allow_implicit_invocation: true

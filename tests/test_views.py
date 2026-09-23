@@ -88,6 +88,7 @@ def test_context_token_reports_permissions():
         "library_download",
         "settings_read",
         "data_query",
+        "sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact",
     ]
 
 
@@ -157,6 +158,25 @@ def test_session_keepalive_marks_the_browser_session_for_renewal():
     assert request.session.modified is True
 
 
+def test_attachment_listing_includes_remote_query_policy(monkeypatch):
+    obj = FakeObject(annotations=[FakeAnnotation(11, "measurements.duckdb", b"duckdb")])
+    conn = FakeConnection(obj)
+    monkeypatch.setattr(
+        views.DataQueryBroker,
+        "capabilities",
+        lambda self: {"ready": True},
+    )
+    request = with_session(RequestFactory().get("/"))
+    request.META["HTTP_X_OMERO_ANALYSIS_CONTEXT"] = token_for(conn, obj, ["list"])
+
+    response = views.attachments(request, "Image", 1, conn=conn)
+    attachment = json.loads(response.content)["attachments"][0]
+
+    assert attachment["query_format"] == "duckdb"
+    assert attachment["allowed_modes"] == ["local", "remote"]
+    assert attachment["worker_ready"] is True
+
+
 def test_workspace_snapshot_list_upload_and_download_are_separate_from_inputs():
     snapshot = FakeAnnotation(
         21,
@@ -200,7 +220,8 @@ def test_workspace_snapshot_list_upload_and_download_are_separate_from_inputs():
     assert response.status_code == 201
 
 
-def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
+def test_chat_bootstrap_accepts_only_attached_workspace_snapshot(settings):
+    settings.OMERO_ANALYSIS_NOTEBOOK_CELL_TIMEOUT_SECONDS = 1800
     snapshot = FakeAnnotation(
         21,
         "analysis.oa-workspace.zip",
@@ -217,6 +238,7 @@ def test_chat_bootstrap_accepts_only_attached_workspace_snapshot():
     assert response.status_code == 200
     assert b'"selected_workspace_snapshot"' in response.content
     assert b'"annotation_id": 21' in response.content
+    assert b'data-notebook-cell-timeout-seconds="1800"' in response.content
     assert response["Content-Security-Policy"].startswith("default-src 'self'")
     assert "connect-src 'self' https:" in response["Content-Security-Policy"]
     assert "aumc-aicode" not in response["Content-Security-Policy"]
@@ -293,16 +315,16 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
         "name": obj.name,
     }
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {"role": "ai-settings", "profile_count": "3"}
         if namespace == views.SETTINGS_NAMESPACE else {},
     ))
-    settings_context = views._configure_panel_context(None, obj, dict(base))
+    settings_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert settings_context["panel_kind"] == "settings"
     assert settings_context["managed_count"] == "3"
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {
             "role": "dataset",
@@ -325,13 +347,13 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
         "snapshot": {"annotationId": 1171},
         "items": [],
     }])
-    workspace_context = views._configure_panel_context(None, obj, dict(base))
+    workspace_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert workspace_context["panel_kind"] == "workspace"
     assert workspace_context["workspace_summary"]["can_resume"] is True
     assert workspace_context["workspace_summary"]["source_id"] == 152
     assert workspace_context["workspace_summary"]["snapshot_annotation_id"] == 1171
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {
             "role": "content-item",
@@ -340,11 +362,11 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
             "canonical_name": "heatmap.png",
         } if namespace == views.SYNC_NAMESPACE else {},
     ))
-    result_context = views._configure_panel_context(None, obj, dict(base))
+    result_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert result_context["panel_kind"] == "result"
     assert result_context["result_name"] == "heatmap.png"
 
-    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace: (
+    monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
         {
             "role": "item",
@@ -353,11 +375,11 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
             "canonical_name": "managed-heatmap.png",
         } if namespace == views.SYNC_NAMESPACE else {},
     ))
-    image_result_context = views._configure_panel_context(None, obj, dict(base))
+    image_result_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert image_result_context["panel_kind"] == "result"
     assert image_result_context["result_name"] == "managed-heatmap.png"
 
-    multi_context = views._configure_panel_context(None, obj, {
+    multi_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, {
         **base,
         "selection_count": 2,
         "selected_objects": [
@@ -366,6 +388,22 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
         ],
     })
     assert multi_context["panel_kind"] == "source"
+
+
+def test_workspace_marker_wins_over_result_indexes_in_any_annotation_order(monkeypatch):
+    from types import SimpleNamespace
+    def annotation(values):
+        return SimpleNamespace(getNs=lambda: views.SYNC_NAMESPACE, getValue=lambda: list(values.items()))
+    workspace = annotation({"role": "dataset", "workspace_id": "workspace-1",
+                            "source_object_type": "Screen", "source_object_id": "152"})
+    result = annotation({"role": "content-item", "workspace_id": "workspace-1", "item_kind": "png-image"})
+    monkeypatch.setattr(views, "library_datasets", lambda *_: [])
+    for markers in ([result, workspace], [workspace, result]):
+        obj = FakeObject(object_id=454, name="Screen-152 — SolHunt", annotations=markers)
+        context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, {"object_type": "Dataset", "object_id": 454, "name": obj.name})
+        assert context['panel_kind'] == 'workspace'
+        assert context['workspace_summary']['can_resume']
+        assert context['workspace_summary']['workspace_id'] == 'workspace-1'
 
 
 def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
@@ -381,7 +419,7 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
         "Image", 11, conn=SelectionConnection(source)
     )
     assert single_response.status_code == 200
-    assert b"Select data attachments" in single_response.content
+    assert b"Choose data for the new workspace" in single_response.content
     assert b'data-integrated-data-analysis="false"' in single_response.content
 
     settings.INTEGRATE_DATA_ANALYSIS = " TRUE "
@@ -397,7 +435,7 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
     )
     assert multiple_response.status_code == 200
     assert b"2 selected Images" in multiple_response.content
-    assert b"Open selection in Analysis" in multiple_response.content
+    assert b"Start new Workspace" in multiple_response.content
 
     project_response = views.panel(
         RequestFactory().get("/panel/Project/11/"),
@@ -405,7 +443,7 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
     )
     assert project_response.status_code == 200
     assert b"Select an analysis source" in project_response.content
-    assert b"Select data attachments" not in project_response.content
+    assert b"Choose data for the new workspace" not in project_response.content
 
 
 def test_notebook_upload_download_and_bootstrap_selection():

@@ -1,0 +1,325 @@
+{
+  "datasetId": 699,
+  "datasetName": "Screen-204 \u2014 user1-solhunt \u2014 Analysis 1",
+  "groupId": 114,
+  "items": [
+    {
+      "blob": {
+        "filename": "large-cross-user-cells-per-well.ipynb",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/12/12b43e01f6b2bf18b2a096b8306dfcd608bad5b0d27d1ca900cfd02e8749a069/large-cross-user-cells-per-well.ipynb",
+        "relativePath": "users/137/blobs/sha256/12/12b43e01f6b2bf18b2a096b8306dfcd608bad5b0d27d1ca900cfd02e8749a069/large-cross-user-cells-per-well.ipynb",
+        "sha256": "12b43e01f6b2bf18b2a096b8306dfcd608bad5b0d27d1ca900cfd02e8749a069",
+        "size": 176348
+      },
+      "key": "notebook:9f23f053-c335-4e3f-8d55-0d05ed53d504",
+      "kind": "notebook",
+      "logicalPath": "Notebooks/large-cross-user-cells-per-well.ipynb",
+      "metadata": {
+        "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+        "sourceAnnotationId": null
+      },
+      "mimeType": "application/x-ipynb+json",
+      "name": "large-cross-user-cells-per-well.ipynb",
+      "remote": {
+        "file_id": 9218,
+        "object_id": 4271,
+        "object_type": "Annotation"
+      },
+      "sha256": "12b43e01f6b2bf18b2a096b8306dfcd608bad5b0d27d1ca900cfd02e8749a069",
+      "size": 176348,
+      "storageMode": "inplace-annotation"
+    },
+    {
+      "blob": {
+        "filename": "notebook-figure-1.png",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/57/57ebdcb5d86340b61a9540a5b7878e39487c67379ee1d84a554e54398de344b3/notebook-figure-1.png",
+        "relativePath": "users/137/blobs/sha256/57/57ebdcb5d86340b61a9540a5b7878e39487c67379ee1d84a554e54398de344b3/notebook-figure-1.png",
+        "sha256": "57ebdcb5d86340b61a9540a5b7878e39487c67379ee1d84a554e54398de344b3",
+        "size": 42388
+      },
+      "key": "result-content:png-image:57ebdcb5d86340b61a9540a5b7878e39487c67379ee1d84a554e54398de344b3",
+      "kind": "png-image",
+      "logicalPath": "Results/notebook-figure-1.png",
+      "metadata": {
+        "contentAddressed": true,
+        "sourceCount": 2,
+        "sources": [
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "94ded40c-2ac2-486f-8d2a-2505ba133336",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/notebook-figure-1.png",
+            "methodId": null,
+            "name": "notebook-figure-1.png",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          },
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "9ef8a109-2f8d-40a1-beb6-48cdde95e187",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/notebook-figure-1.png",
+            "methodId": null,
+            "name": "notebook-figure-1.png",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          }
+        ]
+      },
+      "mimeType": "image/png",
+      "name": "notebook-figure-1.png",
+      "remote": {
+        "object_id": 3273,
+        "object_type": "Image"
+      },
+      "sha256": "57ebdcb5d86340b61a9540a5b7878e39487c67379ee1d84a554e54398de344b3",
+      "size": 42388,
+      "storageMode": "importer"
+    },
+    {
+      "blob": {
+        "filename": "cells-per-well.png",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/da/da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49/cells-per-well.png",
+        "relativePath": "users/137/blobs/sha256/da/da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49/cells-per-well.png",
+        "sha256": "da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49",
+        "size": 85360
+      },
+      "key": "result-content:png-image:da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49",
+      "kind": "png-image",
+      "logicalPath": "Results/cells-per-well.png",
+      "metadata": {
+        "contentAddressed": true,
+        "sourceCount": 2,
+        "sources": [
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "2556e277-8039-4759-a8d6-04271240446d",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/cells-per-well.png",
+            "methodId": null,
+            "name": "cells-per-well.png",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          },
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "41ec74e2-5aba-4fa5-9aca-631833701d5f",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/cells-per-well.png",
+            "methodId": null,
+            "name": "cells-per-well.png",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          }
+        ]
+      },
+      "mimeType": "image/png",
+      "name": "cells-per-well.png",
+      "remote": {
+        "object_id": 3274,
+        "object_type": "Image"
+      },
+      "sha256": "da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49",
+      "size": 85360,
+      "storageMode": "importer"
+    },
+    {
+      "blob": {
+        "filename": "cells-per-well.csv",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/1c/1cf0939ad0d207ecb4a1610a91c7a101b861fe30fe46f130771a56d7ff1c278d/cells-per-well.csv",
+        "relativePath": "users/137/blobs/sha256/1c/1cf0939ad0d207ecb4a1610a91c7a101b861fe30fe46f130771a56d7ff1c278d/cells-per-well.csv",
+        "sha256": "1cf0939ad0d207ecb4a1610a91c7a101b861fe30fe46f130771a56d7ff1c278d",
+        "size": 616
+      },
+      "key": "result-content:result:1cf0939ad0d207ecb4a1610a91c7a101b861fe30fe46f130771a56d7ff1c278d",
+      "kind": "result",
+      "logicalPath": "Results/cells-per-well.csv",
+      "metadata": {
+        "contentAddressed": true,
+        "plotImageKeys": [
+          "result-content:png-image:da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49"
+        ],
+        "sourceCount": 2,
+        "sources": [
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "aa643caa-30d3-413a-b4e6-aa6720dd4b34",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/cells-per-well.csv",
+            "methodId": null,
+            "name": "cells-per-well.csv",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          },
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "f7332a27-c758-47a0-a2b5-d62b057924e8",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/cells-per-well.csv",
+            "methodId": null,
+            "name": "cells-per-well.csv",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          }
+        ]
+      },
+      "mimeType": "text/csv",
+      "name": "cells-per-well.csv",
+      "remote": {
+        "file_id": 9214,
+        "object_id": 4263,
+        "object_type": "Annotation"
+      },
+      "sha256": "1cf0939ad0d207ecb4a1610a91c7a101b861fe30fe46f130771a56d7ff1c278d",
+      "size": 616,
+      "storageMode": "inplace-annotation"
+    },
+    {
+      "blob": {
+        "filename": "cells-per-well.svg",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/a6/a6e9ec97a157d2d4ee85906f624612d37eb10638517a8b5831125081f330895b/cells-per-well.svg",
+        "relativePath": "users/137/blobs/sha256/a6/a6e9ec97a157d2d4ee85906f624612d37eb10638517a8b5831125081f330895b/cells-per-well.svg",
+        "sha256": "a6e9ec97a157d2d4ee85906f624612d37eb10638517a8b5831125081f330895b",
+        "size": 51983
+      },
+      "key": "result-content:result:a6e9ec97a157d2d4ee85906f624612d37eb10638517a8b5831125081f330895b",
+      "kind": "result",
+      "logicalPath": "Results/cells-per-well.svg",
+      "metadata": {
+        "contentAddressed": true,
+        "plotImageKeys": [
+          "result-content:png-image:da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49"
+        ],
+        "sourceCount": 1,
+        "sources": [
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "811a0244-51bc-469d-bfff-095481c1f6ac",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/cells-per-well.svg",
+            "methodId": null,
+            "name": "cells-per-well.svg",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          }
+        ]
+      },
+      "mimeType": "image/svg+xml",
+      "name": "cells-per-well.svg",
+      "remote": {
+        "file_id": 9219,
+        "object_id": 4272,
+        "object_type": "Annotation"
+      },
+      "sha256": "a6e9ec97a157d2d4ee85906f624612d37eb10638517a8b5831125081f330895b",
+      "size": 51983,
+      "storageMode": "inplace-annotation"
+    },
+    {
+      "blob": {
+        "filename": "cells-per-well.svg",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/e8/e89a0ad51333b3b788058940b6d1f926682aa67626883591c2c64a75b099b26f/cells-per-well.svg",
+        "relativePath": "users/137/blobs/sha256/e8/e89a0ad51333b3b788058940b6d1f926682aa67626883591c2c64a75b099b26f/cells-per-well.svg",
+        "sha256": "e89a0ad51333b3b788058940b6d1f926682aa67626883591c2c64a75b099b26f",
+        "size": 51983
+      },
+      "key": "result-content:result:e89a0ad51333b3b788058940b6d1f926682aa67626883591c2c64a75b099b26f",
+      "kind": "result",
+      "logicalPath": "Results/cells-per-well.svg",
+      "metadata": {
+        "contentAddressed": true,
+        "plotImageKeys": [
+          "result-content:png-image:da30dd9a3825ec04fe58aba867cba54dddf7925eb7a440fc30259b1293883a49"
+        ],
+        "sourceCount": 1,
+        "sources": [
+          {
+            "chatId": null,
+            "deletedAt": null,
+            "executionId": null,
+            "fileId": "c3996a92-cdbc-4701-a003-fd4ec879d314",
+            "logicalPath": "OMERO/Screen-204--analysis-1/Notebooks/Results/large-cross-user-cells-per-well.ipynb/cells-per-well.svg",
+            "methodId": null,
+            "name": "cells-per-well.svg",
+            "notebookId": "9f23f053-c335-4e3f-8d55-0d05ed53d504",
+            "pipelineId": null,
+            "runId": null,
+            "viewer": null
+          }
+        ]
+      },
+      "mimeType": "image/svg+xml",
+      "name": "cells-per-well.svg",
+      "remote": {
+        "file_id": 9215,
+        "object_id": 4264,
+        "object_type": "Annotation"
+      },
+      "sha256": "e89a0ad51333b3b788058940b6d1f926682aa67626883591c2c64a75b099b26f",
+      "size": 51983,
+      "storageMode": "inplace-annotation"
+    },
+    {
+      "blob": {
+        "filename": "workspace.oa-workspace.zip",
+        "path": "/data/Project B/.analysis/users/137/blobs/sha256/d2/d2ac4b62c75718c333161acf60cce4c3056759d1538eb346aee2ebf841a8a34a/workspace.oa-workspace.zip",
+        "relativePath": "users/137/blobs/sha256/d2/d2ac4b62c75718c333161acf60cce4c3056759d1538eb346aee2ebf841a8a34a/workspace.oa-workspace.zip",
+        "sha256": "d2ac4b62c75718c333161acf60cce4c3056759d1538eb346aee2ebf841a8a34a",
+        "size": 366180
+      },
+      "key": "workspace-snapshot:ee120f4d-6859-4caa-9b6c-89188431c59d",
+      "kind": "workspace-snapshot",
+      "logicalPath": "Workspace/workspace.oa-workspace.zip",
+      "metadata": {
+        "stateDigest": "3c185f505f4a0ef1fdc84cec1a2d269efb79d51ce95492dd6104219419e5e20a",
+        "workspaceId": "ee120f4d-6859-4caa-9b6c-89188431c59d"
+      },
+      "mimeType": "application/zip",
+      "name": "workspace.oa-workspace.zip",
+      "remote": {
+        "file_id": 9220,
+        "object_id": 4273,
+        "object_type": "Annotation"
+      },
+      "sha256": "d2ac4b62c75718c333161acf60cce4c3056759d1538eb346aee2ebf841a8a34a",
+      "size": 366180,
+      "storageMode": "inplace-annotation"
+    }
+  ],
+  "revision": 5,
+  "schema": "nl.bioimaging.analysis.storage.workspace.v1",
+  "updatedAt": "2026-09-11T14:53:13.791375+00:00",
+  "userId": 137,
+  "workspace": {
+    "groupId": 114,
+    "id": "ee120f4d-6859-4caa-9b6c-89188431c59d",
+    "lifecycleRevision": 0,
+    "name": "user1-solhunt \u2014 Analysis 1",
+    "sourceObjectId": 204,
+    "sourceObjectName": "user1-solhunt",
+    "sourceObjectType": "Screen",
+    "userId": 137
+  },
+  "workspaceId": "ee120f4d-6859-4caa-9b6c-89188431c59d"
+}

@@ -1083,7 +1083,8 @@ th { position: sticky; top: 0; background: #183040; }
 .analysis-start-card h3 { grid-column: 2; grid-row: 1; }
 .analysis-start-card p { grid-row: 2; }
 .analysis-start-card select, .analysis-start-card button { min-width: 0; }
-.analysis-start-card select { background: #0b151c; border: 1px solid #365266; border-radius: 6px; color: #e7f1f7; min-height: 34px; padding: .35rem .5rem; }
+.analysis-start-card .bp5-html-select { min-width: 0; width: 100%; }
+.analysis-start-card select { background: #0b151c; border: 1px solid #365266; border-radius: 6px; color: #e7f1f7; min-height: 34px; overflow: hidden; padding: .35rem 2.2rem .35rem .5rem; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-start-card button { justify-self: start; }
 .analysis-card-controls { align-self: end; display: grid; gap: .55rem; grid-column: 2; grid-row: 3; min-width: 0; width: 100%; }
 .analysis-card-controls > select { width: 100%; }
@@ -1097,7 +1098,7 @@ th { position: sticky; top: 0; background: #183040; }
 .runs-toolbar div { display: grid; gap: .2rem; }
 .runs-toolbar span { color: #91a7b5; font-size: .72rem; }
 .runs-toolbar .runs-launchers { display: flex; gap: .35rem; justify-content: flex-end; min-width: 0; width: 100%; }
-.runs-launchers select { background: #0b151c; border: 1px solid #365266; border-radius: 5px; color: #e7f1f7; flex: 1 1 auto; max-width: none; min-width: 0; width: 100%; }
+.runs-launchers select { background: #0b151c; border: 1px solid #365266; border-radius: 5px; color: #e7f1f7; flex: 1 1 auto; max-width: none; min-width: 0; overflow: hidden; padding-right: 2rem; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
 .runs-launchers button { flex: 0 0 auto; }
 .pipeline-builder { background: #0d171e; border-bottom: 1px solid #2b4353; padding: .75rem .9rem; }
 .pipeline-builder > header { background: transparent; border: 0; height: auto; min-height: 0; padding: 0 0 .6rem; }
@@ -1274,6 +1275,11 @@ th { position: sticky; top: 0; background: #183040; }
 .settings-check input { margin-top: .2rem; }
 .settings-check span { display: grid; gap: .25rem; }
 .settings-check.inline { align-items: center; display: flex; }
+.data-query-policy {
+  background: #0f1b23; border: 1px solid #365266; border-radius: 8px;
+  display: grid; gap: .3rem; margin-top: .8rem; padding: .75rem .85rem;
+}
+.data-query-policy small { color: #9db2c1; font-size: .76rem; line-height: 1.45; }
 .secondary-action { justify-self: start; }
 .ai-profile-toolbar {
   align-items: end;
@@ -1335,7 +1341,7 @@ th { position: sticky; top: 0; background: #183040; }
   background: #101a22; border: 1px solid #456479; border-radius: 10px;
   box-shadow: 0 20px 70px #000c;
   height: min(720px, calc(100vh - 110px)); max-height: calc(100vh - 16px);
-  max-width: calc(100vw - 16px); min-height: 320px; min-width: 520px;
+  max-width: calc(100vw - 16px); min-height: min(320px, calc(100vh - 16px)); min-width: min(520px, calc(100vw - 16px));
   overflow: hidden; position: fixed; resize: both;
   width: min(900px, calc(100vw - 48px)); z-index: 80;
 }
@@ -1463,6 +1469,13 @@ th { position: sticky; top: 0; background: #183040; }
   padding: 0;
 }
 
+.notebook-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .notebook-toolbar {
   align-items: center;
   background: #0d171e;
@@ -1473,7 +1486,7 @@ th { position: sticky; top: 0; background: #183040; }
   min-height: 54px;
   padding: .5rem .8rem;
 }
-.notebook-selector { min-width: 0; width: 100%; }
+.notebook-selector { min-width: 0; overflow: hidden; padding-right: 2rem; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
 .notebook-toolbar-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
 
 @media (max-width: 800px) {
@@ -1493,7 +1506,64 @@ th { position: sticky; top: 0; background: #183040; }
   display: flex; font-size: .72rem; margin: 0; min-height: 32px; padding: .35rem .8rem;
 }
 
+.notebook-portability-warning {
+  margin: .5rem 1rem;
+  padding: .65rem .8rem;
+  border: 1px solid #b27b35;
+  border-radius: 6px;
+  background: rgba(178, 123, 53, .12);
+  color: #f0c887;
+}
+
+.notebook-parameters {
+  margin: .75rem 1rem;
+  padding: .85rem;
+  border: 1px solid #334a5c;
+  border-radius: 7px;
+  background: #12212b;
+}
+
+.notebook-parameters > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.notebook-parameters small,
+.notebook-parameter small {
+  color: #9db2c1;
+}
+
+.notebook-parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: .7rem;
+  margin-top: .75rem;
+}
+
+.notebook-parameter {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.notebook-parameter.boolean {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.notebook-parameter input:not([type="checkbox"]),
+.notebook-parameter select {
+  min-height: 34px;
+  border: 1px solid #456071;
+  border-radius: 4px;
+  padding: .35rem .5rem;
+  background: #0b171f;
+  color: inherit;
+}
+
 .notebook-cells {
+  flex: 1 1 auto;
   display: grid;
   gap: .8rem;
   min-height: 0;
@@ -1527,6 +1597,17 @@ th { position: sticky; top: 0; background: #183040; }
 }
 .notebook-source { background: transparent; padding: 0; }
 .notebook-source .artifact-code-preview { margin: 0; max-height: none !important; }
+.notebook-code { min-width: 0; }
+.notebook-code > summary {
+  color: #9db2c1;
+  cursor: pointer;
+  font-size: .72rem;
+  list-style-position: outside;
+  margin-left: 1rem;
+  padding: .2rem 0;
+  user-select: none;
+}
+.notebook-code[open] > summary { margin-bottom: .45rem; }
 
 .notebook-markdown {
   line-height: 1.55;
@@ -1625,6 +1706,44 @@ th { position: sticky; top: 0; background: #183040; }
   gap: .4rem;
 }
 
+
+
+
+.workspace-switcher { display: flex; align-items: center; gap: .35rem; }
+.workspace-switcher select {
+  min-width: 150px; max-width: 240px; min-height: var(--control-height);
+  padding: .4rem .6rem; border: 1px solid var(--theme-border); border-radius: 6px;
+  background: var(--theme-control); color: var(--theme-text); font: inherit;
+}
+
+/* Shared lifecycle and result controls use the existing theme palette. */
+.trash-dialog { width: min(900px, 94vw); max-height: 85vh; overflow: auto; }
+.trash-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .7rem 0; border-bottom: 1px solid var(--border); }
+.trash-row > span { flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+.trash-row small { display: block; }
+.plot-downloads { display: inline-flex; gap: .3rem; margin-left: 1rem; }
+.result-file-group { display: flex; flex-wrap: wrap; gap: .35rem; }
+.header-brand { min-width: 0; }
+.header-brand p, .source-breadcrumb { overflow-wrap: anywhere; }
+.workspace-switcher { flex-wrap: wrap; }
+.workspace-trash-banner { padding: 1rem; background: var(--panel); }
+.app-shell:has(.workspace-trash-banner) > .workspace { display: none; }
+
+.workspace-switcher .dialog-backdrop { z-index: 1100; }
+.dialog-backdrop:has(> form.app-dialog) { z-index: 1200; }
+
+.artifact-actions { display:flex; flex-wrap:wrap; gap:.4rem; padding:.5rem; border-bottom:1px solid var(--border); }
+.editor-bindings { padding:.7rem; background:var(--panel); }
+.editor-bindings label { display:flex; align-items:center; gap:1rem; margin:.4rem 0; }
+.editor-bindings span { overflow-wrap:anywhere; }
+.workspace-save-status { display:flex; flex-wrap:wrap; gap:1rem; padding:.35rem 1rem; font-size:.8rem; background:var(--panel); border-bottom:1px solid var(--border); }
+.app-shell:has(> .workspace-save-status) { grid-template-rows:auto auto minmax(0, 1fr); }
+.center-pane:has(> .artifact-actions) { grid-template-rows:42px auto minmax(0, 1fr); }
+.center-pane.runtime-loading:has(> .artifact-actions) { grid-template-rows:42px auto auto minmax(0, 1fr); }
+.header-brand:has(.source-breadcrumb) { grid-template-rows:auto auto auto; }
+.header-brand .source-breadcrumb { grid-row:2; grid-column:1; }
+.header-brand:has(.source-breadcrumb) p { grid-row:3; }
+.generated-files .result-file-group { display:flex; flex-wrap:wrap; gap:.35rem; }
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,
    or positioning here. Those remain identical to the dark Analysis layout. */
@@ -2010,6 +2129,7 @@ th { position: sticky; top: 0; background: #183040; }
 .app-shell[data-theme="light"] .artifact-help,
 .app-shell[data-theme="light"] .settings-form label small,
 .app-shell[data-theme="light"] .settings-check small,
+.app-shell[data-theme="light"] .data-query-policy small,
 .app-shell[data-theme="light"] .notebook-status,
 .app-shell[data-theme="light"] .welcome {
   color: var(--muted);
@@ -2086,3 +2206,155 @@ th { position: sticky; top: 0; background: #183040; }
   border-color: rgba(200, 118, 25, .7);
   color: #a66315;
 }
+
+/* Secondary panels and status text share the same light palette as the main
+   views. Keep these scoped to the shell so dark mode and notebook plots retain
+   their own colors. */
+.app-shell[data-theme="light"] .notebook-parameters,
+.app-shell[data-theme="light"] .data-query-policy,
+.app-shell[data-theme="light"] .settings-card,
+.app-shell[data-theme="light"] .method-inspector-narrative,
+.app-shell[data-theme="light"] .pipeline-inspector-preview > li,
+.app-shell[data-theme="light"] .pipeline-step-heading,
+.app-shell[data-theme="light"] .help-window-layout > nav,
+.app-shell[data-theme="light"] .table-filter,
+.app-shell[data-theme="light"] .message.execution.inspection {
+  background: var(--theme-control);
+  border-color: var(--line);
+  color: var(--theme-text);
+}
+.app-shell[data-theme="light"] .library-item-icon,
+.app-shell[data-theme="light"] .pipeline-inspector-step-number,
+.app-shell[data-theme="light"] .pipeline-outline .pipeline-step-number,
+.app-shell[data-theme="light"] .pipeline-method-order,
+.app-shell[data-theme="light"] .editor-managed-note {
+  background: #e8f1fb;
+  border-color: #8eb5de;
+  color: var(--theme-accent);
+}
+.app-shell[data-theme="light"] .notebook-parameters small,
+.app-shell[data-theme="light"] .notebook-parameter small,
+.app-shell[data-theme="light"] .notebook-code > summary,
+.app-shell[data-theme="light"] .notebook-cell-gutter,
+.app-shell[data-theme="light"] .notebook-duckdb-output > summary small,
+.app-shell[data-theme="light"] .notebook-duckdb-progress span,
+.app-shell[data-theme="light"] .notebook-duckdb-progress small,
+.app-shell[data-theme="light"] .notebook-empty,
+.app-shell[data-theme="light"] .notebook-inspector-cell-heading span,
+.app-shell[data-theme="light"] .database-schema-preview summary small,
+.app-shell[data-theme="light"] .workspace-header p,
+.app-shell[data-theme="light"] .workspace-actions .menu-heading,
+.app-shell[data-theme="light"] .browser-context-menu .context-title,
+.app-shell[data-theme="light"] .method-selection-toolbar span,
+.app-shell[data-theme="light"] .library-tree-dataset > summary span:nth-child(3) small,
+.app-shell[data-theme="light"] .pipeline-inspector-preview small,
+.app-shell[data-theme="light"] .pipeline-inspector-preview em,
+.app-shell[data-theme="light"] .pipeline-inspector-empty,
+.app-shell[data-theme="light"] .pipeline-binding-list dt,
+.app-shell[data-theme="light"] .pipeline-parameter-list dt,
+.app-shell[data-theme="light"] .editor-empty,
+.app-shell[data-theme="light"] .editor-title small,
+.app-shell[data-theme="light"] .editor-outline li button span,
+.app-shell[data-theme="light"] .pipeline-step-summary small,
+.app-shell[data-theme="light"] .pipeline-step-heading small,
+.app-shell[data-theme="light"] .pipeline-step-editor > label,
+.app-shell[data-theme="light"] .pipeline-step-editor fieldset label,
+.app-shell[data-theme="light"] .notebook-add-cell small,
+.app-shell[data-theme="light"] .message-citations > span,
+.app-shell[data-theme="light"] .activity-timing,
+.app-shell[data-theme="light"] .message-activity,
+.app-shell[data-theme="light"] .inspection-note,
+.app-shell[data-theme="light"] .table-filter span,
+.app-shell[data-theme="light"] .message figcaption,
+.app-shell[data-theme="light"] .supporting-executions > p,
+.app-shell[data-theme="light"] .pipeline-builder > header span,
+.app-shell[data-theme="light"] .pipeline-method-picker label small,
+.app-shell[data-theme="light"] .pipeline-builder-actions > span,
+.app-shell[data-theme="light"] .run-history h3,
+.app-shell[data-theme="light"] .run-history button time,
+.app-shell[data-theme="light"] .run-empty,
+.app-shell[data-theme="light"] .run-steps li > span,
+.app-shell[data-theme="light"] .run-bindings dt,
+.app-shell[data-theme="light"] .run-files h3,
+.app-shell[data-theme="light"] .run-files button small,
+.app-shell[data-theme="light"] .settings-sync-toolbar span,
+.app-shell[data-theme="light"] .local-ai-heading small,
+.app-shell[data-theme="light"] .local-ai-help,
+.app-shell[data-theme="light"] .local-ai-status,
+.app-shell[data-theme="light"] .local-ai-server label span,
+.app-shell[data-theme="light"] .provider-validation small,
+.app-shell[data-theme="light"] .skill-card span,
+.app-shell[data-theme="light"] .skill-settings-row span,
+.app-shell[data-theme="light"] .help-window-search small,
+.app-shell[data-theme="light"] .help-window-layout > nav strong { color: var(--muted); }
+.app-shell[data-theme="light"] .app-dialog p,
+.app-shell[data-theme="light"] .app-dialog label,
+.app-shell[data-theme="light"] .pipeline-binding-list dd,
+.app-shell[data-theme="light"] .pipeline-parameter-list dd,
+.app-shell[data-theme="light"] .execution-content h4,
+.app-shell[data-theme="light"] .supporting-execution h5 { color: var(--theme-text); }
+.app-shell[data-theme="light"] .skill-badge,
+.app-shell[data-theme="light"] .method-source-preview[open] summary,
+.app-shell[data-theme="light"] .pipeline-inspector-preview details summary,
+.app-shell[data-theme="light"] .pipeline-binding-list dd span,
+.app-shell[data-theme="light"] .pipeline-step-heading span,
+.app-shell[data-theme="light"] .pipeline-step-editor legend,
+.app-shell[data-theme="light"] .assistant-method-code > summary,
+.app-shell[data-theme="light"] .message-citations button,
+.app-shell[data-theme="light"] .ai-live-response > strong,
+.app-shell[data-theme="light"] .ai-question > strong,
+.app-shell[data-theme="light"] .execution-heading,
+.app-shell[data-theme="light"] .execution-actions .detail-toggle,
+.app-shell[data-theme="light"] .supporting-executions > summary,
+.app-shell[data-theme="light"] .analysis-start-card > .action-icon,
+.app-shell[data-theme="light"] .run-summary span { color: var(--theme-accent); }
+.app-shell[data-theme="light"] .privacy-badge,
+.app-shell[data-theme="light"] .compatibility,
+.app-shell[data-theme="light"] .reuse-note,
+.app-shell[data-theme="light"] .model-payload summary,
+.app-shell[data-theme="light"] .workspace-sync-bar > span { color: #237344; }
+.app-shell[data-theme="light"] .ai-activity-log li.completed .ai-activity-marker { color: #237344; }
+.app-shell[data-theme="light"] .ai-question-answer { color: #237344 !important; }
+.app-shell[data-theme="light"] .skill-badge.warning,
+.app-shell[data-theme="light"] .compatibility.needs-setup,
+.app-shell[data-theme="light"] .attachment-chip em,
+.app-shell[data-theme="light"] .workspace-sync-bar.changes > span,
+.app-shell[data-theme="light"] .warning,
+.app-shell[data-theme="light"] .settings-warning,
+.app-shell[data-theme="light"] .composer-state.waiting { color: #8a520f; }
+.app-shell[data-theme="light"] .notebook-error,
+.app-shell[data-theme="light"] .notebook-stream.stderr,
+.app-shell[data-theme="light"] .notebook-inspector-output.error,
+.app-shell[data-theme="light"] .execution-error,
+.app-shell[data-theme="light"] .workspace-preparation-error,
+.app-shell[data-theme="light"] .workspace-sync-bar.error > span,
+.app-shell[data-theme="light"] .run-summary pre,
+.app-shell[data-theme="light"] .run-steps li p { color: #b52f35; }
+.app-shell[data-theme="light"] .quota-warning,
+.app-shell[data-theme="light"] .plot-warning,
+.app-shell[data-theme="light"] .blocker,
+.app-shell[data-theme="light"] .notebook-portability-warning {
+  background: #fff4df;
+  border-color: #c99748;
+  color: #8a520f;
+}
+.app-shell[data-theme="light"] .editor-error {
+  background: #fff0ef;
+  border-color: #ce7777;
+  color: #b52f35;
+}
+.app-shell[data-theme="light"] .icon-root,
+.app-shell[data-theme="light"] .icon-file,
+.app-shell[data-theme="light"] .folder-chevron,
+.app-shell[data-theme="light"] .cell-type-icon {
+  color: #516675;
+}
+.app-shell[data-theme="light"] .browser-icon.notebook::before { color: #6f3f91; }
+.app-shell[data-theme="light"] .browser-icon.pipeline::before { color: #17658b; }
+.app-shell[data-theme="light"] .cell-type-icon.code::before { color: #7b5d00; }
+.app-shell[data-theme="light"] .cell-type-icon.markdown::before { color: #17658b; }
+.app-shell[data-theme="light"] .cell-type-icon.raw::before { color: #516675; }
+.app-shell[data-theme="light"] .cell-type-icon.bindings::before { color: #237344; }
+.app-shell[data-theme="light"] .file-browser-toolbar button:hover,
+.app-shell[data-theme="light"] .browser-more:hover { background: #edf0f2 !important; }
+.app-shell[data-theme="light"] .library-tree-group > summary:hover { background: #e8f1fb; }

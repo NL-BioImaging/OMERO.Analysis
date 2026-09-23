@@ -278,3 +278,16 @@
   .omero-analysis-center .oa-section-heading { align-items: flex-start; gap: 8px; }
   .omero-analysis-center .oa-workspace-stats { grid-template-columns: repeat(2, minmax(100px, 1fr)); margin-left: 0; }
 }
+
+.omero-analysis-center .oa-card > h3 {
+  font-size: 18px; font-weight: 650; margin: 0 0 8px;
+}
+.omero-analysis-center .oa-create-workspace > .oa-card {
+  box-shadow: none; background: var(--oa-surface-soft);
+}
+.omero-analysis-center .oa-optional-library { margin: 18px 0; }
+.omero-analysis-center .oa-optional-library > summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; padding: 8px 0;
+}
+
+.omero-analysis-center .oa-button:disabled { opacity: .45; cursor: not-allowed; }

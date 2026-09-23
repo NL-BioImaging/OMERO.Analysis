@@ -1,0 +1,1851 @@
+{
+  "allowlist": {
+    "users": {
+      "102": "dqw-test-f22e9d934a-owner",
+      "103": "dqw-test-ed2dce83e0-owner",
+      "104": "dqw-test-ed2dce83e0-member",
+      "105": "dqw-test-ed2dce83e0-pi",
+      "106": "dqw-test-16b6f88908-owner",
+      "107": "dqw-test-16b6f88908-member",
+      "108": "dqw-test-16b6f88908-pi",
+      "109": "dqw-test-c58d8bbc9c-owner",
+      "110": "dqw-test-c58d8bbc9c-member",
+      "111": "dqw-test-c58d8bbc9c-pi",
+      "112": "dqw-test-4af06c5076-owner",
+      "113": "dqw-test-4af06c5076-member",
+      "114": "dqw-test-4af06c5076-pi",
+      "115": "dqw-test-329b28512a-owner",
+      "116": "dqw-test-329b28512a-member",
+      "117": "dqw-test-329b28512a-pi",
+      "118": "dqw-test-4ba924d9f0-owner",
+      "119": "dqw-test-4ba924d9f0-member",
+      "120": "dqw-test-4ba924d9f0-pi",
+      "121": "dqw-test-b0548d0d5c-owner",
+      "122": "dqw-test-b0548d0d5c-member",
+      "123": "dqw-test-b0548d0d5c-pi",
+      "124": "dqw-test-351c7df3e5-owner",
+      "125": "dqw-test-351c7df3e5-member",
+      "126": "dqw-test-351c7df3e5-pi",
+      "127": "dqw-test-3f1d0b06c0-owner",
+      "128": "dqw-test-3f1d0b06c0-member",
+      "129": "dqw-test-3f1d0b06c0-pi",
+      "130": "dqw-test-3e34e883bd-owner",
+      "131": "dqw-test-3e34e883bd-member",
+      "132": "dqw-test-3e34e883bd-pi",
+      "133": "dqw-test-b2b23f757d-owner",
+      "134": "dqw-test-b2b23f757d-member",
+      "135": "dqw-test-b2b23f757d-pi"
+    },
+    "groups": {
+      "58": "dqw-test-ed2dce83e0-private",
+      "62": "dqw-test-16b6f88908-private",
+      "63": "dqw-test-16b6f88908-read-only",
+      "64": "dqw-test-16b6f88908-read-annotate",
+      "65": "dqw-test-16b6f88908-read-write",
+      "66": "dqw-test-c58d8bbc9c-private",
+      "67": "dqw-test-c58d8bbc9c-read-only",
+      "68": "dqw-test-c58d8bbc9c-read-annotate",
+      "69": "dqw-test-c58d8bbc9c-read-write",
+      "70": "dqw-test-4af06c5076-private",
+      "71": "dqw-test-4af06c5076-read-only",
+      "72": "dqw-test-4af06c5076-read-annotate",
+      "73": "dqw-test-4af06c5076-read-write",
+      "74": "dqw-test-329b28512a-private",
+      "75": "dqw-test-329b28512a-read-only",
+      "76": "dqw-test-329b28512a-read-annotate",
+      "77": "dqw-test-329b28512a-read-write",
+      "78": "dqw-test-329b28512a-revocation",
+      "79": "dqw-test-4ba924d9f0-private",
+      "80": "dqw-test-4ba924d9f0-read-only",
+      "81": "dqw-test-4ba924d9f0-read-annotate",
+      "82": "dqw-test-4ba924d9f0-read-write",
+      "83": "dqw-test-4ba924d9f0-revocation",
+      "84": "dqw-test-b0548d0d5c-private",
+      "85": "dqw-test-b0548d0d5c-read-only",
+      "86": "dqw-test-b0548d0d5c-read-annotate",
+      "87": "dqw-test-b0548d0d5c-read-write",
+      "88": "dqw-test-b0548d0d5c-revocation",
+      "89": "dqw-test-351c7df3e5-private",
+      "90": "dqw-test-351c7df3e5-read-only",
+      "91": "dqw-test-351c7df3e5-read-annotate",
+      "92": "dqw-test-351c7df3e5-read-write",
+      "93": "dqw-test-351c7df3e5-revocation",
+      "94": "dqw-test-3f1d0b06c0-private",
+      "95": "dqw-test-3f1d0b06c0-read-only",
+      "96": "dqw-test-3f1d0b06c0-read-annotate",
+      "97": "dqw-test-3f1d0b06c0-read-write",
+      "98": "dqw-test-3f1d0b06c0-revocation",
+      "104": "dqw-test-3e34e883bd-private",
+      "105": "dqw-test-3e34e883bd-read-only",
+      "106": "dqw-test-3e34e883bd-read-annotate",
+      "107": "dqw-test-3e34e883bd-read-write",
+      "108": "dqw-test-3e34e883bd-revocation",
+      "109": "dqw-test-b2b23f757d-private",
+      "110": "dqw-test-b2b23f757d-read-only",
+      "111": "dqw-test-b2b23f757d-read-annotate",
+      "112": "dqw-test-b2b23f757d-read-write",
+      "113": "dqw-test-b2b23f757d-revocation"
+    }
+  },
+  "checks": {
+    "users:102": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [],
+      "safe": true
+    },
+    "users:103": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        58
+      ],
+      "safe": true
+    },
+    "users:104": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        58
+      ],
+      "safe": true
+    },
+    "users:105": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        58
+      ],
+      "safe": true
+    },
+    "users:106": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "safe": true
+    },
+    "users:107": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "safe": true
+    },
+    "users:108": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        62,
+        63,
+        64,
+        65
+      ],
+      "safe": true
+    },
+    "users:109": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "safe": true
+    },
+    "users:110": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "safe": true
+    },
+    "users:111": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "safe": true
+    },
+    "users:112": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        70,
+        71,
+        72,
+        73
+      ],
+      "safe": true
+    },
+    "users:113": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        70,
+        71,
+        72,
+        73
+      ],
+      "safe": true
+    },
+    "users:114": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        70,
+        71,
+        72,
+        73
+      ],
+      "safe": true
+    },
+    "users:115": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        74,
+        75,
+        76,
+        77,
+        78
+      ],
+      "safe": true
+    },
+    "users:116": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        74,
+        75,
+        76,
+        77
+      ],
+      "safe": true
+    },
+    "users:117": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        74,
+        75,
+        76,
+        77,
+        78
+      ],
+      "safe": true
+    },
+    "users:118": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "safe": true
+    },
+    "users:119": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        79,
+        80,
+        81,
+        82
+      ],
+      "safe": true
+    },
+    "users:120": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "safe": true
+    },
+    "users:121": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        84,
+        85,
+        86,
+        87,
+        88
+      ],
+      "safe": true
+    },
+    "users:122": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        84,
+        85,
+        86,
+        87,
+        88
+      ],
+      "safe": true
+    },
+    "users:123": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        84,
+        85,
+        86,
+        87,
+        88
+      ],
+      "safe": true
+    },
+    "users:124": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "safe": true
+    },
+    "users:125": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "safe": true
+    },
+    "users:126": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "safe": true
+    },
+    "users:127": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        94,
+        95,
+        96,
+        97,
+        98
+      ],
+      "safe": true
+    },
+    "users:128": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        94,
+        95,
+        96,
+        97,
+        98
+      ],
+      "safe": true
+    },
+    "users:129": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        94,
+        95,
+        96,
+        97,
+        98
+      ],
+      "safe": true
+    },
+    "users:130": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        104,
+        105,
+        106,
+        107,
+        108
+      ],
+      "safe": true
+    },
+    "users:131": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        104,
+        105,
+        106,
+        107,
+        108
+      ],
+      "safe": true
+    },
+    "users:132": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        104,
+        105,
+        106,
+        107,
+        108
+      ],
+      "safe": true
+    },
+    "users:133": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "safe": true
+    },
+    "users:134": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "safe": true
+    },
+    "users:135": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [],
+      "memberships": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "safe": true
+    },
+    "groups:58": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        103,
+        104,
+        105
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:62": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:63": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:64": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:65": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        106,
+        107,
+        108
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:66": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:67": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:68": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:69": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        109,
+        110,
+        111
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:70": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:71": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:72": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:73": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        112,
+        113,
+        114
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:74": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:75": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:76": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:77": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        116,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:78": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        115,
+        117
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:79": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:80": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:81": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:82": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        119,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:83": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        118,
+        120
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:84": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:85": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:86": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:87": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:88": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        121,
+        122,
+        123
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:89": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:90": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:91": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:92": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:93": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        124,
+        125,
+        126
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:94": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:95": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:96": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:97": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:98": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        127,
+        128,
+        129
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:104": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:105": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:106": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:107": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:108": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        130,
+        131,
+        132
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:109": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:110": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:111": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:112": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    },
+    "groups:113": {
+      "objects": {
+        "Project": 0,
+        "Dataset": 0,
+        "Screen": 0,
+        "Plate": 0,
+        "Image": 0,
+        "OriginalFile": 0,
+        "Annotation": 0,
+        "Fileset": 0,
+        "Well": 0,
+        "PlateAcquisition": 0
+      },
+      "members": [
+        133,
+        134,
+        135
+      ],
+      "memberships": [],
+      "safe": true
+    }
+  }
+}

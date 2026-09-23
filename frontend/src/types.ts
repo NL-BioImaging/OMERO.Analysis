@@ -1,9 +1,16 @@
+import type {
+  NotebookProtocolBinding,
+  NotebookRunProvenance
+} from "./notebookProtocol";
+
 export type OmeroObjectType = "Image" | "Dataset" | "Plate" | "Screen";
 export type FileSource = "local" | "omero" | "result";
 export type FileState = "loading" | "ready" | "failed" | "missing";
 
 export interface Attachment {
   annotation_id: number;
+  owner_id?: number;
+  owner_name?: string;
   file_id: number;
   name: string;
   mimetype: string;
@@ -22,9 +29,15 @@ export interface OmeroContext {
   object_type: OmeroObjectType;
   object_id: number;
   name: string;
+  source_owner_id?: number;
+  source_owner_name?: string;
+  source_path?: Array<{ type: string; id: number; name: string }>;
   user_id: number;
   group_id: number;
   can_annotate: boolean;
+  can_read_source?: boolean;
+  can_annotate_source?: boolean;
+  can_manage_workspace?: boolean;
   max_snapshot_bytes?: number;
   selected_attachments: Attachment[];
   selected_workspace_snapshot?: Attachment | null;
@@ -62,11 +75,26 @@ export interface Bootstrap {
   dataSourceSchemaTemplate?: string;
   dataSourceQueryTemplate?: string;
   dataQueryResultDownloadTemplate?: string;
+  dataQueryResultPromoteUrl?: string;
   zarrViewerStatusUrl: string;
   keepaliveUrl: string;
   keepaliveInterval: number;
+  notebookCellTimeoutSeconds?: number;
   styleNonce?: string;
   runtimeBase: string;
+}
+
+export interface DataQueryCapabilities {
+  features?: { result_promotion_v1?: boolean };
+  available: boolean;
+  ready: boolean;
+  capability: "omero-data-query-v1";
+  formats: Array<"duckdb" | "sqlite" | "csv">;
+  threshold_bytes: number;
+  result_ttl_seconds: number;
+  limits?: Record<string, unknown>;
+  parameter_style?: string;
+  csv_table?: string;
 }
 
 export interface WorkflowSkillMatch {
@@ -106,7 +134,7 @@ export interface WorkflowSkillSource {
   plugin_version?: string;
   plugin_path?: string;
   plugin_sha256?: string;
-  format?: "agent-plugin-v1" | "legacy-agent-skills";
+  format?: "agent-skills-v1" | "agent-plugin-v1" | "legacy-agent-skills";
 }
 
 export interface WorkflowSkillEntry {
@@ -155,6 +183,8 @@ export interface AnalysisSkillProviderCatalog {
   };
   skills: Array<{
     name: string;
+    format?: "agent-skills-v1";
+    skills_path?: string;
     description: string;
     purpose: string;
     consumers: string[];
@@ -180,6 +210,9 @@ export interface OmeroHierarchy {
 }
 
 export interface WorkspaceRecord {
+  browserLifecycleRevision?: number;
+  lifecycleRevision?: number;
+  purgedAt?: string;
   id: string;
   contextKey: string;
   rootPath: string;
@@ -228,6 +261,7 @@ export interface ChatRecord {
 }
 
 export interface WorkspaceFile {
+  remoteResult?: { workspaceId: string; key: string; sha256: string; size: number };
   id: string;
   workspaceId: string;
   chatId?: string;
@@ -346,7 +380,7 @@ export interface ExecutionRecord {
   model: string;
   modelPayload?: ModelPayload;
   workflowSkills?: ChatMessage["workflowSkills"];
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   purpose?: ExecutionPurpose;
   evidenceId?: string;
   durationMs?: number;
@@ -418,7 +452,7 @@ export interface MethodRecord {
   parameters?: ParameterDefinition[];
   requiredCapabilities?: string[];
   workspaceBindings?: Record<string, Record<string, string>>;
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   libraryOrigin?: LibraryOrigin;
   deletedAt?: string;
   createdAt: string;
@@ -441,7 +475,7 @@ export interface PipelineRecord {
   description: string;
   version: number;
   steps: PipelineStep[];
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
@@ -715,6 +749,8 @@ export interface RuntimeOutput {
 }
 
 export interface RuntimeProgress {
+  indeterminate?: boolean;
+  detail?: string;
   percent: number;
   message: string;
 }
@@ -774,6 +810,7 @@ export interface NotebookDocument {
 }
 
 export interface NotebookRecord {
+  deletedAt?: string;
   id: string;
   workspaceId: string;
   name: string;
@@ -781,7 +818,13 @@ export interface NotebookRecord {
   sourceAnnotationId?: number;
   attachmentIds: number[];
   selectedDataFileIds: string[];
-  remoteQueryBindings?: RemoteQueryBindingV1[];
+  remoteQueryBindings?: RemoteQueryBinding[];
+  protocolBindings?: NotebookProtocolBinding[];
+  parameterValues?: Record<string, boolean | number | string | null>;
+  parameterChoices?: Record<string, Array<boolean | number | string>>;
+  parameterChoiceLabels?: Record<string, string[]>;
+  protocolRuns?: NotebookRunProvenance[];
+  portabilityWarning?: string;
   libraryOrigin?: LibraryOrigin;
   createdAt: string;
   updatedAt: string;
@@ -802,6 +845,32 @@ export interface RemoteQueryBindingV1 {
   }>;
   outputCsvName: string;
 }
+
+/**
+ * A portable data-query recipe. The preferred source identifies the source
+ * used while authoring, but is never required when the Method is copied to a
+ * different OMERO workspace. At run time Analysis rebinds this recipe to a
+ * compatible, currently-authorized local or remote OMERO source with the same
+ * normalized schema.
+ */
+export interface RemoteQueryBindingV2 {
+  version: 2;
+  bindingId: string;
+  capability: "omero-data-query-v1";
+  format: "duckdb" | "sqlite" | "csv";
+  sourceName: string;
+  preferredAnnotationId?: number;
+  preferredFileId?: number;
+  schemaDigest: string;
+  sql: string;
+  parameters: Record<string, {
+    type: "null" | "boolean" | "integer" | "float" | "decimal" | "string" | "date" | "time" | "timestamp";
+    value: unknown;
+  }>;
+  outputCsvName: string;
+}
+
+export type RemoteQueryBinding = RemoteQueryBindingV1 | RemoteQueryBindingV2;
 
 export interface LibraryOrigin {
   projectId: number;
@@ -836,6 +905,7 @@ export interface SyncInventoryItem {
 export interface SyncInventory {
   schema: "nl.bioimaging.analysis.sync.inventory.v1";
   workspace: {
+    lifecycleRevision?: number;
     id: string;
     name: string;
     sourceObjectType: OmeroObjectType;
@@ -849,11 +919,16 @@ export interface SyncInventory {
 }
 
 export interface SyncPayload {
+  contentDigest?: string;
   inventory: SyncInventory;
   bytes: Map<string, Uint8Array>;
 }
 
 export interface SyncStatus {
+  lifecycle?: "active" | "trashed" | "purging" | "purged" | "unavailable";
+  lifecycleRevision?: number;
+  browseState?: "ready" | "failed";
+  cleanup?: { complete: boolean; errors: unknown[] };
   schema: "nl.bioimaging.analysis.sync.status.v1";
   canSync: boolean;
   reason: string;
@@ -867,9 +942,21 @@ export interface SyncStatus {
   inventoryDigest: string;
   itemCount: number;
   lastSyncedAt?: string;
+  syncState?: "complete" | "pending" | "failed";
+  pendingOrderCount?: number;
+  storage?: {
+    mode: "legacy" | "inplace";
+    ready: boolean;
+    failureCode: string;
+    detail: string;
+    dependencyVersions: Record<string, string | null>;
+    mappedRoot?: string;
+    groupName?: string;
+  };
 }
 
 export interface SyncPlan {
+  payloadEncoding?: "concat-v1";
   schema: "nl.bioimaging.analysis.sync.plan.v1";
   planToken: string;
   projectName: string;
@@ -901,6 +988,8 @@ export interface LibraryItem {
 }
 
 export interface LibraryDataset {
+  lifecycle?: string;
+  lifecycleRevision?: number;
   projectId: number;
   datasetId: number;
   datasetName: string;

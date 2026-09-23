@@ -9,4 +9,5 @@ config set -- omero.web.analysis.max_download_bytes 2147483648
 config set -- omero.web.analysis.max_notebook_bytes 33554432
 config set -- omero.web.analysis.remote_query_threshold_bytes 104857600
 config set -- omero.web.analysis.data_query_result_ttl_seconds 600
+config set -- omero.web.analysis.import_max_concurrency 4
 config set -- omero.web.analysis.allowed_result_extensions '.csv,.tsv,.json,.xlsx,.xls,.parquet,.npy,.npz,.duckdb,.sqlite,.sqlite3,.png,.svg,.pdf,.txt,.md'

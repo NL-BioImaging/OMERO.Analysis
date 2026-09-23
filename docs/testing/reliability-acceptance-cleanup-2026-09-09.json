@@ -1,0 +1,50 @@
+{
+  "removed_sources": [
+    {
+      "type": "Screen",
+      "id": 201,
+      "name": "Analysis-QA-205e68df Screen"
+    },
+    {
+      "type": "Plate",
+      "id": 301,
+      "name": "Analysis-QA-205e68df Plate"
+    },
+    {
+      "type": "Dataset",
+      "id": 661,
+      "name": "Analysis-QA-205e68df Dataset"
+    },
+    {
+      "type": "Image",
+      "id": 2354,
+      "name": "Analysis-QA-205e68df Image"
+    }
+  ],
+  "preserved_workspaces": [
+    {
+      "id": 451,
+      "name": "Screen-151 \u2014 2DWellTestZarr"
+    },
+    {
+      "id": 454,
+      "name": "Screen-152 \u2014 SolHunt"
+    },
+    {
+      "id": 552,
+      "name": "Dataset-551 \u2014 benchdataqueryworker"
+    },
+    {
+      "id": 553,
+      "name": "Plate-201 \u2014 cellsA1B1__cisegmentation"
+    },
+    {
+      "id": 659,
+      "name": "Dataset-551 \u2014 Analysis 2"
+    },
+    {
+      "id": 660,
+      "name": "Screen-152 \u2014 SolHunt \u2014 Analysis 2"
+    }
+  ]
+}

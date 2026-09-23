@@ -53,7 +53,7 @@ def test_center_panel_supports_expected_omero_objects():
     assert 'context.panel_kind == "workspace"' in panel
     assert 'context.panel_kind == "result"' in panel
     assert 'context.panel_kind == "settings"' in panel
-    assert "Open selection in Analysis" in panel
+    assert "Start new Workspace" in panel
     assert "Resume" in panel
     assert "data-integrated-data-analysis" in panel
 

@@ -5,6 +5,7 @@ import {
   withWorkspaceSyncStatus
 } from "./workspaceSync";
 import type { AnalysisWorkspace, OmeroContext, SyncStatus } from "./types";
+import { unzipSync, strFromU8 } from "fflate";
 
 const context: OmeroContext = {
   object_type: "Screen",
@@ -95,9 +96,9 @@ describe("Workspace synchronization inventory", () => {
   it("is deterministic, excludes ordinary inputs, and includes template-named inputs", async () => {
     const first = await buildWorkspaceSyncPayload(workspace(), context);
     const second = await buildWorkspaceSyncPayload(workspace(), context);
-    expect(first.inventory).toEqual(second.inventory);
+    expect(first.contentDigest).toEqual(second.contentDigest);
     expect(first.inventory.items.map((item) => item.key)).toEqual([
-      "template-input:template-1"
+      "template-input:template-1", "workspace-snapshot:workspace-1"
     ]);
     expect(first.bytes.has("input-1")).toBe(false);
     expect(first.inventory.items.find(
@@ -152,6 +153,26 @@ describe("Workspace synchronization inventory", () => {
     expect(csv.metadata.plotImageKeys).toEqual([image.key]);
   });
 
+  it("links same-stem SVG inventory items to their synchronized PNG image", async () => {
+    const value = workspace();
+    value.files[2] = { ...value.files[2], chatId: undefined, methodId: "method-1" };
+    value.files.push({
+      ...value.files[2],
+      id: "result-svg",
+      name: "plot.svg",
+      logicalPath: "/output/plot.svg",
+      type: "image/svg+xml",
+      data: new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\"/>").buffer
+    });
+
+    const payload = await buildWorkspaceSyncPayload(value, context);
+    const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
+    const svg = payload.inventory.items.find((item) =>
+      item.kind === "result" && item.name === "plot.svg"
+    )!;
+    expect(svg.metadata.plotImageKeys).toEqual([image.key]);
+  });
+
   it("canonicalizes object keys and detects a remote digest mismatch", () => {
     expect(canonicalJson({ z: 1, a: { y: 2, b: 3 } })).toBe(
       '{\n  "a": {\n    "b": 3,\n    "y": 2\n  },\n  "z": 1\n}\n'
@@ -183,6 +204,14 @@ describe("Workspace synchronization inventory", () => {
       .toBe(false);
     expect(payload.inventory.items.some((item) => item.kind === "png-image")).toBe(false);
     expect(JSON.stringify(payload.inventory)).not.toContain("secret.example");
+    const snapshot = unzipSync(payload.bytes.get(`workspace-snapshot:${value.workspace.id}`)!);
+    const manifest = JSON.parse(strFromU8(snapshot["workspace.json"]));
+    expect(manifest.chats.every((chat: { messages: unknown[] }) => chat.messages.length === 0)).toBe(true);
+    expect(JSON.stringify(manifest)).not.toContain("secret.example");
+    const repeat = await buildWorkspaceSyncPayload({ ...value, workspace: {
+      ...value.workspace, updatedAt: "2026-09-09T00:00:00Z", revision: 999
+    } }, context);
+    expect(repeat.contentDigest).toBe(payload.contentDigest);
   });
 
   it("merges sync metadata without restoring stale run state", () => {
@@ -207,4 +236,24 @@ describe("Workspace synchronization inventory", () => {
       inventoryDigest: "remote"
     });
   });
+  it("keeps large results out of recovery snapshots and retains Trash metadata", async () => {
+    const value = workspace();
+    const file = value.files.find(file => file.id === "result-1")!;
+    file.methodId = "method-1";
+    file.deletedAt = "2026-09-09T00:00:00Z";
+    file.data = new Uint8Array(100_000).buffer;
+    file.size = file.data.byteLength;
+    const payload = await buildWorkspaceSyncPayload(value, { ...context, max_snapshot_bytes: 20_000 });
+    const snapshot = unzipSync(payload.bytes.get(`workspace-snapshot:${value.workspace.id}`)!);
+    const manifest = JSON.parse(strFromU8(snapshot["workspace.json"]));
+    const restored = manifest.files.find((item: { id: string }) => item.id === file.id);
+    expect(restored.deletedAt).toBe(file.deletedAt);
+    expect(restored.remoteResult.size).toBe(100_000);
+    expect(restored.remoteResult.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(Object.values(snapshot).every(bytes => bytes.length < 20_000)).toBe(true);
+    const repeated = await buildWorkspaceSyncPayload({ ...value, files: value.files.map(item => item.id === file.id
+      ? { ...item, data: undefined, remoteResult: restored.remoteResult } : item) }, { ...context, max_snapshot_bytes: 20_000 });
+    expect(repeated.inventory.items.find(item => item.kind === "png-image")?.sha256).toBe(restored.remoteResult.sha256);
+  });
+
 });

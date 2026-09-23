@@ -27,13 +27,17 @@ REQUIRED = {
 PACKAGES = {
     "duckdb",
     "matplotlib",
+    "numpy",
     "pandas",
     "pyarrow",
+    "pypdf",
     "python-calamine",
+    "scikit-image",
     "scipy",
     "seaborn",
+    "xlrd",
 }
-LOCK_PACKAGES = PACKAGES - {"seaborn"}
+LOCK_PACKAGES = PACKAGES - {"pypdf", "seaborn"}
 
 
 def main():

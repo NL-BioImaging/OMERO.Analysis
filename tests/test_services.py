@@ -1,6 +1,29 @@
 from io import BytesIO
+from types import SimpleNamespace
 import json
 import zipfile
+
+
+def test_source_name_path_includes_project_and_hcs_ancestry():
+    from omero_analysis.services import source_name_path
+    def node(kind, number, name, parents=()):
+        return SimpleNamespace(OMERO_CLASS=kind, getId=lambda: number,
+                               getName=lambda: name, listParents=lambda: list(parents))
+    project = node('Project', 1, 'Study')
+    dataset = node('Dataset', 2, 'Measurements', [project])
+    image = node('Image', 3, 'Field 1', [dataset])
+    assert [item['name'] for item in source_name_path('Image', image)] == ['Study', 'Measurements', 'Field 1']
+    screen = node('Screen', 4, 'SolHunt')
+    plate = node('Plate', 5, 'Plate A', [screen])
+    well = node('Well', 6, None, [plate])
+    sample = node('WellSample', 7, None, [well])
+    field = node('Image', 8, 'Field 2', [sample])
+    assert [item['name'] for item in source_name_path('Image', field)] == ['SolHunt', 'Plate A', 'Field 2']
+    assert [item['name'] for item in source_name_path('Plate', plate)] == ['SolHunt', 'Plate A']
+    assert [item['name'] for item in source_name_path('Screen', screen)] == ['SolHunt']
+    other = node('Project', 9, 'Another Study')
+    multiple = node('Dataset', 10, 'Shared', [project, other])
+    assert source_name_path('Dataset', multiple)[0]['name'] == 'Another Study'
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile

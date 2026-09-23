@@ -58,7 +58,7 @@ function utf8(value: string): Uint8Array {
 function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): ArchiveResult {
   const entries: Record<string, Uint8Array> = {};
   const omittedLocalInputs: string[] = [];
-  const files = workspace.files.filter((file) => !file.deletedAt).map((file) => {
+  const files = workspace.files.map((file) => {
     const metadata: Omit<WorkspaceFile, "data"> & { archivePath?: string } = { ...file };
     delete (metadata as Partial<WorkspaceFile>).data;
     const omitted = file.source === "local" && omitLocal;
@@ -222,7 +222,8 @@ function containsCredentialField(value: unknown): boolean {
 
 export async function importWorkspace(
   data: ArrayBuffer,
-  currentContext: OmeroContext | null = null
+  currentContext: OmeroContext | null = null,
+  restoreWorkspaceId?: string
 ): Promise<AnalysisWorkspace> {
   const archiveBytes = new Uint8Array(data);
   validateArchiveDirectory(archiveBytes);
@@ -240,22 +241,30 @@ export async function importWorkspace(
   const manifest = requireManifest(JSON.parse(strFromU8(manifestBytes)));
   if (containsCredentialField(manifest)) throw new Error("Workspace archive contains a credential field");
 
-  const workspaceId = crypto.randomUUID();
+  if (restoreWorkspaceId && (
+    manifest.workspace.id !== restoreWorkspaceId || !currentContext ||
+    manifest.workspace.userId !== currentContext.user_id ||
+    manifest.workspace.groupId !== currentContext.group_id ||
+    manifest.workspace.objectType !== currentContext.object_type ||
+    manifest.workspace.objectId !== currentContext.object_id
+  )) throw new Error("Saved workspace identity does not match the selected context");
+  const workspaceId = restoreWorkspaceId || crypto.randomUUID();
+  const restoredId = (id: string) => restoreWorkspaceId ? id : crypto.randomUUID();
   const now = new Date().toISOString();
-  const chatIds = new Map(manifest.chats.map((item) => [item.id, crypto.randomUUID()]));
-  const executionIds = new Map(manifest.executions.map((item) => [item.id, crypto.randomUUID()]));
-  const runIds = new Map(manifest.runs.map((item) => [item.id, crypto.randomUUID()]));
-  const evidenceIds = new Map(manifest.evidence.map((item) => [item.id, crypto.randomUUID()]));
-  const fileIds = new Map(manifest.files.map((item) => [item.id, crypto.randomUUID()]));
-  const artifactIds = new Map(manifest.artifacts.map((item) => [item.id, crypto.randomUUID()]));
-  const methodIds = new Map(manifest.methods.map((item) => [item.id, crypto.randomUUID()]));
-  const pipelineIds = new Map(manifest.pipelines.map((item) => [item.id, crypto.randomUUID()]));
-  const notebookIds = new Map(manifest.notebooks.map((item) => [item.id, crypto.randomUUID()]));
+  const chatIds = new Map(manifest.chats.map((item) => [item.id, restoredId(item.id)]));
+  const executionIds = new Map(manifest.executions.map((item) => [item.id, restoredId(item.id)]));
+  const runIds = new Map(manifest.runs.map((item) => [item.id, restoredId(item.id)]));
+  const evidenceIds = new Map(manifest.evidence.map((item) => [item.id, restoredId(item.id)]));
+  const fileIds = new Map(manifest.files.map((item) => [item.id, restoredId(item.id)]));
+  const artifactIds = new Map(manifest.artifacts.map((item) => [item.id, restoredId(item.id)]));
+  const methodIds = new Map(manifest.methods.map((item) => [item.id, restoredId(item.id)]));
+  const pipelineIds = new Map(manifest.pipelines.map((item) => [item.id, restoredId(item.id)]));
+  const notebookIds = new Map(manifest.notebooks.map((item) => [item.id, restoredId(item.id)]));
   const chats = manifest.chats.map((chat) => ({
     ...chat,
     id: chatIds.get(chat.id)!,
     workspaceId,
-    title: `${chat.title} (imported)`,
+    title: restoreWorkspaceId ? chat.title : `${chat.title} (imported)`,
     messages: chat.messages.map((message) => ({
       ...message,
       executionId: message.executionId ? executionIds.get(message.executionId) : undefined,
@@ -264,7 +273,7 @@ export async function importWorkspace(
         ?.map((id) => executionIds.get(id))
         .filter(Boolean) as string[] | undefined
     })),
-    updatedAt: now
+    updatedAt: restoreWorkspaceId ? chat.updatedAt : now
   }));
   const files: WorkspaceFile[] = [];
   for (const metadata of manifest.files) {
@@ -288,10 +297,10 @@ export async function importWorkspace(
       executionId: metadata.executionId ? executionIds.get(metadata.executionId) : undefined,
       data: fileData,
       viewer: metadata.viewer ? { ...metadata.viewer, viewerUrl: "" } : undefined,
-      state: fileData || metadata.source === "omero" ? metadata.state : "missing",
+      state: fileData || metadata.source === "omero" || metadata.remoteResult ? metadata.state : "missing",
       logicalPath: metadata.logicalPath.replace(
         manifest.workspace.rootPath,
-        `${manifest.workspace.rootPath}--imported`
+        restoreWorkspaceId ? manifest.workspace.rootPath : `${manifest.workspace.rootPath}--imported`
       )
     });
   }
@@ -317,7 +326,7 @@ export async function importWorkspace(
       .filter(Boolean) as string[],
     steps: run.steps.map((step) => ({
       ...step,
-      stepId: crypto.randomUUID(),
+      stepId: restoredId(step.stepId),
       methodId: methodIds.get(step.methodId) || step.methodId,
       executionIds: step.executionIds
         .map((executionId) => executionIds.get(executionId))
@@ -332,7 +341,7 @@ export async function importWorkspace(
       ...version,
       executionId: executionIds.get(version.executionId) || ""
     })),
-    updatedAt: now
+    updatedAt: restoreWorkspaceId ? method.updatedAt : now
   }));
   const pipelines = manifest.pipelines.map((pipeline) => ({
     ...pipeline,
@@ -340,10 +349,10 @@ export async function importWorkspace(
     workspaceId,
     steps: pipeline.steps.map((step) => ({
       ...step,
-      id: crypto.randomUUID(),
+      id: restoredId(step.id),
       methodId: methodIds.get(step.methodId) || step.methodId
     })),
-    updatedAt: now
+    updatedAt: restoreWorkspaceId ? pipeline.updatedAt : now
   }));
   const notebooks = manifest.notebooks.map((notebook) => ({
     ...notebook,
@@ -352,18 +361,18 @@ export async function importWorkspace(
     selectedDataFileIds: notebook.selectedDataFileIds
       .map((id) => fileIds.get(id))
       .filter(Boolean) as string[],
-    updatedAt: now
+    updatedAt: restoreWorkspaceId ? notebook.updatedAt : now
   }));
   const activeChatId = chatIds.get(manifest.workspace.activeChatId) || chats[0]?.id;
   if (!activeChatId) throw new Error("Workspace archive contains no chats");
   const workspaceRecord: WorkspaceRecord = {
     ...manifest.workspace,
     id: workspaceId,
-    contextKey: currentContext
+    contextKey: restoreWorkspaceId ? `${manifest.workspace.contextKey.split(":workspace:")[0].split(":import:")[0]}:workspace:${restoreWorkspaceId}` : currentContext
       ? `${currentContext.user_id}:${currentContext.group_id}:${currentContext.object_type}:${currentContext.object_id}:import:${workspaceId}`
       : `${manifest.workspace.contextKey}:import:${workspaceId}`,
-    rootPath: `${manifest.workspace.rootPath}--imported`,
-    name: `${manifest.workspace.name} (imported)`,
+    rootPath: restoreWorkspaceId ? manifest.workspace.rootPath : `${manifest.workspace.rootPath}--imported`,
+    name: restoreWorkspaceId ? manifest.workspace.name : `${manifest.workspace.name} (imported)`,
     objectType: currentContext?.object_type || manifest.workspace.objectType,
     objectId: currentContext?.object_id || manifest.workspace.objectId,
     userId: currentContext?.user_id ?? manifest.workspace.userId,
@@ -375,8 +384,8 @@ export async function importWorkspace(
       groupId: manifest.workspace.groupId,
       snapshotAnnotationId: manifest.workspace.sourceWorkspaceSnapshotAnnotationId
     },
-    createdAt: now,
-    updatedAt: now
+    createdAt: restoreWorkspaceId ? manifest.workspace.createdAt : now,
+    updatedAt: restoreWorkspaceId ? manifest.workspace.updatedAt : now
   };
   const artifacts = manifest.artifacts.map((artifact) => ({
     ...artifact,

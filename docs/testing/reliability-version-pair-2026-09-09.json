@@ -1,0 +1,10 @@
+{
+  "package": "omero-analysis",
+  "version": "0.14.0",
+  "wheel_sha256": "c62544c3195e10a60135936cbce9987f73dbe4d2bcbb1875fbcd1060393820f4",
+  "analysis_branch": "analysis_integration",
+  "worker_commit": "62fdb1eff654b1a2510058bee4f4c8391c59645b",
+  "omero_web": "5.31.1",
+  "image_id": "sha256:b9f7fdab159f40d53378970c7f82e9d031d35f901ce7ad3db6b3730616e2ff03",
+  "analysis_implementation_commit": "1a0fa8cb4de1acd1f60213121a68441ed4c029cc"
+}

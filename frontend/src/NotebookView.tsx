@@ -3,6 +3,7 @@ import { PythonRuntime } from "./runtime";
 import { MarkdownPreview, PythonPreview } from "./components/WorkspacePanels";
 import { ActionIcon } from "./components/ActionIcon";
 import { Button } from "./components/BlueprintControls";
+import { parameterDefaults, parseNotebookProtocol } from "./notebookProtocol";
 import type {
   NotebookCell,
   NotebookDocument,
@@ -78,6 +79,15 @@ export function parseNotebook(data: ArrayBuffer): NotebookDocument {
 
 export function serializeNotebook(document: NotebookDocument): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(document, null, 2));
+}
+
+export function clearNotebookInlineState(document: NotebookDocument): NotebookDocument {
+  return {
+    ...document,
+    cells: document.cells.map((cell) => cell.cell_type === "code"
+      ? { ...cell, execution_count: null, outputs: [] }
+      : cell)
+  };
 }
 
 const INPUT_BINDINGS_KIND = "input-bindings";
@@ -301,8 +311,13 @@ interface Props {
   inputs: WorkspaceFile[];
   runtime: PythonRuntime;
   runRequest: { id: string; nonce: number } | null;
+  onRunRequestConsumed?: () => void;
+  onRunStateChange?: (running: boolean) => void;
   workspaceActions: ReactNode;
-  onBeforeRun: () => Promise<void>;
+  onBeforeRun: (record: NotebookRecord) => Promise<
+    WorkspaceFile[] | { inputs: WorkspaceFile[]; notebook: NotebookRecord } | void
+  >;
+  onPrepareProtocol?: (record: NotebookRecord) => Promise<NotebookRecord>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
   onSelect?: (id: string) => void;
@@ -312,11 +327,17 @@ interface Props {
 export default function NotebookView(props: Props) {
   const {
     notebook, notebooks = notebook ? [notebook] : [], inputs, runtime, runRequest, workspaceActions,
-    onBeforeRun, onChange, onFiles, onSelect, onEdit
+    onRunRequestConsumed, onRunStateChange,
+    onBeforeRun, onPrepareProtocol, onChange, onFiles, onSelect, onEdit
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
   const lastRunRequest = useRef(0);
+  const stopRequested = useRef(false);
+
+  function checkStopped() {
+    if (stopRequested.current) throw new Error("Notebook stopped");
+  }
 
   async function executeCell(
     index: number,
@@ -328,6 +349,7 @@ export default function NotebookView(props: Props) {
     if (cell.cell_type !== "code") return base;
     try {
       const result = await runtime.runNotebookCell(sourceText(cell));
+      checkStopped();
       const changed: NotebookRecord = {
         ...base,
         document: {
@@ -342,12 +364,24 @@ export default function NotebookView(props: Props) {
               : candidate
           )
         },
+        protocolRuns: base.protocolRuns?.map((run, runIndex, runs) =>
+          runIndex === runs.length - 1 && run.status === "running"
+            ? {
+                ...run,
+                outputs: [
+                  ...run.outputs,
+                  ...result.files.map((file) => ({ name: file.name, size: file.data.byteLength }))
+                ]
+              }
+            : run
+        ),
         updatedAt: new Date().toISOString()
       };
       await onFiles(changed, result.files);
       await onChange(changed);
       return changed;
     } catch (error) {
+      const message = String(error instanceof Error ? error.message : error);
       const failed: NotebookRecord = {
         ...base,
         document: {
@@ -358,28 +392,46 @@ export default function NotebookView(props: Props) {
               : candidate
           )
         },
+        protocolRuns: base.protocolRuns?.map((run, runIndex, runs) =>
+          runIndex === runs.length - 1 && run.status === "running"
+            ? { ...run, status: "failed", error: message, completedAt: new Date().toISOString() }
+            : run
+        ),
         updatedAt: new Date().toISOString()
       };
       await onChange(failed);
-      setStatus(`Stopped at cell ${index + 1}: ${String(error)}`);
+      setStatus(stopRequested.current ? "Notebook stopped." : `Stopped at cell ${index + 1}: ${message}`);
       return null;
     }
   }
 
   async function attachInputs(
     record: NotebookRecord,
-    startRuntime = true
+    startRuntime = true,
+    preparedInputs?: WorkspaceFile[]
   ): Promise<NotebookRecord> {
+    if (startRuntime && !running) stopRequested.current = false;
     setStatus("Attaching current Workspace input data…");
-    if (startRuntime) await onBeforeRun();
-    await runtime.syncInputs(inputs);
-    const readyInputs = inputs.filter(
+    const preparation = startRuntime ? await onBeforeRun(record) : undefined;
+    checkStopped();
+    const preparedRecord = preparation && !Array.isArray(preparation)
+      ? preparation.notebook
+      : record;
+    const currentInputs = startRuntime
+      ? Array.isArray(preparation) ? preparation : preparation?.inputs || inputs
+      : preparedInputs || inputs;
+    await runtime.syncInputs(currentInputs);
+    checkStopped();
+    const readyInputs = currentInputs.filter(
       (file) => file.source !== "result" && file.state === "ready" &&
         !file.deletedAt && Boolean(file.data)
     );
+    const protocol = parseNotebookProtocol(preparedRecord.document);
     const changed = {
-      ...record,
-      document: reattachNotebookDocument(record.document, readyInputs),
+      ...preparedRecord,
+      document: protocol
+        ? preparedRecord.document
+        : reattachNotebookDocument(preparedRecord.document, readyInputs),
       selectedDataFileIds: readyInputs.map((file) => file.id),
       updatedAt: new Date().toISOString()
     };
@@ -390,47 +442,108 @@ export default function NotebookView(props: Props) {
 
   async function runAll() {
     if (!notebook || running) return;
+    stopRequested.current = false;
     setRunning(true);
+    onRunStateChange?.(true);
     try {
-      setStatus("Preparing the notebook and current input data…");
-      await onBeforeRun();
+      let working: NotebookRecord | null = {
+        ...notebook,
+        document: clearNotebookInlineState(notebook.document),
+        updatedAt: new Date().toISOString()
+      };
+      await onChange(working);
+      setStatus("Starting browser Python (the first run can take a minute)...");
+      // Reset first: onBeforeRun may materialize remote-query CSV bindings in
+      // /remote-query. Resetting afterward would delete those files before the
+      // first notebook cell can consume them.
       await runtime.reset();
-      let working: NotebookRecord | null = await attachInputs(notebook, false);
+      checkStopped();
+      setStatus("Loading source data and checking query access...");
+      const preparation = await onBeforeRun(working);
+      checkStopped();
+      if (preparation && !Array.isArray(preparation)) working = preparation.notebook;
+      const preparedInputs = Array.isArray(preparation)
+        ? preparation
+        : preparation?.inputs || inputs;
+      working = await attachInputs(working, false, preparedInputs);
+      setStatus("Binding notebook inputs and preparing queries...");
+      if (onPrepareProtocol) working = await onPrepareProtocol(working);
+      checkStopped();
+      if (parseNotebookProtocol(working.document)) {
+        const run = {
+          startedAt: new Date().toISOString(),
+          parameters: {
+            ...parameterDefaults(parseNotebookProtocol(working.document)!),
+            ...(working.parameterValues || {})
+          },
+          sources: (working.protocolBindings || []).map((binding) => ({
+            inputId: binding.inputId,
+            name: binding.name,
+            schemaDigest: binding.schemaDigest,
+            sourceDigest: binding.sourceDigest
+          })),
+          outputs: [],
+          status: "running" as const
+        };
+        working = { ...working, protocolRuns: [...(working.protocolRuns || []), run] };
+        await onChange(working);
+      }
       let count = 1;
       for (let index = 0; working && index < working.document.cells.length; index += 1) {
+        checkStopped();
         if (working.document.cells[index].cell_type !== "code") continue;
         setStatus(`Running cell ${index + 1}…`);
         working = await executeCell(index, count++, working);
         if (!working) break;
       }
-      setStatus((value) => value.startsWith("Stopped") ? value : "Notebook run completed.");
+      if (working && working.protocolRuns?.at(-1)?.status === "running") {
+        working = {
+          ...working,
+          protocolRuns: working.protocolRuns.map((run, index, runs) =>
+            index === runs.length - 1
+              ? { ...run, status: "success" as const, completedAt: new Date().toISOString() }
+              : run
+          ),
+          updatedAt: new Date().toISOString()
+        };
+        await onChange(working);
+      }
+      setStatus((value) => stopRequested.current ? "Notebook stopped." : value.startsWith("Stopped") ? value : "Notebook run completed.");
     } catch (error) {
-      setStatus(`Notebook could not start: ${String(error)}`);
+      setStatus(stopRequested.current ? "Notebook stopped." : `Notebook could not start: ${String(error)}`);
     } finally {
       setRunning(false);
+      onRunStateChange?.(false);
     }
   }
 
+  async function updateParameter(name: string, value: boolean | number | string | null) {
+    if (!notebook) return;
+    await onChange({
+      ...notebook,
+      parameterValues: { ...(notebook.parameterValues || {}), [name]: value },
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  let protocol = null;
+  try {
+    protocol = notebook ? parseNotebookProtocol(notebook.document) : null;
+  } catch {
+    protocol = null;
+  }
+
   async function stopReset() {
+    stopRequested.current = true;
     runtime.stop();
-    setRunning(false);
-    setStatus("Execution stopped; restoring the isolated Python kernel…");
-    await runtime.start(inputs);
-    setStatus("Execution stopped. The kernel is ready.");
+    setStatus("Stopping Notebook…");
   }
 
   async function clearOutputs() {
     if (!notebook) return;
     const changed = {
       ...notebook,
-      document: {
-        ...notebook.document,
-        cells: notebook.document.cells.map((cell) =>
-          cell.cell_type === "code"
-            ? { ...cell, execution_count: null, outputs: [] }
-            : cell
-        )
-      },
+      document: clearNotebookInlineState(notebook.document),
       updatedAt: new Date().toISOString()
     };
     await onChange(changed);
@@ -444,14 +557,16 @@ export default function NotebookView(props: Props) {
       runRequest.nonce !== lastRunRequest.current
     ) {
       lastRunRequest.current = runRequest.nonce;
+      onRunRequestConsumed?.();
       void runAll();
     }
-  }, [runRequest, notebook?.id]);
+  }, [runRequest, notebook?.id, onRunRequestConsumed]);
 
   return (
     <section className="notebook-tab" aria-label="Notebook">
       <div className="notebook-toolbar">
         <select className="notebook-selector" aria-label="Notebook"
+          title={notebook?.name || "No notebook selected"}
           value={notebook?.id || ""} disabled={!notebooks.length || running}
           onChange={(event) => onSelect?.(event.target.value)}>
           {!notebooks.length && <option value="">No notebook selected</option>}
@@ -469,10 +584,66 @@ export default function NotebookView(props: Props) {
         </div>
       </div>
       <p className="notebook-status" role="status">{status}</p>
-      {!notebook ? (
-        <div className="notebook-empty">Choose a Notebook from the Workspace explorer.</div>
-      ) : (
-        <div className="notebook-cells">
+      <div className="notebook-content">
+        {notebook?.portabilityWarning && (
+          <p className="notebook-portability-warning" role="status">{notebook.portabilityWarning}</p>
+        )}
+        {notebook && protocol && protocol.parameters.length > 0 && (
+          <section className="notebook-parameters" aria-label="Notebook parameters">
+          <div>
+            <strong>Notebook parameters</strong>
+            <small>Values are stored with this Notebook and captured in every run.</small>
+          </div>
+          <div className="notebook-parameter-grid">
+            {protocol.parameters.map((parameter) => {
+              const value = notebook.parameterValues?.[parameter.name] ?? parameter.default ?? null;
+              const choices = parameter.choices || notebook.parameterChoices?.[parameter.name] || [];
+              const choiceLabels = notebook.parameterChoiceLabels?.[parameter.name] || [];
+              const label = parameter.label || parameter.name;
+              if (parameter.type === "boolean") return (
+                <label key={parameter.name} className="notebook-parameter boolean">
+                  <input type="checkbox" checked={Boolean(value)} disabled={running}
+                    onChange={(event) => void updateParameter(parameter.name, event.target.checked)} />
+                  <span><strong>{label}</strong>{parameter.help && <small>{parameter.help}</small>}</span>
+                </label>
+              );
+              if (parameter.type === "choice") return (
+                <label key={parameter.name} className="notebook-parameter">
+                  <span>{label}</span>
+                  <select value={String(choices.findIndex((choice) => Object.is(choice, value)))} disabled={running || choices.length === 0}
+                    onChange={(event) => void updateParameter(parameter.name, choices[Number(event.target.value)] ?? null)}>
+                    {choices.length === 0 && <option value="">Choices load from the bound database at run time</option>}
+                    {choices.map((choice, index) => <option key={`${typeof choice}:${String(choice)}`} value={String(index)}>{choiceLabels[index] || String(choice)}</option>)}
+                  </select>
+                  {parameter.help && <small>{parameter.help}</small>}
+                </label>
+              );
+              return (
+                <label key={parameter.name} className="notebook-parameter">
+                  <span>{label}</span>
+                  <input
+                    type={parameter.type === "integer" || parameter.type === "number" ? "number" : "text"}
+                    value={value == null ? "" : String(value)}
+                    min={parameter.minimum} max={parameter.maximum} step={parameter.step}
+                    disabled={running}
+                    onChange={(event) => void updateParameter(
+                      parameter.name,
+                      event.target.value === "" ? null :
+                        parameter.type === "integer" ? Number.parseInt(event.target.value, 10) :
+                          parameter.type === "number" ? Number.parseFloat(event.target.value) : event.target.value
+                    )}
+                  />
+                  {parameter.help && <small>{parameter.help}</small>}
+                </label>
+              );
+            })}
+          </div>
+          </section>
+        )}
+        {!notebook ? (
+          <div className="notebook-empty">Choose a Notebook from the Workspace explorer.</div>
+        ) : (
+          <div className="notebook-cells">
           {notebook.document.cells.map((cell, index) => (
             <article className={`notebook-cell ${cell.cell_type}`} key={cell.id || index}>
               <div className="notebook-cell-gutter">
@@ -484,9 +655,12 @@ export default function NotebookView(props: Props) {
                     <MarkdownPreview markdown={sourceText(cell)} />
                   </div>
                 ) : cell.cell_type === "code" ? (
-                  <div className="notebook-source">
+                  <details className="notebook-code">
+                    <summary>Code</summary>
+                    <div className="notebook-source">
                     <PythonPreview code={sourceText(cell)} />
-                  </div>
+                    </div>
+                  </details>
                 ) : (
                   <pre className="notebook-source">{sourceText(cell)}</pre>
                 )}
@@ -498,8 +672,9 @@ export default function NotebookView(props: Props) {
               </div>
             </article>
           ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

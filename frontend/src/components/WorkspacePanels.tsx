@@ -613,8 +613,8 @@ export function ComposerPanel({
       )}
       <div className="status" role="status">{status}</div>
       <div className="usage-status">
-        <span>Ordinary workspace inputs remain browser-local. For selected Assistant attachments, extracted text or metadata-stripped image pixels are sent to the configured AI provider; original PDF and DOCX bytes are never sent.</span>
-        <span>{usageSummary(usage, settings.contextWindow || 0)}</span>
+        <span>Conversations stay in this browser. The configured AI provider receives your messages, bounded analysis summaries, and selected attachment text or image pixels. Original PDF and DOCX bytes are not sent. Reusable analyses save separately to OMERO.</span>
+        <details><summary>Assistant diagnostics</summary><span>{usageSummary(usage, settings.contextWindow || 0)}</span></details>
       </div>
       {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
       {providerMissing ? (
@@ -713,9 +713,9 @@ export function RuntimeProgressPanel({
   const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
   return (
     <div className="runtime-progress" role="status" aria-live="polite">
-      <div><strong>{progress.message}</strong><span>{percent}%</span></div>
-      <progress max="100" value={percent} aria-label={label} />
-      <small>{detail}</small>
+      <div><strong>{progress.message}</strong><span>{progress.indeterminate ? "" : `${percent}%`}</span></div>
+      <progress max="100" value={progress.indeterminate ? undefined : percent} aria-label={label} />
+      <small>{progress.detail || detail}</small>
     </div>
   );
 }
@@ -841,7 +841,7 @@ export function ArtifactInspector({
                   </a>
                 )}
                 <Button onClick={() => onDownload(file)}><ActionIcon name="download" />Download</Button>
-                {canUpload && <Button onClick={() => onAttach(file)}><ActionIcon name="attach" />Attach to OMERO</Button>}
+                {canUpload && <Button onClick={() => onAttach(file)}><ActionIcon name="attach" />Save to my workspace</Button>}
               </div>
             </>
           ) : (

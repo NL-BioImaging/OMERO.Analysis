@@ -15,6 +15,10 @@ from omero_analysis.workspace_sync import (
     _canonical_json,
     _item_marker_values,
     _item_namespace,
+    _inventory_matches_manifest,
+    _active_workspace_import_orders,
+    _reconcile_workspace_journals,
+    _upload_bytes,
     _validate_payload,
     _reconcile_result_attachments,
     plan_sync,
@@ -22,6 +26,24 @@ from omero_analysis.workspace_sync import (
     sync_status,
     validate_inventory,
 )
+from omero_analysis.inplace_storage import AnalysisStorage, StorageCapability
+from omero_analysis import settings as analysis_settings
+
+
+def test_sync_bundle_handles_more_than_django_multipart_file_limit():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from omero_analysis.workspace_sync import bundled_uploads
+    payloads = [f"value-{index}-é".encode() for index in range(101)] + [b""]
+    items = [{"key": str(index), "kind": "result", "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+             for index, data in enumerate(payloads)]
+    request = RequestFactory().post("/", {"payload_bundle": SimpleUploadedFile("bundle.bin", b"".join(payloads))})
+    assert len(request.FILES) == 1
+    parts = bundled_uploads({"items": items}, [item["key"] for item in items], request.FILES["payload_bundle"])
+    assert [_validate_payload(item, part) for item, part in zip(items, parts)] == payloads
+    with pytest.raises(InvalidObject, match="size"):
+        bundled_uploads({"items": items}, ["0"], request.FILES["payload_bundle"])
+    with pytest.raises(InvalidObject, match="keys"):
+        bundled_uploads({"items": items}, ["0", "0"], request.FILES["payload_bundle"])
 
 from .conftest import FakeAnnotation, FakeConnection, FakeObject
 
@@ -74,7 +96,7 @@ def test_inventory_validation_and_empty_plan_are_deterministic():
     assert plan["delete"] == 0
     assert plan["uploadKeys"] == ["method:one"]
     assert plan["uploadBytes"] == 12
-    assert plan["datasetName"] == "Screen-151 — 2DWellTestZarr"
+    assert plan["datasetName"] == "Screen-151 — Cells"
     assert plan["planToken"]
 
 
@@ -192,6 +214,34 @@ def test_template_input_is_a_supported_managed_file_kind():
     assert validated["items"][0]["kind"] == "template-input"
 
 
+def test_upload_bytes_uses_durable_blob_for_inplace_annotation(monkeypatch, tmp_path):
+    blob = tmp_path / "plot.csv"
+    blob.write_bytes(b"x,y\n1,2\n")
+    item = {
+        "key": "result:plot.csv", "kind": "result", "name": "plot.csv",
+        "mimetype": "text/csv",
+    }
+    dataset = FakeObject()
+    captured = {}
+
+    def create(conn, path, **kwargs):
+        captured.update({"path": path, **kwargs})
+        return FakeAnnotation(44, "plot.csv"), "inplace-annotation", None
+
+    monkeypatch.setattr(
+        "omero_analysis.inplace_annotations.create_file_annotation", create
+    )
+    annotation, mode = _upload_bytes(
+        FakeConnection(), dataset, item, blob.read_bytes(),
+        stored={"path": str(blob)},
+    )
+
+    assert annotation.getId() == 44
+    assert mode == "inplace-annotation"
+    assert captured["path"] == str(blob)
+    assert dataset.linked == [annotation]
+
+
 @pytest.mark.parametrize("kind", ["chat-json", "chat-markdown", "chat-attachment"])
 def test_assistant_content_is_not_a_supported_sync_item(kind):
     obj = FakeObject(object_id=151, name="2DWellTestZarr")
@@ -283,6 +333,29 @@ def test_plot_csv_is_linked_to_image_instead_of_dataset():
     assert annotation in image.linked
 
 
+def test_plot_svg_is_linked_to_image_instead_of_dataset():
+    annotation = FakeAnnotation(43, "plot.svg")
+    dataset = FakeObject(object_id=20, annotations=[annotation])
+    image = FakeObject(object_id=30)
+    item = {
+        "key": "result:svg",
+        "kind": "result",
+        "name": "plot.svg",
+        "metadata": {"plotImageKeys": ["result:image"]},
+    }
+
+    _reconcile_result_attachments(
+        FakeConnection(),
+        dataset,
+        [item],
+        {"result:svg": annotation, "result:image": image},
+        {},
+    )
+
+    assert annotation not in dataset.annotations
+    assert annotation in image.linked
+
+
 def test_content_marker_tracks_every_local_result_origin():
     values = _item_marker_values("workspace-1", {
         "key": f"result-content:result:{'a' * 64}",
@@ -339,6 +412,93 @@ def test_status_does_not_adopt_an_unmarked_same_name_project():
     assert status["projectId"] is None
 
 
+def test_identical_content_inventory_is_a_noop():
+    obj = FakeObject(object_id=151)
+    conn = FakeConnection(obj)
+    payload = inventory(obj, conn)
+    manifest = {"content_inventory_digest": hashlib.sha256(
+        _canonical_json({
+            "schema": payload["schema"],
+            "workspace": payload["workspace"],
+            "items": payload["items"],
+        })
+    ).hexdigest()}
+    assert _inventory_matches_manifest(payload, manifest)
+
+
+def test_reconciliation_removes_journal_already_in_manifest(monkeypatch, tmp_path):
+    root = tmp_path / "group"
+    root.mkdir()
+    capability = StorageCapability(
+        mode="inplace", ready=True, failure_code="ready", detail="ok",
+        mapped_root=str(root), group_name="Lab",
+    )
+    storage = AnalysisStorage(capability, 1)
+    item = {
+        "key": "result:plot", "sha256": "a" * 64,
+        "remote": {"objectType": "Image", "objectId": 42},
+    }
+    journal_path = storage.pending_path("4973a18e-9bf2-55a5-9f4f-36efc2eb5a51")
+    storage.write_json(journal_path, {
+        "workspaceId": "workspace-1",
+        "orderUuid": "4973a18e-9bf2-55a5-9f4f-36efc2eb5a51",
+        "items": [{"key": item["key"], "sha256": item["sha256"]}],
+    })
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync._remote_object",
+        lambda conn, remote: object(),
+    )
+
+    result = _reconcile_workspace_journals(
+        object(), object(), {"items": [item]}, storage, "workspace-1"
+    )
+
+    assert result == {"syncState": "complete", "pendingOrderCount": 0}
+    assert storage.read_json(journal_path) is None
+
+
+def test_active_import_count_supports_bounded_parallel_batches(monkeypatch, tmp_path):
+    root = tmp_path / "group"
+    root.mkdir()
+    storage = AnalysisStorage(StorageCapability(
+        mode="inplace", ready=True, failure_code="ready", detail="ok",
+        mapped_root=str(root), group_name="Lab",
+    ), 1)
+    uuids = [
+        "4973a18e-9bf2-55a5-9f4f-36efc2eb5a51",
+        "bbf92cc4-840f-522c-bd45-b79525a405a5",
+        "0522b401-9110-571e-b93b-a07dcfbacc15",
+    ]
+    for order_uuid in uuids:
+        storage.write_json(storage.pending_path(order_uuid), {
+            "workspaceId": "workspace-1", "orderUuid": order_uuid,
+            "createdAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        })
+    events = {
+        uuids[0]: {"state": "pending", "hasTerminalEvent": False},
+        uuids[1]: {"state": "pending", "hasTerminalEvent": False},
+        uuids[2]: {"state": "pending", "hasTerminalEvent": True},
+    }
+    monkeypatch.setattr(
+        "omero_analysis.workspace_sync.latest_ingest_events",
+        lambda order_uuids: {value: events[value] for value in order_uuids},
+    )
+
+    assert _active_workspace_import_orders(storage, "workspace-1") == 2
+
+
+@pytest.mark.parametrize(("configured", "expected"), [
+    (0, 1), (1, 1), (4, 4), (16, 16), (100, 32),
+])
+def test_import_concurrency_is_configurable_and_safely_bounded(
+    monkeypatch, configured, expected
+):
+    monkeypatch.setattr(
+        analysis_settings, "_setting", lambda name, default: configured
+    )
+    assert analysis_settings.import_max_concurrency() == expected
+
+
 def test_changed_payload_limit_is_enforced(settings):
     settings.OMERO_ANALYSIS_MAX_SYNC_CHANGED_BYTES = 5
     obj = FakeObject(object_id=151)
@@ -393,3 +553,38 @@ def test_sync_uses_concrete_omero_container_and_link_models(monkeypatch):
     assert project._obj is not None
     assert dataset._obj is not None
     assert link.__class__.__name__ == "ProjectDatasetLinkI"
+
+
+def test_read_only_source_can_plan_own_workspace_without_source_mutations():
+    obj = FakeObject(can_annotate=False)
+    conn = FakeConnection(obj)
+    plan = plan_sync(request(), conn, obj, inventory(obj, conn))
+    assert plan["planToken"]
+    assert sync_status(conn, obj, "workspace-1")["canSync"]
+    assert not obj.linked
+
+
+def test_workspace_destination_rejects_other_owner(monkeypatch):
+    from omero_analysis import workspace_sync as ws
+    source = FakeObject()
+    source.OMERO_CLASS = "Image"
+    target = FakeObject(object_id=20)
+    conn = FakeConnection(source)
+    monkeypatch.setattr(ws, "_managed_project", lambda *args: object())
+    monkeypatch.setattr(ws, "_managed_dataset", lambda *args: target)
+    monkeypatch.setattr(ws, "_owner_id", lambda obj: conn.user_id + 1)
+    with pytest.raises(PermissionDenied, match="active user"):
+        ws.workspace_destination(conn, source, "workspace-1")
+
+
+def test_first_plot_import_is_serialized_across_workspaces(monkeypatch):
+    from omero_analysis import workspace_sync as ws
+    calls = []
+    monkeypatch.setattr(ws, "_active_workspace_import_orders", lambda storage, wid: calls.append(wid) or 1)
+    monkeypatch.setattr(ws, "import_max_concurrency", lambda: 4)
+    monkeypatch.setattr(ws, "_project_datasets", lambda project: [SimpleNamespace(listChildren=lambda: [])])
+    assert ws._import_capacity(None, None, "mine") == (1, 1)
+    assert calls == [None]
+    monkeypatch.setattr(ws, "_project_datasets", lambda project: [SimpleNamespace(listChildren=lambda: [object()])])
+    assert ws._import_capacity(None, None, "mine") == (1, 4)
+    assert calls == [None, "mine"]

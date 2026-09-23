@@ -141,6 +141,8 @@ class AttachmentInfo:
     object_id: int | None = None
     object_name: str | None = None
     direct: bool = True
+    owner_id: int | None = None
+    owner_name: str | None = None
 
     def to_dict(self):
         return asdict(self)
@@ -176,7 +178,13 @@ def attachment_info(annotation, obj=None, direct=True):
         if namespace == RESULT_NAMESPACE or namespace in LEGACY_RESULT_NAMESPACES
         else "attachment"
     )
+    try:
+        owner = annotation.getDetails().getOwner()
+        owner_id, owner_name = int(owner.getId()), str(owner.getOmeName())
+    except (AttributeError, TypeError, ValueError):
+        owner_id, owner_name = None, None
     return AttachmentInfo(
+        owner_id=owner_id, owner_name=owner_name,
         annotation_id=int(annotation.getId()),
         file_id=int(original.getId()),
         name=name,
@@ -283,6 +291,12 @@ def object_context(object_type, object_id, obj, conn=None):
         user_id = int(conn.getUserId()) if conn is not None else 0
     except (AttributeError, TypeError, ValueError):
         user_id = 0
+    from .workspace_access import can_manage_workspace
+    try:
+        owner = obj.getDetails().getOwner()
+        source_owner_id, source_owner_name = int(owner.getId()), str(owner.getOmeName())
+    except (AttributeError, TypeError, ValueError):
+        source_owner_id, source_owner_name = None, None
     attachments = list_attachment_dicts(obj)
     scoped_attachments = [
         info.to_dict() for _, info in scoped_file_annotations(obj)
@@ -291,9 +305,15 @@ def object_context(object_type, object_id, obj, conn=None):
         "object_type": object_type,
         "object_id": int(object_id),
         "name": str(_plain(obj.getName())),
+        "source_owner_id": source_owner_id,
+        "source_owner_name": source_owner_name,
+        "source_path": source_name_path(object_type, obj),
         "user_id": user_id,
         "group_id": object_group_id(obj),
         "can_annotate": can_annotate(obj),
+        "can_read_source": True,
+        "can_annotate_source": can_annotate(obj),
+        "can_manage_workspace": can_manage_workspace(conn, obj),
         "max_snapshot_bytes": max_upload_bytes(),
         "attachments": attachments,
         "workspace_snapshots": [
@@ -332,6 +352,36 @@ def _hierarchy_item(value):
         "name": name,
         "supported": value_type in SUPPORTED_OBJECT_TYPES,
     }
+
+
+def source_name_path(object_type, obj):
+    """A stable readable ancestry, including HCS parents via WellSample/Well.
+
+    Multiple OMERO parents have no intrinsic order. Choose the first full path
+    by name and ID; only traverse parents readable through the current gateway.
+    """
+    visible = {"Project", "Dataset", "Screen", "Plate", "Image"}
+
+    def walk(value, kind, seen):
+        identity = (kind, int(value.getId()))
+        if identity in seen or len(seen) >= 8:
+            return []
+        parents_method = getattr(value, "listParents", None)
+        parents = list(parents_method()) if callable(parents_method) else []
+        if not parents:
+            parent_method = getattr(value, "getParent", None)
+            parent = parent_method() if callable(parent_method) else None
+            parents = [parent] if parent is not None else []
+        paths = [walk(parent, _object_type(parent), seen | {identity})
+                 for parent in parents if parent is not None]
+        paths = [path for path in paths if path]
+        prefix = min(paths, key=lambda path: [(item['name'].casefold(), item['id']) for item in path]) if paths else []
+        if kind in visible:
+            name = str(_plain(value.getName()) or f"{kind} {identity[1]}")
+            return prefix + [{"type": kind, "id": identity[1], "name": name}]
+        return prefix
+
+    return walk(obj, object_type, set())
 
 
 def object_hierarchy(object_type, object_id, obj):

@@ -6,6 +6,7 @@ import type {
   PipelineRecord,
   WorkspaceFile
 } from "./types";
+import { parseNotebookProtocol } from "./notebookProtocol";
 
 export const INPUT_BINDINGS_KIND = "input-bindings";
 
@@ -21,7 +22,7 @@ interface BindingCandidate {
 }
 
 export class ArtifactBindingError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly referencedName?: string) {
     super(message);
     this.name = "ArtifactBindingError";
   }
@@ -32,6 +33,19 @@ const outputPattern = /["']\/output\/([^"']+)["']/g;
 
 function extension(name: string): string {
   return name.toLowerCase().match(/(\.[^.\\/]+)$/)?.[1] || "";
+}
+
+export function downloadableWorkspaceInputs(
+  referencedName: string,
+  files: WorkspaceFile[]
+): WorkspaceFile[] {
+  const suffix = extension(referencedName);
+  if (!suffix) return [];
+  return files.filter((file) =>
+    file.source === "omero" && Boolean(file.annotationId) &&
+    file.state === "ready" && !file.deletedAt && !file.data &&
+    extension(file.name) === suffix
+  );
 }
 
 function uniqueCandidates(candidates: BindingCandidate[]): BindingCandidate[] {
@@ -67,7 +81,8 @@ function resolveCandidate(
   if (compatible.length === 1) return compatible[0];
   if (!compatible.length) {
     throw new ArtifactBindingError(
-      `Input ${basename} has no ready compatible Workspace file.`
+      `Input ${basename} has no ready compatible Workspace file.`,
+      basename
     );
   }
   throw new ArtifactBindingError(
@@ -99,6 +114,24 @@ export function extractOutputNames(code: string): string[] {
   return Array.from(new Set(
     Array.from(code.matchAll(outputPattern), (match) => match[1])
   ));
+}
+
+/** Inspect saved pins without rebinding or changing the draft. */
+export function pipelineInputState(pipeline: PipelineRecord, methods: MethodRecord[], files: WorkspaceFile[]) {
+  const available = new Set(files.filter(file => file.state === "ready" && !file.deletedAt)
+    .map(file => file.name));
+  return pipeline.steps.map(step => {
+    const method = methods.find(item => item.id === step.methodId && !item.deletedAt);
+    const version = method?.versions.find(item => item.version === step.methodVersion);
+    const names = [...new Set([...extractInputNames(version?.code || ""), ...Object.keys(step.inputBindings)])];
+    const options = [...available].sort();
+    const bindings = names.map(from => {
+      const to = step.inputBindings[from] || from;
+      return { from, to, missing: !available.has(to) };
+    });
+    if (version) extractOutputNames(version.code).forEach(name => available.add(name));
+    return { stepId: step.id, missingMethod: !version, bindings, options };
+  });
 }
 
 function bindCodeWithCandidates(
@@ -167,15 +200,19 @@ export function isInputBindingsCell(cell: NotebookCell): boolean {
 
 export function bindNotebookInputsStrict(
   document: NotebookDocument,
-  files: WorkspaceFile[]
+  files: WorkspaceFile[],
+  preferred: Record<string, string> = {}
 ): { document: NotebookDocument; bindings: InputBinding[] } {
+  if (parseNotebookProtocol(document)) {
+    return { document, bindings: [] };
+  }
   const candidates = workspaceCandidates(files);
   const bindings: InputBinding[] = [];
   const cells = document.cells
     .filter((cell) => !isInputBindingsCell(cell))
     .map((cell) => {
       if (cell.cell_type !== "code") return { ...cell };
-      const rebound = bindCodeWithCandidates(sourceText(cell), candidates);
+      const rebound = bindCodeWithCandidates(sourceText(cell), candidates, preferred);
       bindings.push(...rebound.bindings);
       return { ...cell, source: rebound.code };
     });

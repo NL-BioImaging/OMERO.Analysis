@@ -1,5 +1,6 @@
 import {
   loadOrCreateWorkspace,
+  listContextWorkspaces,
   loadWorkspace,
   newChat,
   deleteChatCascade,
@@ -24,6 +25,19 @@ const context: OmeroContext = {
 };
 
 describe("normalized workspace storage", () => {
+  it("rejects stale tab writes after Trash, Restore and permanent removal", async () => {
+    const original = await loadOrCreateWorkspace({ ...context, object_id: 9182 }, "lifecycle-check");
+    const trashed = await saveWorkspaceRecord({ ...original.workspace, deletedAt: "2026-09-09", browserLifecycleRevision: 1 });
+    await expect(saveWorkspaceRecord(original.workspace)).rejects.toThrow(/lifecycle changed/);
+    await expect(replaceWorkspace(original)).rejects.toThrow(/lifecycle changed/);
+    const restored = await saveWorkspaceRecord({ ...trashed, deletedAt: undefined, browserLifecycleRevision: 2 });
+    expect(restored.lifecycleRevision || 0).toBe(0); // Local Trash does not invent a server revision.
+    await expect(saveWorkspaceRecord(trashed)).rejects.toThrow(/lifecycle changed/);
+    await deleteWorkspaceCascade(original.workspace.id, true);
+    await expect(saveWorkspaceRecord(restored)).rejects.toThrow(/permanently removed/);
+    await expect(replaceWorkspace({ ...original, workspace: restored })).rejects.toThrow(/permanently removed/);
+    expect(await loadWorkspace(original.workspace.id)).toBeUndefined();
+  });
   it("keeps a multi-image selection separate from each individual Image workspace", async () => {
     const selectedContext: OmeroContext = {
       ...context,
@@ -243,4 +257,17 @@ describe("normalized workspace storage", () => {
     expect((await loadWorkspace(workspace.workspace.id))?.evidence.map((item) => item.id))
       .toEqual(["keep"]);
   });
+});
+
+it("keeps multiple named workspaces independent for the same source", async () => {
+  const scope = { ...context, object_id: 9876 };
+  const first = await loadOrCreateWorkspace(scope, "instance-one", "Analysis 1");
+  const second = await loadOrCreateWorkspace(scope, "instance-two", "Analysis 2");
+  const reopened = await loadOrCreateWorkspace(scope, "instance-one", "ignored");
+  expect(first.workspace.id).not.toBe(second.workspace.id);
+  expect(first.chats[0].id).not.toBe(second.chats[0].id);
+  expect(reopened.workspace.name).toBe(`${scope.name} — Analysis 1`);
+  expect(reopened.workspace.id).toBe(first.workspace.id);
+  expect((await listContextWorkspaces(scope)).map(item => item.id).sort())
+    .toEqual([first.workspace.id, second.workspace.id].sort());
 });

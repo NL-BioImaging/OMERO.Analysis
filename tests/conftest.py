@@ -86,6 +86,9 @@ class FakeObject:
     def getName(self):
         return self.name
 
+    def getId(self):
+        return self.object_id
+
     def listAnnotations(self):
         return list(self.annotations) + [
             annotation for annotation in self.linked if annotation not in self.annotations
@@ -117,6 +120,9 @@ class FakeConnection:
         self.deleted = []
 
     def getObject(self, object_type, object_id):
+        if object_type == "OriginalFile":
+            return next((a.getFile() for a in self.obj.listAnnotations()
+                         if hasattr(a, "getFile") and a.getFile().getId() == int(object_id)), None)
         if int(object_id) == self.obj.object_id:
             return self.obj
         return None

@@ -1,0 +1,2496 @@
+{
+  "rows": 100000,
+  "capabilities": {
+    "protocol": "omero-data-query-worker-v1",
+    "worker_version": "0.2.0",
+    "policy_version": "query-policy-v1",
+    "formats": [
+      "duckdb",
+      "sqlite",
+      "csv"
+    ],
+    "csv_table": "data",
+    "parameter_style": "$name",
+    "features": {
+      "result_provenance_v1": true
+    },
+    "engine_versions": {
+      "duckdb": "1.5.5",
+      "sqlite": "3.45.3",
+      "sqlglot": "28.10.1"
+    },
+    "limits": {
+      "query_timeout_seconds": 30,
+      "max_result_rows": 100000,
+      "max_result_bytes": 8388608,
+      "max_source_bytes": 21474836480,
+      "max_concurrent_queries": 4,
+      "max_concurrent_ingestions": 1,
+      "ingestion_timeout_seconds": 600
+    }
+  },
+  "cold_definition": "Distinct query parameters, ingested source; OS cache is not cleared",
+  "memory_definition": "Sampled sum of worker/child RSS, includes shared pages",
+  "records": [
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 1,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.8005054998211563,
+      "p95_seconds": 0.8005054998211563,
+      "peak_process_tree_rss_bytes": 124723200,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 1,
+        "result_bytes": 1830,
+        "hits": 0,
+        "misses": 1,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.8005054998211563,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 1,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.05034599988721311,
+      "p95_seconds": 0.05034599988721311,
+      "peak_process_tree_rss_bytes": 0,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 1,
+        "result_bytes": 1830,
+        "hits": 1,
+        "misses": 1,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.05034599988721311,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 2,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.893346400000155,
+      "p95_seconds": 0.9075909999664873,
+      "peak_process_tree_rss_bytes": 170016768,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 3,
+        "result_bytes": 5490,
+        "hits": 1,
+        "misses": 3,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.9075909999664873,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.893346400000155,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 2,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.12281619990244508,
+      "p95_seconds": 0.14193849987350404,
+      "peak_process_tree_rss_bytes": 80437248,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 3,
+        "result_bytes": 5490,
+        "hits": 3,
+        "misses": 3,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.14193849987350404,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.12281619990244508,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 4,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 1.228669699979946,
+      "p95_seconds": 1.2298421999439597,
+      "peak_process_tree_rss_bytes": 261668864,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 7,
+        "result_bytes": 12880,
+        "hits": 3,
+        "misses": 7,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.1828991998918355,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.228669699979946,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.2298421999439597,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 1.2297658000607044,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 4,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.20161069999448955,
+      "p95_seconds": 0.20305160013958812,
+      "peak_process_tree_rss_bytes": 81629184,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 7,
+        "result_bytes": 12880,
+        "hits": 7,
+        "misses": 7,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.20305160013958812,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.20207079988904297,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.14552620006725192,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 0.20161069999448955,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 278
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 8,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.18940840009599924,
+      "p95_seconds": 1.5328989999834448,
+      "peak_process_tree_rss_bytes": 259792896,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 11,
+        "result_bytes": 20366,
+        "hits": 7,
+        "misses": 15,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 0.18940840009599924,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.18794690002687275,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.5328989999834448,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 0.18760179984383285,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.18796360003761947,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.4870808001141995,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 279
+        },
+        {
+          "seconds": 1.4868507001083344,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 1.4629420000128448,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 279
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "aggregate",
+      "concurrency": 8,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.31620330014266074,
+      "p95_seconds": 1.7195903998799622,
+      "peak_process_tree_rss_bytes": 278392832,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 15,
+        "result_bytes": 27778,
+        "hits": 11,
+        "misses": 19,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.7193434000946581,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.7192182000726461,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.31475879997015,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 1.7195903998799622,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 1.696195799857378,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 0.28867370006628335,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 279
+        },
+        {
+          "seconds": 0.3154311999678612,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 0.31620330014266074,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 279
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 1,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 1.755339400144294,
+      "p95_seconds": 1.755339400144294,
+      "peak_process_tree_rss_bytes": 147636224,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 16,
+        "result_bytes": 5735120,
+        "hits": 11,
+        "misses": 20,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.755339400144294,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700630
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 1,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.13671129988506436,
+      "p95_seconds": 0.13671129988506436,
+      "peak_process_tree_rss_bytes": 82874368,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 16,
+        "result_bytes": 5735120,
+        "hits": 12,
+        "misses": 20,
+        "bypasses": 0,
+        "evictions": 0,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.13671129988506436,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700630
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 2,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 1.9968896999489516,
+      "p95_seconds": 2.0041227999608964,
+      "peak_process_tree_rss_bytes": 212967424,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 2,
+        "result_bytes": 11414660,
+        "hits": 12,
+        "misses": 22,
+        "bypasses": 0,
+        "evictions": 16,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.9968896999489516,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700630
+        },
+        {
+          "seconds": 2.0041227999608964,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700596
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 2,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.23154189996421337,
+      "p95_seconds": 0.2533627999946475,
+      "peak_process_tree_rss_bytes": 83120128,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 2,
+        "result_bytes": 11414660,
+        "hits": 14,
+        "misses": 22,
+        "bypasses": 0,
+        "evictions": 16,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.2533627999946475,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700630
+        },
+        {
+          "seconds": 0.23154189996421337,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700596
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 4,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 1.8165120999328792,
+      "p95_seconds": 1.9245691001415253,
+      "peak_process_tree_rss_bytes": 343818240,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 14,
+        "misses": 26,
+        "bypasses": 0,
+        "evictions": 18,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 1.8165120999328792,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.893796700052917,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.9245691001415253,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.8020073000807315,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 4,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 1.877016199985519,
+      "p95_seconds": 2.08813549997285,
+      "peak_process_tree_rss_bytes": 342953984,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 1,
+        "result_bytes": 5707319,
+        "hits": 14,
+        "misses": 30,
+        "bypasses": 0,
+        "evictions": 18,
+        "active_queries": 0
+      },
+      "failures": 3,
+      "requests": [
+        {
+          "seconds": 1.760213099885732,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.08813549997285,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700596
+        },
+        {
+          "seconds": 1.877016199985519,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.877024000044912,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 8,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.19461550004780293,
+      "p95_seconds": 1.7437406999524683,
+      "peak_process_tree_rss_bytes": 342745088,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 14,
+        "misses": 38,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 8,
+      "requests": [
+        {
+          "seconds": 1.7386361001990736,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7437406999524683,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.19366830005310476,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7395824999548495,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.19325150013901293,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.19461550004780293,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.19342929986305535,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7234582998789847,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "csv",
+      "kind": "full",
+      "concurrency": 8,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.1760148000903428,
+      "p50_seconds": 0.20520369987934828,
+      "p95_seconds": 1.6438459001947194,
+      "peak_process_tree_rss_bytes": 343265280,
+      "cache": {
+        "source_count": 1,
+        "source_bytes": 7286887,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 14,
+        "misses": 46,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 8,
+      "requests": [
+        {
+          "seconds": 1.6395448001567274,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.20370279997587204,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.6393727001268417,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.20268109999597073,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.20387159986421466,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.6438459001947194,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.537347299978137,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.20520369987934828,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 1,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.704268200090155,
+      "p95_seconds": 0.704268200090155,
+      "peak_process_tree_rss_bytes": 135159808,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 1,
+        "result_bytes": 1830,
+        "hits": 14,
+        "misses": 47,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.704268200090155,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 1,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.0958787000272423,
+      "p95_seconds": 0.0958787000272423,
+      "peak_process_tree_rss_bytes": 85286912,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 1,
+        "result_bytes": 1830,
+        "hits": 15,
+        "misses": 47,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.0958787000272423,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 2,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.8473958999384195,
+      "p95_seconds": 0.8481084001250565,
+      "peak_process_tree_rss_bytes": 176033792,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 3,
+        "result_bytes": 5490,
+        "hits": 15,
+        "misses": 49,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.8473958999384195,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.8481084001250565,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 2,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.12231200002133846,
+      "p95_seconds": 0.14131109998561442,
+      "peak_process_tree_rss_bytes": 85307392,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 3,
+        "result_bytes": 5490,
+        "hits": 17,
+        "misses": 49,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.12231200002133846,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.14131109998561442,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 4,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 1.1175353999715298,
+      "p95_seconds": 1.1261607999913394,
+      "peak_process_tree_rss_bytes": 265117696,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 7,
+        "result_bytes": 12880,
+        "hits": 17,
+        "misses": 53,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.117876200005412,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.096123600145802,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.1261607999913394,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 1.1175353999715298,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 4,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.21655060001648962,
+      "p95_seconds": 0.21776780020445585,
+      "peak_process_tree_rss_bytes": 85397504,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 7,
+        "result_bytes": 12880,
+        "hits": 21,
+        "misses": 53,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.21655060001648962,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.21773190004751086,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.19049700000323355,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 0.21776780020445585,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 278
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 8,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.2166593000292778,
+      "p95_seconds": 1.4917154000140727,
+      "peak_process_tree_rss_bytes": 259915776,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 11,
+        "result_bytes": 20296,
+        "hits": 21,
+        "misses": 61,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 1.4904406000860035,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.4917154000140727,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.2095824999269098,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.2166593000292778,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.21636969991959631,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.4906851998530328,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 279
+        },
+        {
+          "seconds": 0.212208200013265,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.49012909992598,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 279
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "aggregate",
+      "concurrency": 8,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.3047515000216663,
+      "p95_seconds": 1.667131399968639,
+      "peak_process_tree_rss_bytes": 283635712,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 15,
+        "result_bytes": 27778,
+        "hits": 25,
+        "misses": 65,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.304372200043872,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 0.24231510004028678,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        },
+        {
+          "seconds": 1.667131399968639,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 267
+        },
+        {
+          "seconds": 1.666943500051275,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 1.6458145999349654,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 0.3026787000708282,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 279
+        },
+        {
+          "seconds": 1.6656506001017988,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 278
+        },
+        {
+          "seconds": 0.3047515000216663,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 279
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 1,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 1.7808384001255035,
+      "p95_seconds": 1.7808384001255035,
+      "peak_process_tree_rss_bytes": 149282816,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 16,
+        "result_bytes": 5735123,
+        "hits": 25,
+        "misses": 66,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.7808384001255035,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700630
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 1,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.16316509991884232,
+      "p95_seconds": 0.16316509991884232,
+      "peak_process_tree_rss_bytes": 84439040,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 16,
+        "result_bytes": 5735123,
+        "hits": 26,
+        "misses": 66,
+        "bypasses": 0,
+        "evictions": 19,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.16316509991884232,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700630
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 2,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 1.9106040999758989,
+      "p95_seconds": 1.9204294998198748,
+      "peak_process_tree_rss_bytes": 214089728,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 2,
+        "result_bytes": 11414668,
+        "hits": 26,
+        "misses": 68,
+        "bypasses": 0,
+        "evictions": 35,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.9204294998198748,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700630
+        },
+        {
+          "seconds": 1.9106040999758989,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700596
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 2,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.20782690006308258,
+      "p95_seconds": 0.21689260005950928,
+      "peak_process_tree_rss_bytes": 84668416,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 2,
+        "result_bytes": 11414668,
+        "hits": 28,
+        "misses": 68,
+        "bypasses": 0,
+        "evictions": 35,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.20782690006308258,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700630
+        },
+        {
+          "seconds": 0.21689260005950928,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700596
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 4,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 1.7979756998829544,
+      "p95_seconds": 1.8480792997870594,
+      "peak_process_tree_rss_bytes": 343437312,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 28,
+        "misses": 72,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 1.8477138001471758,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.8480792997870594,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7553288000635803,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7979756998829544,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 4,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 1.5632511998992413,
+      "p95_seconds": 1.5640420001000166,
+      "peak_process_tree_rss_bytes": 342581248,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 28,
+        "misses": 76,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 1.5640420001000166,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.5632511998992413,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.5630929998587817,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.5638055000454187,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 8,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.1930508001241833,
+      "p95_seconds": 1.7424747000914067,
+      "peak_process_tree_rss_bytes": 343695360,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 28,
+        "misses": 84,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 8,
+      "requests": [
+        {
+          "seconds": 1.644370200112462,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.1930508001241833,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.1919716999400407,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.651090599829331,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.6444261998403817,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7424747000914067,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.19108170014806092,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.19165449985302985,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "duckdb",
+      "kind": "full",
+      "concurrency": 8,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 0.6459033000282943,
+      "p50_seconds": 0.20326069998554885,
+      "p95_seconds": 1.84419049997814,
+      "peak_process_tree_rss_bytes": 344301568,
+      "cache": {
+        "source_count": 2,
+        "source_bytes": 8873166,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 28,
+        "misses": 92,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 8,
+      "requests": [
+        {
+          "seconds": 0.2019142999779433,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7657511001452804,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.84419049997814,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7655289000831544,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.2007210000883788,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.20160840009339154,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.7647736000362784,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.20326069998554885,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 1,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.7952119000256062,
+      "p95_seconds": 0.7952119000256062,
+      "peak_process_tree_rss_bytes": 137297920,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 1,
+        "result_bytes": 1688,
+        "hits": 28,
+        "misses": 93,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.7952119000256062,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 186
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 1,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.08751529990695417,
+      "p95_seconds": 0.08751529990695417,
+      "peak_process_tree_rss_bytes": 86953984,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 1,
+        "result_bytes": 1688,
+        "hits": 29,
+        "misses": 93,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.08751529990695417,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 186
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 2,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.9038695001509041,
+      "p95_seconds": 0.9100926998071373,
+      "peak_process_tree_rss_bytes": 186900480,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 3,
+        "result_bytes": 5064,
+        "hits": 29,
+        "misses": 95,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.9100926998071373,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 186
+        },
+        {
+          "seconds": 0.9038695001509041,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 185
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 2,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.1119055999442935,
+      "p95_seconds": 0.1304913000203669,
+      "peak_process_tree_rss_bytes": 86953984,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 3,
+        "result_bytes": 5064,
+        "hits": 31,
+        "misses": 95,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.1304913000203669,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 186
+        },
+        {
+          "seconds": 0.1119055999442935,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 185
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 4,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 1.2536382998805493,
+      "p95_seconds": 1.2547254001256078,
+      "peak_process_tree_rss_bytes": 288698368,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 7,
+        "result_bytes": 11884,
+        "hits": 31,
+        "misses": 99,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 1.2547090998850763,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 186
+        },
+        {
+          "seconds": 1.2547254001256078,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 185
+        },
+        {
+          "seconds": 1.2298767000902444,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 197
+        },
+        {
+          "seconds": 1.2536382998805493,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 208
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 4,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.21222530002705753,
+      "p95_seconds": 0.21412630006670952,
+      "peak_process_tree_rss_bytes": 87019520,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 7,
+        "result_bytes": 11884,
+        "hits": 35,
+        "misses": 99,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.21372779994271696,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 186
+        },
+        {
+          "seconds": 0.15136340004391968,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 185
+        },
+        {
+          "seconds": 0.21222530002705753,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 197
+        },
+        {
+          "seconds": 0.21412630006670952,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 208
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 8,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.21219919994473457,
+      "p95_seconds": 1.5707645998336375,
+      "peak_process_tree_rss_bytes": 286806016,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 11,
+        "result_bytes": 18892,
+        "hits": 35,
+        "misses": 107,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 1.5707645998336375,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 186
+        },
+        {
+          "seconds": 1.570734899956733,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 185
+        },
+        {
+          "seconds": 0.2101581001188606,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.21219919994473457,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.2111407001502812,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.21067199995741248,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.4972212000284344,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 244
+        },
+        {
+          "seconds": 1.522918100003153,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "aggregate",
+      "concurrency": 8,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.3033716999925673,
+      "p95_seconds": 1.7072954000905156,
+      "peak_process_tree_rss_bytes": 274874368,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 15,
+        "result_bytes": 25872,
+        "hits": 39,
+        "misses": 111,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.3033716999925673,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 186
+        },
+        {
+          "seconds": 0.30283029982820153,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 185
+        },
+        {
+          "seconds": 1.6714522999245673,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 197
+        },
+        {
+          "seconds": 1.6971577999647707,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 208
+        },
+        {
+          "seconds": 1.7065099000465125,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 220
+        },
+        {
+          "seconds": 1.7072954000905156,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 232
+        },
+        {
+          "seconds": 0.2380774999037385,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 244
+        },
+        {
+          "seconds": 0.3033349998295307,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 255
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 1,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 2.188619799911976,
+      "p95_seconds": 2.188619799911976,
+      "peak_process_tree_rss_bytes": 138334208,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 16,
+        "result_bytes": 5733209,
+        "hits": 39,
+        "misses": 112,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 2.188619799911976,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700630
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 1,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.14603259996511042,
+      "p95_seconds": 0.14603259996511042,
+      "peak_process_tree_rss_bytes": 87044096,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 16,
+        "result_bytes": 5733209,
+        "hits": 40,
+        "misses": 112,
+        "bypasses": 0,
+        "evictions": 37,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.14603259996511042,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700630
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 2,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 2.2862150000873953,
+      "p95_seconds": 2.303689999971539,
+      "peak_process_tree_rss_bytes": 189706240,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 2,
+        "result_bytes": 11414650,
+        "hits": 40,
+        "misses": 114,
+        "bypasses": 0,
+        "evictions": 53,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 2.303689999971539,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700630
+        },
+        {
+          "seconds": 2.2862150000873953,
+          "http_status": 200,
+          "cache_status": "miss",
+          "error": null,
+          "transfer_bytes": 5700596
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 2,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.2339326001238078,
+      "p95_seconds": 0.25909879989922047,
+      "peak_process_tree_rss_bytes": 87060480,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 2,
+        "result_bytes": 11414650,
+        "hits": 42,
+        "misses": 114,
+        "bypasses": 0,
+        "evictions": 53,
+        "active_queries": 0
+      },
+      "failures": 0,
+      "requests": [
+        {
+          "seconds": 0.2339326001238078,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700630
+        },
+        {
+          "seconds": 0.25909879989922047,
+          "http_status": 200,
+          "cache_status": "hit",
+          "error": null,
+          "transfer_bytes": 5700596
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 4,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 2.143511400092393,
+      "p95_seconds": 2.154779699863866,
+      "peak_process_tree_rss_bytes": 292040704,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 42,
+        "misses": 118,
+        "bypasses": 0,
+        "evictions": 55,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 2.143511400092393,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.154779699863866,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.1507615000009537,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.053293599979952,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 4,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 2.3072780000511557,
+      "p95_seconds": 2.308319400064647,
+      "peak_process_tree_rss_bytes": 292655104,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 42,
+        "misses": 122,
+        "bypasses": 0,
+        "evictions": 55,
+        "active_queries": 0
+      },
+      "failures": 4,
+      "requests": [
+        {
+          "seconds": 2.307727500097826,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.3072780000511557,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.3063610999379307,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.308319400064647,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 8,
+      "temperature": "cold",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.21483519999310374,
+      "p95_seconds": 2.1414038999937475,
+      "peak_process_tree_rss_bytes": 292298752,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 42,
+        "misses": 130,
+        "bypasses": 0,
+        "evictions": 55,
+        "active_queries": 0
+      },
+      "failures": 8,
+      "requests": [
+        {
+          "seconds": 2.1414038999937475,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.2132761999964714,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.140812300145626,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.140081600053236,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.21383480005897582,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.21353269997052848,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.21483519999310374,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 1.997226299950853,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    },
+    {
+      "format": "sqlite",
+      "kind": "full",
+      "concurrency": 8,
+      "temperature": "warm",
+      "repeat": 0,
+      "ingestion_seconds": 1.0197223001159728,
+      "p50_seconds": 0.3399485000409186,
+      "p95_seconds": 2.2442975000012666,
+      "peak_process_tree_rss_bytes": 288673792,
+      "cache": {
+        "source_count": 3,
+        "source_bytes": 15202614,
+        "result_count": 0,
+        "result_bytes": 0,
+        "hits": 42,
+        "misses": 138,
+        "bypasses": 0,
+        "evictions": 55,
+        "active_queries": 0
+      },
+      "failures": 8,
+      "requests": [
+        {
+          "seconds": 2.243826299905777,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.134729100158438,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.22933980007655919,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.2442975000012666,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.22943449998274446,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 2.13382440013811,
+          "http_status": 507,
+          "cache_status": null,
+          "error": "cache_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.23006480000913143,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        },
+        {
+          "seconds": 0.3399485000409186,
+          "http_status": 429,
+          "cache_status": null,
+          "error": "query_capacity_exceeded",
+          "transfer_bytes": 0
+        }
+      ]
+    }
+  ]
+}

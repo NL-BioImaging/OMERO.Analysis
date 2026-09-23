@@ -15,6 +15,7 @@ import type {
   SyncStatus,
   AnalysisSettingsBundle,
   AnalysisSettingsStatus,
+  DataQueryCapabilities,
   ZarrViewerIntegrationStatus
 } from "./types";
 import { zarrViewerStatusFrom } from "./zarrViewer";
@@ -37,12 +38,36 @@ function workspaceRoute(
 }
 
 export class OmeroApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
   }
 }
 
+export interface QuerySaveReceipt {
+  annotationId: number;
+  resultToken: string;
+  receipt: string;
+  rowCount: number;
+  completedAt: number;
+}
+
 export class OmeroBridge {
+  private queryResultListeners = new Set<(result: QuerySaveReceipt) => void>();
+
+  subscribeQueryResults(listener: (result: QuerySaveReceipt) => void): () => void {
+    this.queryResultListeners.add(listener);
+    return () => { this.queryResultListeners.delete(listener); };
+  }
+
+  async promoteRemoteResult(result: QuerySaveReceipt, workspaceId: string): Promise<Record<string, any>> {
+    const url = this.bootstrap.dataQueryResultPromoteUrl;
+    if (!url) throw new Error("Saving verified query results is unavailable");
+    return readJson(await this.authorizedFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+      body: JSON.stringify({ result_token: result.resultToken, receipt: result.receipt, workspace_id: workspaceId })
+    }));
+  }
   private readonly transport: OmeroContextTransport;
 
   constructor(private readonly bootstrap: Bootstrap) {
@@ -50,7 +75,7 @@ export class OmeroBridge {
   }
 
   get canUpload(): boolean {
-    return this.transport.has("upload");
+    return this.transport.has("workspace_artifact");
   }
 
   get canSync(): boolean {
@@ -83,27 +108,31 @@ export class OmeroBridge {
     return response.arrayBuffer();
   }
 
-  async attach(file: WorkspaceFile): Promise<Attachment> {
+  async listAttachments(): Promise<Attachment[]> {
     const context = this.bootstrap.context;
-    if (!context || !file.data) throw new Error("No OMERO target or result data");
-    const form = new FormData();
-    form.append("file", new Blob([file.data], { type: file.type }), file.name);
+    if (!context) return [];
     const response = await this.authorizedFetch(
-      route(
-        this.bootstrap.uploadTemplate,
-        context.object_type,
-        context.object_id
-      ),
-      {
-        method: "POST",
-        headers: {
-          "X-CSRFToken": csrfToken()
-        },
-        body: form
-      }
+      route(this.bootstrap.attachmentsTemplate, context.object_type, context.object_id)
     );
     const body = await readJson(response);
-    return attachmentFrom(body.attachment);
+    return attachmentList(body.attachments);
+  }
+
+  private async uploadWorkspaceArtifact(workspaceId: string, kind: string, name: string, data: Blob): Promise<Attachment> {
+    const context = this.bootstrap.context;
+    if (!context || !workspaceId) throw new Error("An active workspace is required");
+    const form = new FormData();
+    form.append("kind", kind);
+    form.append("file", data, name);
+    const response = await this.authorizedFetch(workspaceRoute(
+      this.bootstrap.workspaceSyncStatusTemplate, context.object_type, context.object_id, workspaceId
+    ) + "artifact/", { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form });
+    return attachmentFrom((await readJson(response)).attachment);
+  }
+
+  async attach(file: WorkspaceFile, workspaceId: string): Promise<Attachment> {
+    if (!file.data) throw new Error("No result data");
+    return this.uploadWorkspaceArtifact(workspaceId, "result", file.name, new Blob([file.data], { type: file.type }));
   }
 
   async listSnapshots(): Promise<Attachment[]> {
@@ -128,27 +157,9 @@ export class OmeroBridge {
     return hierarchyFrom(await readJson(response));
   }
 
-  async uploadSnapshot(name: string, data: Uint8Array): Promise<Attachment> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the workspace snapshot");
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([data as BlobPart], { type: "application/zip" }),
-      name
-    );
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.snapshotUploadTemplate, context.object_type, context.object_id),
-      {
-        method: "POST",
-        headers: {
-          "X-CSRFToken": csrfToken()
-        },
-        body: form
-      }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.snapshot);
+  async uploadSnapshot(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
+    return this.uploadWorkspaceArtifact(workspaceId, "snapshot", name,
+      new Blob([data as BlobPart], { type: "application/zip" }));
   }
 
   async downloadSnapshot(snapshot: Attachment): Promise<ArrayBuffer> {
@@ -171,17 +182,9 @@ export class OmeroBridge {
     return attachmentList(body.pipelines);
   }
 
-  async uploadPipelineTemplate(name: string, data: Uint8Array): Promise<Attachment> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the pipeline template");
-    const form = new FormData();
-    form.append("file", new Blob([data as BlobPart], { type: "application/json" }), name);
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.pipelineTemplatesTemplate, context.object_type, context.object_id),
-      { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.pipeline);
+  async uploadPipelineTemplate(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
+    return this.uploadWorkspaceArtifact(workspaceId, "pipeline", name,
+      new Blob([data as BlobPart], { type: "application/json" }));
   }
 
   async downloadPipelineTemplate(template: Attachment): Promise<ArrayBuffer> {
@@ -204,21 +207,9 @@ export class OmeroBridge {
     return response.arrayBuffer();
   }
 
-  async uploadNotebook(name: string, data: Uint8Array): Promise<Attachment> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO target for the notebook");
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([data as BlobPart], { type: "application/x-ipynb+json" }),
-      name
-    );
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.notebookUploadTemplate, context.object_type, context.object_id),
-      { method: "POST", headers: { "X-CSRFToken": csrfToken() }, body: form }
-    );
-    const body = await readJson(response);
-    return attachmentFrom(body.notebook);
+  async uploadNotebook(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
+    return this.uploadWorkspaceArtifact(workspaceId, "notebook", name,
+      new Blob([data as BlobPart], { type: "application/x-ipynb+json" }));
   }
 
   async syncStatus(workspaceId: string): Promise<SyncStatus> {
@@ -263,17 +254,20 @@ export class OmeroBridge {
     form.append("inventory", JSON.stringify(inventory));
     form.append("plan_token", plan.planToken);
     const payloadKeys: string[] = [];
+    const bundle: BlobPart[] = [];
     for (const key of plan.uploadKeys) {
       const data = bytes.get(key);
       const item = inventory.items.find((entry) => entry.key === key);
       if (!data || !item) throw new Error(`Missing synchronization payload ${key}`);
       payloadKeys.push(key);
-      form.append(
+      if (plan.payloadEncoding === "concat-v1") bundle.push(data as BlobPart);
+      else form.append(
         "payloads",
         new Blob([data as BlobPart], { type: item.mimetype }),
         item.name
       );
     }
+    if (plan.payloadEncoding === "concat-v1") form.append("payload_bundle", new Blob(bundle), "workspace-payloads.bin");
     form.append("payload_keys", JSON.stringify(payloadKeys));
     const response = await this.authorizedFetch(workspaceRoute(
       this.bootstrap.workspaceSyncApplyTemplate,
@@ -285,7 +279,61 @@ export class OmeroBridge {
       headers: { "X-CSRFToken": csrfToken() },
       body: form
     });
+    return syncStatusFrom(await readJson(response));
+  }
+
+  async downloadWorkspaceResult(reference: { workspaceId: string; key: string; sha256: string; size: number }): Promise<ArrayBuffer> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("An OMERO context is required to restore this result");
+    const url = workspaceRoute(this.bootstrap.workspaceSyncStatusTemplate, context.object_type,
+      context.object_id, reference.workspaceId) + "result/?key=" + encodeURIComponent(reference.key);
+    const response = await this.authorizedFetch(url);
     if (!response.ok) throw new OmeroApiError(await errorText(response), response.status);
+    if (!Number.isSafeInteger(reference.size) || reference.size < 0 || !response.body) throw new Error("Invalid saved result size");
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        size += part.value.byteLength;
+        if (size > reference.size) throw new Error("Restored result exceeds its declared size");
+        chunks.push(part.value);
+      }
+    } finally { await reader.cancel(); reader.releaseLock(); }
+    const buffer = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.byteLength; }
+    const data = buffer.buffer;
+    if (data.byteLength !== reference.size) throw new Error("Restored result size mismatch");
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data))).map(b => b.toString(16).padStart(2, "0")).join("");
+    if (digest !== reference.sha256) throw new Error("Restored result checksum mismatch");
+    return data;
+  }
+
+  async manageWorkspaceDataset(datasetId: number, action?: "trash" | "restore" | "purge", revision?: number): Promise<SyncStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO group for workspace management");
+    const transport = new OmeroContextTransport({ ...this.bootstrap,
+      context: { ...context, object_type: "Dataset", object_id: datasetId } });
+    await transport.connect();
+    const base = this.bootstrap.workspaceSyncStatusTemplate.split("workspace-sync/")[0];
+    const response = await transport.fetch(`${base}workspace-dataset/${datasetId}/lifecycle/`, action ? {
+      method: "POST", headers: { "X-CSRFToken": csrfToken(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action, revision })
+    } : {});
+    return syncStatusFrom(await readJson(response));
+  }
+
+  async changeWorkspaceLifecycle(workspaceId: string, action: "trash" | "restore" | "purge", revision: number): Promise<SyncStatus> {
+    const context = this.bootstrap.context;
+    if (!context) throw new Error("No OMERO context for workspace management");
+    const url = workspaceRoute(this.bootstrap.workspaceSyncStatusTemplate,
+      context.object_type, context.object_id, workspaceId) + "lifecycle/";
+    const response = await this.authorizedFetch(url, { method: "POST",
+      headers: { "X-CSRFToken": csrfToken(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action, revision }) });
     return syncStatusFrom(await readJson(response));
   }
 
@@ -380,12 +428,51 @@ export class OmeroBridge {
     return workflowSkillCatalogFrom(await readJson(response));
   }
 
-  async remoteSchema(annotationId: number): Promise<Record<string, any>> {
-    const url = (this.bootstrap.dataSourceSchemaTemplate || "").replace(
-      "/1/schema/",
-      `/${annotationId}/schema/`
+  async dataQueryCapabilities(): Promise<DataQueryCapabilities> {
+    if (!this.bootstrap.dataQueryCapabilitiesUrl) {
+      throw new Error("Remote data-query capabilities are unavailable");
+    }
+    const body = record(
+      await readJson(await fetch(this.bootstrap.dataQueryCapabilitiesUrl, {
+        credentials: "same-origin"
+      })),
+      "remote data-query capabilities"
     );
-    return await readJson(await this.authorizedFetch(url));
+    if (
+      body.capability !== "omero-data-query-v1" ||
+      typeof body.available !== "boolean" ||
+      typeof body.ready !== "boolean" ||
+      !Array.isArray(body.formats) ||
+      !body.formats.every((item) => ["duckdb", "sqlite", "csv"].includes(String(item))) ||
+      !Number.isSafeInteger(body.threshold_bytes) || body.threshold_bytes < 0 ||
+      !Number.isSafeInteger(body.result_ttl_seconds) || body.result_ttl_seconds < 1
+    ) {
+      throw new Error("OMERO returned invalid remote data-query capabilities");
+    }
+    return body as unknown as DataQueryCapabilities;
+  }
+
+  async remoteSchema(annotationId: number, onProgress?: (value: Record<string, any>) => void): Promise<Record<string, any>> {
+    const url = (this.bootstrap.dataSourceSchemaTemplate || "").replace(
+      "/1/schema/", `/${annotationId}/schema/`
+    );
+    if (!onProgress) return await readJson(await this.authorizedFetch(url));
+    const progressId = crypto.randomUUID();
+    const suffix = `?progress_id=${progressId}`;
+    let finished = false;
+    let polling = false;
+    const poll = async () => {
+      if (finished || polling) return;
+      polling = true;
+      try {
+        const value = await readJson(await this.authorizedFetch(url.replace("/schema/", "/progress/") + suffix));
+        if (!finished) onProgress(value);
+      } catch { /* Status availability must not block the query. */ }
+      finally { polling = false; }
+    };
+    const timer = window.setInterval(() => { void poll(); }, 1000);
+    try { return await readJson(await this.authorizedFetch(url + suffix)); }
+    finally { finished = true; window.clearInterval(timer); }
   }
 
   async remoteQuery(
@@ -397,7 +484,7 @@ export class OmeroBridge {
       "/1/query/",
       `/${annotationId}/query/`
     );
-    return await readJson(await this.authorizedFetch(url, {
+    const result = await readJson(await this.authorizedFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -405,6 +492,14 @@ export class OmeroBridge {
       },
       body: JSON.stringify({ sql, parameters })
     }));
+    if (typeof result.result_token === "string" && typeof result.provenance_receipt === "string") {
+      const receipt: QuerySaveReceipt = {
+        annotationId, resultToken: result.result_token, receipt: result.provenance_receipt,
+        rowCount: Number(result.row_count), completedAt: Date.now()
+      };
+      this.queryResultListeners.forEach((listener) => listener(receipt));
+    }
+    return result;
   }
 
   async downloadRemoteResult(resultToken: string): Promise<ArrayBuffer> {
@@ -439,6 +534,8 @@ export class OmeroBridge {
     const skill = record(body.skill, "ZarrViewer skill");
     if (
       skill.name !== "use-omero-zarr-viewer" ||
+      !(skill.format == null || skill.format === "agent-skills-v1") ||
+      !(skill.skills_path == null || skill.skills_path === "skills") ||
       typeof skill.version !== "string" ||
       typeof skill.sha256 !== "string" ||
       !Array.isArray(body.files)
@@ -454,8 +551,9 @@ export class OmeroBridge {
         repository_url: "BIOMERO.ZarrViewer",
         configured_ref: String(provider.version || ""),
         resolved_commit: String(provider.version || ""),
-        skills_path: "bundled/analysis_skills",
-        ref_kind: "distribution"
+        skills_path: skill.skills_path === "skills" ? "skills" : "bundled/analysis_skills",
+        ref_kind: "distribution",
+        format: skill.format === "agent-skills-v1" ? "agent-skills-v1" : undefined
       },
       skill: {
         workflow_key: "biomero-zarr-viewer",
@@ -514,6 +612,8 @@ export class OmeroBridge {
       const skill = record(raw, "ZarrViewer skill");
       if (
         typeof skill.name !== "string" ||
+        !(skill.format == null || skill.format === "agent-skills-v1") ||
+        !(skill.skills_path == null || skill.skills_path === "skills") ||
         typeof skill.version !== "string" ||
         typeof skill.sha256 !== "string" ||
         typeof skill.package_url !== "string"
@@ -529,15 +629,22 @@ export class OmeroBridge {
     skillName: string
   ): Promise<WorkflowSkillPackage> {
     const catalog = await this.listWorkflowSkills();
-    const skill = catalog.workflows
-      .flatMap((entry) => entry.skills)
-      .find((item) =>
-        (item.source_key || item.workflow_key) === workflowKey && item.name === skillName
-      );
-    if (!skill) throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
+    const candidates = catalog.workflows.flatMap((entry) =>
+      entry.skills.map((skill) => ({ entry, skill }))
+    );
+    const exact = candidates.find(({ entry, skill }) =>
+      (skill.source_key || entry.source.source_key || skill.workflow_key ||
+        entry.source.workflow_key) === workflowKey && skill.name === skillName
+    );
+    const named = candidates.filter(({ skill }) => skill.name === skillName);
+    const resolved = exact || (named.length === 1 ? named[0] : undefined);
+    if (!resolved) {
+      throw new Error(`Workflow skill ${workflowKey}/${skillName} is unavailable`);
+    }
+    const canonicalWorkflowKey = resolved.entry.source.workflow_key;
     const catalogUrl = this.bootstrap.workflowSkillsUrl.replace(/\/?$/, "/");
     const packageUrl =
-      `${catalogUrl}${encodeURIComponent(workflowKey)}/${encodeURIComponent(skillName)}/`;
+      `${catalogUrl}${encodeURIComponent(canonicalWorkflowKey)}/${encodeURIComponent(skillName)}/`;
     const response = await fetch(packageUrl, { credentials: "same-origin" });
     return workflowSkillPackageFrom(await readJson(response));
   }
@@ -557,7 +664,7 @@ async function errorText(response: Response): Promise<string> {
 async function readJson(response: Response): Promise<any> {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error?.message || `${response.status} ${response.statusText}`);
+    throw new OmeroApiError(body.error?.message || `${response.status} ${response.statusText}`, response.status, body.error?.code);
   }
   return body;
 }

@@ -74,7 +74,7 @@ viewer is enabled. If a preview cannot be created:
 1. confirm `biomero-zarr-viewer>=0.4.0` is installed and present in
    `omero.web.apps`;
 2. confirm its authenticated `/api/analysis-skills/` provider route is
-   available;
+   available and advertises the canonical Agent Skills `skills` layout;
 3. confirm the selected Screen/Plate or Dataset/Image refers to the same
    OME-Zarr store UUID recorded in the database;
 4. confirm the database field path, dimensions, channels, label path, and

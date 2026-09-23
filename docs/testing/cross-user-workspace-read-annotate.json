@@ -1,0 +1,727 @@
+{
+  "before": {
+    "302": [
+      {
+        "id": 4049,
+        "owner": 136,
+        "ns": "biomero.import",
+        "value": [
+          [
+            "UUID",
+            "dafebd31-cc30-4407-b186-ce1a644362b9"
+          ],
+          [
+            "Filepath",
+            "/data/Project B/cellsA1B1__cisegmentation.ome.zarr"
+          ],
+          [
+            "Group",
+            "TestGroup"
+          ],
+          [
+            "Username",
+            "user1"
+          ],
+          [
+            "DestinationID",
+            "202"
+          ],
+          [
+            "DestinationType",
+            "Screen"
+          ],
+          [
+            "Files",
+            "['/data/Project B/cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "FileNames",
+            "['cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "Import_Timestamp",
+            "2026-09-11T12:43:29.412442"
+          ]
+        ]
+      },
+      {
+        "id": 4050,
+        "owner": 136,
+        "ns": null,
+        "file_id": 9052,
+        "sha256": "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265",
+        "value": null
+      },
+      {
+        "id": 4061,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.sync.v1",
+        "value": [
+          [
+            "dataset_id",
+            "677"
+          ],
+          [
+            "project_id",
+            "152"
+          ],
+          [
+            "role",
+            "source-link"
+          ],
+          [
+            "workspace_id",
+            "83d400a6-2bcd-40fa-9ee8-f61fd6d60b6c"
+          ]
+        ]
+      },
+      {
+        "id": 4065,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.notebook.v1",
+        "file_id": 9060,
+        "sha256": "cf8e5e1cdaa7f3f7ed9af16920104d99624f2d9845649b110f9f0d8413f2f85c",
+        "value": null
+      },
+      {
+        "id": 4111,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.result.v1",
+        "file_id": 9096,
+        "sha256": "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41",
+        "value": null
+      },
+      {
+        "id": 4112,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "file_id": 9097,
+        "sha256": "53cecae00594747a3f28eae004f95a3aee4a0525402669d511d0f779a8635df2",
+        "value": null
+      },
+      {
+        "id": 4113,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "value": [
+          [
+            "byte_count",
+            "53"
+          ],
+          [
+            "completion",
+            "eyJyZWNlaXB0X3NoYTI1NiI6ImVhOTkwMDFkZWUwZmI2YzYyYzVhYzBkOWM2Y2M0ZDA5ZjRhYTEwMmE5OGJmMjNkMjYwMzg5Njc1ZDVjMzhhODUiLCJyZXN1bHRfYW5ub3RhdGlvbl9pZCI6NDExMSwicHJvdmVuYW5jZV9hbm5vdGF0aW9uX2lkIjo0MTEyLCJieXRlX2NvdW50Ijo1MywicmVzdWx0X3NoYTI1NiI6IjQzMjcyMDM3MGNiYmMxNDdiYjM0M2M1MzY2MjU2ZTA5OWMzMWI5NDMwYzdhNzdkYzhiYjczMzU2ZTY4ZTNkNDEiLCJwcm92ZW5hbmNlX2J5dGVfY291bnQiOjIyNjIsInByb3ZlbmFuY2Vfc2hhMjU2IjoiNTNjZWNhZTAwNTk0NzQ3YTNmMjhlYWUwMDRmOTVhM2FlZTRhMDUyNTQwMjY2OWQ1MTFkMGY3NzlhODYzNWRmMiJ9:1x50yl:ZJw08NFt-JStiX83-xyv2oyy17F3ErkoB2Mlzxvx_3Q"
+          ],
+          [
+            "provenance_annotation_id",
+            "4112"
+          ],
+          [
+            "provenance_byte_count",
+            "2262"
+          ],
+          [
+            "provenance_sha256",
+            "53cecae00594747a3f28eae004f95a3aee4a0525402669d511d0f779a8635df2"
+          ],
+          [
+            "receipt_sha256",
+            "ea99001dee0fb6c62c5ac0d9c6cc4d09f4aa102a98bf23d260389675d5c38a85"
+          ],
+          [
+            "result_annotation_id",
+            "4111"
+          ],
+          [
+            "result_sha256",
+            "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41"
+          ],
+          [
+            "source_annotation_id",
+            "4050"
+          ],
+          [
+            "source_file_id",
+            "9052"
+          ],
+          [
+            "source_sha256",
+            "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265"
+          ],
+          [
+            "sql_sha256",
+            "ca45c290737597038b60c807a30077ccac660e95d6b1b4d4d0212765d0a3ad90"
+          ]
+        ]
+      }
+    ],
+    "303": [
+      {
+        "id": 4051,
+        "owner": 137,
+        "ns": "biomero.import",
+        "value": [
+          [
+            "UUID",
+            "b9d79472-b07f-4b82-9054-bd963770ade9"
+          ],
+          [
+            "Filepath",
+            "/data/Project B/cellsA1B1__cisegmentation.ome.zarr"
+          ],
+          [
+            "Group",
+            "TestGroup"
+          ],
+          [
+            "Username",
+            "user2"
+          ],
+          [
+            "DestinationID",
+            "203"
+          ],
+          [
+            "DestinationType",
+            "Screen"
+          ],
+          [
+            "Files",
+            "['/data/Project B/cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "FileNames",
+            "['cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "Import_Timestamp",
+            "2026-09-11T12:49:39.169070"
+          ]
+        ]
+      },
+      {
+        "id": 4052,
+        "owner": 137,
+        "ns": null,
+        "file_id": 9053,
+        "sha256": "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265",
+        "value": null
+      },
+      {
+        "id": 4084,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.sync.v1",
+        "value": [
+          [
+            "dataset_id",
+            "678"
+          ],
+          [
+            "project_id",
+            "152"
+          ],
+          [
+            "role",
+            "source-link"
+          ],
+          [
+            "workspace_id",
+            "424a3d14-7345-4f90-b17c-c4740b58213e"
+          ]
+        ]
+      },
+      {
+        "id": 4087,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.notebook.v1",
+        "file_id": 9080,
+        "sha256": "cf8e5e1cdaa7f3f7ed9af16920104d99624f2d9845649b110f9f0d8413f2f85c",
+        "value": null
+      },
+      {
+        "id": 4100,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.sync.v1",
+        "value": [
+          [
+            "dataset_id",
+            "681"
+          ],
+          [
+            "project_id",
+            "154"
+          ],
+          [
+            "role",
+            "source-link"
+          ],
+          [
+            "workspace_id",
+            "808a3d7b-ed4a-443f-8f6d-580853f70783"
+          ]
+        ]
+      },
+      {
+        "id": 4108,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.result.v1",
+        "file_id": 9094,
+        "sha256": "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41",
+        "value": null
+      },
+      {
+        "id": 4109,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "file_id": 9095,
+        "sha256": "f34f89c8cdeb94ae74ddc03429d935d3078ccfabd448d0f391e0cd3f39922b16",
+        "value": null
+      },
+      {
+        "id": 4110,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "value": [
+          [
+            "byte_count",
+            "53"
+          ],
+          [
+            "completion",
+            "eyJyZWNlaXB0X3NoYTI1NiI6IjljOWJmZjc5YjRhZDZlNGE0Y2MyZDA3MGI2MGU0YzNmY2M4NGFkNDM1NTc5ZDE3Yzg5MmY1YWU4YTcyZDExN2UiLCJyZXN1bHRfYW5ub3RhdGlvbl9pZCI6NDEwOCwicHJvdmVuYW5jZV9hbm5vdGF0aW9uX2lkIjo0MTA5LCJieXRlX2NvdW50Ijo1MywicmVzdWx0X3NoYTI1NiI6IjQzMjcyMDM3MGNiYmMxNDdiYjM0M2M1MzY2MjU2ZTA5OWMzMWI5NDMwYzdhNzdkYzhiYjczMzU2ZTY4ZTNkNDEiLCJwcm92ZW5hbmNlX2J5dGVfY291bnQiOjIyNjIsInByb3ZlbmFuY2Vfc2hhMjU2IjoiZjM0Zjg5YzhjZGViOTRhZTc0ZGRjMDM0MjlkOTM1ZDMwNzhjY2ZhYmQ0NDhkMGYzOTFlMGNkM2YzOTkyMmIxNiJ9:1x50yi:QbGEBdQIYY1347kOTD4gKFZ9i7ZTKDM_Qhs8FsAo0Wg"
+          ],
+          [
+            "provenance_annotation_id",
+            "4109"
+          ],
+          [
+            "provenance_byte_count",
+            "2262"
+          ],
+          [
+            "provenance_sha256",
+            "f34f89c8cdeb94ae74ddc03429d935d3078ccfabd448d0f391e0cd3f39922b16"
+          ],
+          [
+            "receipt_sha256",
+            "9c9bff79b4ad6e4a4cc2d070b60e4c3fcc84ad435579d17c892f5ae8a72d117e"
+          ],
+          [
+            "result_annotation_id",
+            "4108"
+          ],
+          [
+            "result_sha256",
+            "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41"
+          ],
+          [
+            "source_annotation_id",
+            "4052"
+          ],
+          [
+            "source_file_id",
+            "9053"
+          ],
+          [
+            "source_sha256",
+            "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265"
+          ],
+          [
+            "sql_sha256",
+            "ca45c290737597038b60c807a30077ccac660e95d6b1b4d4d0212765d0a3ad90"
+          ]
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "mode": "read-annotate",
+      "user": "user1",
+      "plate": 302,
+      "can_annotate_source": true,
+      "can_manage_workspace": true,
+      "workspace": "cfb72fc0-8f62-4596-9540-ed93b4f6aa5f",
+      "dataset": 683,
+      "result_annotation": 4153,
+      "cell_count": 3,
+      "retry": "reused",
+      "trash_restore": "passed"
+    },
+    {
+      "mode": "read-annotate",
+      "user": "user1",
+      "plate": 303,
+      "can_annotate_source": true,
+      "can_manage_workspace": true,
+      "workspace": "9cf5845f-a3f8-4bbf-a575-feb9fd893196",
+      "dataset": 684,
+      "result_annotation": 4158,
+      "cell_count": 3,
+      "retry": "reused",
+      "trash_restore": "passed"
+    },
+    {
+      "mode": "read-annotate",
+      "user": "user2",
+      "plate": 302,
+      "can_annotate_source": true,
+      "can_manage_workspace": true,
+      "workspace": "3c36e7e0-eb9a-4d5b-93b0-493a7ae86d68",
+      "dataset": 685,
+      "result_annotation": 4163,
+      "cell_count": 3,
+      "retry": "reused",
+      "trash_restore": "passed"
+    },
+    {
+      "mode": "read-annotate",
+      "user": "user2",
+      "plate": 303,
+      "can_annotate_source": true,
+      "can_manage_workspace": true,
+      "workspace": "dce70e68-0ef6-4c10-85e0-9d85e4af8ace",
+      "dataset": 686,
+      "result_annotation": 4168,
+      "cell_count": 3,
+      "retry": "reused",
+      "trash_restore": "passed"
+    }
+  ],
+  "after": {
+    "302": [
+      {
+        "id": 4049,
+        "owner": 136,
+        "ns": "biomero.import",
+        "value": [
+          [
+            "UUID",
+            "dafebd31-cc30-4407-b186-ce1a644362b9"
+          ],
+          [
+            "Filepath",
+            "/data/Project B/cellsA1B1__cisegmentation.ome.zarr"
+          ],
+          [
+            "Group",
+            "TestGroup"
+          ],
+          [
+            "Username",
+            "user1"
+          ],
+          [
+            "DestinationID",
+            "202"
+          ],
+          [
+            "DestinationType",
+            "Screen"
+          ],
+          [
+            "Files",
+            "['/data/Project B/cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "FileNames",
+            "['cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "Import_Timestamp",
+            "2026-09-11T12:43:29.412442"
+          ]
+        ]
+      },
+      {
+        "id": 4050,
+        "owner": 136,
+        "ns": null,
+        "file_id": 9052,
+        "sha256": "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265",
+        "value": null
+      },
+      {
+        "id": 4061,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.sync.v1",
+        "value": [
+          [
+            "dataset_id",
+            "677"
+          ],
+          [
+            "project_id",
+            "152"
+          ],
+          [
+            "role",
+            "source-link"
+          ],
+          [
+            "workspace_id",
+            "83d400a6-2bcd-40fa-9ee8-f61fd6d60b6c"
+          ]
+        ]
+      },
+      {
+        "id": 4065,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.notebook.v1",
+        "file_id": 9060,
+        "sha256": "cf8e5e1cdaa7f3f7ed9af16920104d99624f2d9845649b110f9f0d8413f2f85c",
+        "value": null
+      },
+      {
+        "id": 4111,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.result.v1",
+        "file_id": 9096,
+        "sha256": "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41",
+        "value": null
+      },
+      {
+        "id": 4112,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "file_id": 9097,
+        "sha256": "53cecae00594747a3f28eae004f95a3aee4a0525402669d511d0f779a8635df2",
+        "value": null
+      },
+      {
+        "id": 4113,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "value": [
+          [
+            "byte_count",
+            "53"
+          ],
+          [
+            "completion",
+            "eyJyZWNlaXB0X3NoYTI1NiI6ImVhOTkwMDFkZWUwZmI2YzYyYzVhYzBkOWM2Y2M0ZDA5ZjRhYTEwMmE5OGJmMjNkMjYwMzg5Njc1ZDVjMzhhODUiLCJyZXN1bHRfYW5ub3RhdGlvbl9pZCI6NDExMSwicHJvdmVuYW5jZV9hbm5vdGF0aW9uX2lkIjo0MTEyLCJieXRlX2NvdW50Ijo1MywicmVzdWx0X3NoYTI1NiI6IjQzMjcyMDM3MGNiYmMxNDdiYjM0M2M1MzY2MjU2ZTA5OWMzMWI5NDMwYzdhNzdkYzhiYjczMzU2ZTY4ZTNkNDEiLCJwcm92ZW5hbmNlX2J5dGVfY291bnQiOjIyNjIsInByb3ZlbmFuY2Vfc2hhMjU2IjoiNTNjZWNhZTAwNTk0NzQ3YTNmMjhlYWUwMDRmOTVhM2FlZTRhMDUyNTQwMjY2OWQ1MTFkMGY3NzlhODYzNWRmMiJ9:1x50yl:ZJw08NFt-JStiX83-xyv2oyy17F3ErkoB2Mlzxvx_3Q"
+          ],
+          [
+            "provenance_annotation_id",
+            "4112"
+          ],
+          [
+            "provenance_byte_count",
+            "2262"
+          ],
+          [
+            "provenance_sha256",
+            "53cecae00594747a3f28eae004f95a3aee4a0525402669d511d0f779a8635df2"
+          ],
+          [
+            "receipt_sha256",
+            "ea99001dee0fb6c62c5ac0d9c6cc4d09f4aa102a98bf23d260389675d5c38a85"
+          ],
+          [
+            "result_annotation_id",
+            "4111"
+          ],
+          [
+            "result_sha256",
+            "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41"
+          ],
+          [
+            "source_annotation_id",
+            "4050"
+          ],
+          [
+            "source_file_id",
+            "9052"
+          ],
+          [
+            "source_sha256",
+            "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265"
+          ],
+          [
+            "sql_sha256",
+            "ca45c290737597038b60c807a30077ccac660e95d6b1b4d4d0212765d0a3ad90"
+          ]
+        ]
+      }
+    ],
+    "303": [
+      {
+        "id": 4051,
+        "owner": 137,
+        "ns": "biomero.import",
+        "value": [
+          [
+            "UUID",
+            "b9d79472-b07f-4b82-9054-bd963770ade9"
+          ],
+          [
+            "Filepath",
+            "/data/Project B/cellsA1B1__cisegmentation.ome.zarr"
+          ],
+          [
+            "Group",
+            "TestGroup"
+          ],
+          [
+            "Username",
+            "user2"
+          ],
+          [
+            "DestinationID",
+            "203"
+          ],
+          [
+            "DestinationType",
+            "Screen"
+          ],
+          [
+            "Files",
+            "['/data/Project B/cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "FileNames",
+            "['cellsA1B1__cisegmentation.ome.zarr']"
+          ],
+          [
+            "Import_Timestamp",
+            "2026-09-11T12:49:39.169070"
+          ]
+        ]
+      },
+      {
+        "id": 4052,
+        "owner": 137,
+        "ns": null,
+        "file_id": 9053,
+        "sha256": "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265",
+        "value": null
+      },
+      {
+        "id": 4084,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.sync.v1",
+        "value": [
+          [
+            "dataset_id",
+            "678"
+          ],
+          [
+            "project_id",
+            "152"
+          ],
+          [
+            "role",
+            "source-link"
+          ],
+          [
+            "workspace_id",
+            "424a3d14-7345-4f90-b17c-c4740b58213e"
+          ]
+        ]
+      },
+      {
+        "id": 4087,
+        "owner": 137,
+        "ns": "nl.bioimaging.analysis.notebook.v1",
+        "file_id": 9080,
+        "sha256": "cf8e5e1cdaa7f3f7ed9af16920104d99624f2d9845649b110f9f0d8413f2f85c",
+        "value": null
+      },
+      {
+        "id": 4100,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.sync.v1",
+        "value": [
+          [
+            "dataset_id",
+            "681"
+          ],
+          [
+            "project_id",
+            "154"
+          ],
+          [
+            "role",
+            "source-link"
+          ],
+          [
+            "workspace_id",
+            "808a3d7b-ed4a-443f-8f6d-580853f70783"
+          ]
+        ]
+      },
+      {
+        "id": 4108,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.result.v1",
+        "file_id": 9094,
+        "sha256": "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41",
+        "value": null
+      },
+      {
+        "id": 4109,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "file_id": 9095,
+        "sha256": "f34f89c8cdeb94ae74ddc03429d935d3078ccfabd448d0f391e0cd3f39922b16",
+        "value": null
+      },
+      {
+        "id": 4110,
+        "owner": 136,
+        "ns": "nl.bioimaging.analysis.data-query.provenance.v1",
+        "value": [
+          [
+            "byte_count",
+            "53"
+          ],
+          [
+            "completion",
+            "eyJyZWNlaXB0X3NoYTI1NiI6IjljOWJmZjc5YjRhZDZlNGE0Y2MyZDA3MGI2MGU0YzNmY2M4NGFkNDM1NTc5ZDE3Yzg5MmY1YWU4YTcyZDExN2UiLCJyZXN1bHRfYW5ub3RhdGlvbl9pZCI6NDEwOCwicHJvdmVuYW5jZV9hbm5vdGF0aW9uX2lkIjo0MTA5LCJieXRlX2NvdW50Ijo1MywicmVzdWx0X3NoYTI1NiI6IjQzMjcyMDM3MGNiYmMxNDdiYjM0M2M1MzY2MjU2ZTA5OWMzMWI5NDMwYzdhNzdkYzhiYjczMzU2ZTY4ZTNkNDEiLCJwcm92ZW5hbmNlX2J5dGVfY291bnQiOjIyNjIsInByb3ZlbmFuY2Vfc2hhMjU2IjoiZjM0Zjg5YzhjZGViOTRhZTc0ZGRjMDM0MjlkOTM1ZDMwNzhjY2ZhYmQ0NDhkMGYzOTFlMGNkM2YzOTkyMmIxNiJ9:1x50yi:QbGEBdQIYY1347kOTD4gKFZ9i7ZTKDM_Qhs8FsAo0Wg"
+          ],
+          [
+            "provenance_annotation_id",
+            "4109"
+          ],
+          [
+            "provenance_byte_count",
+            "2262"
+          ],
+          [
+            "provenance_sha256",
+            "f34f89c8cdeb94ae74ddc03429d935d3078ccfabd448d0f391e0cd3f39922b16"
+          ],
+          [
+            "receipt_sha256",
+            "9c9bff79b4ad6e4a4cc2d070b60e4c3fcc84ad435579d17c892f5ae8a72d117e"
+          ],
+          [
+            "result_annotation_id",
+            "4108"
+          ],
+          [
+            "result_sha256",
+            "432720370cbbc147bb343c5366256e099c31b9430c7a77dc8bb73356e68e3d41"
+          ],
+          [
+            "source_annotation_id",
+            "4052"
+          ],
+          [
+            "source_file_id",
+            "9053"
+          ],
+          [
+            "source_sha256",
+            "a52502a8879b474e6f48f98d3e3d4bce207aa26526cbedf88c9c5e670335c265"
+          ],
+          [
+            "sql_sha256",
+            "ca45c290737597038b60c807a30077ccac660e95d6b1b4d4d0212765d0a3ad90"
+          ]
+        ]
+      }
+    ]
+  },
+  "source_unchanged": true
+}

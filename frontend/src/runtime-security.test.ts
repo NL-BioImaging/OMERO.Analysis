@@ -1,4 +1,4 @@
-import { runtimeWorker, sandboxUrl } from "./runtime";
+import { PythonRuntime, runtimeWorker, sandboxUrl } from "./runtime";
 
 describe("Python sandbox", () => {
   const worker = runtimeWorker("https://omero.example/omero_analysis/runtime/");
@@ -17,6 +17,9 @@ describe("Python sandbox", () => {
   it("reports meaningful boot stages without weakening the sandbox", () => {
     expect(worker).toContain("Loading the browser Python engine");
     expect(worker).toContain("Loading data-analysis packages");
+    expect(worker).toContain('_oa_matplotlib.use("Agg", force=True)');
+    expect(worker).toContain("_oa_savefig_with_svg");
+    expect(worker).toContain('path.with_suffix(".svg")');
     expect(worker).toContain('["micropip","numpy","pandas"');
     expect(worker).toContain('required.push("scipy")');
     expect(worker).toContain("Loading vendored Python support");
@@ -27,6 +30,25 @@ describe("Python sandbox", () => {
     expect(worker).toContain("Network access is disabled in Analysis Python");
     expect(worker).toContain("globalThis.fetch = denyNetwork");
     expect(worker).toContain('message.type === "clear_inputs"');
+    expect(worker).toContain('message.type === "clear_remote_queries"');
+    expect(worker).toContain('message.type === "remote_query_file"');
+    expect(worker).toContain('message.type === "notebook_config"');
+    expect(worker).toContain("ensureNotebookRequirements(message.value?.contract?.requirements)");
+    expect(worker).toContain('loadedPackages.add("seaborn")');
+    expect(worker).toContain('type: "notebook_query"');
+    expect(worker).toContain('message.type === "notebook_query_result"');
+    expect(worker).toContain('frame.attrs["omero_analysis_query"] = metrics');
+    expect(worker).toContain('"dataframe_memory_bytes"');
+    expect(worker).toContain('"throughput_mib_per_second"');
+    expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain("PyCF_ALLOW_TOP_LEVEL_AWAIT");
+    expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain("notebookCellTimeoutMs");
+    expect(PythonRuntime.prototype.runNotebookCell.toString()).toContain(
+      "FigureCanvasAgg is non-interactive"
+    );
+    expect(worker).toContain('"scikit-image"');
+    expect(worker).toContain('ModuleType("omero_analysis_notebook")');
+    expect(worker).toContain('ModuleType("omero_analysis_remote")');
+    expect(worker).toContain('Path("/remote-query")');
     expect(worker).toContain('message.type === "profile"');
   });
 });

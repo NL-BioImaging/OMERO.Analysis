@@ -3,9 +3,11 @@ import {
   bindNotebookInputsStrict,
   bindPipelineInputsStrict,
   bindPythonInputsStrict,
+  downloadableWorkspaceInputs,
   extendPipelineInputs,
   isInputBindingsCell
 } from "./artifactBindings";
+import { pipelineInputState } from "./artifactBindings";
 import type {
   ExecutionRecord,
   MethodRecord,
@@ -15,6 +17,25 @@ import type {
 } from "./types";
 
 const createdAt = "2026-08-03T10:00:00Z";
+
+it("inspects missing Pipeline bindings without rebinding and respects ordered pinned outputs", () => {
+  const first = method("first", 'read("/input/missing.csv"); write("/output/first.csv")');
+  first.versions.push({ ...first.versions[0], version: 2, code: 'write("/output/other.csv")' });
+  const second = method("second", 'read("/input/first.csv")');
+  const pipeline = { steps: [
+    { id: "one", methodId: "first", methodVersion: 1, inputBindings: {} },
+    { id: "two", methodId: "second", methodVersion: 1, inputBindings: {} }
+  ] } as PipelineRecord;
+  const before = JSON.stringify(pipeline);
+  const states = pipelineInputState(pipeline, [first, second], [input("replacement.csv")]);
+  expect(states[0].bindings).toEqual([{from: "missing.csv", to: "missing.csv", missing: true}]);
+  expect(states[1].bindings[0].missing).toBe(false);
+  expect(states[1].options).not.toContain("other.csv");
+  expect(JSON.stringify(pipeline)).toBe(before);
+  pipeline.steps[0].inputBindings["missing.csv"] = "replacement.csv";
+  expect(pipelineInputState(pipeline, [first, second], [input("replacement.csv")])[0].bindings[0].missing).toBe(false);
+  expect(pipelineInputState(pipeline, [first], [])[1].missingMethod).toBe(true);
+});
 
 function input(name: string, state: WorkspaceFile["state"] = "ready"): WorkspaceFile {
   return {
@@ -70,6 +91,33 @@ describe("strict artifact input binding", () => {
       .toThrow(/ambiguous/);
   });
 
+  it("identifies a missing input so the UI can offer an explicit local fallback", () => {
+    try {
+      bindPythonInputsStrict('p = "/input/legacy.duckdb"', []);
+      throw new Error("Expected binding to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ArtifactBindingError);
+      expect((error as ArtifactBindingError).referencedName).toBe("legacy.duckdb");
+    }
+  });
+
+  it("finds an undownloaded OMERO database for legacy Method, Pipeline, and Notebook recovery", () => {
+    const remoteOnly: WorkspaceFile = {
+      ...input("current-measurements.duckdb"),
+      source: "omero",
+      annotationId: 42,
+      dataQueryMode: "local",
+      data: undefined,
+      sha256: ""
+    };
+    expect(downloadableWorkspaceInputs("legacy-name.duckdb", [remoteOnly]))
+      .toEqual([remoteOnly]);
+    expect(downloadableWorkspaceInputs("legacy-name.csv", [remoteOnly])).toEqual([]);
+    expect(downloadableWorkspaceInputs("legacy-name.duckdb", [
+      { ...remoteOnly, state: "failed" }
+    ])).toEqual([]);
+  });
+
   it("replaces one managed Notebook binding cell and strictly rebinds code cells", () => {
     const document: NotebookDocument = {
       nbformat: 4,
@@ -87,6 +135,32 @@ describe("strict artifact input binding", () => {
     const rebound = bindNotebookInputsStrict(document, [input("screen.duckdb")]);
     expect(rebound.document.cells.filter(isInputBindingsCell)).toHaveLength(1);
     expect(rebound.document.cells[1].source).toContain("/input/screen.duckdb");
+  });
+
+  it("preserves a portable protocol configuration cell instead of inserting a legacy binding cell", () => {
+    const literal = JSON.stringify({
+      schema: "nl.bioimaging.omero-analysis-notebook.v1",
+      inputs: [{ id: "measurements", kind: "query", path: "input/old.duckdb", formats: ["duckdb"] }],
+      results: { path: "results" },
+      parameters: [],
+      requirements: []
+    });
+    const document: NotebookDocument = {
+      nbformat: 4,
+      nbformat_minor: 5,
+      metadata: {},
+      cells: [{
+        id: "config",
+        cell_type: "code",
+        source: `import omero_analysis_notebook as oan\nctx = oan.configure(r'''${literal}''')`,
+        metadata: { tags: ["omero-analysis-config"] },
+        execution_count: null,
+        outputs: []
+      }]
+    };
+    const rebound = bindNotebookInputsStrict(document, [input("screen.duckdb")]);
+    expect(rebound.document).toBe(document);
+    expect(rebound.document.cells.filter(isInputBindingsCell)).toHaveLength(0);
   });
 
   it("recognizes literal outputs from earlier Pipeline steps as staged inputs", () => {

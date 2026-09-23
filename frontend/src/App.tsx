@@ -1,3 +1,6 @@
+import { trashBlockers, purgeBlockers, pipelineRestoreBlockers, type TrashKind } from "./artifactLifecycle";
+import { editorDraft } from "./editorDraft";
+import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import {
   lazy,
   Suspense,
@@ -30,18 +33,36 @@ import {
   TOOLS,
   ZARR_VIEWER_TOOLS
 } from "./constants";
-import { PythonRuntime, RUNTIME_VERSION } from "./runtime";
+import {
+  PythonRuntime,
+  RUNTIME_VERSION,
+  type RemoteQueryRuntimeResult,
+  type NotebookQueryRequest
+} from "./runtime";
 import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
+import {
+  extensionOf,
+  inputCandidates,
+  parameterDefaults,
+  parseNotebookProtocol,
+  sanitizeProtocolNotebook,
+  validateParameterValues,
+  type NotebookProtocolBinding,
+  type NotebookProtocolContract,
+  type NotebookProtocolInput
+} from "./notebookProtocol";
 import type {
   ArtifactEditorSession,
   EditorOriginTab
 } from "./ArtifactEditor";
 import {
+  ArtifactBindingError,
   bindNotebookInputsStrict,
   bindPipelineInputsStrict,
   bindPipelineStepCodeStrict,
   bindPythonInputsStrict,
   clearNotebookOutputs,
+  downloadableWorkspaceInputs,
   extendPipelineInputs,
   readyWorkspaceInputs
 } from "./artifactBindings";
@@ -53,6 +74,7 @@ import {
   deleteNotebook as deleteStoredNotebook,
   getValue,
   listContextWorkspaces,
+  contextKey,
   loadOrCreateWorkspace,
   loadWorkspace,
   newChat,
@@ -119,9 +141,22 @@ import type {
   AiProfileStore,
   CustomSkill,
   AnalysisSettingsStatus,
+  DataQueryCapabilities,
   AnalysisRunRecord,
-  RemoteQueryBindingV1
+  RemoteQueryBinding,
+  RemoteQueryBindingV2
 } from "./types";
+import {
+  bindRemoteQueryCode,
+  dataQueryBindingCandidates,
+  dataQuerySourceFormat,
+  isOmeroDataQuerySource,
+  remoteBindingFormat,
+  remoteBindingId,
+  remoteBindingPreferredAnnotationId,
+  remoteBindingPreferredFileId
+} from "./remoteQueryBindings";
+import { upgradeLegacyDatabaseCode } from "./legacyRemoteQuery";
 import { useDialogs } from "./components/Dialogs";
 import { ExecutionCard } from "./components/ExecutionCard";
 import { AiActivityCard } from "./components/AiActivityCard";
@@ -218,6 +253,8 @@ import {
   groupChatResults,
   normalizeWorkspaceName,
   renameAnalysisWorkspace,
+  scopedWorkspaceName,
+  workspaceNameSuffix,
   trashWorkspaceOutputs
 } from "./workspaceModel";
 import {
@@ -225,6 +262,8 @@ import {
   syncHasChanges,
   withWorkspaceSyncStatus
 } from "./workspaceSync";
+
+const IMPORT_SYNC_POLL_INTERVAL_MS = 1000;
 import {
   reconcileDeletedRemoteWorkspaces,
   remoteWorkspaceWasDeleted
@@ -332,18 +371,22 @@ function inputContractFromCode(code: string): InputContract {
 
 function listFiles(files: WorkspaceFile[]): string {
   return JSON.stringify(
-    files.filter((file) => !file.deletedAt && file.role !== "chat-attachment").map((file) => ({
-      path: file.dataQueryMode === "remote"
-        ? null
-        : file.source === "result" ? `/output/${file.name}` : `/input/${file.name}`,
-      logical_path: file.logicalPath,
-      sha256: file.sha256,
-      size: file.size,
-      type: file.type,
-      state: file.state,
-      data_query_mode: file.dataQueryMode,
-      annotation_id: file.dataQueryMode === "remote" ? file.annotationId : undefined
-    }))
+    files.filter((file) => !file.deletedAt && file.role !== "chat-attachment").map((file) => {
+      const portableDataSource = isOmeroDataQuerySource(file);
+      return {
+        path: portableDataSource || file.dataQueryMode === "remote"
+          ? null
+          : file.source === "result" ? `/output/${file.name}` : `/input/${file.name}`,
+        logical_path: file.logicalPath,
+        sha256: file.sha256,
+        size: file.size,
+        type: file.type,
+        state: file.state,
+        data_query_mode: file.dataQueryMode,
+        data_query_capability: portableDataSource ? "omero-data-query-v1" : undefined,
+        annotation_id: portableDataSource ? file.annotationId : undefined
+      };
+    })
   );
 }
 
@@ -382,8 +425,8 @@ function toolActivityLabel(name: string): string {
     reset_python: "Resetting local Python",
     list_saved_methods: "Checking saved Methods",
     read_saved_method: "Reading a saved Method",
-    inspect_remote_schema: "Inspecting a remote data schema",
-    query_remote_data: "Querying remote data",
+    inspect_data_schema: "Inspecting a data schema",
+    query_data: "Querying data",
     list_saved_pipelines: "Checking saved Pipelines",
     open_zarr_view: "Preparing an OME-Zarr view",
     render_zarr_roi: "Rendering an OME-Zarr region",
@@ -420,6 +463,51 @@ function bytesLabel(value: number): string {
   if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MiB`;
   if (value >= 1024) return `${(value / 1024).toFixed(1)} KiB`;
   return `${value} bytes`;
+}
+
+function notebookRuntimeName(name: string): string {
+  return name.replace(/[^A-Za-z0-9._ -]/g, "_");
+}
+
+function notebookQueryFormat(name: string): "duckdb" | "sqlite" | "sqlite3" | "csv" {
+  const extension = extensionOf(name);
+  if (extension === ".duckdb") return "duckdb";
+  if (extension === ".sqlite") return "sqlite";
+  if (extension === ".sqlite3") return "sqlite3";
+  if (extension === ".csv") return "csv";
+  throw new Error(`${name} is not a supported notebook query source`);
+}
+
+function typedNotebookQueryParameters(parameters: Record<string, unknown>): Record<string, {
+  type: "null" | "boolean" | "integer" | "float" | "string";
+  value: unknown;
+}> {
+  return Object.fromEntries(Object.entries(parameters).map(([name, value]) => {
+    if (value == null) return [name, { type: "null", value: null }];
+    if (typeof value === "boolean") return [name, { type: "boolean", value }];
+    if (typeof value === "number" && Number.isSafeInteger(value)) return [name, { type: "integer", value }];
+    if (typeof value === "number" && Number.isFinite(value)) return [name, { type: "float", value }];
+    if (typeof value === "string") return [name, { type: "string", value }];
+    throw new Error(`Notebook query parameter ${name} must be a JSON scalar`);
+  }));
+}
+
+function importedNotebookProtocol(document: NotebookRecord["document"]): Pick<
+  NotebookRecord,
+  "document" | "parameterValues" | "portabilityWarning"
+> {
+  const protocol = parseNotebookProtocol(document);
+  return protocol
+    ? {
+        document: sanitizeProtocolNotebook(document),
+        parameterValues: parameterDefaults(protocol),
+        portabilityWarning: undefined
+      }
+    : {
+        document,
+        parameterValues: undefined,
+        portabilityWarning: "Legacy notebook: convert it to the portable protocol to rebind between Local and Remote query sources."
+      };
 }
 
 function workspaceBytes(analysisWorkspace: AnalysisWorkspace | null): number {
@@ -527,7 +615,11 @@ export default function App() {
   const bootstrap = window.OMERO_ANALYSIS;
   const bridge = useMemo(() => new OmeroBridge(bootstrap), [bootstrap]);
   const runtime = useMemo(
-    () => new PythonRuntime(bootstrap.runtimeBase, bootstrap.context),
+    () => new PythonRuntime(
+      bootstrap.runtimeBase,
+      bootstrap.context,
+      (bootstrap.notebookCellTimeoutSeconds || 300) * 1000
+    ),
     [bootstrap]
   );
   const dialogs = useDialogs();
@@ -551,6 +643,8 @@ export default function App() {
   const [zarrViewerWarning, setZarrViewerWarning] = useState("");
   const [zarrSkillCatalog, setZarrSkillCatalog] =
     useState<AnalysisSkillProviderCatalog | null>(null);
+  const [dataQueryCapabilities, setDataQueryCapabilities] =
+    useState<DataQueryCapabilities | null>(null);
   const zarrCapabilities = useRef(new Map<string, ZarrViewerCapability>());
   const [visibleZarrSources, setVisibleZarrSources] = useState<VisibleZarrSource[]>([]);
   const [settings, setSettings] = useState<ProviderSettings>(defaultSettings);
@@ -635,6 +729,10 @@ export default function App() {
   const remoteSettingsLoaded = useRef(false);
   const workspaceSyncInFlight = useRef(false);
   const workspaceSyncQueued = useRef(false);
+  const workspaceSyncPollTimer = useRef<number | null>(null);
+  const workspaceSyncDeferredForRun = useRef(false);
+  const syncRunBarrierTokens = useRef(new Set<string>());
+  const [syncRunBarrierActive, setSyncRunBarrierActive] = useState(false);
   const remoteDeletionInFlight = useRef(false);
   const settingsSyncInFlight = useRef(false);
   const settingsSyncQueued = useRef(false);
@@ -671,7 +769,10 @@ export default function App() {
   const turnOutputNames = useRef(new Set<string>());
   const turnWorkflowSkills =
     useRef<NonNullable<ChatMessage["workflowSkills"]>>([]);
-  const turnRemoteQueryBindings = useRef<RemoteQueryBindingV1[]>([]);
+  const turnRemoteQueryBindings = useRef<RemoteQueryBinding[]>([]);
+  const turnRemoteQueryResults = useRef<RemoteQueryRuntimeResult[]>([]);
+  const activeRemoteQueryDigests = useRef<string[]>([]);
+  const activeRemoteQuerySources = useRef<Record<string, string>>({});
   workspaceRef.current = analysisWorkspace;
   workflowSkillCatalogRef.current = workflowSkillCatalog;
 
@@ -723,6 +824,9 @@ export default function App() {
     else url.searchParams.delete("runId");
     window.history.replaceState({}, "", url);
     setSelectedRunId(runId);
+    const run = workspaceRef.current?.runs.find(item => item.id === runId);
+    if (run?.kind === "method") setHomeMethodId(run.artifactId);
+    if (run?.kind === "pipeline") setHomePipelineId(run.artifactId);
   }
 
   function toggleTheme() {
@@ -853,7 +957,22 @@ export default function App() {
   const trashedFiles = (analysisWorkspace?.files || []).filter((file) => Boolean(file.deletedAt));
   const activeMethods = (analysisWorkspace?.methods || []).filter((method) => !method.deletedAt);
   const activePipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => !pipeline.deletedAt);
-  const activeNotebooks = analysisWorkspace?.notebooks || [];
+  const activeNotebooks = (analysisWorkspace?.notebooks || []).filter(item => !item.deletedAt);
+  const trashedNotebooks = (analysisWorkspace?.notebooks || []).filter(item => item.deletedAt);
+  const [showTrash, setShowTrash] = useState(false);
+  const [browserSaving, setBrowserSaving] = useState(false);
+  const [browserSaveError, setBrowserSaveError] = useState("");
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ pending: number; error?: string }>).detail;
+      setBrowserSaving(detail.pending > 0);
+      if (detail.error) setBrowserSaveError(detail.error);
+    };
+    window.addEventListener("analysis-storage-state", listener);
+    return () => window.removeEventListener("analysis-storage-state", listener);
+  }, []);
+  const savingMethodExecutions = useRef(new Set<string>());
+  const restoringResults = useRef(new Map<string, Promise<WorkspaceFile>>());
   const activeRunKind = runKindForTab(activeTab);
   const visibleRuns = (analysisWorkspace?.runs || []).filter((run) =>
     !activeRunKind || run.kind === activeRunKind
@@ -870,6 +989,16 @@ export default function App() {
   const selectedRunFiles = selectedRun
     ? outputFiles.filter((file) => file.runId === selectedRun.id)
     : [];
+  useEffect(() => {
+    const wanted = (analysisWorkspace?.files || []).filter(file =>
+      file.id === selectedArtifactFileId || Boolean(selectedRun) && file.runId === selectedRun?.id && file.type.startsWith("image/"));
+    for (const file of wanted) {
+      if (!file.data && file.remoteResult && !file.error) void restoreResult(file).catch(error => {
+        if (workspaceRef.current?.workspace.id === file.workspaceId) upsertFiles([{ ...file, error: String(error) }]);
+        setStatus(`Result recovery failed: ${String(error)}`);
+      });
+    }
+  }, [analysisWorkspace?.files, selectedArtifactFileId, selectedRun?.id]);
   const trashedMethods = (analysisWorkspace?.methods || []).filter((method) => Boolean(method.deletedAt));
   const trashedPipelines = (analysisWorkspace?.pipelines || []).filter((pipeline) => Boolean(pipeline.deletedAt));
   const canChat =
@@ -945,7 +1074,8 @@ export default function App() {
       )
     );
     return JSON.stringify({
-      workspace: [analysisWorkspace.workspace.id, analysisWorkspace.workspace.name],
+      workspace: [analysisWorkspace.workspace.id, analysisWorkspace.workspace.name, analysisWorkspace.workspace.revision,
+        analysisWorkspace.workspace.lifecycleRevision || 0, analysisWorkspace.workspace.deletedAt || null],
       methods: analysisWorkspace.methods.map((item) =>
         [item.id, item.currentVersion, item.updatedAt, item.deletedAt || null]
       ),
@@ -953,7 +1083,7 @@ export default function App() {
         [item.id, item.version, item.updatedAt, item.deletedAt || null]
       ),
       notebooks: analysisWorkspace.notebooks.map((item) =>
-        [item.id, item.name, item.updatedAt]
+        [item.id, item.name, item.updatedAt, item.deletedAt || null]
       ),
       files: reusableFiles.map((item) => [
         item.id, item.name, item.logicalPath, item.sha256, item.size,
@@ -963,59 +1093,104 @@ export default function App() {
     });
   }, [analysisWorkspace]);
 
+  function setRunSyncBarrier(token: string, active: boolean) {
+    if (active) syncRunBarrierTokens.current.add(token);
+    else syncRunBarrierTokens.current.delete(token);
+    setSyncRunBarrierActive(syncRunBarrierTokens.current.size > 0);
+  }
+
   useEffect(() => {
     if (!analysisWorkspace || !bootstrap.context) {
       setRemoteSync(null);
       setLocalSyncDigest("");
       return;
     }
+    if (syncRunBarrierActive) {
+      workspaceSyncDeferredForRun.current = true;
+      return;
+    }
     let cancelled = false;
-    const timer = window.setTimeout(() => {
+    const delay = workspaceSyncDeferredForRun.current ? 0 : 1000;
+    let timer: number;
+    let attempts = 0;
+    const check = () => {
+      workspaceSyncDeferredForRun.current = false;
       void Promise.all([
         buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!),
         bridge.syncStatus(analysisWorkspace.workspace.id)
       ]).then(async ([payload, remote]) => {
         if (cancelled) return;
-        setLocalSyncDigest(payload.inventory.digest);
+        setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
         setRemoteSync(remote);
         setSyncError("");
+        await observeLifecycle(remote);
+        if (remote.lifecycle && !["active", "unavailable"].includes(remote.lifecycle)) return;
         if (remoteWorkspaceWasDeleted(analysisWorkspace.workspace, remote)) {
           await discardWorkspaceDeletedInOmero(analysisWorkspace.workspace);
           return;
         }
         if (remote.canSync && (payload.inventory.items.length > 0 || remote.linked) &&
           (!remote.linked || syncHasChanges(
-          payload.inventory.digest,
+          payload.contentDigest || payload.inventory.digest,
           remote.inventoryDigest
         ))) {
           await synchronizeWorkspace(payload);
         }
       }).catch((error) => {
-        if (!cancelled) setSyncError(String(error));
+        if (cancelled) return;
+        if (error instanceof OmeroApiError && error.code === "sync_busy" && attempts++ < 12) {
+          setStatus("Waiting for another workspace synchronization to finish…");
+          timer = window.setTimeout(check, 2500);
+        } else setSyncError(String(error));
       });
-    }, 1000);
+    };
+    timer = window.setTimeout(check, delay);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [workspaceSyncSignature, bootstrap.context, bridge]);
+  }, [workspaceSyncSignature, bootstrap.context, bridge, syncRunBarrierActive]);
+
+  useEffect(() => () => {
+    if (workspaceSyncPollTimer.current != null) {
+      window.clearTimeout(workspaceSyncPollTimer.current);
+    }
+  }, []);
+
+  async function observeLifecycle(remote: SyncStatus) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const state = remote.lifecycle;
+    if (!state || state === "unavailable") return;
+    const deletedAt = state === "active" ? undefined : current.workspace.deletedAt || now();
+    const revision = remote.lifecycleRevision || 0;
+    if (revision < (current.workspace.lifecycleRevision || 0)) return;
+    if (current.workspace.lifecycleRevision === revision && current.workspace.deletedAt === deletedAt) return;
+    const next = { ...current, workspace: { ...current.workspace, deletedAt,
+      purgedAt: state === "purged" ? current.workspace.purgedAt || now() : undefined, lifecycleRevision: revision } };
+    workspaceRef.current = next; setWorkspace(next);
+    await saveWorkspaceRecord(next.workspace);
+    if (state !== "active") setStatus("Workspace lifecycle changed. Local work is preserved; review Manage workspaces.");
+  }
 
   useEffect(() => {
     const workspaceRecord = analysisWorkspace?.workspace;
-    if (!workspaceRecord?.omeroSync || !bootstrap.context) return;
+    if (!workspaceRecord) return;
     let disposed = false;
     let checking = false;
     const checkRemoteWorkspace = async () => {
-      if (disposed || checking || remoteDeletionInFlight.current) return;
+      if (disposed || checking || remoteDeletionInFlight.current || !workspaceRecord.omeroSync || !bootstrap.context) return;
       checking = true;
       try {
         const remote = await bridge.syncStatus(workspaceRecord.id);
         if (disposed) return;
+        await observeLifecycle(remote);
         if (remoteWorkspaceWasDeleted(workspaceRecord, remote)) {
           await discardWorkspaceDeletedInOmero(workspaceRecord);
           return;
         }
         setRemoteSync(remote);
+        await observeLifecycle(remote);
       } catch (error) {
         // A failed probe is not evidence of deletion. Keep all local data and
         // allow the normal sync status UI to report transport failures.
@@ -1028,12 +1203,31 @@ export default function App() {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") void checkRemoteWorkspace();
     };
+    const channel = new BroadcastChannel("omero-analysis-lifecycle");
+    channel.onmessage = event => {
+      if (event.data?.id !== workspaceRecord.id) return;
+      void (async () => {
+        const stored = await loadWorkspace(workspaceRecord.id);
+        const current = workspaceRef.current;
+        if (disposed || current?.workspace.id !== workspaceRecord.id) return;
+        // Apply local lifecycle changes as well, including workspaces never synced.
+        // An explicit purge closes editing without recreating the deleted record.
+        if (stored || event.data.action === "purge") {
+          const record = stored?.workspace || { ...current.workspace, deletedAt: now(), purgedAt: now() };
+          const next = { ...current, workspace: record };
+          workspaceRef.current = next; setWorkspace(next);
+        }
+        await checkRemoteWorkspace();
+      })();
+    };
+    void checkRemoteWorkspace();
     const timer = window.setInterval(() => void checkRemoteWorkspace(), 30_000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       disposed = true;
       window.clearInterval(timer);
+      channel.close();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
@@ -1079,7 +1273,16 @@ export default function App() {
       ]);
       let localWorkspacesAtStart = storedContextWorkspaces;
       setWorkspaceProgress({ percent: 15, message: "Loading the current Workspace record…" });
-      let baseWorkspace = await loadOrCreateWorkspace(bootstrap.context);
+      const launch = new URL(window.location.href);
+      const newId = launch.searchParams.get("new_workspace");
+      const activeWorkspaceKey = `active-workspace:${await contextKey(bootstrap.context)}`;
+      const requestedId = launch.searchParams.get("workspace_id") || (!newId ? await getValue<string>(activeWorkspaceKey) : null);
+      const names = storedContextWorkspaces.map(item => item.name);
+      let number = storedContextWorkspaces.length + 1;
+      while (names.includes(scopedWorkspaceName(bootstrap.context, `Analysis ${number}`))) number++;
+      const selectedLocal = !newId && storedContextWorkspaces.find(item => item.id === requestedId);
+      let baseWorkspace = selectedLocal ? (await loadWorkspace(selectedLocal.id))! :
+        await loadOrCreateWorkspace(bootstrap.context, newId || undefined, newId ? `Analysis ${number}` : undefined);
       if (!alive) return;
       if (!bootstrap.embeddedHost && (savedTheme === "dark" || savedTheme === "light")) {
         setTheme(savedTheme);
@@ -1130,7 +1333,7 @@ export default function App() {
         }
       }
       setWorkspaceProgress({ percent: 34, message: "Reading OMERO data and viewer capabilities…" });
-      const [loadedHierarchy, viewerStatus] = await Promise.all([
+      const [loadedHierarchy, viewerStatus, queryCapabilities] = await Promise.all([
         bridge.hierarchy(),
         bridge.zarrViewerStatus().catch((error) => ({
           schema_version: 1 as const,
@@ -1140,10 +1343,12 @@ export default function App() {
           version: null,
           minimum_version: "0.4.0",
           reason: "not-installed" as const
-        }))
+        })),
+        bridge.dataQueryCapabilities().catch(() => null)
       ]);
       setHierarchy(loadedHierarchy);
       setZarrViewerStatus(viewerStatus);
+      setDataQueryCapabilities(queryCapabilities);
       if (viewerStatus.available) {
         setZarrSkillCatalog(
           await bridge.listZarrViewerSkills().catch(() => null)
@@ -1176,10 +1381,19 @@ export default function App() {
           );
         }
       }
+      if (newId && !storedContextWorkspaces.some(item => item.contextKey.endsWith(`:workspace:${newId}`))) {
+        const remoteNames = (await bridge.workspaceLibrary()).filter(item =>
+          item.sourceObjectType === bootstrap.context?.object_type && item.sourceObjectId === bootstrap.context?.object_id
+        );
+        const used = new Set([...names, ...remoteNames.map(item => item.workspaceName)]);
+        number = Math.max(storedContextWorkspaces.length, remoteNames.length) + 1;
+        while (used.has(scopedWorkspaceName(bootstrap.context, `Analysis ${number}`))) number++;
+        baseWorkspace = await replaceWorkspace(renameAnalysisWorkspace(baseWorkspace, `Analysis ${number}`, now(), bootstrap.context));
+      }
       let initial = baseWorkspace;
       let automaticRestoreMessage = "";
       const requestedSnapshot = bootstrap.context?.selected_workspace_snapshot;
-      if (requestedSnapshot) {
+      if (requestedSnapshot && !newId && !localWorkspacesAtStart.some(item => item.id === requestedId)) {
         setWorkspaceProgress({ percent: 55, message: "Restoring the selected Analysis Workspace…" });
         const localWorkspaces = await listContextWorkspaces(bootstrap.context);
         const existing = localWorkspaces.find(
@@ -1208,20 +1422,24 @@ export default function App() {
         }
       } else if (
         bootstrap.context &&
-        localWorkspacesAtStart.length === 0
+        !newId && (Boolean(requestedId) || localWorkspacesAtStart.length === 0) &&
+        !localWorkspacesAtStart.some(item => item.id === requestedId)
       ) {
         try {
           const candidates = (await bridge.workspaceLibrary())
             .filter((dataset) =>
               dataset.sourceObjectType === bootstrap.context!.object_type &&
               dataset.sourceObjectId === bootstrap.context!.object_id &&
-              Boolean(dataset.snapshot)
+              Boolean(dataset.snapshot) && (!requestedId || dataset.workspaceId === requestedId)
             )
             .sort((left, right) =>
               Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
               right.revision - left.revision
             );
           const latest = candidates[0];
+          if (!latest?.snapshot && launch.searchParams.has("workspace_id")) {
+            throw new Error("This workspace has no saved snapshot. Open it in its original browser and synchronize it first.");
+          }
           if (latest?.snapshot) {
             setWorkspaceProgress({
               percent: 55,
@@ -1229,7 +1447,7 @@ export default function App() {
             });
             const imported = await importWorkspace(
               await bridge.downloadLibraryItem(latest.snapshot.annotationId),
-              bootstrap.context
+              bootstrap.context, latest.workspaceId
             );
             if (
               imported.workspace.objectType !== bootstrap.context.object_type ||
@@ -1238,59 +1456,43 @@ export default function App() {
               throw new Error("The synchronized Workspace belongs to a different OMERO object");
             }
             initial = await replaceWorkspace(imported);
-            if (baseWorkspace.workspace.id !== initial.workspace.id) {
+            if (baseWorkspace.workspace.id !== initial.workspace.id &&
+                !storedContextWorkspaces.some(item => item.id === baseWorkspace.workspace.id)) {
               await deleteWorkspaceCascade(baseWorkspace.workspace.id);
             }
             automaticRestoreMessage =
               `Restored the latest synchronized Workspace from ${latest.datasetName}`;
           }
         } catch (error) {
+          if (launch.searchParams.has("workspace_id")) {
+            if (!storedContextWorkspaces.some(item => item.id === baseWorkspace.workspace.id)) {
+              await deleteWorkspaceCascade(baseWorkspace.workspace.id);
+            }
+            throw error;
+          }
           console.warn("Automatic AnalysisWorkspace restore was skipped", error);
           automaticRestoreMessage = `Automatic Workspace restore was skipped: ${String(error)}`;
         }
       }
-      setWorkspaceProgress({ percent: 68, message: "Loading attached Notebooks…" });
-      for (const attached of bootstrap.context?.notebooks || []) {
-        if (initial.notebooks.some(
-          (item) => item.sourceAnnotationId === attached.annotation_id
-        )) continue;
-        try {
-          const timestamp = now();
-          const notebook: NotebookRecord = {
-            id: id(),
-            workspaceId: initial.workspace.id,
-            name: attached.name,
-            document: parseNotebook(await bridge.downloadNotebook(attached)),
-            sourceAnnotationId: attached.annotation_id,
-            attachmentIds: [attached.annotation_id],
-            selectedDataFileIds: [],
-            createdAt: timestamp,
-            updatedAt: timestamp
-          };
-          initial = {
-            ...initial,
-            notebooks: [...initial.notebooks, notebook]
-          };
-          await saveNotebook(notebook);
-        } catch (error) {
-          console.warn(`Skipped invalid attached notebook ${attached.name}`, error);
-        }
+      if (/^Analysis \d+$/.test(initial.workspace.name)) {
+        initial = await replaceWorkspace(renameAnalysisWorkspace(initial, initial.workspace.name, now(), bootstrap.context));
       }
+      // Source notebooks are imported only after an explicit user selection.
       const requestedNotebook = bootstrap.context?.selected_notebook;
       if (requestedNotebook) {
         let notebook = initial.notebooks.find(
           (item) => item.sourceAnnotationId === requestedNotebook.annotation_id
         );
         if (!notebook) {
-          const document = parseNotebook(
-            await bridge.downloadNotebook(requestedNotebook)
+          const preparedNotebook = importedNotebookProtocol(
+            parseNotebook(await bridge.downloadNotebook(requestedNotebook))
           );
           const timestamp = now();
           notebook = {
             id: id(),
             workspaceId: initial.workspace.id,
             name: requestedNotebook.name,
-            document,
+            ...preparedNotebook,
             sourceAnnotationId: requestedNotebook.annotation_id,
             attachmentIds: [requestedNotebook.annotation_id],
             selectedDataFileIds: [],
@@ -1305,10 +1507,17 @@ export default function App() {
         setActiveNotebookId(initial.notebooks[0].id);
       }
       setWorkspaceProgress({ percent: 82, message: "Preparing current Workspace inputs…" });
-      const prepared = await prepareInputs(initial);
+      let prepared = await removePersistedRemoteQueryInputs(
+        await migratePersistedRemoteMethods(await prepareInputs(initial))
+      );
+      for (const notebook of prepared.notebooks) {
+        const contract = parseNotebookProtocol(notebook.document);
+        if (contract) prepared = await discoverExactNotebookInputs(contract, prepared);
+      }
       if (!alive) return;
       setWorkspace(prepared);
       workspaceRef.current = prepared;
+      await setValue(activeWorkspaceKey, prepared.workspace.id);
       setWorkspaceProgress({ percent: 94, message: "Finishing the Analysis interface…" });
       setPipelineTemplates(await bridge.listPipelineTemplates());
       if (alive) {
@@ -1343,7 +1552,10 @@ export default function App() {
     void bridge.analysisSettings().then(async (remote) => {
       setSettingsSync(remote);
       const payload = remote.payload;
-      if (!remote.synced || !payload) return;
+      if (!remote.synced || !payload) {
+        setSettingsRestoreComplete(true);
+        return;
+      }
       if (payload.ai.profiles.length) {
         const active = payload.ai.profiles.find(
           (profile) => profile.id === payload.ai.activeProfileId
@@ -1378,11 +1590,23 @@ export default function App() {
         setWorkspace(updated);
         await commitWorkspaceRecord(updated.workspace);
       }
-      setSettingsSyncMessage("Settings restored from ~AnalysisSettings");
-    }).catch((error) => {
-      setSettingsSyncMessage(`Settings could not be restored: ${String(error)}`);
-    }).finally(() => {
+      const activeProfile = payload.ai.profiles.find(
+        (profile) => profile.id === payload.ai.activeProfileId
+      ) || payload.ai.profiles[0];
+      const activeProviderNeedsKey = activeProfile && (
+        activeProfile.settings.protocol === "anthropic" ||
+        activeProfile.settings.authMode !== "none"
+      );
+      setSettingsSyncMessage(
+        activeProviderNeedsKey && !activeProfile?.settings.apiKey
+          ? "Settings restored, but the active AI profile has no stored API key"
+          : "Settings restored from ~AnalysisSettings"
+      );
       setSettingsRestoreComplete(true);
+    }).catch((error) => {
+      setSettingsSyncMessage(
+        `Settings could not be restored; automatic saving is paused to protect stored credentials: ${String(error)}`
+      );
     });
   }, [
     analysisWorkspace?.workspace.id,
@@ -1488,7 +1712,19 @@ export default function App() {
       };
       if (selectedMode === "remote") {
         try {
-          const schema = await bridge.remoteSchema(attachment.annotation_id);
+          const started = Date.now();
+          const describe = (value: Record<string, any> = {}) => {
+            const sent = Number(value.sent || 0);
+            const transferring = value.stage === "transferring";
+            setWorkspaceProgress({
+              percent: transferring ? sent / Math.max(1, attachment.size) * 100 : 0,
+              indeterminate: !transferring,
+              message: `${transferring ? "Transferring to DataQueryWorker" : value.stage === "inspecting" ? "Checking database on DataQueryWorker" : "Preparing DataQueryWorker source"}: ${attachment.name}`,
+              detail: `${transferring ? `${bytesLabel(sent)} of ` : ""}${bytesLabel(attachment.size)} · ${Math.floor((Date.now() - started) / 1000)} seconds elapsed. The database stays on the server; only query results are returned to your browser.`
+            });
+          };
+          describe();
+          const schema = await bridge.remoteSchema(attachment.annotation_id, describe);
           file.remoteSchemaDigest = String(schema.schema_digest || "");
         } catch (error) {
           file.state = "failed";
@@ -1516,6 +1752,12 @@ export default function App() {
     }
     for (let index = 0; index < candidates.length; index += 1) {
       const file = candidates[index];
+      setWorkspaceProgress({
+        percent: 0,
+        indeterminate: true,
+        message: `Downloading browser input ${index + 1} of ${candidates.length}: ${file.name}`,
+        detail: `${bytesLabel(file.size)} · Browser analysis downloads this file into your workspace.`
+      });
       setRuntimeProgress({
         percent: Math.round(index / Math.max(1, candidates.length) * 90),
         message: `Downloading ${index + 1} of ${candidates.length} OMERO inputs…`
@@ -1559,6 +1801,117 @@ export default function App() {
         await saveFile(failed);
       }
     }
+    return next;
+  }
+
+  function localFallbackSource(
+    error: unknown,
+    current: AnalysisWorkspace
+  ): WorkspaceFile | null {
+    if (!(error instanceof ArtifactBindingError) || !error.referencedName) return null;
+    const candidates = downloadableWorkspaceInputs(error.referencedName, current.files)
+      .filter((file) => file.dataQueryMode !== "remote");
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  async function legacyRemoteUpgrade(
+    error: unknown,
+    code: string,
+    current: AnalysisWorkspace,
+    artifactKey: string
+  ): Promise<{ code: string; bindings: RemoteQueryBindingV2[] } | null> {
+    if (!(error instanceof ArtifactBindingError) || !error.referencedName) return null;
+    const candidates = downloadableWorkspaceInputs(error.referencedName, current.files)
+      .filter((file) => file.dataQueryMode === "remote" && isOmeroDataQuerySource(file));
+    if (candidates.length !== 1) return null;
+    const source = candidates[0];
+    const format = dataQuerySourceFormat(source);
+    if (!format || !source.annotationId) return null;
+    const schema = await bridge.remoteSchema(source.annotationId);
+    const tables = (Array.isArray(schema.tables) ? schema.tables : [])
+      .map((table: any) => String(table.name || ""))
+      .filter(Boolean);
+    const upgraded = upgradeLegacyDatabaseCode(code, artifactKey, tables, source.name);
+    if (!upgraded) return null;
+    const bindings = upgraded.recipes.map((recipe): RemoteQueryBindingV2 => ({
+      version: 2,
+      bindingId: recipe.bindingId,
+      capability: "omero-data-query-v1",
+      format,
+      sourceName: source.name,
+      preferredAnnotationId: source.annotationId,
+      preferredFileId: source.fileId || undefined,
+      schemaDigest: String(schema.schema_digest || ""),
+      sql: recipe.sql,
+      parameters: {},
+      outputCsvName: recipe.outputCsvName
+    }));
+    return { code: upgraded.code, bindings };
+  }
+
+  async function offerLocalFallback(
+    error: unknown,
+    current: AnalysisWorkspace,
+    artifactName: string
+  ): Promise<AnalysisWorkspace | null> {
+    const source = localFallbackSource(error, current);
+    if (!source) return null;
+    const capacityError = capacityWarning(
+      workspaceBytes(current), source.size, await storageEstimate(), MAX_WORKSPACE_BYTES
+    );
+    if (capacityError) {
+      await dialogs.alert(
+        "Local data required",
+        `${artifactName} opens a DuckDB or SQLite file directly and needs the database in browser storage. ` +
+        capacityError
+      );
+      return null;
+    }
+    const confirmed = await dialogs.confirm(
+      "Download database for this legacy analysis?",
+      `${artifactName} opens its database path directly and the matching Workspace source is not currently downloaded. ` +
+      `Download ${source.name} (${bytesLabel(source.size)}) into browser storage and continue ` +
+      `locally? The worker cache remains available for remote-bound analyses.`,
+      "Download and continue"
+    );
+    if (!confirmed) return null;
+    setStatus(`Downloading ${source.name} for local analysis…`);
+    setRuntimeProgress({ percent: 5, message: `Downloading ${source.name}…` });
+    const attachment: Attachment = {
+      annotation_id: source.annotationId!,
+      file_id: source.fileId || 0,
+      name: source.name,
+      mimetype: source.type,
+      size: source.size,
+      kind: "attachment",
+      supported: true
+    };
+    const data = await bridge.download(attachment);
+    const digest = await sha256(data);
+    if (source.sha256 && source.sha256 !== digest) {
+      throw new Error(`OMERO input ${source.name} no longer matches the Workspace hash`);
+    }
+    const completed: WorkspaceFile = {
+      ...source,
+      data,
+      size: data.byteLength,
+      sha256: digest,
+      dataQueryMode: "local",
+      remoteSchemaDigest: undefined,
+      state: "ready",
+      error: undefined
+    };
+    const next = {
+      ...current,
+      files: current.files.map((file) => file.id === source.id ? completed : file)
+    };
+    await saveFile(completed);
+    workspaceRef.current = next;
+    setWorkspace(next);
+    await syncRuntimeIfStarted(
+      next.files,
+      `${source.name} downloaded; continuing ${artifactName} locally`
+    );
     return next;
   }
 
@@ -1612,34 +1965,108 @@ export default function App() {
     return discovered;
   }
 
+  function portableRemoteQueryBindings(
+    bindings: RemoteQueryBinding[],
+    current: AnalysisWorkspace
+  ): RemoteQueryBindingV2[] {
+    return bindings.map((binding) => {
+      if (binding.version === 2) return binding;
+      const source = current.files.find((file) =>
+        file.annotationId === binding.annotationId &&
+        (!binding.fileId || file.fileId === binding.fileId)
+      );
+      return {
+        version: 2,
+        bindingId: remoteBindingId(binding),
+        capability: binding.capability,
+        format: binding.format,
+        sourceName: source?.name || `${binding.format}-source`,
+        preferredAnnotationId: binding.annotationId,
+        preferredFileId: binding.fileId || undefined,
+        schemaDigest: binding.schemaDigest,
+        sql: binding.sql,
+        parameters: binding.parameters,
+        outputCsvName: binding.outputCsvName
+      };
+    });
+  }
+
+  async function resolveRemoteBindingSource(
+    binding: RemoteQueryBinding,
+    current: AnalysisWorkspace
+  ): Promise<{ source: WorkspaceFile; schema: Record<string, any> }> {
+    const candidates = dataQueryBindingCandidates(binding, current.files);
+    if (!candidates.length) {
+      throw new Error(
+        `No authorized ${remoteBindingFormat(binding)} source is attached to this Workspace`
+      );
+    }
+    const preferredAnnotationId = remoteBindingPreferredAnnotationId(binding);
+    const preferredFileId = remoteBindingPreferredFileId(binding);
+    const preferred = candidates.find((file) =>
+      file.annotationId === preferredAnnotationId &&
+      (!preferredFileId || file.fileId === preferredFileId)
+    );
+    const ordered = preferred
+      ? [preferred, ...candidates.filter((file) => file.id !== preferred.id)]
+      : candidates;
+    const compatible: Array<{ source: WorkspaceFile; schema: Record<string, any> }> = [];
+    for (const source of ordered) {
+      const schema = await bridge.remoteSchema(source.annotationId!);
+      if (String(schema.schema_digest || "") === binding.schemaDigest) {
+        compatible.push({ source, schema });
+      }
+    }
+    if (!compatible.length) {
+      throw new Error(
+        `No ${remoteBindingFormat(binding)} source has the schema required by this Method`
+      );
+    }
+    if (preferred) {
+      const exact = compatible.find((item) => item.source.id === preferred.id);
+      if (exact) return exact;
+    }
+    if (compatible.length === 1) return compatible[0];
+    const selected = await dialogs.choose(
+      "Bind the database",
+      compatible.map(({ source }) => ({
+        value: source.id,
+        label: source.name,
+        description: `OMERO annotation ${source.annotationId}`
+      })),
+      "Choose the current plate data source for this reusable query. Local and remote sources are both supported."
+    );
+    if (!selected) throw new Error("Remote data rebinding was cancelled");
+    return compatible.find(({ source }) => source.id === selected) || compatible[0];
+  }
+
   async function materializeRemoteQueryBindings(
-    bindings: RemoteQueryBindingV1[],
+    bindings: RemoteQueryBinding[],
     current: AnalysisWorkspace
   ): Promise<AnalysisWorkspace> {
-    if (!bindings.length) return current;
-    const prepared: WorkspaceFile[] = [];
-    for (const binding of bindings) {
+    const unique = Array.from(new Map(
+      bindings.map((binding) => [remoteBindingId(binding), binding])
+    ).values());
+    if (!unique.length) {
+      activeRemoteQueryDigests.current = [];
+      activeRemoteQuerySources.current = {};
+      if (runtimeStarted.current) await runtime.syncRemoteQueries([]);
+      return current;
+    }
+    const prepared: RemoteQueryRuntimeResult[] = [];
+    const resolvedSources: Record<string, string> = {};
+    for (const binding of unique) {
       if (
-        binding.version !== 1 || binding.capability !== "omero-data-query-v1" ||
-        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.csv$/i.test(binding.outputCsvName)
+        ![1, 2].includes(binding.version) || binding.capability !== "omero-data-query-v1" ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.csv$/i.test(binding.outputCsvName) ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(remoteBindingId(binding))
       ) {
         throw new Error("Invalid remote query binding");
       }
-      const source = current.files.find((file) =>
-        file.annotationId === binding.annotationId && file.fileId === binding.fileId &&
-        file.dataQueryMode === "remote" && file.state === "ready"
-      );
-      if (!source) throw new Error("The remote query source is no longer authorized");
-      const schema = await bridge.remoteSchema(binding.annotationId);
-      if (String(schema.schema_digest || "") !== binding.schemaDigest) {
-        throw new Error(`Schema changed for ${source.name}`);
-      }
+      const { source } = await resolveRemoteBindingSource(binding, current);
       const result = await bridge.remoteQuery(
-        binding.annotationId, binding.sql, binding.parameters
+        source.annotationId!, binding.sql, binding.parameters
       );
-      if (String(result.source_sha256 || "") !== binding.sourceDigest) {
-        throw new Error(`Source content changed for ${source.name}`);
-      }
       if (typeof result.result_token !== "string") {
         throw new Error("Remote query did not return a result token");
       }
@@ -1647,35 +2074,87 @@ export default function App() {
       if (data.byteLength !== Number(result.byte_count)) {
         throw new Error("Remote query result size changed during download");
       }
-      const digest = await sha256(data);
       prepared.push({
-        id: id(),
-        workspaceId: current.workspace.id,
+        bindingId: remoteBindingId(binding),
         name: binding.outputCsvName,
-        logicalPath: `${current.workspace.rootPath}/inputs/${binding.outputCsvName}`,
-        type: "text/csv",
-        size: data.byteLength,
-        sha256: digest,
-        source: "local",
-        state: "ready",
         data,
-        createdAt: now()
+        sourceDigest: String(result.source_sha256 || await sha256(data))
       });
+      resolvedSources[`query:${remoteBindingId(binding)}`] = source.name;
     }
-    const replacedNames = new Set(prepared.map((file) => file.name.toLowerCase()));
-    const next = {
-      ...current,
-      files: [
-        ...current.files.filter((file) =>
-          !replacedNames.has(file.name.toLowerCase()) || file.dataQueryMode === "remote"
-        ),
-        ...prepared
-      ]
-    };
-    await Promise.all(prepared.map(saveFile));
-    workspaceRef.current = next;
-    setWorkspace(next);
-    return next;
+    await ensureRuntime(current.files);
+    await runtime.syncRemoteQueries(prepared);
+    activeRemoteQueryDigests.current = prepared.map((item) => item.sourceDigest).sort();
+    activeRemoteQuerySources.current = resolvedSources;
+    return current;
+  }
+
+  async function removePersistedRemoteQueryInputs(
+    current: AnalysisWorkspace
+  ): Promise<AnalysisWorkspace> {
+    const queryNames = new Set([
+      ...current.methods.flatMap((item) => item.remoteQueryBindings || []),
+      ...current.pipelines.flatMap((item) => item.remoteQueryBindings || []),
+      ...current.notebooks.flatMap((item) => item.remoteQueryBindings || []),
+      ...current.executions.flatMap((item) => item.remoteQueryBindings || [])
+    ].map((binding) => binding.outputCsvName.toLowerCase()));
+    if (!queryNames.size) return current;
+    const stale = current.files.filter((file) =>
+      file.source === "local" && file.role !== "chat-attachment" &&
+      queryNames.has(file.name.toLowerCase()) &&
+      file.logicalPath.toLowerCase().includes("/inputs/")
+    );
+    if (!stale.length) return current;
+    await Promise.all(stale.map((file) => deleteStoredFile(file.id)));
+    const staleIds = new Set(stale.map((file) => file.id));
+    return { ...current, files: current.files.filter((file) => !staleIds.has(file.id)) };
+  }
+
+  async function migratePersistedRemoteMethods(
+    current: AnalysisWorkspace
+  ): Promise<AnalysisWorkspace> {
+    const migrated: MethodRecord[] = [];
+    for (const method of current.methods) {
+      const bindings = method.remoteQueryBindings || [];
+      if (!bindings.some((binding) => binding.version === 1)) {
+        migrated.push(method);
+        continue;
+      }
+      const portableBindings = portableRemoteQueryBindings(bindings, current);
+      const currentVersion = method.versions.find(
+        (version) => version.version === method.currentVersion
+      );
+      if (!currentVersion) {
+        migrated.push({ ...method, remoteQueryBindings: portableBindings });
+        continue;
+      }
+      const portableCode = bindRemoteQueryCode(currentVersion.code, portableBindings);
+      const codeChanged = portableCode !== currentVersion.code;
+      const nextVersion = codeChanged ? method.currentVersion + 1 : method.currentVersion;
+      const updated: MethodRecord = {
+        ...method,
+        remoteQueryBindings: portableBindings,
+        requiredCapabilities: Array.from(new Set([
+          ...(method.requiredCapabilities || []),
+          "omero-data-query-v1"
+        ])),
+        inputContract: inputContractFromCode(portableCode),
+        currentVersion: nextVersion,
+        versions: codeChanged
+          ? [...method.versions, {
+            ...currentVersion,
+            version: nextVersion,
+            code: portableCode,
+            codeHash: await sha256(portableCode),
+            createdAt: now()
+          }]
+          : method.versions,
+        updatedAt: now()
+      };
+      await saveMethod(updated);
+      migrated.push(updated);
+    }
+    return { ...current, methods: migrated };
   }
 
   async function syncRuntimeIfStarted(files: WorkspaceFile[], finalStatus: string) {
@@ -2247,21 +2726,25 @@ export default function App() {
     }
     try {
       const data = await file.arrayBuffer();
-      const document = parseNotebook(data);
-      const attachment = bootstrap.context && bridge.canUpload
-        ? await bridge.uploadNotebook(file.name, new Uint8Array(data))
-        : null;
+      const parsed = parseNotebook(data);
+      const protocol = parseNotebookProtocol(parsed);
+      const document = protocol ? sanitizeProtocolNotebook(parsed) : parsed;
+      // Automatic sync persists this notebook in the user-owned workspace.
       const timestamp = now();
       const record: NotebookRecord = {
         id: id(),
         workspaceId: current.workspace.id,
-        name: attachment?.name || file.name,
+        name: file.name,
         document,
-        sourceAnnotationId: attachment?.annotation_id,
-        attachmentIds: attachment ? [attachment.annotation_id] : [],
+        sourceAnnotationId: undefined,
+        attachmentIds: [],
         selectedDataFileIds: current.files
           .filter((item) => item.source !== "result" && item.role !== "chat-attachment" && !item.deletedAt)
           .map((item) => item.id),
+        parameterValues: protocol ? parameterDefaults(protocol) : undefined,
+        portabilityWarning: protocol
+          ? undefined
+          : "Legacy notebook: input paths are rebound by filename and the notebook is not portable between Local and Remote query sources.",
         createdAt: timestamp,
         updatedAt: timestamp
       };
@@ -2272,11 +2755,7 @@ export default function App() {
       setInspectorSelection({ kind: "notebook", id: record.id });
       setActiveTab("notebooks");
       await saveNotebook(record);
-      setStatus(
-        attachment
-          ? `Uploaded and attached ${record.name}`
-          : `Uploaded ${record.name} to this browser workspace`
-      );
+      setStatus(`Imported ${record.name} into your workspace${protocol ? "" : "; legacy portability warning added"}`);
     } catch (error) {
       setStatus(`Notebook upload failed: ${String(error)}`);
     }
@@ -2503,15 +2982,345 @@ export default function App() {
     return true;
   }
 
+  async function resolveNotebookProtocolBinding(
+    input: NotebookProtocolInput,
+    record: NotebookRecord,
+    current: AnalysisWorkspace
+  ): Promise<NotebookProtocolBinding | null> {
+    const candidates = inputCandidates(input, current.files);
+    const previous = record.protocolBindings?.find((binding) => binding.inputId === input.id);
+    let source = previous
+      ? candidates.find((file) => file.id === previous.fileId)
+      : undefined;
+    if (!source && candidates.length === 1) source = candidates[0];
+    if (!source && candidates.length > 1) {
+      const selected = await dialogs.choose(
+        `Bind notebook input “${input.id}”`,
+        candidates.map((file) => ({
+          value: file.id,
+          label: file.name,
+          description: input.kind === "query"
+            ? `${file.dataQueryMode === "remote" || !file.data ? "Remote" : "Local"} ${notebookQueryFormat(file.name)} source`
+            : `Supporting ${extensionOf(file.name)} file`
+        })),
+        input.kind === "query"
+          ? "Choose a schema-compatible source. This binding can be changed for another plate."
+          : "Choose the supporting file for this notebook."
+      );
+      if (selected) source = candidates.find((file) => file.id === selected);
+    }
+    if (!source) {
+      if (!input.required) return null;
+      throw new Error(`Required notebook input “${input.id}” has no compatible Workspace file`);
+    }
+    if (input.kind === "file" && !source.data) {
+      throw new Error(`Supporting notebook input ${source.name} must be downloaded before execution`);
+    }
+    const mode: "local" | "remote" = input.kind === "query" &&
+      (source.dataQueryMode === "remote" || !source.data)
+      ? "remote"
+      : "local";
+    if (mode === "remote" && !source.annotationId) {
+      throw new Error(`Remote notebook input ${source.name} is not an OMERO attachment`);
+    }
+    let schemaDigest = source.remoteSchemaDigest;
+    let sourceDigest: string | undefined = source.sha256;
+    if (input.kind === "query" && source.annotationId) {
+      const schema = await bridge.remoteSchema(source.annotationId);
+      schemaDigest = String(schema.schema_digest || schemaDigest || "") || undefined;
+      sourceDigest = String(schema.source_sha256 || sourceDigest || "") || undefined;
+      if (input.schema?.tables?.length) {
+        const available = new Map(
+          (Array.isArray(schema.tables) ? schema.tables : []).map((table: any) => [
+            String(table.name),
+            new Set((Array.isArray(table.columns) ? table.columns : []).map((column: any) => String(column.name)))
+          ])
+        );
+        for (const table of input.schema.tables) {
+          const columns = available.get(table.name);
+          if (!columns || table.columns?.some((column) => !columns.has(column.name))) {
+            throw new Error(`Notebook input ${source.name} does not satisfy the declared schema for ${input.id}`);
+          }
+        }
+      }
+    }
+    return {
+      inputId: input.id,
+      fileId: source.id,
+      name: source.name,
+      kind: input.kind,
+      mode,
+      path: `/input/${notebookRuntimeName(source.name)}`,
+      format: input.kind === "query" ? notebookQueryFormat(source.name) : undefined,
+      annotationId: source.annotationId,
+      originalFileId: source.fileId,
+      schemaDigest,
+      sourceDigest
+    };
+  }
+
+  async function discoverExactNotebookInputs(
+    contract: NotebookProtocolContract,
+    current: AnalysisWorkspace
+  ): Promise<AnalysisWorkspace> {
+    const missing = contract.inputs.filter((input) => inputCandidates(input, current.files).length === 0);
+    const localQueryInputs = contract.inputs.filter((input) => input.kind === "query").flatMap((input) =>
+      inputCandidates(input, current.files).filter((file) =>
+        file.source === "omero" && file.dataQueryMode !== "remote" &&
+        file.name.toLowerCase() === input.path.split(/[\\/]/).pop()?.toLowerCase()
+      )
+    );
+    if ((!missing.length && !localQueryInputs.length) || !bootstrap.context) return current;
+
+    const attachments = await bridge.listAttachments();
+    let next = current;
+    for (const source of localQueryInputs) {
+      const attachment = attachments.find((candidate) =>
+        candidate.annotation_id === source.annotationId && candidate.default_mode === "remote" &&
+        candidate.allowed_modes?.includes("remote") === true
+      );
+      if (!attachment) continue;
+      const schema = await bridge.remoteSchema(attachment.annotation_id);
+      const promoted: WorkspaceFile = {
+        ...source,
+        data: undefined,
+        size: attachment.size,
+        sha256: "",
+        state: "ready",
+        dataQueryMode: "remote",
+        remoteSchemaDigest: String(schema.schema_digest || "") || undefined,
+        error: undefined
+      };
+      next = {
+        ...next,
+        files: next.files.map((file) => file.id === source.id ? promoted : file)
+      };
+      await saveFile(promoted);
+    }
+    for (const input of missing) {
+      const expectedName = input.path.split(/[\\/]/).pop()?.toLowerCase();
+      if (!expectedName) continue;
+      const attachment = attachments.find((candidate) =>
+        candidate.supported && candidate.name.toLowerCase() === expectedName &&
+        !next.files.some((file) => file.annotationId === candidate.annotation_id)
+      );
+      if (!attachment) continue;
+
+      const remote = input.kind === "query" && attachment.default_mode === "remote" &&
+        attachment.allowed_modes?.includes("remote") === true;
+      const file: WorkspaceFile = {
+        id: id(),
+        workspaceId: next.workspace.id,
+        name: attachment.name,
+        logicalPath: `${next.workspace.rootPath}/inputs/${attachment.annotation_id}--${attachment.name}`,
+        type: attachment.mimetype,
+        size: attachment.size,
+        sha256: "",
+        source: "omero",
+        state: remote ? "ready" : "loading",
+        annotationId: attachment.annotation_id,
+        fileId: attachment.file_id,
+        dataQueryMode: remote ? "remote" : "local",
+        createdAt: now()
+      };
+      if (remote) {
+        const schema = await bridge.remoteSchema(attachment.annotation_id);
+        file.remoteSchemaDigest = String(schema.schema_digest || "") || undefined;
+      } else {
+        const capacityError = capacityWarning(
+          workspaceBytes(next), attachment.size, await storageEstimate(), MAX_WORKSPACE_BYTES
+        );
+        if (capacityError) {
+          throw new Error(`Notebook input ${attachment.name} cannot be downloaded: ${capacityError}`);
+        }
+        const data = await bridge.download(attachment);
+        file.data = data;
+        file.size = data.byteLength;
+        file.sha256 = await sha256(data);
+        file.state = "ready";
+      }
+      next = { ...next, files: [...next.files, file] };
+      await saveFile(file);
+    }
+    if (next !== current) {
+      workspaceRef.current = next;
+      setWorkspace(next);
+    }
+    return next;
+  }
+
+  async function runNotebookBrokerQuery(
+    bindings: NotebookProtocolBinding[],
+    request: NotebookQueryRequest
+  ): Promise<{ data: ArrayBuffer; metadata: Record<string, unknown> }> {
+    const binding = bindings.find((item) => item.inputId === request.source);
+    if (!binding || binding.kind !== "query") {
+      throw new Error(`Notebook query source is not bound: ${request.source}`);
+    }
+    if (binding.mode !== "remote" || !binding.annotationId) {
+      throw new Error(`Notebook source ${request.source} is not a remote OMERO binding`);
+    }
+    const brokerStarted = performance.now();
+    const result = await bridge.remoteQuery(
+      binding.annotationId,
+      request.sql,
+      typedNotebookQueryParameters(request.parameters)
+    );
+    const brokerQueryMs = performance.now() - brokerStarted;
+    if (typeof result.result_token !== "string") {
+      throw new Error("Remote notebook query did not return a result token");
+    }
+    const downloadStarted = performance.now();
+    const data = await bridge.downloadRemoteResult(result.result_token);
+    const downloadMs = performance.now() - downloadStarted;
+    if (data.byteLength !== Number(result.byte_count)) {
+      throw new Error("Remote notebook query result size changed during download");
+    }
+    return {
+      data,
+      metadata: {
+        cache_status: result.cache_status,
+        row_count: Number(result.row_count),
+        byte_count: Number(result.byte_count),
+        worker_duration_ms: Number(result.duration_ms),
+        source_sha256: result.source_sha256,
+        sql_sha256: result.sql_sha256,
+        broker_query_ms: brokerQueryMs,
+        download_ms: downloadMs
+      }
+    };
+  }
+
+  async function prepareProtocolNotebook(record: NotebookRecord): Promise<NotebookRecord> {
+    let current = workspaceRef.current;
+    if (!current) throw new Error("Workspace is unavailable");
+    const contract = parseNotebookProtocol(record.document);
+    if (!contract) {
+      runtime.setNotebookQueryHandler(null);
+      return record;
+    }
+    current = await discoverExactNotebookInputs(contract, current);
+    const bindings = (await Promise.all(
+      contract.inputs.map((input) => resolveNotebookProtocolBinding(input, record, current))
+    )).filter((binding): binding is NotebookProtocolBinding => binding != null);
+    const parameters = {
+      ...parameterDefaults(contract),
+      ...(record.parameterValues || {})
+    };
+    const parameterChoices = { ...(record.parameterChoices || {}) };
+    const parameterChoiceLabels = { ...(record.parameterChoiceLabels || {}) };
+    for (const parameter of contract.parameters) {
+      const choicesQuery = parameter.choices_query;
+      if (!choicesQuery) continue;
+      const binding = bindings.find((item) => item.inputId === choicesQuery.source);
+      if (!binding?.annotationId) continue;
+      const boundedSql = `SELECT * FROM (${choicesQuery.sql.replace(/;\s*$/, "")}) AS choices LIMIT ${choicesQuery.limit}`;
+      const result = await bridge.remoteQuery(binding.annotationId, boundedSql, {});
+      const columns = Array.isArray(result.columns)
+        ? result.columns.map((column: any) => String(column.name ?? column))
+        : [];
+      const rows = Array.isArray(result.preview) ? result.preview : [];
+      const valueIndex = Math.max(0, choicesQuery.value_column
+        ? columns.indexOf(choicesQuery.value_column)
+        : 0);
+      const labelIndex = choicesQuery.label_column
+        ? columns.indexOf(choicesQuery.label_column)
+        : -1;
+      if (choicesQuery.value_column && columns.indexOf(choicesQuery.value_column) < 0) {
+        throw new Error(`Notebook parameter ${parameter.name} choices value column is missing: ${choicesQuery.value_column}`);
+      }
+      if (choicesQuery.label_column && labelIndex < 0) {
+        throw new Error(`Notebook parameter ${parameter.name} choices label column is missing: ${choicesQuery.label_column}`);
+      }
+      const choiceRows = rows
+        .map((row: unknown) => Array.isArray(row)
+          ? { value: row[valueIndex], label: labelIndex >= 0 ? String(row[labelIndex] ?? "") : "" }
+          : null)
+        .filter((item): item is { value: boolean | number | string; label: string } =>
+          item != null && ["boolean", "number", "string"].includes(typeof item.value)
+        );
+      parameterChoices[parameter.name] = choiceRows.map((item) => item.value);
+      parameterChoiceLabels[parameter.name] = choiceRows.map((item) => item.label);
+      if (parameters[parameter.name] == null && parameterChoices[parameter.name].length) {
+        parameters[parameter.name] = parameterChoices[parameter.name][0];
+      }
+    }
+    const validatedParameters = validateParameterValues(contract, parameters, parameterChoices);
+    const changed: NotebookRecord = {
+      ...record,
+      protocolBindings: bindings,
+      parameterValues: validatedParameters,
+      parameterChoices,
+      parameterChoiceLabels,
+      selectedDataFileIds: bindings.map((binding) => binding.fileId),
+      portabilityWarning: undefined,
+      updatedAt: now()
+    };
+    await updateNotebook(changed);
+    runtime.setNotebookQueryHandler((request) => runNotebookBrokerQuery(bindings, request));
+    await runtime.configureNotebook({ contract, bindings, parameters: validatedParameters });
+    return changed;
+  }
+
   async function runNotebook(record: NotebookRecord, fromEditor = false) {
     if (!await openNotebook(record, fromEditor)) return;
-    const current = workspaceRef.current;
-    if (!current) return;
-    const materialized = await materializeRemoteQueryBindings(
-      record.remoteQueryBindings || [], current
-    );
-    await ensureRuntime(materialized.files);
     setNotebookRunRequest({ id: record.id, nonce: Date.now() });
+  }
+
+  async function prepareNotebookRuntime(
+    record: NotebookRecord
+  ): Promise<{ inputs: WorkspaceFile[]; notebook: NotebookRecord }> {
+    let current = workspaceRef.current;
+    if (!current) throw new Error("Workspace is not ready");
+    const protocol = parseNotebookProtocol(record.document);
+    if (protocol) {
+      await ensureRuntime(current.files);
+      return { inputs: current.files, notebook: record };
+    }
+    let bindings = record.remoteQueryBindings || [];
+    const cells = [] as NotebookRecord["document"]["cells"];
+    for (let index = 0; index < record.document.cells.length; index += 1) {
+      const cell = record.document.cells[index];
+      if (cell.cell_type !== "code") {
+        cells.push(cell);
+        continue;
+      }
+      let code = Array.isArray(cell.source) ? cell.source.join("") : cell.source;
+      code = bindRemoteQueryCode(code, bindings);
+      try {
+        bindPythonInputsStrict(code, current.files);
+      } catch (error) {
+        const remote = await legacyRemoteUpgrade(
+          error, code, current, `${record.id}-cell-${index + 1}`
+        );
+        if (remote) {
+          bindings = [...bindings, ...remote.bindings];
+          code = remote.code;
+        } else {
+          const local = await offerLocalFallback(error, current, record.name);
+          if (!local) throw error;
+          current = local;
+          bindPythonInputsStrict(code, current.files);
+        }
+      }
+      cells.push({ ...cell, source: code });
+    }
+    current = await materializeRemoteQueryBindings(bindings, current);
+    const changed: NotebookRecord = {
+      ...record,
+      document: { ...record.document, cells },
+      remoteQueryBindings: bindings,
+      portabilityWarning: bindings.length
+        ? "Large OMERO databases are queried remotely; only bounded CSV results enter the browser runtime."
+        : record.portabilityWarning,
+      updatedAt: now()
+    };
+    if (JSON.stringify(changed.document) !== JSON.stringify(record.document) ||
+        JSON.stringify(changed.remoteQueryBindings) !== JSON.stringify(record.remoteQueryBindings)) {
+      await updateNotebook(changed);
+    }
+    await ensureRuntime(current.files);
+    return { inputs: current.files, notebook: changed };
   }
 
   async function renameNotebook(record: NotebookRecord) {
@@ -2544,26 +3353,10 @@ export default function App() {
   }
 
   async function removeNotebook(record: NotebookRecord) {
-    if (!await dialogs.confirm(
-      "Delete notebook?",
-      `${record.name} and its browser-stored outputs will be removed from this Workspace. OMERO FileAnnotations are not deleted.`,
-      "Delete notebook",
-      true
-    )) return;
-    const current = workspaceRef.current;
-    if (!current) return;
-    const notebooks = current.notebooks.filter((notebook) => notebook.id !== record.id);
-    const next = { ...current, notebooks };
-    workspaceRef.current = next;
-    setWorkspace(next);
-    if (activeNotebookId === record.id) {
-      setActiveNotebookId(notebooks[0]?.id || null);
-    }
-    if (inspectorSelection?.kind === "notebook" && inspectorSelection.id === record.id) {
-      setInspectorSelection({ kind: "folder", id: "notebooks" });
-    }
-    await deleteStoredNotebook(record.id);
-    setStatus(`Deleted notebook ${record.name}`);
+    if (!await dialogs.confirm("Move Notebook to Trash?", `${record.name} and its history remain recoverable.`, "Move to Trash", true)) return;
+    await updateNotebook({ ...record, deletedAt: now(), updatedAt: now() });
+    setActiveNotebookId(null);
+    setStatus(`Moved ${record.name} to Trash`);
   }
 
   async function updateNotebook(record: NotebookRecord) {
@@ -2618,6 +3411,15 @@ export default function App() {
           omero_analysis: {
             runtime: RUNTIME_VERSION,
             source_annotation: record.sourceAnnotationId || null,
+            protocol: parseNotebookProtocol(record.document)?.schema || null,
+            protocol_bindings: (record.protocolBindings || []).map((binding) => ({
+              input_id: binding.inputId,
+              format: binding.format,
+              mode: binding.mode,
+              source_digest: binding.sourceDigest,
+              schema_digest: binding.schemaDigest
+            })),
+            parameter_values: record.parameterValues || {},
             input_hashes: current.files
               .filter((file) => file.source !== "result" && file.role !== "chat-attachment" && !file.deletedAt)
               .map((file) => ({ name: file.name, sha256: file.sha256 })),
@@ -2632,14 +3434,14 @@ export default function App() {
       };
       const attachment = await bridge.uploadNotebook(
         `${stem}-executed-${timestamp}.ipynb`,
-        serializeNotebook(document)
+        serializeNotebook(document), current.workspace.id
       );
       await updateNotebook({
         ...record,
         attachmentIds: [...record.attachmentIds, attachment.annotation_id],
         updatedAt: now()
       });
-      setStatus(`Attached executed copy as FileAnnotation ${attachment.annotation_id}`);
+      setStatus(`Saved executed copy in your workspace as FileAnnotation ${attachment.annotation_id}`);
     } catch (error) {
       setStatus(`Executed notebook attachment failed: ${String(error)}`);
     }
@@ -3143,6 +3945,16 @@ export default function App() {
     window.addEventListener("mouseup", stop);
   }
 
+  function openAnalysisWorkspace(id?: string) {
+    if (syncing || busy || editorSession?.dirty) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("new_workspace");
+    url.searchParams.delete("workspace_id");
+    url.searchParams.delete("workspace_annotation");
+    url.searchParams.set(id ? "workspace_id" : "new_workspace", id || crypto.randomUUID());
+    window.location.assign(url);
+  }
+
   async function refreshWorkspace() {
     if (!workspace) return;
     setBrowserMenu(null);
@@ -3156,18 +3968,50 @@ export default function App() {
     await syncRuntimeIfStarted(prepared.files, "Workspace refreshed");
   }
 
+  async function changeWorkspaceLifecycle(identifier: string, action: "trash" | "restore" | "purge") {
+    const local = await loadWorkspace(identifier);
+    const name = local?.workspace.name || identifier;
+    if (action !== "restore" && !await dialogs.confirm(action === "trash" ? "Move workspace to Trash?" : "Delete workspace permanently?",
+      action === "trash" ? `${name} can be restored later.` : `${name}: managed results and reusable analyses will be removed. Unrelated OMERO content is preserved.`,
+      action === "trash" ? "Move to Trash" : "Delete permanently", true)) return;
+    const datasetId = local?.workspace.omeroSync?.datasetId;
+    const remote = bootstrap.context ? (datasetId ? await bridge.manageWorkspaceDataset(datasetId) : await bridge.syncStatus(identifier)) : null;
+    let result = remote;
+    if (remote?.linked || (remote?.lifecycle && !["active", "unavailable"].includes(remote.lifecycle))) {
+      result = datasetId ? await bridge.manageWorkspaceDataset(datasetId, action, remote.lifecycleRevision || 0)
+        : await bridge.changeWorkspaceLifecycle(identifier, action, remote.lifecycleRevision || 0);
+      if (result.cleanup && !result.cleanup.complete) throw new Error("Cleanup is incomplete. Its journal is retained; retry Delete permanently.");
+    } else if (local?.workspace.omeroSync) {
+      throw new Error("Remote workspace is unavailable. Local data is preserved; restore its access or linkage first.");
+    }
+    if (local) {
+      const record = { ...local.workspace, deletedAt: action === "restore" ? undefined : now(),
+        purgedAt: action === "purge" ? now() : undefined, lifecycleRevision: result?.lifecycleRevision || 0,
+        browserLifecycleRevision: (local.workspace.browserLifecycleRevision || 0) + 1 };
+      if (action === "purge") await deleteWorkspaceCascade(identifier, true);
+      else await saveWorkspaceRecord(record);
+      if (workspaceRef.current?.workspace.id === identifier) {
+        const current = { ...workspaceRef.current, workspace: record };
+        workspaceRef.current = current; setWorkspace(current);
+      }
+    }
+    const channel = new BroadcastChannel("omero-analysis-lifecycle");
+    channel.postMessage({ id: identifier, action }); channel.close();
+    setStatus(action === "restore" ? "Workspace restored" : action === "trash" ? "Workspace moved to Trash" : "Workspace permanently removed");
+  }
+
   async function renameWorkspace(target: WorkspaceRecord) {
     const requested = await dialogs.askText(
       "Rename workspace",
-      target.name,
-      "This changes the browser-local workspace name and logical workspace folder. OMERO object and attachment names are unchanged."
+      workspaceNameSuffix(bootstrap.context, target.name),
+      "Rename the analysis label. Its full source path stays as a fixed prefix. The name updates in OMERO and the disk browsing folder on the next synchronization."
     );
     if (requested == null) return;
-    const name = normalizeWorkspaceName(requested);
-    if (!name) {
+    if (!normalizeWorkspaceName(requested)) {
       setStatus("Workspace name cannot be empty");
       return;
     }
+    const name = scopedWorkspaceName(bootstrap.context, requested);
     if (name === target.name) return;
     const siblings = await listContextWorkspaces(bootstrap.context);
     if (siblings.some((item) =>
@@ -3185,7 +4029,7 @@ export default function App() {
       setStatus("The browser-local workspace could not be loaded");
       return;
     }
-    const renamed = renameAnalysisWorkspace(targetWorkspace, name, now());
+    const renamed = renameAnalysisWorkspace(targetWorkspace, name, now(), bootstrap.context);
     if (siblings.some((item) =>
       item.id !== target.id &&
       item.rootPath.toLocaleLowerCase() === renamed.workspace.rootPath.toLocaleLowerCase()
@@ -3778,7 +4622,10 @@ export default function App() {
     const owner = executionOwner(executionContext);
     const normalizedCode = code.replace(/\r\n/g, "\n").trimEnd();
     const codeHash = await sha256(normalizedCode);
-    const inputHashes = workspaceInputHashes(current);
+    const inputHashes = [
+      ...workspaceInputHashes(current),
+      ...activeRemoteQueryDigests.current
+    ].sort();
     const skillHashes = turnWorkflowSkills.current
       .map((skill) => skill.sha256)
       .sort();
@@ -3893,7 +4740,11 @@ export default function App() {
     let output: RuntimeOutput;
     try {
       setAnalysisPhase("running");
-      output = await runtime.run(normalizedCode);
+      output = await runtime.run(
+        normalizedCode,
+        120_000,
+        purpose === "method" || purpose === "pipeline"
+      );
     } catch (error) {
       const detail = String(error instanceof Error ? error.message : error).slice(0, MAX_TOOL_TEXT);
       const evidenceId = id();
@@ -4189,21 +5040,22 @@ export default function App() {
       }
     }
     if (
-      call.function.name === "inspect_remote_schema" ||
-      call.function.name === "query_remote_data"
+      call.function.name === "inspect_data_schema" ||
+      call.function.name === "query_data"
     ) {
       try {
         const annotationId = Number(args.annotation_id);
         const source = current.files.find((file) =>
-          file.annotationId === annotationId && file.dataQueryMode === "remote" &&
+          file.annotationId === annotationId && isOmeroDataQuerySource(file) &&
           file.state === "ready" && !file.deletedAt
         );
-        if (!source) return toolErrorText("Remote query source is unavailable");
+        if (!source) return toolErrorText("Data query source is unavailable");
         const schema = await bridge.remoteSchema(annotationId);
-        if (call.function.name === "inspect_remote_schema") {
+        if (call.function.name === "inspect_data_schema") {
           return JSON.stringify({
             annotation_id: annotationId,
             name: source.name,
+            execution_mode: source.dataQueryMode || "local",
             format: schema.format,
             schema_digest: schema.schema_digest,
             tables: schema.tables
@@ -4218,6 +5070,7 @@ export default function App() {
           args.parameters as Record<string, { type: string; value: unknown }>
         );
         const summary = {
+          execution_mode: source.dataQueryMode || "local",
           columns: result.columns,
           row_count: result.row_count,
           byte_count: result.byte_count,
@@ -4234,39 +5087,58 @@ export default function App() {
           ? args.output_csv_name : `remote-query-${annotationId}.csv`;
         const outputCsvName = `${slug(requested.replace(/\.csv$/i, ""))}.csv`;
         const data = await bridge.downloadRemoteResult(String(result.result_token || ""));
-        const output: WorkspaceFile = {
-          id: id(),
-          workspaceId: current.workspace.id,
-          chatId,
-          name: outputCsvName,
-          logicalPath: `${current.workspace.rootPath}/inputs/${outputCsvName}`,
-          type: "text/csv",
-          size: data.byteLength,
-          sha256: await sha256(data),
-          source: "local",
-          state: "ready",
-          data,
-          createdAt: now()
-        };
-        const format = source.name.toLowerCase().endsWith(".duckdb")
-          ? "duckdb" : source.name.toLowerCase().endsWith(".csv") ? "csv" : "sqlite";
-        turnRemoteQueryBindings.current = [...turnRemoteQueryBindings.current, {
-          version: 1,
+        if (data.byteLength !== Number(result.byte_count)) {
+          throw new Error("Remote query result size changed during download");
+        }
+        const format = dataQuerySourceFormat(source);
+        if (!format) throw new Error("Unsupported data query source format");
+        const bindingId = slug(outputCsvName.replace(/\.csv$/i, ""));
+        const binding: RemoteQueryBindingV2 = {
+          version: 2,
+          bindingId,
           capability: "omero-data-query-v1",
-          annotationId,
-          fileId: source.fileId || 0,
           format,
-          sourceDigest: String(result.source_sha256 || ""),
+          sourceName: source.name,
+          preferredAnnotationId: annotationId,
+          preferredFileId: source.fileId || undefined,
           schemaDigest: String(schema.schema_digest || ""),
           sql: args.sql,
-          parameters: args.parameters as RemoteQueryBindingV1["parameters"],
+          parameters: args.parameters as RemoteQueryBindingV2["parameters"],
           outputCsvName
-        }];
-        const updated = { ...current, files: [...current.files, output] };
-        workspaceRef.current = updated;
-        setWorkspace(updated);
-        await saveFile(output);
-        return JSON.stringify({ ...summary, complete_csv_path: output.logicalPath });
+        };
+        const runtimeResult: RemoteQueryRuntimeResult = {
+          bindingId,
+          name: outputCsvName,
+          data,
+          sourceDigest: String(result.source_sha256 || await sha256(data))
+        };
+        turnRemoteQueryBindings.current = [
+          ...turnRemoteQueryBindings.current.filter(
+            (item) => remoteBindingId(item) !== bindingId
+          ),
+          binding
+        ];
+        turnRemoteQueryResults.current = [
+          ...turnRemoteQueryResults.current.filter((item) => item.bindingId !== bindingId),
+          runtimeResult
+        ];
+        activeRemoteQueryDigests.current = turnRemoteQueryResults.current
+          .map((item) => item.sourceDigest).sort();
+        activeRemoteQuerySources.current = {
+          ...activeRemoteQuerySources.current,
+          [`query:${bindingId}`]: source.name
+        };
+        await runtime.syncRemoteQueries(turnRemoteQueryResults.current);
+        return JSON.stringify({
+          ...summary,
+          data_binding_id: bindingId,
+          python_loader: [
+            "import pandas as pd",
+            "from omero_analysis_remote import query_csv as remote_query_csv",
+            `data = pd.read_csv(remote_query_csv(${JSON.stringify(bindingId)}))`
+          ].join("\n"),
+          reusable: true
+        });
       } catch (error) {
         return toolErrorText(error);
       }
@@ -4322,7 +5194,12 @@ export default function App() {
       if (!method) return toolErrorText("Saved method was not found");
       const version = method.versions.find((item) => item.version === method.currentVersion);
       return version
-        ? JSON.stringify({ id: method.id, name: method.name, version: version.version, code: version.code })
+        ? JSON.stringify({
+          id: method.id,
+          name: method.name,
+          version: version.version,
+          code: bindRemoteQueryCode(version.code, method.remoteQueryBindings || [])
+        })
         : toolErrorText("Saved method has no readable current version");
     }
     if (call.function.name === "list_saved_pipelines") {
@@ -4405,6 +5282,7 @@ export default function App() {
     try {
       activeProfiles = await ensureProfiles(current.files);
       await runtime.beginTurn();
+      await runtime.syncRemoteQueries([]);
     } catch (error) {
       finishAiActivityEntry(
         chat.id,
@@ -4425,6 +5303,9 @@ export default function App() {
     }
     turnWorkflowSkills.current = [];
     turnRemoteQueryBindings.current = [];
+    turnRemoteQueryResults.current = [];
+    activeRemoteQueryDigests.current = [];
+    activeRemoteQuerySources.current = {};
     const activeSkillPackages: WorkflowSkillPackage[] = [];
     let activeSkillWarning = "";
     const visualIntent =
@@ -4900,6 +5781,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function saveAsMethod(execution: ExecutionRecord) {
+    if (savingMethodExecutions.current.has(execution.id)) return;
+    savingMethodExecutions.current.add(execution.id);
+    try { await saveAsMethodOnce(execution); }
+    catch (error) { setStatus(`Save Method failed: ${String(error)}`); }
+    finally { savingMethodExecutions.current.delete(execution.id); }
+  }
+
+  async function saveAsMethodOnce(execution: ExecutionRecord) {
     const current = workspaceRef.current;
     if (
       busy ||
@@ -4916,9 +5805,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const scriptCode = Array.from(new Set(related.map((item) => item.code))).join(
       "\n\n# Continued analysis / automatic repair\n"
     ) || execution.code;
+    const remoteQueryBindings = portableRemoteQueryBindings(Array.from(new Map(
+      related.flatMap((item) => item.remoteQueryBindings || [])
+        .map((binding) => [remoteBindingId(binding), binding])
+    ).values()), current);
+    const portableScriptCode = bindRemoteQueryCode(scriptCode, remoteQueryBindings);
     const assistantSummary = assistantSummaryForPrompt(chat, execution.promptId);
     const documentedScriptCode = withAssistantSummaryComments(
-      scriptCode,
+      portableScriptCode,
       assistantSummary
     );
     const scriptHash = await sha256(documentedScriptCode);
@@ -4947,16 +5841,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const existing = current.methods.find((method) =>
       !method.deletedAt && method.name.toLowerCase() === safeName.toLowerCase()
     );
-    const requiredCapabilities = current.artifacts.some((artifact) =>
+    if (existing?.versions.some(version => version.executionId === execution.id && version.codeHash === scriptHash) &&
+        !await dialogs.confirm("Save another Method version?", "This execution is already saved in this Method. Create an additional version intentionally?", "Create version")) return;
+    if (workspaceRef.current?.workspace.id !== current.workspace.id) throw new Error("Workspace changed while saving");
+    const zarrRequired = current.artifacts.some((artifact) =>
       artifact.chatId === execution.chatId &&
       artifact.promptId === execution.promptId &&
       Boolean(artifact.viewer)
     ) || /(?:store_uuid|render_panels|zarrviewer|ome[-_.]?zarr)/i.test(scriptCode)
-      ? ["zarrviewer"]
-      : [];
-    const remoteQueryBindings = related.flatMap(
-      (item) => item.remoteQueryBindings || []
-    );
+      ? ["zarrviewer"] : [];
+    const requiredCapabilities = [
+      ...zarrRequired,
+      ...(remoteQueryBindings.length ? ["omero-data-query-v1"] : [])
+    ];
     const method: MethodRecord = existing
       ? {
         ...existing,
@@ -4980,7 +5877,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         description,
         requiredCapabilities,
         remoteQueryBindings,
-        inputContract: inputContractFromCode(scriptCode),
+        inputContract: inputContractFromCode(portableScriptCode),
         parameters: [],
         currentVersion: 1,
         versions: [{
@@ -4993,7 +5890,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         createdAt: now(),
         updatedAt: now()
       };
-    method.inputContract = inputContractFromCode(scriptCode);
+    method.inputContract = inputContractFromCode(portableScriptCode);
     const latest = workspaceRef.current;
     if (latest) {
       const updated = {
@@ -5158,6 +6055,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setEditorSession(null);
       editorRoute();
     }
+    setHomeMethodId(method.id);
     setActiveTab("methods");
     const version = method.versions.find((item) => item.version === requestedVersion);
     if (!version) return;
@@ -5179,16 +6077,36 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     selectRun(runId);
     upsertRun(run);
     let bound: ReturnType<typeof bindMethodInputs>;
+    let executionBindings = method.remoteQueryBindings || [];
     try {
       current = await materializeRemoteQueryBindings(
-        method.remoteQueryBindings || [], current
+        executionBindings, current
       );
-      bound = bindMethodInputs(version.code, current.files);
+      let remoteBoundCode = bindRemoteQueryCode(version.code, executionBindings);
+      try {
+        bound = bindMethodInputs(remoteBoundCode, current.files);
+      } catch (error) {
+        const remote = await legacyRemoteUpgrade(
+          error, remoteBoundCode, current, `${method.id}-v${requestedVersion}`
+        );
+        if (remote) {
+          executionBindings = remote.bindings;
+          remoteBoundCode = remote.code;
+          current = await materializeRemoteQueryBindings(executionBindings, current);
+          bound = bindMethodInputs(remoteBoundCode, current.files);
+        } else {
+          const local = await offerLocalFallback(error, current, method.name);
+          if (!local) throw error;
+          current = local;
+          bound = bindMethodInputs(remoteBoundCode, current.files);
+        }
+      }
       run = {
         ...run,
-        resolvedBindings: Object.fromEntries(
-          bound.bindings.map((binding) => [binding.from, binding.to])
-        )
+        resolvedBindings: {
+          ...activeRemoteQuerySources.current,
+          ...Object.fromEntries(bound.bindings.map((binding) => [binding.from, binding.to]))
+        }
       };
       upsertRun(run);
     } catch (error) {
@@ -5198,10 +6116,13 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       return;
     }
     setBusy(true);
+    const syncBarrierToken = `method:${runId}`;
+    setRunSyncBarrier(syncBarrierToken, true);
     turnOutputNames.current.clear();
     try {
       await ensureRuntime(current.files);
       await runtime.beginTurn();
+      turnRemoteQueryBindings.current = executionBindings;
       const { renderResult } = await executeSavedMethodVersion(
         method,
         version,
@@ -5245,6 +6166,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setStatus(stopped ? `Stopped ${method.name}` : `Could not complete ${method.name}: ${message}`);
     } finally {
       setBusy(false);
+      setRunSyncBarrier(syncBarrierToken, false);
     }
   }
 
@@ -5296,10 +6218,16 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function removeMethod(method: MethodRecord) {
+    const blockers = workspaceRef.current ? trashBlockers(workspaceRef.current, "method", method.id) : [];
+    if (blockers.length) {
+      await dialogs.alert("Method is used by Pipelines", `Replace this Method or move these Pipelines to Trash first: ${blockers.join(", ")}`);
+      return;
+    }
+
     if (!await dialogs.confirm(
-      "Delete saved method?",
+      "Move Method to Trash?",
       `${method.name} and all of its versions will be moved out of the active workspace.`,
-      "Delete method",
+      "Move to Trash",
       true
     )) {
       return;
@@ -5487,9 +6415,12 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       setEditorSession(null);
       editorRoute();
     }
+    setHomePipelineId(pipeline.id);
     setActiveTab("pipelines");
     setBusy(true);
     const runId = id();
+    const syncBarrierToken = `pipeline:${runId}`;
+    setRunSyncBarrier(syncBarrierToken, true);
     let run: AnalysisRunRecord = {
       id: runId,
       workspaceId: current.workspace.id,
@@ -5522,6 +6453,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       current = await materializeRemoteQueryBindings(
         [...(pipeline.remoteQueryBindings || []), ...methodBindings], current
       );
+      run = { ...run, resolvedBindings: { ...activeRemoteQuerySources.current } };
+      upsertRun(run);
       await ensureRuntime(current.files);
       let availableInputs = current.files.filter(
         (file) => file.source !== "result" && file.role !== "chat-attachment" &&
@@ -5544,11 +6477,43 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         setStatus(`Pipeline ${pipeline.name}: step ${index + 1} of ${pipeline.steps.length}`);
         await runtime.beginTurn();
         turnOutputNames.current.clear();
-        const bound = bindPipelineStepCodeStrict(
-          version.code,
-          availableInputs,
-          step.inputBindings || {}
-        );
+        let stepBindings = method.remoteQueryBindings || [];
+        let portableCode = bindRemoteQueryCode(version.code, stepBindings);
+        let bound: ReturnType<typeof bindPipelineStepCodeStrict>;
+        try {
+          bound = bindPipelineStepCodeStrict(
+            portableCode,
+            availableInputs,
+            step.inputBindings || {}
+          );
+        } catch (error) {
+          const remote = await legacyRemoteUpgrade(
+            error, portableCode, current, `${pipeline.id}-${step.id}-v${step.methodVersion}`
+          );
+          if (remote) {
+            stepBindings = remote.bindings;
+            portableCode = remote.code;
+            current = await materializeRemoteQueryBindings(stepBindings, current);
+            bound = bindPipelineStepCodeStrict(
+              portableCode, availableInputs, step.inputBindings || {}
+            );
+          } else {
+            const local = await offerLocalFallback(error, current, pipeline.name);
+            if (!local) throw error;
+            current = local;
+            availableInputs = [
+              ...local.files.filter((file) =>
+                file.source !== "result" && file.role !== "chat-attachment" &&
+                file.state === "ready" && Boolean(file.data) && !file.deletedAt
+              ),
+              ...availableInputs.filter((file) => file.source === "result")
+            ];
+            bound = bindPipelineStepCodeStrict(
+              portableCode, availableInputs, step.inputBindings || {}
+            );
+          }
+        }
+        turnRemoteQueryBindings.current = stepBindings;
         const resolvedBindings = Object.fromEntries(
           bound.bindings.map((binding) => [binding.from, binding.to])
         );
@@ -5629,14 +6594,15 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         // Runtime may have been deliberately stopped.
       }
       setBusy(false);
+      setRunSyncBarrier(syncBarrierToken, false);
     }
   }
 
   async function removePipeline(pipeline: PipelineRecord) {
     if (!await dialogs.confirm(
-      "Delete pipeline?",
+      "Move Pipeline to Trash?",
       `${pipeline.name} will be moved to workspace trash. Its source methods remain available.`,
-      "Delete pipeline",
+      "Move to Trash",
       true
     )) return;
     const current = workspaceRef.current;
@@ -5650,6 +6616,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setWorkspace(updated);
     await savePipeline(deleted);
     setStatus(`Moved pipeline ${pipeline.name} to workspace trash`);
+  }
+
+  async function purgeArtifact(kind: TrashKind, identifier: string) {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const blockers = purgeBlockers(current, kind, identifier);
+    if (blockers.length) { await dialogs.alert("Preserved for provenance", blockers.join(", ")); return; }
+    if (!await dialogs.confirm("Delete permanently?", "This item will no longer be recoverable from Trash.", "Delete permanently", true)) return;
+    const field = kind === "method" ? "methods" : kind === "pipeline" ? "pipelines" : kind === "notebook" ? "notebooks" : "files";
+    const updated = { ...current, [field]: current[field].filter(item => item.id !== identifier) };
+    const stored = await replaceWorkspace(updated);
+    workspaceRef.current = stored; setWorkspace(stored);
+    setStatus("Permanently removed unreferenced item");
   }
 
   async function restoreTrashedFile(file: WorkspaceFile) {
@@ -5675,6 +6654,11 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   async function restoreTrashedPipeline(pipeline: PipelineRecord) {
     const current = workspaceRef.current;
     if (!current) return;
+    const blockers = pipelineRestoreBlockers(current, pipeline.id);
+    if (blockers.length) {
+      await dialogs.alert("Restore required Methods first", blockers.join(", "));
+      return;
+    }
     const restored = { ...pipeline, deletedAt: undefined, updatedAt: now() };
     const updated = {
       ...current,
@@ -5748,8 +6732,25 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function downloadFile(file: WorkspaceFile) {
-    if (file.data) downloadBytes(file.name, file.data, file.type);
+  async function restoreResult(file: WorkspaceFile): Promise<WorkspaceFile> {
+    if (file.data || !file.remoteResult) return file;
+    const pending = restoringResults.current.get(file.id);
+    if (pending) return pending;
+    const task = bridge.downloadWorkspaceResult(file.remoteResult).then(data => {
+      const ready = { ...file, data, state: "ready" as const, error: undefined };
+      if (workspaceRef.current?.workspace.id === file.workspaceId) upsertFiles([ready]);
+      return ready;
+    }).finally(() => restoringResults.current.delete(file.id));
+    restoringResults.current.set(file.id, task);
+    return task;
+  }
+
+  async function downloadFile(file: WorkspaceFile) {
+    try {
+      const ready = await restoreResult(file);
+      if (!ready.data) throw new Error("Result bytes are unavailable");
+      downloadBytes(ready.name, ready.data, ready.type);
+    } catch (error) { setStatus(`Download failed: ${String(error)}`); }
   }
 
   function downloadMethod(method: MethodRecord) {
@@ -5837,12 +6838,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
 
   async function attach(file: WorkspaceFile) {
     if (!await dialogs.confirm(
-      "Attach result to OMERO?",
-      `${file.name} will be uploaded and linked directly to the selected OMERO object.`,
-      "Attach result"
+      "Save result in my workspace?",
+      `${file.name} will be saved in your own Analysis workspace. Group permissions apply.`,
+      "Save result"
     )) return;
     try {
-      const result = await bridge.attach(file);
+      const current = workspaceRef.current;
+      if (!current) return;
+      const result = await bridge.attach(await restoreResult(file), current.workspace.id);
       setStatus(`Attached ${result.name} as FileAnnotation ${result.annotation_id}`);
     } catch (error) {
       setStatus(`Attach failed: ${String(error)}`);
@@ -5852,10 +6855,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   async function createArchive() {
     const current = workspaceRef.current;
     if (!current) throw new Error("Workspace is not ready");
-    return exportWorkspace(
-      current,
-      bootstrap.context?.max_snapshot_bytes ?? DEFAULT_MAX_SNAPSHOT_BYTES
-    );
+    const limit = bootstrap.context?.max_snapshot_bytes ?? DEFAULT_MAX_SNAPSHOT_BYTES;
+    const required = current.files.filter(file => file.remoteResult && !file.data);
+    if (required.reduce((sum, file) => sum + file.size, 0) > limit) {
+      throw new Error("Portable download exceeds the configured size limit. Download individual results instead.");
+    }
+    const files = [];
+    for (const file of current.files) files.push(await restoreResult(file));
+    return exportWorkspace({ ...current, files }, limit);
   }
 
   async function downloadArchive() {
@@ -5873,43 +6880,71 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function discardWorkspaceDeletedInOmero(record: WorkspaceRecord) {
-    if (remoteDeletionInFlight.current) return;
-    remoteDeletionInFlight.current = true;
-    setWorkspacePreparing(true);
-    setWorkspaceProgress({
-      percent: 20,
-      message: `Removing ${record.name} because it was deleted in OMERO…`
-    });
-    setStatus(`Removing ${record.name}; its synchronized OMERO Workspace was deleted`);
+    setSyncError(`${record.name} is unavailable in OMERO. Its browser copy is preserved. Use workspace management to review recovery options.`);
+    setStatus("Automatic synchronization paused; browser data is preserved");
+  }
+
+  function scheduleWorkspaceSyncPoll(payload: SyncPayload) {
+    if (workspaceSyncPollTimer.current != null) {
+      window.clearTimeout(workspaceSyncPollTimer.current);
+    }
+    workspaceSyncPollTimer.current = window.setTimeout(() => {
+      workspaceSyncPollTimer.current = null;
+      void pollWorkspaceSynchronization(payload);
+    }, IMPORT_SYNC_POLL_INTERVAL_MS);
+  }
+
+  async function pollWorkspaceSynchronization(payload: SyncPayload) {
+    const current = workspaceRef.current;
+    if (!current || current.workspace.id !== payload.inventory.workspace.id) return;
     try {
-      await deleteWorkspaceCascade(record.id);
-      if (workspaceRef.current?.workspace.id === record.id) {
-        workspaceRef.current = null;
-        setWorkspace(null);
+      const remote = await bridge.syncStatus(current.workspace.id);
+      setRemoteSync(remote);
+      if (remote.syncState === "pending") {
+        setStatus(
+          `${remote.pendingOrderCount || 1} plot import(s) pending in BIOMERO.importer`
+        );
+        scheduleWorkspaceSyncPoll(payload);
+        return;
       }
-      window.location.reload();
+      if (remote.syncState === "failed") {
+        setSyncError(remote.reason || "BIOMERO.importer reported an import failure");
+        setStatus("Workspace synchronization is retained for retry after an importer failure");
+        return;
+      }
+      // The importer has completed. Apply once more to publish its Images and
+      // companions in the manifest; polling itself must never create revisions.
+      await synchronizeWorkspace(payload);
     } catch (error) {
-      remoteDeletionInFlight.current = false;
-      setWorkspacePreparing(false);
-      setSyncError(`Could not remove the deleted OMERO Workspace locally: ${String(error)}`);
+      setSyncError(String(error));
+      setStatus(`Could not check importer progress: ${String(error)}`);
+      scheduleWorkspaceSyncPoll(payload);
     }
   }
 
   async function synchronizeWorkspace(prepared?: SyncPayload) {
     const current = workspaceRef.current;
     const context = bootstrap.context;
-    if (!current || !context || remoteDeletionInFlight.current) return;
+    if (!current || !context || current.workspace.deletedAt || current.workspace.purgedAt || remoteDeletionInFlight.current) return;
+    if (syncRunBarrierTokens.current.size > 0) {
+      workspaceSyncDeferredForRun.current = true;
+      return;
+    }
     if (workspaceSyncInFlight.current) {
       workspaceSyncQueued.current = true;
       return;
     }
     workspaceSyncInFlight.current = true;
+    if (workspaceSyncPollTimer.current != null) {
+      window.clearTimeout(workspaceSyncPollTimer.current);
+      workspaceSyncPollTimer.current = null;
+    }
     setSyncing(true);
     setSyncError("");
     try {
       if (current.workspace.omeroSync) {
         const remote = await bridge.syncStatus(current.workspace.id);
-        if (remoteWorkspaceWasDeleted(current.workspace, remote)) {
+        if (!remote.linked || (remote.lifecycle && remote.lifecycle !== "active")) {
           await discardWorkspaceDeletedInOmero(current.workspace);
           return;
         }
@@ -5930,6 +6965,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       }
       const latest = workspaceRef.current;
       if (!latest || latest.workspace.id !== current.workspace.id) return;
+      setRemoteSync(synced);
+      if (synced.syncState === "pending") {
+        setStatus(
+          `${synced.pendingOrderCount || 1} plot import(s) pending in BIOMERO.importer`
+        );
+        scheduleWorkspaceSyncPoll(payload);
+        return;
+      }
+      if (synced.syncState === "failed") {
+        setSyncError(synced.reason || "BIOMERO.importer reported an import failure");
+        setStatus("Workspace synchronization is retained for retry after an importer failure");
+        return;
+      }
       // Synchronization may finish while a Method or Pipeline is still
       // updating runs, executions, and files. Merge the remote metadata into
       // the latest Workspace rather than restoring the snapshot captured when
@@ -5939,10 +6987,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       workspaceRef.current = next;
       setWorkspace(next);
       await commitWorkspaceRecord(nextRecord);
-      setRemoteSync(synced);
-      setLocalSyncDigest(payload.inventory.digest);
-      setStatus(`Reusable Analysis items saved automatically to ${synced.projectName} / ${synced.datasetName}`);
+      setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
+      setStatus(synced.browseState === "failed" ? "Saved to OMERO; readable filesystem copy needs retry" : `Reusable Analysis items saved automatically to ${synced.projectName} / ${synced.datasetName}`);
+      if (synced.browseState === "failed") setSyncError("Readable filesystem copy failed. Retry synchronization to rebuild it.");
     } catch (error) {
+      if (error instanceof OmeroApiError && error.code === "sync_busy") {
+        setStatus("Waiting for another workspace synchronization to finish…");
+        workspaceSyncQueued.current = false;
+        workspaceSyncPollTimer.current = window.setTimeout(() => {
+          workspaceSyncPollTimer.current = null;
+          void synchronizeWorkspace();
+        }, IMPORT_SYNC_POLL_INTERVAL_MS);
+        return;
+      }
       const message = String(error);
       setSyncError(message);
       setStatus(`Workspace synchronization failed: ${message}`);
@@ -6105,8 +7162,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           methodIds.set(`${dataset.datasetId}:${item.key}`, importedId);
         } else if (item.kind === "notebook") {
           if (next.notebooks.some(exact)) continue;
-          const document = parseNotebook(
-            await bridge.downloadLibraryItem(item.annotationId)
+          const preparedNotebook = importedNotebookProtocol(
+            parseNotebook(await bridge.downloadLibraryItem(item.annotationId))
           );
           const imported: NotebookRecord = {
             id: id(),
@@ -6114,7 +7171,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             name: uniqueLibraryName(
               item.name, next.notebooks.map((value) => value.name), false
             ),
-            document,
+            ...preparedNotebook,
             attachmentIds: [],
             selectedDataFileIds: next.files
               .filter((file) => file.source !== "result" && file.role !== "chat-attachment" &&
@@ -6277,7 +7334,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       { label: "Rename", run: () => void renameWorkspaceFile(file) },
       { label: "Download", run: () => downloadFile(file) },
       ...(bridge.canUpload
-        ? [{ label: "Attach to OMERO", run: () => void attach(file) }]
+        ? [{ label: "Save to my workspace", run: () => void attach(file) }]
         : []),
       {
         label: selected.length > 1
@@ -6311,63 +7368,34 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     window.history.replaceState({}, "", url);
   }
 
-  function preparedEditorSession(
-    kind: ArtifactEditorSession["kind"],
-    artifactId: string,
-    originTab: EditorOriginTab
-  ): ArtifactEditorSession {
+  function preparedEditorSession(kind: ArtifactEditorSession["kind"], artifactId: string,
+    originTab: EditorOriginTab): ArtifactEditorSession {
     const current = workspaceRef.current;
     if (!current) throw new Error("Workspace is not ready");
-    if (kind === "method") {
-      const method = current.methods.find((item) => item.id === artifactId && !item.deletedAt);
-      const version = method?.versions.find((item) => item.version === method.currentVersion);
-      if (!method || !version) throw new Error("Method is unavailable");
-      const rebound = bindPythonInputsStrict(version.code, current.files);
-      return {
-        kind,
-        id: method.id,
-        name: method.name,
-        originTab,
-        original: method,
-        draftCode: rebound.code,
-        bindingCount: rebound.bindings.length,
-        dirty: rebound.code !== version.code
-      };
-    }
-    if (kind === "pipeline") {
-      const pipeline = current.pipelines.find((item) => item.id === artifactId && !item.deletedAt);
-      if (!pipeline) throw new Error("Pipeline is unavailable");
-      const rebound = bindPipelineInputsStrict(pipeline, current.methods, current.files);
-      return {
-        kind,
-        id: pipeline.id,
-        name: pipeline.name,
-        originTab,
-        original: pipeline,
-        draft: rebound.pipeline,
-        bindingCount: rebound.bindings.length,
-        dirty: JSON.stringify(rebound.pipeline.steps) !== JSON.stringify(pipeline.steps)
-      };
-    }
-    const notebook = current.notebooks.find((item) => item.id === artifactId);
-    if (!notebook) throw new Error("Notebook is unavailable");
-    const rebound = bindNotebookInputsStrict(notebook.document, current.files);
-    const draft = {
-      ...notebook,
-      document: rebound.document,
-      selectedDataFileIds: readyWorkspaceInputs(current.files).map((file) => file.id)
-    };
-    return {
-      kind,
-      id: notebook.id,
-      name: notebook.name,
-      originTab,
-      original: notebook,
-      draft,
-      bindingCount: rebound.bindings.length,
-      dirty: JSON.stringify(draft.document) !== JSON.stringify(notebook.document) ||
-        JSON.stringify(draft.selectedDataFileIds) !== JSON.stringify(notebook.selectedDataFileIds)
-    };
+    return editorDraft(current, kind, artifactId, originTab);
+  }
+
+  function applyEditorBindings(preferred: Record<string, string> = {}) {
+    const session = editorSession;
+    const current = workspaceRef.current;
+    if (!session || !current) return;
+    try {
+      if (session.kind === "method") {
+        const bound = bindPythonInputsStrict(session.draftCode, current.files, preferred);
+        setEditorSession({ ...session, draftCode: bound.code, bindingCount: bound.bindings.length,
+          dirty: session.dirty || bound.code !== session.draftCode, error: undefined });
+      } else if (session.kind === "pipeline") {
+        const bound = bindPipelineInputsStrict(session.draft, current.methods, current.files);
+        setEditorSession({ ...session, draft: bound.pipeline, bindingCount: bound.bindings.length,
+          dirty: session.dirty || JSON.stringify(bound.pipeline) !== JSON.stringify(session.draft), error: undefined });
+      } else {
+        const bound = bindNotebookInputsStrict(session.draft.document, current.files, preferred);
+        const draft = { ...session.draft, document: bound.document,
+          selectedDataFileIds: readyWorkspaceInputs(current.files).map(file => file.id) };
+        setEditorSession({ ...session, draft, bindingCount: bound.bindings.length,
+          dirty: session.dirty || JSON.stringify(draft) !== JSON.stringify(session.draft), error: undefined });
+      }
+    } catch (error) { setEditorSession({ ...session, error: String(error) }); }
   }
 
   async function openArtifactEditor(
@@ -6387,12 +7415,27 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     const originTab = requestedOrigin ||
       (activeTab === "editor" ? editorSession?.originTab || "home" : activeTab);
     try {
-      const prepared = preparedEditorSession(kind, artifactId, originTab);
+      let prepared;
+      try {
+        prepared = preparedEditorSession(kind, artifactId, originTab);
+      } catch (error) {
+        const current = workspaceRef.current;
+        const artifactName = kind === "method"
+          ? current?.methods.find((item) => item.id === artifactId)?.name
+          : kind === "pipeline"
+            ? current?.pipelines.find((item) => item.id === artifactId)?.name
+            : current?.notebooks.find((item) => item.id === artifactId)?.name;
+        const local = current && artifactName
+          ? await offerLocalFallback(error, current, artifactName)
+          : null;
+        if (!local) throw error;
+        prepared = preparedEditorSession(kind, artifactId, originTab);
+      }
       setEditorSession(prepared);
       setInspectorSelection({ kind, id: artifactId });
       editorRoute(kind, artifactId);
       setActiveTab("editor");
-      setStatus(`Editing ${prepared.name}; current inputs rebound successfully`);
+      setStatus(`Editing ${prepared.name}; saved content opened without changes`);
     } catch (error) {
       await dialogs.alert("Editor could not open", String(error));
       setStatus(`Editor could not open: ${String(error)}`);
@@ -6400,29 +7443,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   function changeEditorSession(next: ArtifactEditorSession) {
-    const current = workspaceRef.current;
-    if (next.kind !== "pipeline" || !current) {
-      setEditorSession(next);
-      return;
-    }
-    try {
-      const rebound = bindPipelineInputsStrict(next.draft, current.methods, current.files);
-      setEditorSession({
-        ...next,
-        draft: rebound.pipeline,
-        bindingCount: rebound.bindings.length,
-        error: undefined
-      });
-    } catch (error) {
-      setEditorSession({ ...next, error: String(error) });
-    }
+    setEditorSession({ ...next, error: undefined });
   }
 
   async function saveEditor(): Promise<MethodRecord | PipelineRecord | NotebookRecord | null> {
     const session = editorSession;
     const current = workspaceRef.current;
-    if (!session || !current || session.error) return null;
-    if (!session.dirty) {
+    if (!session || !current) return null;
+    if (!session.dirty && !session.isNew) {
       return session.kind === "method"
         ? current.methods.find((item) => item.id === session.id) || null
         : session.kind === "pipeline"
@@ -6432,19 +7460,28 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setEditorSaving(true);
     try {
       if (session.kind === "method") {
-        const source = current.methods.find((item) => item.id === session.id && !item.deletedAt);
+        const source = current.methods.find((item) => item.id === session.id && !item.deletedAt) || (session.isNew ? session.original : null);
         if (!source) throw new Error("Method is unavailable");
-        const rebound = bindPythonInputsStrict(session.draftCode, current.files);
-        const nextVersion = source.currentVersion + 1;
+        const rebound = { code: session.draftCode, bindings: [] };
+        const portableBindings = portableRemoteQueryBindings(
+          source.remoteQueryBindings || [],
+          current
+        );
+        const nextVersion = session.isNew ? 1 : source.currentVersion + 1;
         const updated: MethodRecord = {
           ...source,
+          remoteQueryBindings: portableBindings,
           currentVersion: nextVersion,
           inputContract: inputContractFromCode(rebound.code),
-          requiredCapabilities: methodUsesZarrViewer(
-            { ...source, requiredCapabilities: [] },
-            rebound.code
-          ) ? ["zarrviewer"] : [],
-          versions: [...source.versions, {
+          requiredCapabilities: [
+            ...(methodUsesZarrViewer(
+              { ...source, requiredCapabilities: [] },
+              rebound.code
+            ) ? ["zarrviewer"] : []),
+            ...(portableBindings.length
+              ? ["omero-data-query-v1"] : [])
+          ],
+          versions: [...(session.isNew ? [] : source.versions), {
             version: nextVersion,
             code: rebound.code,
             codeHash: await sha256(rebound.code),
@@ -6456,13 +7493,15 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         };
         const nextWorkspace = {
           ...current,
-          methods: current.methods.map((item) => item.id === updated.id ? updated : item)
+          methods: session.isNew ? [...current.methods, updated] : current.methods.map((item) => item.id === updated.id ? updated : item)
         };
         workspaceRef.current = nextWorkspace;
         setWorkspace(nextWorkspace);
         await saveMethod(updated);
+        setHomeMethodId(updated.id);
         setEditorSession({
           ...session,
+          isNew: false,
           original: updated,
           draftCode: rebound.code,
           bindingCount: rebound.bindings.length,
@@ -6473,7 +7512,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       }
       if (session.kind === "pipeline") {
         if (!session.draft.steps.length) throw new Error("A Pipeline must contain at least one step");
-        const rebound = bindPipelineInputsStrict(session.draft, current.methods, current.files);
+        const rebound = { pipeline: session.draft, bindings: [] };
         const source = current.pipelines.find((item) => item.id === session.id && !item.deletedAt);
         if (!source) throw new Error("Pipeline is unavailable");
         const updated: PipelineRecord = {
@@ -6490,8 +7529,10 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         workspaceRef.current = nextWorkspace;
         setWorkspace(nextWorkspace);
         await savePipeline(updated);
+        setHomePipelineId(updated.id);
         setEditorSession({
           ...session,
+          isNew: false,
           original: updated,
           draft: updated,
           bindingCount: rebound.bindings.length,
@@ -6500,24 +7541,26 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         setStatus(`Saved ${updated.name} version ${updated.version}`);
         return updated;
       }
-      const source = current.notebooks.find((item) => item.id === session.id);
+      const source = current.notebooks.find((item) => item.id === session.id) || (session.isNew ? session.original : null);
       if (!source) throw new Error("Notebook is unavailable");
-      const rebound = bindNotebookInputsStrict(session.draft.document, current.files);
+      const rebound = { document: session.draft.document, bindings: [] };
       const updated: NotebookRecord = {
         ...source,
         document: clearNotebookOutputs(rebound.document),
-        selectedDataFileIds: readyWorkspaceInputs(current.files).map((file) => file.id),
+        selectedDataFileIds: session.draft.selectedDataFileIds,
         updatedAt: now()
       };
       const nextWorkspace = {
         ...current,
-        notebooks: current.notebooks.map((item) => item.id === updated.id ? updated : item)
+        notebooks: session.isNew ? [...current.notebooks, updated] : current.notebooks.map((item) => item.id === updated.id ? updated : item)
       };
       workspaceRef.current = nextWorkspace;
       setWorkspace(nextWorkspace);
       await saveNotebook(updated);
+      setActiveNotebookId(updated.id);
       setEditorSession({
         ...session,
+        isNew: false,
         original: updated,
         draft: updated,
         bindingCount: rebound.bindings.length,
@@ -6549,12 +7592,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   function revertEditor() {
     if (!editorSession) return;
     try {
+      if (editorSession.isNew) {
+        const original = editorSession.original;
+        setEditorSession(editorSession.kind === "method"
+          ? { ...editorSession, draftCode: editorSession.original.versions[0].code, dirty: false, error: undefined }
+          : { ...editorSession, draft: structuredClone(original), dirty: false, error: undefined } as ArtifactEditorSession);
+        return;
+      }
       setEditorSession(preparedEditorSession(
         editorSession.kind,
         editorSession.id,
         editorSession.originTab
       ));
-      setStatus(`Reverted ${editorSession.name} to its saved content and rebound current inputs`);
+      setStatus(`Reverted ${editorSession.name} to its saved content`);
     } catch (error) {
       void dialogs.alert("Editor could not revert", String(error));
     }
@@ -6580,6 +7630,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function createUntitledMethod() {
+    if (workspaceRef.current?.workspace.deletedAt) return;
     const current = workspaceRef.current;
     if (!current || !editorEnabled) return;
     const originTab = activeTab === "editor" ? editorSession?.originTab || "home" : activeTab;
@@ -6606,12 +7657,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    const nextWorkspace = { ...current, methods: [...current.methods, method] };
-    workspaceRef.current = nextWorkspace;
-    setWorkspace(nextWorkspace);
-    await saveMethod(method);
-    const prepared = preparedEditorSession("method", method.id, originTab);
-    setEditorSession(prepared);
+    const draft = editorDraft({ ...current, methods: [...current.methods, method] }, "method", method.id, originTab);
+    setEditorSession({ ...draft, isNew: true });
     setInspectorSelection({ kind: "method", id: method.id });
     editorRoute("method", method.id);
     setActiveTab("editor");
@@ -6619,6 +7666,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function createUntitledNotebook() {
+    if (workspaceRef.current?.workspace.deletedAt) return;
     const current = workspaceRef.current;
     if (!current || !editorEnabled) return;
     const originTab = activeTab === "editor" ? editorSession?.originTab || "home" : activeTab;
@@ -6636,13 +7684,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    const nextWorkspace = { ...current, notebooks: [...current.notebooks, notebook] };
-    workspaceRef.current = nextWorkspace;
-    setWorkspace(nextWorkspace);
-    setActiveNotebookId(notebook.id);
-    await saveNotebook(notebook);
-    const prepared = preparedEditorSession("notebook", notebook.id, originTab);
-    setEditorSession(prepared);
+    const draft = editorDraft({ ...current, notebooks: [...current.notebooks, notebook] }, "notebook", notebook.id, originTab);
+    setEditorSession({ ...draft, isNew: true });
     setInspectorSelection({ kind: "notebook", id: notebook.id });
     editorRoute("notebook", notebook.id);
     setActiveTab("editor");
@@ -6657,7 +7700,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("method", method.id) }] : []),
       { label: "Rename", run: () => void renameMethod(method) },
       { label: "Download", run: () => downloadMethod(method) },
-      { label: "Delete method", danger: true, run: () => void removeMethod(method) }
+      { label: "Move to Trash", danger: true, run: () => void removeMethod(method) }
     ];
   }
 
@@ -6667,7 +7710,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("pipeline", pipeline.id) }] : []),
       { label: "Rename", run: () => void renamePipeline(pipeline) },
       { label: "Download", run: () => downloadPipeline(pipeline) },
-      { label: "Delete pipeline", danger: true, run: () => void removePipeline(pipeline) }
+      { label: "Move to Trash", danger: true, run: () => void removePipeline(pipeline) }
     ];
   }
 
@@ -6678,7 +7721,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       ...(editorEnabled ? [{ label: "Edit", run: () => void openArtifactEditor("notebook", notebook.id) }] : []),
       { label: "Rename", run: () => void renameNotebook(notebook) },
       { label: "Download", run: () => downloadNotebook(notebook) },
-      { label: "Delete notebook", danger: true, run: () => void removeNotebook(notebook) }
+      { label: "Move to Trash", danger: true, run: () => void removeNotebook(notebook) }
     ];
   }
 
@@ -6709,9 +7752,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   const catalogSkillCount = (workflowSkillCatalog?.workflows || [])
     .reduce((total, entry) => total + entry.skills.length, 0) +
     (zarrSkillCatalog?.skills.length || 0);
-  const activeNotebook = analysisWorkspace.notebooks.find(
+  const activeNotebook = activeNotebooks.find(
     (item) => item.id === activeNotebookId
-  ) || analysisWorkspace.notebooks[0] || null;
+  ) || activeNotebooks[0] || null;
   const selectedInspectorItem: InspectorItem = (() => {
     const selection = inspectorSelection;
     if (!selection || selection.kind === "workspace") {
@@ -6730,7 +7773,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           Results: outputFiles.length,
           Methods: activeMethods.length,
           Pipelines: analysisWorkspace.pipelines.filter((item) => !item.deletedAt).length,
-          Notebooks: analysisWorkspace.notebooks.length,
+          Notebooks: activeNotebooks.length,
           Updated: new Date(workspace.updatedAt).toLocaleString()
         }
       };
@@ -6914,8 +7957,12 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     remoteSync?.linked &&
     syncHasChanges(localSyncDigest, remoteSync.inventoryDigest)
   );
-  const syncButtonLabel = syncing
+  const syncButtonLabel = workspace.purgedAt ? "Remote workspace removed — local copy retained"
+    : workspace.deletedAt ? "In Trash — synchronization suspended"
+    : syncing
     ? "Saving reusable items…"
+    : syncRunBarrierActive
+      ? "Sync queued until run finishes"
     : syncError
       ? "Automatic sync paused"
       : !remoteSync?.linked
@@ -7022,13 +8069,28 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     <main className="app-shell" data-theme={theme}
       data-embedded-host={bootstrap.embeddedHost}>
       {dialogs.element}
+      {showTrash && <div className="dialog-backdrop"><section role="dialog" aria-modal="true" aria-label="Workspace Trash" className="app-dialog trash-dialog">
+        <h2>Workspace Trash</h2><p>Items remain recoverable until permanently deleted. Referenced history is preserved.</p>
+        {([
+          ...trashedMethods.map(item => ({ item, kind: "method" as TrashKind, restore: () => restoreTrashedMethod(item) })),
+          ...trashedPipelines.map(item => ({ item, kind: "pipeline" as TrashKind, restore: () => restoreTrashedPipeline(item) })),
+          ...trashedNotebooks.map(item => ({ item, kind: "notebook" as TrashKind, restore: () => updateNotebook({ ...item, deletedAt: undefined, updatedAt: now() }) })),
+          ...trashedFiles.map(item => ({ item, kind: "file" as TrashKind, restore: () => restoreTrashedFile(item) }))
+        ]).map(({ item, kind, restore }) => <div className="trash-row" key={item.id}><span>{item.name} <small>{kind}</small></span>
+          <Button onClick={() => void restore()}>Restore</Button><Button onClick={() => void purgeArtifact(kind, item.id)}>Delete permanently</Button></div>)}
+        <Button onClick={() => setShowTrash(false)}>Close Trash</Button>
+      </section></div>}
       {showHelp && <HelpWindow onClose={() => setShowHelp(false)} />}
       <header className="workspace-header">
         <div className="header-brand">
           <h1>OMERO.Analysis</h1>
-          <p>{workspace.name}</p>
+          <small className="source-breadcrumb">Source: {bootstrap.context?.source_owner_name || ""} / {bootstrap.context?.source_path?.map(item => item.name).join(" / ")} · Saved in your workspace (user {bootstrap.context?.user_id}; group permissions apply)</small><p title={workspace.name}>{workspace.name}</p>
         </div>
         <div className="header-actions">
+          <Button onClick={() => setShowTrash(true)}>Trash</Button>
+          <WorkspaceSwitcher workspace={workspace} context={bootstrap.context} bridge={bridge}
+            disabled={syncing || busy || Boolean(editorSession?.dirty)}
+            onOpen={openAnalysisWorkspace} onRename={() => void renameWorkspace(workspace)} onLifecycle={changeWorkspaceLifecycle} />
           <Button
             className="panel-visibility-toggle"
             aria-pressed={explorerVisible}
@@ -7072,6 +8134,19 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           </Button>
         </div>
       </header>
+      <div className="workspace-save-status" role="status">
+        <span>Browser: {browserSaveError ? "save failed — keep this tab open" : browserSaving ? "saving…" : "saved locally"}</span>
+        <span title={syncError || remoteSync?.reason}>OMERO: {syncButtonLabel}</span>
+        <span>Imports: {remoteSync?.pendingOrderCount || 0} pending</span>
+        <span>Filesystem: {remoteSync?.browseState === "failed" ? "copy failed" : remoteSync?.linked ? "available" : "not synchronized"}</span>
+        {Boolean((remoteSync as SyncStatus & { cleanupPending?: number })?.cleanupPending) && <span>Cleanup pending — retry synchronization</span>}
+        {browserSaveError && <Button onClick={() => void replaceWorkspace(analysisWorkspace).then(() => setBrowserSaveError("")).catch(error => setBrowserSaveError(String(error)))}>Retry browser save</Button>}
+        {syncError && <Button disabled={syncing} onClick={() => void synchronizeWorkspace()}>Retry OMERO sync</Button>}
+      </div>
+      {workspace.deletedAt && <section role="status" className="workspace-trash-banner"><h2>{workspace.purgedAt ? "Remote workspace permanently removed" : "This workspace is in Trash"}</h2>
+        <p>{workspace.purgedAt ? "This tab retains its local recovery copy. Results that were only stored remotely may no longer be available."
+          : "Restore it through Manage workspaces to edit or run analyses. Its saved content is retained."}</p>
+        <Button onClick={() => void downloadArchive()}>Download workspace</Button></section>}
 
       {showLibrary && (
         <div className="dialog-backdrop" role="presentation">
@@ -7147,9 +8222,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           "--artifact-width": `${artifactWidth}px`
         } as CSSProperties}
       >
-        {explorerVisible && (<>
         <aside
           className="workspace-tree"
+          style={explorerVisible ? undefined : { display: "none" }}
           onDragOver={(event) => {
             event.preventDefault();
             event.dataTransfer.dropEffect = "copy";
@@ -7599,15 +8674,27 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             >
               <Icon name="chevron" className="folder-chevron" />
               <Icon name="folder" />
-              <strong>Notebooks</strong><small>{analysisWorkspace.notebooks.length}</small>
+              <strong>Notebooks</strong><small>{activeNotebooks.length}</small>
             </summary>
             <div className="method-selection-toolbar notebook-folder-toolbar">
-              <span>{analysisWorkspace.notebooks.length} notebook{analysisWorkspace.notebooks.length === 1 ? "" : "s"}</span>
+              <span>{activeNotebooks.length} notebook{activeNotebooks.length === 1 ? "" : "s"}</span>
               {editorEnabled && <button aria-label="Create new Notebook" onClick={() => void createUntitledNotebook()}><ActionIcon name="add" />New Notebook</button>}
               <button aria-label="Upload Notebook" onClick={() => notebookUploadInput.current?.click()}><ActionIcon name="upload" />Upload Notebook</button>
+              {!!bootstrap.context?.notebooks?.length && <select aria-label="Import notebook from source" value=""
+                onChange={(event) => {
+                  const selected = bootstrap.context?.notebooks?.find(item => String(item.annotation_id) === event.target.value);
+                  if (selected) void bridge.downloadNotebook(selected).then(data =>
+                    uploadNotebookFile(new File([data], selected.name))).catch(error => setStatus(`Import failed: ${String(error)}`));
+                }}>
+                <option value="">Import notebook from source...</option>
+                {bootstrap.context.notebooks.map(item => <option key={item.annotation_id} value={item.annotation_id}>
+                  {item.name} ({item.owner_name || `owner ${item.owner_id ?? "unknown"}`}; annotation {item.annotation_id})
+                </option>)}
+              </select>}
+
             </div>
             <ul className="browser-list">
-              {analysisWorkspace.notebooks.filter((notebook) =>
+              {activeNotebooks.filter((notebook) =>
                 matchesExplorer(notebook.name)
               ).map((notebook) => (
                 <li key={notebook.id} className="browser-row"
@@ -7633,7 +8720,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                   </button>
                 </li>
               ))}
-              {!analysisWorkspace.notebooks.length &&
+              {!activeNotebooks.length &&
                 <li className="browser-empty">No notebooks</li>}
             </ul>
             {resultFolder("Notebooks results", "notebooks-results", notebookOutputFiles)}
@@ -7646,13 +8733,12 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               }} />
           </details>
         </aside>
-        <div
+        {explorerVisible && <div
           className="pane-resizer"
           role="separator"
           aria-label="Resize workspace explorer"
           onMouseDown={beginExplorerResize}
-        />
-        </>)}
+        />}
 
         {browserMenu && (
           <div
@@ -7684,7 +8770,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         ) ? "runtime-loading" : ""}`}>
         <AnalysisNavigation activeTab={activeTab} editorEnabled={editorEnabled}
           onNavigate={(tab) => void navigateFromEditor(tab)} />
-        {!runtimeReady && (activeTab === "methods" || activeTab === "pipelines" || activeTab === "notebooks") && (
+        {!runtimeReady && (activeTab === "methods" || activeTab === "pipelines" ||
+          (activeTab === "notebooks" && notebookRunRequest != null)) && (
           <RuntimeProgressPanel
             progress={runtimeProgress}
             detail={activeTab === "methods"
@@ -7712,7 +8799,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onNotebookPipelineIdChange={setHomeNotebookPipelineId}
             onRunMethod={(method) => void runMethod(method)}
             onRunPipeline={(pipeline) => void runPipeline(pipeline)}
-            onRunNotebook={(notebook) => void runNotebook(notebook)}
+            onOpenNotebook={(notebook) => void openNotebook(notebook)}
             onOpenAssistant={() => setActiveTab("assistant")}
             onNewMethod={() => void createUntitledMethod()}
             onCreatePipeline={() => {
@@ -7727,6 +8814,23 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onNewNotebook={() => void createUntitledNotebook()}
           />
         )}
+        {["methods", "pipelines", "notebooks"].includes(activeTab) && <div className="artifact-actions" role="toolbar" aria-label="Analysis item actions">
+          {activeTab === "methods" && <>
+            {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledMethod()}>New Method</Button>}
+            <Button disabled={busy || !activeMethods.length} onClick={() => void renameMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Rename</Button>
+            <Button disabled={busy || !activeMethods.length} onClick={() => void removeMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Move to Trash</Button>
+          </>}
+          {activeTab === "pipelines" && <>
+            <Button disabled={busy || !activePipelines.length} onClick={() => void renamePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Rename</Button>
+            <Button disabled={busy || !activePipelines.length} onClick={() => void removePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Move to Trash</Button>
+          </>}
+          {activeTab === "notebooks" && <>
+            {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledNotebook()}>New Notebook</Button>}
+            <Button disabled={busy || !activeNotebooks.length} onClick={() => void renameNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Rename</Button>
+            <Button disabled={busy || !activeNotebooks.length} onClick={() => void removeNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Move to Trash</Button>
+          </>}
+          <Button onClick={() => setShowTrash(true)}>Trash and Restore</Button>
+        </div>}
         {(activeTab === "methods" || activeTab === "pipelines") && (
           <AnalysisRunsView
             kind={activeTab === "methods" ? "method" : "pipeline"}
@@ -7757,6 +8861,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onRerun={(run) => void rerunAnalysisRun(run)}
             onSelectRun={selectRun}
             onInspectFile={(fileId) => setSelectedArtifactFileId(fileId)}
+            onDownloadFile={downloadFile}
           />
         )}
         {activeTab === "assistant" && (
@@ -7849,6 +8954,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                     relatedExecutions={executionsForPrompt(analysisWorkspace, execution)}
                     files={analysisWorkspace.files}
                     onSave={() => void saveAsMethod(execution)}
+                    onDownloadFile={downloadFile}
                     onRerun={() => void rerunExecution(execution)}
                     saveDisabled={busy}
                   />
@@ -7945,8 +9051,15 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             inputs={inputFiles}
             runtime={runtime}
             runRequest={notebookRunRequest}
+            onRunRequestConsumed={() => setNotebookRunRequest(null)}
+            onRunStateChange={(running) => setRunSyncBarrier(
+              `notebook:${activeNotebook?.id || "active"}`, running
+            )}
             workspaceActions={workspaceActionsMenu()}
-            onBeforeRun={() => ensureRuntime(analysisWorkspace.files).then(() => undefined)}
+            onBeforeRun={(record) => activeNotebook
+              ? prepareNotebookRuntime(record)
+              : ensureRuntime(analysisWorkspace.files).then(() => analysisWorkspace.files)}
+            onPrepareProtocol={prepareProtocolNotebook}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
             onSelect={(notebookId) => {
@@ -7975,6 +9088,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
               onSave={() => void saveEditor()}
               onSaveRun={() => void saveAndRunEditor()}
               onRevert={revertEditor}
+              onBindInputs={applyEditorBindings}
               onClose={() => void closeEditor()}
             />
           </Suspense>
@@ -8015,11 +9129,31 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
                     <strong>Enable artifact editor</strong>
                     <small>
                       Show the Editor tab and Edit actions for Methods, Pipelines,
-                      and Notebooks. Inputs are rebound and validated before the
-                      editor opens. Default: off.
+                      and Notebooks. Apply input changes explicitly in the editor;
+                      execution validates required inputs. Default: off.
                     </small>
                   </span>
                 </label>
+                <div className="data-query-policy" role="status">
+                  <strong>Remote data queries</strong>
+                  <small>
+                    {dataQueryCapabilities
+                      ? dataQueryCapabilities.threshold_bytes === 0
+                        ? "All OMERO DuckDB, SQLite, and CSV attachments must use the remote query service."
+                        : `OMERO DuckDB, SQLite, and CSV attachments at or above ${bytesLabel(dataQueryCapabilities.threshold_bytes)} default to remote queries; smaller attachments default to local analysis.`
+                      : "Remote query policy could not be loaded."}
+                  </small>
+                  {dataQueryCapabilities && (
+                    <small>
+                      Worker: {dataQueryCapabilities.ready ? "ready" : "unavailable"}
+                      {` · Result access: ${dataQueryCapabilities.result_ttl_seconds} seconds`}
+                    </small>
+                  )}
+                  <small>
+                    Saved database Methods use a portable query binding, so the same Method can
+                    rebind between compatible local and remote OMERO sources regardless of size.
+                  </small>
+                </div>
               </div>
             </details>
 
