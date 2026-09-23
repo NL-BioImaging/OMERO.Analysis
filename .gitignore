@@ -15,3 +15,4 @@ src/omero_analysis/static/omero_analysis/assets/
 benchmark-data/
 .local-query-deployment/
 .local-query-gates/
+plans/
