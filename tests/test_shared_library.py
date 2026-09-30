@@ -1,6 +1,7 @@
 import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,24 @@ from omero_analysis.shared_library import SharedLibrary, FOLDER, validate_payloa
 @pytest.fixture(autouse=True)
 def immediate_files(monkeypatch):
     monkeypatch.setattr("omero_analysis.shared_library.MIN_STABLE_SECONDS", 0)
+
+
+@pytest.fixture
+def omero_parameters(monkeypatch):
+    """Keep the two database-role unit tests independent of the OMERO client."""
+    try:
+        from omero.sys import ParametersI  # noqa: F401
+    except ModuleNotFoundError:
+        class ParametersI:
+            def addLong(self, *_args):
+                return self
+
+        package = ModuleType("omero")
+        package.__path__ = []
+        module = ModuleType("omero.sys")
+        module.ParametersI = ParametersI
+        monkeypatch.setitem(sys.modules, "omero", package)
+        monkeypatch.setitem(sys.modules, "omero.sys", module)
 
 
 def notebook(text="print('hello')"):
@@ -134,7 +153,7 @@ def test_disabled_or_broken_importer_never_opens_library(tmp_path, monkeypatch, 
     assert not list(tmp_path.iterdir())
 
 
-def test_membership_revocation_and_mapping_revalidation(tmp_path, monkeypatch):
+def test_membership_revocation_and_mapping_revalidation(tmp_path, monkeypatch, omero_parameters):
     from omero_analysis import shared_library as shared
     from .conftest import FakeConnection, FakeObject, Value
     from omero_analysis.errors import PermissionDenied
@@ -155,7 +174,7 @@ def test_membership_revocation_and_mapping_revalidation(tmp_path, monkeypatch):
         shared.library_for(conn, obj)
 
 
-def test_full_admin_requires_fresh_role_not_only_cached_session():
+def test_full_admin_requires_fresh_role_not_only_cached_session(omero_parameters):
     from omero_analysis.shared_library import full_admin
     conn = SimpleNamespace(isFullAdmin=lambda: True, getUserId=lambda: 0,
                            getQueryService=lambda: SimpleNamespace(projection=lambda *args: []))
