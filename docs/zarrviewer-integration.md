@@ -29,26 +29,6 @@ The database therefore does not need an OMERO Image or Plate ID. The store
 UUID is the portable identity; OMERO IDs are deployment-local and are resolved
 from the authenticated hierarchy.
 
-## CISegmentation results
-
-The **CISegmentation Results** tab accepts OMERO-attached DuckDB/SQLite
-measurement databases through the existing read-only DataQueryWorker route.
-It checks `measurement_extensions` version 1, then presents bounded spatial,
-colocalisation, track, and spot distributions. A selected mark resolves its
-`object_navigation` row against the current OMERO Image or Plate capability
-using `output_store_uuid`; a mismatched or inaccessible source fails closed.
-The inline preview and **Open full ZarrViewer** link use the same field, ROI,
-channels, T/Z plane, raster label, and optional vectors. The installed viewer
-must advertise `zarr-vector-overlay-v1` to receive the vectors; older viewers
-still show the image and raster label. Tracks are clipped to a bounded trail,
-with gaps dashed and cell/nucleus divisions shown only when recorded.
-
-Colocalisation review displays the two measured channels, object mask,
-Pearson and directional Manders values, Otsu thresholds, sampling details,
-and undefined-value reasons. Spatial review highlights the selected object,
-its nearest neighbour, and bounded contact neighbours. No database mutation
-or conversion is performed.
-
 ## Preview behavior
 
 - Object requests use the exact database bounding box.
@@ -76,6 +56,20 @@ the recipe to ZarrViewer's authenticated render API. This preserves the
 no-network Python sandbox while making single-ROI and gallery reruns independent
 of the AI provider. Deployment-local OMERO object IDs are not stored in the
 Method.
+
+## Notebook plot requests
+
+A notebook can request a ZarrViewer PNG or SVG by assigning a dictionary to
+`result` with `omero_analysis_render_recipe` and optional
+`omero_analysis_render_format` (`png` by default). The recipe contains one
+bounded panel with `storeUuid`, a field, ROI, channel(s), T/Z plane, optional
+raster label outlines, optional `vectors` with points or lines, and optional
+`timeProjection` (`max` or `mean`, at most 32 frames ending at panel `t`).
+Analysis resolves the UUID in the active OMERO group and sends the authenticated
+request after the Python cell runs. The returned plot is saved with the
+notebook results. ZarrViewer accepts coordinates from any source; the
+[track-projection example](examples/portable-notebooks/track-temporal-projection.ipynb)
+uses a CISegmentation measurement database to supply one track.
 
 ## Privacy boundary
 

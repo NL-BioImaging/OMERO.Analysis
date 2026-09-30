@@ -9,6 +9,7 @@ describe("Analysis navigation", () => {
     expect(appTabFromRoute("runs")).toBe("home");
     expect(appTabFromRoute("notebook")).toBe("home");
     expect(appTabFromRoute("chat")).toBe("home");
+    expect(appTabFromRoute("results")).toBe("home");
   });
 
   it("returns Home for missing or invalid routes", () => {

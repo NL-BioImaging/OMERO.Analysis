@@ -28,7 +28,6 @@ export type EditorOriginTab =
   | "pipelines"
   | "assistant"
   | "notebooks"
-  | "results"
   | "settings";
 
 interface EditorSessionBase {

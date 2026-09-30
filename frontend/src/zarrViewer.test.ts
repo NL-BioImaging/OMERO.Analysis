@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchZarrCapability,
-  renderZarrPreview,
+  notebookZarrRenderRequest,
   zarrCandidates,
   zarrFocusFromToolArgs,
   zarrRecipeFromToolArgs,
@@ -10,6 +10,20 @@ import {
 import type { ZarrViewerIntegrationStatus } from "./types";
 
 const storeUuid = "ac680965-c76f-47f3-98f9-95f07ecae356";
+
+it("accepts a bounded notebook track projection request", () => {
+  const recipe = { storeUuid, panels: [{ field: ".", roi: [0, 0, 128, 128],
+    sourceChannels: [1], t: 3, z: 0, title: "Track", overlays: [],
+    vectors: { version: 1, items: [{ kind: "line", x: 1, y: 2, x2: 3, y2: 4, t: 3, z: 0, color: "#00E5FF" }] },
+    timeProjection: { method: "max", start: 0, end: 3 } }] };
+  expect(notebookZarrRenderRequest({ result: recipe })).toBeNull();
+  expect(notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe })).toEqual({ recipe, format: "png" });
+  expect(notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe,
+    omero_analysis_render_format: "svg" })).toEqual({ recipe, format: "svg" });
+  expect(() => notebookZarrRenderRequest({ omero_analysis_render_recipe: { ...recipe,
+    panels: [{ ...recipe.panels[0], timeProjection: { method: "max", start: 0, end: 33 } }] } }))
+    .toThrow(/temporal projection/);
+});
 const status: ZarrViewerIntegrationStatus = {
   schema_version: 1,
   available: true,
@@ -227,32 +241,5 @@ it("discards capability credentials and builds a validated deep link", async () 
   expect(url.searchParams.get("field")).toBe("A/1/5");
   expect(url.searchParams.get("roi")).toBe("406,737,486,833");
   expect(url.searchParams.get("storeUuid")).toBe(storeUuid);
-});
-
-it("keeps viewer links plain while allowing explicit PNG review exports", async () => {
-  const capability = {
-    schema_version: 1 as const, supported: true as const,
-    image: { id: 201, name: "cells" },
-    store: { uuid: storeUuid, roi_url: "/roi.png", render_url: "/render.png" },
-    kind: "image" as const, initial_path: "A/1/5",
-    channels: [{ index: 0, label: "DNA", active: true }], labels: [],
-    features: ["zarr-review-export-v1"]
-  };
-  const focus = {
-    ...zarrFocusFromToolArgs({ evidence_ids: ["evidence-1"], store_uuid: storeUuid,
-      field: "A/1/5", target_kind: "point", size_x: 100, size_y: 100,
-      centroid: [12, 8], source_channels: [1] }),
-    vectors: { version: 1 as const, items: [{ kind: "point" as const,
-      x: 12.25, y: 8.5, t: 0, z: 0, color: "#00E5FF" }] }
-  };
-  const url = new URL(zarrViewerUrl(status, capability, focus));
   expect(url.hash).toBe("");
-  expect(new URL(zarrViewerUrl(status, { ...capability, features: [] }, focus)).hash).toBe("");
-  const request = vi.fn(async (_url: unknown, options: RequestInit) => {
-    expect(JSON.parse(String(options.body)).panels[0].vectors.items[0].x).toBe(12.25);
-    return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } });
-  });
-  vi.stubGlobal("fetch", request);
-  await renderZarrPreview(capability, focus);
-  expect(request).toHaveBeenCalledOnce();
 });

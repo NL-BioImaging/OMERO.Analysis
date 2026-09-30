@@ -16,6 +16,37 @@ function bytes(value: unknown): ArrayBuffer {
 }
 
 describe("run-only notebook validation", () => {
+  it("saves an authenticated renderer result requested by a notebook cell", async () => {
+    const notebook = {
+      id: "render-test", workspaceId: "workspace", name: "track.ipynb",
+      attachmentIds: [], selectedDataFileIds: [],
+      document: { nbformat: 4, nbformat_minor: 5, metadata: {},
+        cells: [{ id: "render", cell_type: "code", metadata: {}, source: "result = recipe",
+          execution_count: null, outputs: [] }] },
+      createdAt: "2026-09-30", updatedAt: "2026-09-30"
+    } as NotebookRecord;
+    const preview = { omero_analysis_render_recipe: { storeUuid: "test" } };
+    const file = { name: "track.png", type: "image/png",
+      data: new Uint8Array([137, 80, 78, 71]).buffer };
+    const onFiles = vi.fn(async (_record: NotebookRecord, _files: Array<typeof file>) => undefined);
+    const onChange = vi.fn(async (_record: NotebookRecord) => undefined);
+    const onRenderRequest = vi.fn(async (_record: NotebookRecord, _preview: unknown) => [file]);
+    const view = render(createElement(NotebookView, {
+      notebook, inputs: [], runtime: {
+        reset: async () => undefined, syncInputs: async () => undefined,
+        runNotebookCell: async () => ({ stdout: "", stderr: "", preview, files: [] })
+      } as unknown as PythonRuntime,
+      runRequest: null, workspaceActions: null,
+      onBeforeRun: async () => undefined, onChange, onFiles, onRenderRequest
+    }));
+    fireEvent.click(view.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(onFiles).toHaveBeenCalled());
+    expect(onRenderRequest).toHaveBeenCalledWith(expect.objectContaining({ id: notebook.id }), preview);
+    expect(onFiles.mock.calls[0][1]).toEqual([file]);
+    expect(onChange.mock.calls.at(-1)?.[0].document.cells[0].outputs)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ output_type: "display_data" })]));
+  });
+
   it("does not resume after Stop while asynchronous input preparation finishes", async () => {
     let finishPreparation!: () => void;
     const onBeforeRun = vi.fn(() => new Promise<void>(resolve => { finishPreparation = resolve; }));

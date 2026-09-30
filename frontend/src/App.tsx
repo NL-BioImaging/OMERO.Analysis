@@ -177,7 +177,6 @@ import { HelpWindow } from "./components/HelpWindow";
 import { AnalysisHome } from "./components/AnalysisHome";
 import { AnalysisNavigation } from "./components/AnalysisNavigation";
 import { AnalysisRunsView } from "./components/AnalysisRunsView";
-import { CISegmentationResults } from "./components/CISegmentationResults";
 import { WorkspacePreparationScreen } from "./components/WorkspacePreparationScreen";
 import { ActionIcon, type ActionIconName } from "./components/ActionIcon";
 import {
@@ -193,8 +192,10 @@ import {
 } from "./workflowSkills";
 import {
   fetchZarrCapability,
+  notebookZarrRenderRequest,
   renderZarrPreview,
   renderZarrRecipe,
+  renderZarrRecipeSvg,
   zarrBinding,
   zarrCandidates,
   zarrFocusFromToolArgs,
@@ -3424,6 +3425,31 @@ export default function App() {
       });
     }
     upsertFiles(additions);
+  }
+
+  async function renderNotebookZarrRequest(
+    _record: NotebookRecord,
+    preview: unknown
+  ): Promise<RuntimeOutput["files"]> {
+    const request = notebookZarrRenderRequest(preview);
+    if (!request) return [];
+    if (!zarrViewerStatus?.available) throw new Error(zarrViewerWarning || "ZarrViewer is unavailable");
+    const { recipe, format } = request;
+    const { capability } = await resolveZarrTarget(recipe.storeUuid);
+    const panel = recipe.panels[0];
+    if ((panel.vectors || panel.timeProjection) &&
+        !capability.features?.includes("zarr-review-export-v1")) {
+      throw new Error("This ZarrViewer does not support track or temporal-projection exports");
+    }
+    const data = format === "svg"
+      ? await renderZarrRecipeSvg(capability, recipe)
+      : await renderZarrRecipe(capability, recipe);
+    if (workspaceBytes(workspaceRef.current) + data.byteLength > MAX_WORKSPACE_BYTES) {
+      throw new Error("The ZarrViewer plot would exceed the workspace storage limit");
+    }
+    const requested = String(recipe.filename || "zarr-review").replace(/\.(png|svg)$/i, "");
+    return [{ name: `${slug(requested)}.${format}`,
+      type: format === "svg" ? "image/svg+xml" : "image/png", data }];
   }
 
   async function attachExecutedNotebook(record: NotebookRecord) {
@@ -8894,9 +8920,6 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onNewNotebook={() => void createUntitledNotebook()}
           />
         )}
-        {activeTab === "results" && <CISegmentationResults
-          bridge={bridge} files={analysisWorkspace.files} context={bootstrap.context || null}
-          hierarchy={hierarchy} viewer={zarrViewerStatus} />}
         {["methods", "pipelines", "notebooks"].includes(activeTab) && <div className="artifact-actions" role="toolbar" aria-label="Analysis item actions">
           {activeTab === "methods" && <>
             {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledMethod()}>New Method</Button>}
@@ -9145,6 +9168,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onPrepareProtocol={prepareProtocolNotebook}
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
+            onRenderRequest={renderNotebookZarrRequest}
             onSelect={(notebookId) => {
               setActiveNotebookId(notebookId);
               setInspectorSelection({ kind: "notebook", id: notebookId });

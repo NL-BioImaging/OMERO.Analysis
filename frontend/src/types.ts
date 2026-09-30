@@ -633,7 +633,6 @@ export interface ZarrFocusTarget {
   labelChannel?: number;
   labelValue?: number;
   overlays: ZarrOverlay[];
-  vectors?: ZarrVectorOverlay;
   evidenceIds: string[];
   t: number;
   z: number;

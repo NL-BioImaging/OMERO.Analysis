@@ -3,7 +3,6 @@ export type AppTab =
   | "methods"
   | "pipelines"
   | "notebooks"
-  | "results"
   | "assistant"
   | "editor"
   | "settings";
@@ -11,7 +10,7 @@ export type AppTab =
 export function appTabFromRoute(value: string | null): AppTab {
   if (
     value === "methods" || value === "pipelines" || value === "notebooks" ||
-    value === "assistant" || value === "editor" || value === "settings" || value === "results"
+    value === "assistant" || value === "editor" || value === "settings"
   ) return value;
   return "home";
 }

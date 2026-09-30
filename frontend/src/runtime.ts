@@ -450,7 +450,7 @@ function modelPayload(preview, stderr, files) {
 }
 const previewCode = \`
 import json as _oa_json, math as _oa_math
-def _oa_clean(value):
+def _oa_clean(value, max_items=100):
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float):
@@ -461,11 +461,12 @@ def _oa_clean(value):
             frame = frame.iloc[:, :50]
         return {"kind": "table", "data": frame.to_dict(orient="split")}
     if isinstance(value, dict):
-        return {str(k): _oa_clean(v) for k, v in list(value.items())[:100]}
+        return {str(k): _oa_clean(v, 256 if k == "omero_analysis_render_recipe" else max_items)
+                for k, v in list(value.items())[:max_items]}
     if isinstance(value, (list, tuple)):
-        return [_oa_clean(v) for v in value[:100]]
+        return [_oa_clean(v, max_items) for v in value[:max_items]]
     if hasattr(value, "item"):
-        try: return _oa_clean(value.item())
+        try: return _oa_clean(value.item(), max_items)
         except Exception: pass
     return str(value)
 _oa_json.dumps(_oa_clean(globals().get("result")), ensure_ascii=False)

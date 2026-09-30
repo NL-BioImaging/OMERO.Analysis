@@ -320,6 +320,7 @@ interface Props {
   onPrepareProtocol?: (record: NotebookRecord) => Promise<NotebookRecord>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
+  onRenderRequest?: (record: NotebookRecord, preview: unknown) => Promise<RuntimeOutput["files"]>;
   onSelect?: (id: string) => void;
   onEdit?: (record: NotebookRecord) => void;
 }
@@ -328,7 +329,7 @@ export default function NotebookView(props: Props) {
   const {
     notebook, notebooks = notebook ? [notebook] : [], inputs, runtime, runRequest, workspaceActions,
     onRunRequestConsumed, onRunStateChange,
-    onBeforeRun, onPrepareProtocol, onChange, onFiles, onSelect, onEdit
+    onBeforeRun, onPrepareProtocol, onChange, onFiles, onRenderRequest, onSelect, onEdit
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
@@ -350,6 +351,10 @@ export default function NotebookView(props: Props) {
     try {
       const result = await runtime.runNotebookCell(sourceText(cell));
       checkStopped();
+      const rendered = await onRenderRequest?.(base, result.preview) || [];
+      checkStopped();
+      const generated = [...result.files, ...rendered];
+      const combined = { ...result, files: generated };
       const changed: NotebookRecord = {
         ...base,
         document: {
@@ -359,7 +364,7 @@ export default function NotebookView(props: Props) {
               ? {
                   ...candidate,
                   execution_count: count,
-                  outputs: executionOutputs(result, count)
+                  outputs: executionOutputs(combined, count)
                 }
               : candidate
           )
@@ -370,14 +375,14 @@ export default function NotebookView(props: Props) {
                 ...run,
                 outputs: [
                   ...run.outputs,
-                  ...result.files.map((file) => ({ name: file.name, size: file.data.byteLength }))
+                  ...generated.map((file) => ({ name: file.name, size: file.data.byteLength }))
                 ]
               }
             : run
         ),
         updatedAt: new Date().toISOString()
       };
-      await onFiles(changed, result.files);
+      await onFiles(changed, generated);
       await onChange(changed);
       return changed;
     } catch (error) {

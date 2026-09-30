@@ -601,7 +601,6 @@ export async function renderZarrPreview(
       z: focus.z,
       title: focus.title,
       overlays: focus.overlays,
-      ...(capability.features?.includes("zarr-review-export-v1") && focus.vectors ? { vectors: focus.vectors } : {}),
       scaleBar: true
     }]
   };
@@ -658,6 +657,42 @@ export async function renderZarrRecipeSvg(
   const data = await response.arrayBuffer();
   if (data.byteLength > MAX_RENDERED_PNG) throw new Error("ZarrViewer SVG exceeds 32 MiB");
   return data;
+}
+
+export function notebookZarrRenderRequest(preview: unknown):
+  { recipe: ZarrRenderRecipe; format: "png" | "svg" } | null {
+  if (!preview || typeof preview !== "object" || Array.isArray(preview) ||
+      !("omero_analysis_render_recipe" in preview)) return null;
+  const value = preview as Record<string, unknown>;
+  const format = value.omero_analysis_render_format ?? "png";
+  if (format !== "png" && format !== "svg") throw new Error("Notebook ZarrViewer format must be png or svg");
+  const recipe = value.omero_analysis_render_recipe as ZarrRenderRecipe;
+  if (!recipe || typeof recipe !== "object" ||
+      typeof recipe.storeUuid !== "string" || !Array.isArray(recipe.panels) || recipe.panels.length !== 1) {
+    throw new Error("Notebook ZarrViewer request requires one render panel and a store UUID");
+  }
+  const panel = recipe.panels[0];
+  const roi = panel?.roi;
+  const projection = panel?.timeProjection;
+  if (!panel || typeof panel.field !== "string" || !Array.isArray(roi) || roi.length !== 4 ||
+      !roi.every((coordinate) => Number.isSafeInteger(coordinate) && coordinate >= 0) ||
+      roi[2] <= roi[0] || roi[3] <= roi[1] || roi[2] - roi[0] > 2048 || roi[3] - roi[1] > 2048 ||
+      !Array.isArray(panel.sourceChannels) || panel.sourceChannels.length < 1 || panel.sourceChannels.length > 4 ||
+      !Array.isArray(panel.overlays) || panel.overlays.length > 8 ||
+      !Number.isSafeInteger(panel.t) || panel.t < 0 || !Number.isSafeInteger(panel.z) || panel.z < 0) {
+    throw new Error("Notebook ZarrViewer panel has invalid bounds, channels, overlays, or plane");
+  }
+  if (projection && (projection.method !== "max" && projection.method !== "mean" ||
+      !Number.isSafeInteger(projection.start) || !Number.isSafeInteger(projection.end) ||
+      projection.start < 0 || projection.end < projection.start ||
+      projection.end - projection.start >= 32 || projection.end !== panel.t)) {
+    throw new Error("Notebook temporal projection must contain 1–32 frames and end at panel t");
+  }
+  if (panel.vectors && (panel.vectors.version !== 1 || !Array.isArray(panel.vectors.items) ||
+      panel.vectors.items.length > 256 || JSON.stringify(panel.vectors).length > 16_384)) {
+    throw new Error("Notebook track overlay exceeds the vector limit");
+  }
+  return { recipe, format };
 }
 
 export function zarrBinding(
