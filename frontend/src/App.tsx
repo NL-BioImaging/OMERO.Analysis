@@ -685,8 +685,8 @@ export default function App() {
     useState<InspectorSelection | null>(null);
   const [explorerWidth, setExplorerWidth] = useState(480);
   const [artifactWidth, setArtifactWidth] = useState(360);
-  const [explorerVisible, setExplorerVisible] = useState(true);
-  const [inspectorVisible, setInspectorVisible] = useState(true);
+  const [explorerVisible, setExplorerVisible] = useState(false);
+  const [inspectorVisible, setInspectorVisible] = useState(false);
   const [notebookRunRequest, setNotebookRunRequest] =
     useState<{ id: string; nonce: number } | null>(null);
   const [editorSession, setEditorSession] = useState<ArtifactEditorSession | null>(null);
@@ -891,8 +891,8 @@ export default function App() {
         ? savedEditorEnabled
         : undefined;
       setEditorEnabled(savedEditorEnabled === true);
-      setExplorerVisible(savedExplorerVisible !== false);
-      setInspectorVisible(savedInspectorVisible !== false);
+      setExplorerVisible(savedExplorerVisible === true);
+      setInspectorVisible(savedInspectorVisible === true);
       setSyncPreferencesLoaded(true);
     });
     return () => { alive = false; };
@@ -8924,18 +8924,18 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           {activeTab === "methods" && <>
             {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledMethod()}>New Method</Button>}
             <Button disabled={busy || !activeMethods.length} onClick={() => void renameMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Rename</Button>
-            <Button disabled={busy || !activeMethods.length} onClick={() => void removeMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Move to Trash</Button>
+            <Button title="Move the selected Method to Trash. You can restore it later from Open Trash." disabled={busy || !activeMethods.length} onClick={() => void removeMethod(activeMethods.find(m => m.id === homeMethodId) || activeMethods[0])}>Move Method to Trash</Button>
           </>}
           {activeTab === "pipelines" && <>
             <Button disabled={busy || !activePipelines.length} onClick={() => void renamePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Rename</Button>
-            <Button disabled={busy || !activePipelines.length} onClick={() => void removePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Move to Trash</Button>
+            <Button title="Move the selected Pipeline to Trash. You can restore it later from Open Trash." disabled={busy || !activePipelines.length} onClick={() => void removePipeline(activePipelines.find(p => p.id === homePipelineId) || activePipelines[0])}>Move Pipeline to Trash</Button>
           </>}
           {activeTab === "notebooks" && <>
             {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledNotebook()}>New Notebook</Button>}
             <Button disabled={busy || !activeNotebooks.length} onClick={() => void renameNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Rename</Button>
-            <Button disabled={busy || !activeNotebooks.length} onClick={() => void removeNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Move to Trash</Button>
+            <Button title="Move the selected Notebook to Trash. You can restore it later from Open Trash." disabled={busy || !activeNotebooks.length} onClick={() => void removeNotebook(activeNotebooks.find(n => n.id === activeNotebookId) || activeNotebooks[0])}>Move Notebook to Trash</Button>
           </>}
-          <Button onClick={() => setShowTrash(true)}>Trash and Restore</Button>
+          <Button title="Open Trash to review removed items and restore any you still need. This does not move the current item." onClick={() => setShowTrash(true)}>Open Trash to Restore</Button>
         </div>}
         {(activeTab === "methods" || activeTab === "pipelines") && (
           <AnalysisRunsView

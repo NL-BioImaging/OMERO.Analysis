@@ -45,6 +45,8 @@ describe("run-only notebook validation", () => {
     expect(onFiles.mock.calls[0][1]).toEqual([file]);
     expect(onChange.mock.calls.at(-1)?.[0].document.cells[0].outputs)
       .toEqual(expect.arrayContaining([expect.objectContaining({ output_type: "display_data" })]));
+    expect(onChange.mock.calls.at(-1)?.[0].document.cells[0].outputs)
+      .not.toEqual(expect.arrayContaining([expect.objectContaining({ output_type: "execute_result" })]));
   });
 
   it("does not resume after Stop while asynchronous input preparation finishes", async () => {

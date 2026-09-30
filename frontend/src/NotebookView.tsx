@@ -174,7 +174,9 @@ function executionOutputs(result: RuntimeOutput, count: number): NotebookOutput[
   if (result.stderr) {
     outputs.push({ output_type: "stream", name: "stderr", text: result.stderr });
   }
-  if (result.preview != null) {
+  const renderRequest = result.preview != null && typeof result.preview === "object" &&
+    !Array.isArray(result.preview) && "omero_analysis_render_recipe" in result.preview;
+  if (result.preview != null && !renderRequest) {
     outputs.push({
       output_type: "execute_result",
       execution_count: count,
