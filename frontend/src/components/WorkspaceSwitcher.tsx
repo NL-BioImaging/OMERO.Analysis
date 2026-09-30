@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Icon } from "@blueprintjs/core";
 import { Button } from "./BlueprintControls";
 import { listContextWorkspaces } from "../storage";
 import type { OmeroContext, WorkspaceRecord, LibraryDataset } from "../types";
 
-export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen, onRename, onLifecycle }: {
+export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen, onRename, onTrash, onLifecycle }: {
   workspace: WorkspaceRecord;
   context: OmeroContext | null;
   bridge: { workspaceLibrary(): Promise<LibraryDataset[]> };
   disabled: boolean;
   onOpen(id?: string): void;
   onRename(): void;
+  onTrash(): void;
   onLifecycle(id: string, action: "trash" | "restore" | "purge"): Promise<void>;
 }) {
   const [choices, setChoices] = useState<Array<{ id: string; name: string; state: string }>>([]);
@@ -17,6 +19,8 @@ export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen
   const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  const menu = useRef<HTMLDetailsElement>(null);
+  const closeMenu = () => { if (menu.current) menu.current.open = false; };
   useEffect(() => {
     let alive = true;
     void Promise.all([
@@ -41,9 +45,15 @@ export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen
       {choices.length ? choices.filter(item => item.state === "active" || item.id === workspace.id).map(item => <option key={item.id} value={item.id}>{item.id === workspace.id ? workspace.name : item.name}</option>)
         : <option value={workspace.id}>{workspace.name}</option>}
     </select>
-    <button disabled={disabled} onClick={() => onOpen()}>New workspace</button>
-    <button disabled={disabled || Boolean(workspace.deletedAt)} onClick={onRename}>Rename</button>
-    <Button disabled={disabled} onClick={() => { setOpen(true); setRefresh(value => value + 1); }}>Manage workspaces</Button>
+    <details className="workspace-control-menu" ref={menu}>
+      <summary aria-label="Workspace actions"><Icon icon="folder-open" /> Workspace <Icon icon="caret-down" /></summary>
+      <div className="workspace-control-menu-items">
+        <Button aria-label="New workspace" disabled={disabled} onClick={() => { closeMenu(); onOpen(); }}><Icon icon="add" /> New workspace</Button>
+        <Button aria-label="Rename workspace" disabled={disabled || Boolean(workspace.deletedAt)} onClick={() => { closeMenu(); onRename(); }}><Icon icon="edit" /> Rename workspace</Button>
+        <Button aria-label="Trash" onClick={() => { closeMenu(); onTrash(); }}><Icon icon="trash" /> Trash</Button>
+        <Button aria-label="Manage workspaces" disabled={disabled} onClick={() => { closeMenu(); setOpen(true); setRefresh(value => value + 1); }}><Icon icon="list" /> Manage workspaces</Button>
+      </div>
+    </details>
     {open && <div className="dialog-backdrop"><section className="app-dialog trash-dialog" role="dialog" aria-modal="true" aria-label="Manage workspaces">
       <h2>Manage workspaces</h2><p>Trash is recoverable. Permanent deletion removes only this workspace's managed data.</p>
       {error && <p role="alert">{error}</p>}

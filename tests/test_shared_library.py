@@ -134,14 +134,14 @@ def test_disabled_or_broken_importer_never_opens_library(tmp_path, monkeypatch, 
     assert not list(tmp_path.iterdir())
 
 
-def test_membership_revocation_and_root_mapping_revalidation(tmp_path, monkeypatch):
+def test_membership_revocation_and_mapping_revalidation(tmp_path, monkeypatch):
     from omero_analysis import shared_library as shared
     from .conftest import FakeConnection, FakeObject, Value
     from omero_analysis.errors import PermissionDenied
-    obj, mappings = FakeObject(group_id=0), [tmp_path]
-    conn = FakeConnection(obj, user_id=0)
-    conn.getEventContext = lambda: SimpleNamespace(groupId=0)
-    rows = [[Value(0), Value("system")], [Value(1), Value("user")]]
+    obj, mappings = FakeObject(group_id=4), [tmp_path]
+    conn = FakeConnection(obj, user_id=7)
+    conn.getEventContext = lambda: SimpleNamespace(groupId=4)
+    rows = [[Value(4), Value("research")], [Value(1), Value("user")]]
     conn.getQueryService = lambda: SimpleNamespace(projection=lambda *args: rows)
     monkeypatch.setattr(shared, "storage_policy", lambda group, user: SimpleNamespace(operation_mode="inplace",
         capability=SimpleNamespace(mapped_root=mappings[0])))

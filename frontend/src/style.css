@@ -36,11 +36,8 @@ summary, dt, dd, li, th, td, figcaption { color: inherit; }
 .app-shell[data-embedded-host="biomero"] {
   grid-template-rows: 52px minmax(0, 1fr);
 }
-.app-shell[data-embedded-host="biomero"] .workspace-header {
-  height: 52px; padding-block: .4rem;
-}
-.app-shell[data-embedded-host="biomero"] .header-brand h1 { display: none; }
-.app-shell[data-embedded-host="biomero"] .header-brand p { margin: 0; }
+.app-shell[data-embedded-host="biomero"] .workspace-header { padding-block: .4rem; }
+.app-shell[data-embedded-host="biomero"] .workspace-header-top h1 { display: none; }
 .boot-message {
   align-items: center; background: #0b1117; color: #dceaf2; display: flex;
   font-size: .9rem; font-weight: 600; justify-content: center; letter-spacing: .01em;
@@ -54,10 +51,14 @@ button {
 button:hover:not(:disabled) { background: #21445b; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .workspace-header {
-  height: 72px; display: flex; align-items: center; justify-content: space-between;
+  display: grid; gap: .35rem;
   padding: .7rem 1.2rem; border-bottom: 1px solid #263947; background: #101a22;
 }
 .workspace-header { grid-row: 1; }
+.workspace-header-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; min-width: 0; }
+.workspace-header-context { min-width: 0; border-top: 1px solid var(--theme-border); padding-top: .35rem; line-height: 1.35; }
+.workspace-header-context .source-breadcrumb { display: block; color: var(--theme-muted); overflow-wrap: anywhere; }
+.workspace-header-context p { margin: .15rem 0 0; overflow-wrap: anywhere; }
 .header-brand {
   align-items: center; display: grid;
   grid-template-rows: auto auto;
@@ -67,7 +68,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 h1, h2, p { margin-top: 0; }
 .workspace-header h1 { margin: 0; font-size: 1.1rem; }
 .workspace-header p { margin: .2rem 0 0; color: #9db2c1; font-size: .85rem; }
-.header-actions { display: flex; align-items: center; gap: .5rem; }
+.header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
 .header-actions button {
   font-size: var(--control-font-size); height: var(--control-height);
 }
@@ -1711,7 +1712,7 @@ th { position: sticky; top: 0; background: #183040; }
 
 .workspace-switcher { display: flex; align-items: center; gap: .35rem; }
 .workspace-switcher select {
-  min-width: 150px; max-width: 240px; min-height: var(--control-height);
+  min-width: 150px; max-width: min(240px, 45vw); min-height: var(--control-height);
   padding: .4rem .6rem; border: 1px solid var(--theme-border); border-radius: 6px;
   background: var(--theme-control); color: var(--theme-text); font: inherit;
 }
@@ -1726,6 +1727,25 @@ th { position: sticky; top: 0; background: #183040; }
 .header-brand { min-width: 0; }
 .header-brand p, .source-breadcrumb { overflow-wrap: anywhere; }
 .workspace-switcher { flex-wrap: wrap; }
+.workspace-control-menu { position: relative; }
+.workspace-control-menu > summary {
+  display: flex; align-items: center; gap: .4rem; height: var(--control-height);
+  padding: .4rem .65rem; border: 1px solid var(--theme-border); border-radius: 6px;
+  background: var(--theme-control); color: var(--theme-text); cursor: pointer;
+  font-size: var(--control-font-size); list-style: none; white-space: nowrap;
+}
+.workspace-control-menu > summary::-webkit-details-marker { display: none; }
+.workspace-control-menu > summary .bp5-icon:last-child { margin-left: .15rem; }
+.workspace-control-menu-items {
+  position: absolute; right: 0; top: calc(100% + .3rem); z-index: 100;
+  display: grid; gap: .15rem; min-width: 210px; padding: .35rem;
+  background: var(--theme-card); border: 1px solid var(--theme-border);
+  border-radius: 7px; box-shadow: 0 12px 36px #0008;
+}
+.workspace-control-menu-items button { justify-content: flex-start; width: 100%; white-space: nowrap; }
+.workspace-control-menu-items .bp5-button-text { gap: .75rem; }
+.app-shell[data-theme="light"] .workspace-control-menu > summary,
+.app-shell[data-theme="light"] .workspace-control-menu-items { background: var(--biomero-card); color: var(--biomero-text); }
 .workspace-trash-banner { padding: 1rem; background: var(--panel); }
 .app-shell:has(.workspace-trash-banner) > .workspace { display: none; }
 

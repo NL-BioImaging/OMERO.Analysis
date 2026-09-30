@@ -1301,7 +1301,7 @@ export default function App() {
         await loadOrCreateWorkspace(bootstrap.context, newId || undefined, newId ? `Analysis ${number}` : undefined);
       if (!alive) return;
       if (bootstrap.context) bindSharedHandoff(bootstrap.context, newId, baseWorkspace.workspace);
-      if (!bootstrap.embeddedHost && (savedTheme === "dark" || savedTheme === "light")) {
+      if (savedTheme === "dark" || savedTheme === "light") {
         setTheme(savedTheme);
       }
       if (savedProfiles?.profiles?.length) {
@@ -1583,8 +1583,7 @@ export default function App() {
       }
       setCustomSkills(payload.skills);
       await setValue(customSkillsKey, payload.skills);
-      if (!bootstrap.embeddedHost &&
-          (payload.analysis.theme === "dark" || payload.analysis.theme === "light")) {
+      if (payload.analysis.theme === "dark" || payload.analysis.theme === "light") {
         setTheme(payload.analysis.theme);
         await setValue(uiThemeKey, payload.analysis.theme);
       }
@@ -8161,15 +8160,13 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       </section></div>}
       {showHelp && <HelpWindow onClose={() => setShowHelp(false)} />}
       <header className="workspace-header">
-        <div className="header-brand">
+        <div className="workspace-header-top">
           <h1>OMERO.Analysis</h1>
-          <small className="source-breadcrumb">Source: {bootstrap.context?.source_owner_name || ""} / {bootstrap.context?.source_path?.map(item => item.name).join(" / ")} · Saved in your workspace (user {bootstrap.context?.user_id}; group permissions apply)</small><p title={workspace.name}>{workspace.name}</p>
-        </div>
         <div className="header-actions">
-          <Button onClick={() => setShowTrash(true)}>Trash</Button>
           <WorkspaceSwitcher workspace={workspace} context={bootstrap.context} bridge={bridge}
             disabled={syncing || busy || Boolean(editorSession?.dirty)}
-            onOpen={openAnalysisWorkspace} onRename={() => void renameWorkspace(workspace)} onLifecycle={changeWorkspaceLifecycle} />
+            onOpen={openAnalysisWorkspace} onRename={() => void renameWorkspace(workspace)}
+            onTrash={() => setShowTrash(true)} onLifecycle={changeWorkspaceLifecycle} />
           <Button
             className="panel-visibility-toggle"
             aria-pressed={explorerVisible}
@@ -8190,14 +8187,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             Inspector
             <Icon name="chevron" className={inspectorVisible ? "points-right" : "points-left"} />
           </Button>
-          {!bootstrap.embeddedHost && <Button
+          <Button
             className="theme-toggle"
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
             title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
             onClick={toggleTheme}
           >
             <Icon name={theme === "dark" ? "sun" : "moon"} />
-          </Button>}
+          </Button>
           <Button
             className={activeTab === "settings" ? "active" : ""}
             onClick={() => void navigateFromEditor("settings")}
@@ -8211,6 +8208,11 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           >
             <Icon name="help" /> Help
           </Button>
+        </div>
+        </div>
+        <div className="workspace-header-context">
+          <small className="source-breadcrumb">Source: {bootstrap.context?.source_owner_name || ""} / {bootstrap.context?.source_path?.map(item => item.name).join(" / ")} · Saved in your workspace (user {bootstrap.context?.user_id}; group permissions apply)</small>
+          <p title={workspace.name}>{workspace.name}</p>
         </div>
       </header>
       <div className="workspace-save-status" role="status">

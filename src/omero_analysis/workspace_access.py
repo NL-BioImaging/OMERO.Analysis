@@ -13,6 +13,12 @@ def require_workspace_access(conn, obj):
         raise PermissionDenied("An authenticated workspace owner is required")
     if hasattr(conn, "getEventContext") and int(conn.getEventContext().groupId) != group_id:
         raise PermissionDenied("The active OMERO group has changed")
+    # Root is experimenter 0 and has no ordinary "user" membership. Permit
+    # its system workspace only with an active administrator session.
+    if user_id == 0:
+        if group_id != 0 or not hasattr(conn, "isAdmin") or not conn.isAdmin():
+            raise PermissionDenied("An authenticated system administrator is required")
+        return
     # Read membership afresh: session membership can outlive revocation.
     if hasattr(conn, "getQueryService"):
         from omero.sys import ParametersI
