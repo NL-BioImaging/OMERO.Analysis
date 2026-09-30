@@ -229,14 +229,14 @@ it("discards capability credentials and builds a validated deep link", async () 
   expect(url.searchParams.get("storeUuid")).toBe(storeUuid);
 });
 
-it("gates scientific vectors by viewer capability for links and PNG recipes", async () => {
+it("keeps viewer links plain while allowing explicit PNG review exports", async () => {
   const capability = {
     schema_version: 1 as const, supported: true as const,
     image: { id: 201, name: "cells" },
     store: { uuid: storeUuid, roi_url: "/roi.png", render_url: "/render.png" },
     kind: "image" as const, initial_path: "A/1/5",
     channels: [{ index: 0, label: "DNA", active: true }], labels: [],
-    features: ["zarr-vector-overlay-v1"]
+    features: ["zarr-review-export-v1"]
   };
   const focus = {
     ...zarrFocusFromToolArgs({ evidence_ids: ["evidence-1"], store_uuid: storeUuid,
@@ -246,7 +246,7 @@ it("gates scientific vectors by viewer capability for links and PNG recipes", as
       x: 12.25, y: 8.5, t: 0, z: 0, color: "#00E5FF" }] }
   };
   const url = new URL(zarrViewerUrl(status, capability, focus));
-  expect(JSON.parse(new URLSearchParams(url.hash.slice(1)).get("vectors") || "null").items[0].x).toBe(12.25);
+  expect(url.hash).toBe("");
   expect(new URL(zarrViewerUrl(status, { ...capability, features: [] }, focus)).hash).toBe("");
   const request = vi.fn(async (_url: unknown, options: RequestInit) => {
     expect(JSON.parse(String(options.body)).panels[0].vectors.items[0].x).toBe(12.25);

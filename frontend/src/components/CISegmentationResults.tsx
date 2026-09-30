@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import "../scientific-results.css";
-import type { OmeroContext, OmeroHierarchy, WorkspaceFile, ZarrFocusTarget, ZarrVectorItem, ZarrViewerIntegrationStatus } from "../types";
+import type { OmeroContext, OmeroHierarchy, WorkspaceFile, ZarrFocusTarget, ZarrRenderRecipe, ZarrVectorItem, ZarrViewerCapability, ZarrViewerIntegrationStatus } from "../types";
 import type { OmeroBridge } from "../api";
-import { fetchZarrCapability, renderZarrPreview, zarrCandidates, zarrViewerUrl } from "../zarrViewer";
+import { fetchZarrCapability, renderZarrRecipe, renderZarrRecipeSvg, zarrCandidates } from "../zarrViewer";
 import { focusForResult, integerId, numberAt, pointItem, queryRows, RESULT_LABELS, RESULT_SQL, trackItems,
   type ResultKind, type ResultRow } from "../cisegmentationResults";
 
@@ -17,7 +17,7 @@ interface Props {
 const MODES: ResultKind[] = ["spatial", "colocalization", "tracking", "spots"];
 const METRIC: Record<ResultKind, string> = {
   spatial: "Nearest neighbour (µm)", colocalization: "Pearson r",
-  tracking: "Path length (µm)", spots: "Spot area (µm²)"
+  tracking: "Path length (µm)", spots: "Spot mean intensity (a.u.)"
 };
 
 function scientificInputs(files: WorkspaceFile[]): WorkspaceFile[] {
@@ -32,17 +32,17 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
   const [mode, setMode] = useState<ResultKind>("spatial");
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
-  const [preview, setPreview] = useState("");
-  const [fullUrl, setFullUrl] = useState("");
+  const [exportTarget, setExportTarget] = useState<{ focus: ZarrFocusTarget; capability: ZarrViewerCapability } | null>(null);
+  const [projection, setProjection] = useState<"frame" | "max" | "mean">("frame");
+  const [startFrame, setStartFrame] = useState(0);
+  const [endFrame, setEndFrame] = useState(0);
   const [detail, setDetail] = useState("");
-  const [provenance, setProvenance] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const selectionEpoch = useRef(0);
   const source = inputs.find((file) => file.id === fileId) || inputs[0];
 
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-  useEffect(() => { selectionEpoch.current++; setAvailable([]); setRows([]); setSelected(null); setPreview(""); setFullUrl(""); setProvenance(null); setDetail(""); setError(""); }, [source?.id]);
+  useEffect(() => { selectionEpoch.current++; setAvailable([]); setRows([]); setSelected(null); setExportTarget(null); setDetail(""); setError(""); }, [source?.id]);
 
   async function query(sql: string): Promise<ResultRow[]> {
     if (!source?.annotationId) throw new Error("Choose an OMERO-attached measurements database");
@@ -73,7 +73,7 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
 
   async function load(kind: ResultKind) {
     const epoch = ++selectionEpoch.current;
-    setMode(kind); setRows([]); setSelected(null); setDetail(""); setError(""); setBusy(true);
+    setMode(kind); setRows([]); setSelected(null); setExportTarget(null); setDetail(""); setError(""); setBusy(true);
     try {
       const next = await query(RESULT_SQL[kind]);
       if (epoch === selectionEpoch.current) setRows(next);
@@ -83,19 +83,21 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
 
   async function selectRow(row: ResultRow, index: number) {
     const epoch = ++selectionEpoch.current;
-    setSelected(index); setError(""); setDetail(""); setFullUrl(""); setPreview(""); setProvenance(null); setBusy(true);
+    setSelected(index); setError(""); setDetail(""); setExportTarget(null); setBusy(true);
     try {
       const items: ZarrVectorItem[] = [];
       const notes: string[] = [];
+      let lastTrackObservation: ResultRow | undefined;
       if (mode === "spots") items.push(pointItem(row));
       if (mode === "tracking") {
         const trackId = integerId(row, "track_id");
-        const observations = await query(`SELECT n.object_id, n.timepoint, n.centroid_x_px, n.centroid_y_px,
+        const observations = await query(`SELECT n.object_id, n.timepoint, n.label_value, n.centroid_x_px, n.centroid_y_px,
           n.centroid_z_px, p.x_px AS point_x, p.y_px AS point_y, p.z_px AS point_z
           FROM track_observations o JOIN object_navigation n ON n.object_id=o.object_id
           LEFT JOIN point_localizations p ON p.object_id=n.object_id
           WHERE o.track_id=${trackId} ORDER BY n.timepoint LIMIT 100`);
         items.push(...trackItems(observations));
+        lastTrackObservation = observations[observations.length - 1];
         if (observations.length >= 40 || numberAt(row, "observation_count") > observations.length) {
           notes.push("Track overlay shows a bounded partial trail.");
         }
@@ -162,12 +164,13 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
         notes.push(...thresholds.map((threshold) => `Channel ${threshold.channel_index}: ${threshold.method} threshold ${threshold.threshold}, ${threshold.sample_count} sampled pixels (${String(threshold.sampling_json || "sampling details unavailable").slice(0, 300)}).`));
       }
       let focusRow = row;
+      if (lastTrackObservation) focusRow = { ...focusRow, label_value: lastTrackObservation.label_value };
       if (mode !== "colocalization") {
         const labelSetId = integerId(row, "label_set_id");
         const origins = await query(`SELECT c.channel_index FROM label_set_sources s
           JOIN channels c ON c.channel_id=s.channel_id WHERE s.label_set_id=${labelSetId}
           ORDER BY CASE WHEN s.channel_role='primary' THEN 0 ELSE 1 END LIMIT 1`);
-        if (origins.length) focusRow = { ...row, source_channel: origins[0].channel_index };
+        if (origins.length) focusRow = { ...focusRow, source_channel: origins[0].channel_index };
       }
       let focus = focusForResult(focusRow, mode, items);
       if (mode === "tracking") {
@@ -195,31 +198,43 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
           .find((candidate) => candidate.store.uuid === focus.storeUuid);
       }
       if (!capability) throw new Error("No current-group OMERO image matches this result's output store UUID");
-      if (!capability.features?.includes("zarr-vector-overlay-v1")) {
-        focus = { ...focus, vectors: undefined };
-        notes.push("This installed ZarrViewer can show the image and raster label; vector overlays require the analysis_skills viewer build.");
+      if (!capability.features?.includes("zarr-review-export-v1")) {
+        throw new Error("This ZarrViewer does not support scientific PNG/SVG exports");
       }
-      const url = zarrViewerUrl(viewer, capability, focus);
-      const png = await renderZarrPreview(capability, focus);
       if (epoch !== selectionEpoch.current) return;
-      setFullUrl(url); setPreview(URL.createObjectURL(new Blob([png], { type: "image/png" })));
+      setExportTarget({ focus, capability });
+      setProjection("frame");
+      setEndFrame(focus.t);
+      setStartFrame(Math.max(0, focus.t - 3));
       setDetail(notes.join(" "));
-      setProvenance({ schema: "nl.bioimaging.cisegmentation-review.v1", sourceName: source?.name,
-        query: RESULT_SQL[mode], selectedObjectId: row.object_id, metric: row.metric,
-        storeUuid: focus.storeUuid, viewerUrl: url,
-        renderRecipe: { storeUuid: focus.storeUuid, panels: [{ field: focus.field, roi: focus.roi,
-          sourceChannels: focus.sourceChannels, t: focus.t, z: focus.z,
-          overlays: focus.overlays, ...(focus.vectors ? { vectors: focus.vectors } : {}) }] } });
     } catch (reason) { if (epoch === selectionEpoch.current) setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if (epoch === selectionEpoch.current) setBusy(false); }
   }
 
-  function downloadProvenance() {
-    if (!provenance) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url; link.download = "cisegmentation-review.json"; link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function exportPlot(format: "png" | "svg") {
+    if (!exportTarget) return;
+    setBusy(true); setError("");
+    try {
+      const { focus, capability } = exportTarget;
+      const range = projection === "frame" ? undefined : { method: projection, start: startFrame, end: endFrame };
+      if (range && (!Number.isInteger(startFrame) || !Number.isInteger(endFrame) ||
+        startFrame < 0 || endFrame < startFrame || endFrame >= (focus.sizeT || 1) || endFrame - startFrame >= 32)) {
+        throw new Error("Choose 1–32 available timepoints for the projection");
+      }
+      const filename = `cisegmentation-${mode}-${selected == null ? "result" : selected + 1}.${format}`;
+      const recipe: ZarrRenderRecipe = { storeUuid: focus.storeUuid, filename,
+        panels: [{ field: focus.field, roi: focus.roi, sourceChannels: focus.sourceChannels,
+          t: range ? endFrame : focus.t, z: focus.z, title: focus.title,
+          overlays: !range || range.end === focus.t ? focus.overlays : [],
+          vectors: focus.vectors, scaleBar: true,
+          ...(range ? { timeProjection: range } : {}) }] };
+      const data = format === "png" ? await renderZarrRecipe(capability, recipe) : await renderZarrRecipeSvg(capability, recipe);
+      const url = URL.createObjectURL(new Blob([data], { type: format === "png" ? "image/png" : "image/svg+xml" }));
+      const link = document.createElement("a");
+      link.href = url; link.download = filename; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setBusy(false); }
   }
 
   const values = rows.map((row) => Number(row.metric)).filter(Number.isFinite);
@@ -228,7 +243,7 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
   const span = Math.max(1e-9, high - low);
   return <section className="ciseg-results" aria-label="CISegmentation results">
     <h2>Explore CISegmentation results</h2>
-    <p>Inspect measured objects and their source image in the current OMERO group.</p>
+    <p>Inspect measured objects and request a PNG or SVG review plot from ZarrViewer.</p>
     <div className="ciseg-controls">
       <label>Measurements database <select value={source?.id || ""} onChange={(event) => setFileId(event.target.value)}>
         {inputs.map((file) => <option key={file.id} value={file.id}>{file.name}</option>)}
@@ -267,14 +282,22 @@ export function CISegmentationResults({ bridge, files, context, hierarchy, viewe
             <td>{String(row.timepoint)}</td><td>{row.metric == null ? "undefined" : String(row.metric)}</td>
           </tr>)}</tbody></table></div>
       </div>
-      <aside className="ciseg-preview"><h3>Source image</h3>
-        {preview ? <img src={preview} alt="Bounded source image and selected scientific overlays" />
-          : <p>Select a plotted result to inspect its source image.</p>}
-        {fullUrl && <a href={fullUrl} target="_blank" rel="noopener noreferrer">Open full ZarrViewer</a>}
-        {preview && <div className="ciseg-downloads">
-          <a href={preview} download="cisegmentation-review.png">Download PNG</a>
-          <button onClick={downloadProvenance}>Download review provenance</button>
-        </div>}
+      <aside className="ciseg-export"><h3>Export a review plot</h3>
+        <p>Select a result, then request a PNG or SVG from ZarrViewer. The plot includes the selected label outline and available tracks or points.</p>
+        {exportTarget && <>
+          <p>{exportTarget.focus.title} · frame {exportTarget.focus.t + 1}</p>
+          <label>Time image <select value={projection} onChange={(event) => setProjection(event.target.value as "frame" | "max" | "mean")}>
+            <option value="frame">Selected frame</option><option value="max">Maximum across time</option><option value="mean">Mean across time</option>
+          </select></label>
+          {projection !== "frame" && <div className="ciseg-time-range">
+            <label>First frame <input type="number" min={1} max={exportTarget.focus.sizeT || 1} value={startFrame + 1}
+              onChange={(event) => setStartFrame(Number(event.target.value) - 1)} /></label>
+            <label>Last frame <input type="number" min={1} max={exportTarget.focus.sizeT || 1} value={endFrame + 1}
+              onChange={(event) => setEndFrame(Number(event.target.value) - 1)} /></label>
+          </div>}
+          <div className="ciseg-downloads"><button disabled={busy} onClick={() => void exportPlot("png")}>Download PNG</button>
+            <button disabled={busy} onClick={() => void exportPlot("svg")}>Download SVG</button></div>
+        </>}
         {detail && <p>{detail}</p>}
       </aside>
     </div>}

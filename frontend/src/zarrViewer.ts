@@ -160,7 +160,8 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
       uuid: store.uuid.toLowerCase(),
       name: typeof store.name === "string" ? store.name : undefined,
       roi_url: store.roi_url,
-      render_url: store.render_url
+      render_url: store.render_url,
+      render_svg_url: typeof store.render_svg_url === "string" ? store.render_svg_url : undefined
     },
     kind: body.kind,
     initial_path: body.initial_path,
@@ -569,11 +570,6 @@ function appendFocus(url: URL, focus: ZarrFocusTarget): URL {
   if (focus.overlays.length) {
     url.searchParams.set("overlays", JSON.stringify(focus.overlays));
   }
-  if (focus.vectors?.items.length) {
-    const fragment = new URLSearchParams();
-    fragment.set("vectors", JSON.stringify(focus.vectors));
-    url.hash = fragment.toString();
-  }
   return url;
 }
 
@@ -586,10 +582,7 @@ export function zarrViewerUrl(
   if (!status.viewer_url) throw new Error("ZarrViewer has no viewer route");
   const url = new URL(status.viewer_url, window.location.href);
   url.searchParams.set("image", String(capability.image.id));
-  return appendFocus(url, {
-    ...focus,
-    vectors: capability.features?.includes("zarr-vector-overlay-v1") ? focus.vectors : undefined
-  }).toString();
+  return appendFocus(url, focus).toString();
 }
 
 export async function renderZarrPreview(
@@ -608,7 +601,7 @@ export async function renderZarrPreview(
       z: focus.z,
       title: focus.title,
       overlays: focus.overlays,
-      ...(capability.features?.includes("zarr-vector-overlay-v1") && focus.vectors ? { vectors: focus.vectors } : {}),
+      ...(capability.features?.includes("zarr-review-export-v1") && focus.vectors ? { vectors: focus.vectors } : {}),
       scaleBar: true
     }]
   };
@@ -639,6 +632,31 @@ export async function renderZarrRecipe(
   if (declared > MAX_RENDERED_PNG) throw new Error("ZarrViewer preview exceeds 32 MiB");
   const data = await response.arrayBuffer();
   if (data.byteLength > MAX_RENDERED_PNG) throw new Error("ZarrViewer preview exceeds 32 MiB");
+  return data;
+}
+
+export async function renderZarrRecipeSvg(
+  capability: ZarrViewerCapability,
+  recipe: ZarrRenderRecipe
+): Promise<ArrayBuffer> {
+  validateRecipeAgainstCapability(capability, recipe);
+  if (!capability.features?.includes("zarr-review-export-v1") || !capability.store.render_svg_url) {
+    throw new Error("This ZarrViewer does not support SVG review exports");
+  }
+  const response = await fetch(new URL(capability.store.render_svg_url, window.location.href), {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json",
+      "X-CSRFToken": document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1] || "" },
+    body: JSON.stringify(recipe)
+  });
+  if (!response.ok) throw new Error(await response.text() || `${response.status} ${response.statusText}`);
+  if ((response.headers.get("content-type") || "").split(";", 1)[0].toLowerCase() !== "image/svg+xml") {
+    throw new Error("ZarrViewer did not return an SVG plot");
+  }
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > MAX_RENDERED_PNG) throw new Error("ZarrViewer SVG exceeds 32 MiB");
+  const data = await response.arrayBuffer();
+  if (data.byteLength > MAX_RENDERED_PNG) throw new Error("ZarrViewer SVG exceeds 32 MiB");
   return data;
 }
 

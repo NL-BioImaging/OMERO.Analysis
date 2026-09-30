@@ -31,9 +31,11 @@ export const RESULT_SQL: Record<ResultKind, string> = {
     JOIN object_navigation n ON n.object_id=obs.object_id AND n.timepoint=tr.start_frame
     ORDER BY tr.path_length_um DESC LIMIT 100`,
   spots: `SELECT ${NAV}, p.x_px AS point_x, p.y_px AS point_y, p.z_px AS point_z,
-    n.area_um2 AS metric, p.coordinate_source
+    im.intensity_mean AS metric, p.coordinate_source
     FROM point_localizations p JOIN object_navigation n ON n.object_id=p.object_id
-    ORDER BY n.object_id LIMIT 100`,
+    JOIN label_set_sources src ON src.label_set_id=n.label_set_id AND src.channel_role='primary'
+    JOIN intensity_measurements im ON im.object_id=n.object_id AND im.channel_id=src.channel_id
+    ORDER BY im.intensity_mean DESC, n.object_id LIMIT 100`,
 };
 
 export type ResultRow = Record<string, unknown>;

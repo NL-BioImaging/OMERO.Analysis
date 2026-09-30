@@ -4,11 +4,12 @@
 .ciseg-controls label { display: grid; gap: .3rem; min-width: 12rem; }
 .ciseg-controls select { max-width: 26rem; }
 .ciseg-review { display: grid; grid-template-columns: minmax(20rem, 1.4fr) minmax(17rem, 1fr); gap: 1.2rem; }
-.ciseg-plot, .ciseg-preview { min-width: 0; border: 1px solid var(--border-color, #9ca3af); border-radius: .5rem; padding: 1rem; }
+.ciseg-plot, .ciseg-export { min-width: 0; border: 1px solid var(--border-color, #9ca3af); border-radius: .5rem; padding: 1rem; }
 .ciseg-plot svg { display: block; width: 100%; height: auto; min-height: 12rem; }
 .ciseg-plot circle { cursor: pointer; }
-.ciseg-preview img { width: 100%; max-height: 36rem; object-fit: contain; background: #0c1018; }
-.ciseg-preview a { display: inline-block; margin-top: .8rem; }
+.ciseg-export label { display: grid; gap: .3rem; margin-top: 1rem; }
+.ciseg-time-range { display: flex; gap: .8rem; flex-wrap: wrap; }
+.ciseg-time-range input { width: 7rem; }
 .ciseg-downloads { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-top: .5rem; }
 .ciseg-table-wrap { max-height: 22rem; overflow: auto; }
 .ciseg-table-wrap table { width: 100%; border-collapse: collapse; }

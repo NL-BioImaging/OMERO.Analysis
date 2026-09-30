@@ -552,7 +552,7 @@ export interface ZarrViewerCapability {
   supported: true;
   features?: string[];
   image: { id: number; name: string };
-  store: { uuid: string; name?: string; roi_url: string; render_url: string };
+  store: { uuid: string; name?: string; roi_url: string; render_url: string; render_svg_url?: string };
   kind: "image" | "plate";
   initial_path: string;
   channels: Array<{ index: number; label: string; active: boolean }>;
@@ -589,6 +589,7 @@ export interface ZarrRenderPanel {
   caption?: string;
   overlays: ZarrOverlay[];
   vectors?: ZarrVectorOverlay;
+  timeProjection?: { method: "max" | "mean"; start: number; end: number };
   scaleBar?: boolean;
 }
 
