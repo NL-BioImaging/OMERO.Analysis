@@ -29,6 +29,26 @@ The database therefore does not need an OMERO Image or Plate ID. The store
 UUID is the portable identity; OMERO IDs are deployment-local and are resolved
 from the authenticated hierarchy.
 
+## CISegmentation results
+
+The **CISegmentation Results** tab accepts OMERO-attached DuckDB/SQLite
+measurement databases through the existing read-only DataQueryWorker route.
+It checks `measurement_extensions` version 1, then presents bounded spatial,
+colocalisation, track, and spot distributions. A selected mark resolves its
+`object_navigation` row against the current OMERO Image or Plate capability
+using `output_store_uuid`; a mismatched or inaccessible source fails closed.
+The inline preview and **Open full ZarrViewer** link use the same field, ROI,
+channels, T/Z plane, raster label, and optional vectors. The installed viewer
+must advertise `zarr-vector-overlay-v1` to receive the vectors; older viewers
+still show the image and raster label. Tracks are clipped to a bounded trail,
+with gaps dashed and cell/nucleus divisions shown only when recorded.
+
+Colocalisation review displays the two measured channels, object mask,
+Pearson and directional Manders values, Otsu thresholds, sampling details,
+and undefined-value reasons. Spatial review highlights the selected object,
+its nearest neighbour, and bounded contact neighbours. No database mutation
+or conversion is performed.
+
 ## Preview behavior
 
 - Object requests use the exact database bounding box.

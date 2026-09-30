@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchZarrCapability,
+  renderZarrPreview,
   zarrCandidates,
   zarrFocusFromToolArgs,
   zarrRecipeFromToolArgs,
@@ -226,4 +227,32 @@ it("discards capability credentials and builds a validated deep link", async () 
   expect(url.searchParams.get("field")).toBe("A/1/5");
   expect(url.searchParams.get("roi")).toBe("406,737,486,833");
   expect(url.searchParams.get("storeUuid")).toBe(storeUuid);
+});
+
+it("gates scientific vectors by viewer capability for links and PNG recipes", async () => {
+  const capability = {
+    schema_version: 1 as const, supported: true as const,
+    image: { id: 201, name: "cells" },
+    store: { uuid: storeUuid, roi_url: "/roi.png", render_url: "/render.png" },
+    kind: "image" as const, initial_path: "A/1/5",
+    channels: [{ index: 0, label: "DNA", active: true }], labels: [],
+    features: ["zarr-vector-overlay-v1"]
+  };
+  const focus = {
+    ...zarrFocusFromToolArgs({ evidence_ids: ["evidence-1"], store_uuid: storeUuid,
+      field: "A/1/5", target_kind: "point", size_x: 100, size_y: 100,
+      centroid: [12, 8], source_channels: [1] }),
+    vectors: { version: 1 as const, items: [{ kind: "point" as const,
+      x: 12.25, y: 8.5, t: 0, z: 0, color: "#00E5FF" }] }
+  };
+  const url = new URL(zarrViewerUrl(status, capability, focus));
+  expect(JSON.parse(new URLSearchParams(url.hash.slice(1)).get("vectors") || "null").items[0].x).toBe(12.25);
+  expect(new URL(zarrViewerUrl(status, { ...capability, features: [] }, focus)).hash).toBe("");
+  const request = vi.fn(async (_url: unknown, options: RequestInit) => {
+    expect(JSON.parse(String(options.body)).panels[0].vectors.items[0].x).toBe(12.25);
+    return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } });
+  });
+  vi.stubGlobal("fetch", request);
+  await renderZarrPreview(capability, focus);
+  expect(request).toHaveBeenCalledOnce();
 });

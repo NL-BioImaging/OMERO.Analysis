@@ -550,6 +550,7 @@ export interface ZarrViewerIntegrationStatus {
 export interface ZarrViewerCapability {
   schema_version: 1;
   supported: true;
+  features?: string[];
   image: { id: number; name: string };
   store: { uuid: string; name?: string; roi_url: string; render_url: string };
   kind: "image" | "plate";
@@ -587,8 +588,26 @@ export interface ZarrRenderPanel {
   title: string;
   caption?: string;
   overlays: ZarrOverlay[];
+  vectors?: ZarrVectorOverlay;
   scaleBar?: boolean;
 }
+
+export interface ZarrVectorItem {
+  kind: "point" | "line";
+  x: number;
+  y: number;
+  x2?: number;
+  y2?: number;
+  t: number;
+  z: number;
+  color: string;
+  radius?: number;
+  width?: number;
+  dashed?: boolean;
+  trail?: boolean;
+}
+
+export interface ZarrVectorOverlay { version: 1; items: ZarrVectorItem[] }
 
 export interface ZarrRenderRecipe {
   storeUuid: string;
@@ -613,6 +632,7 @@ export interface ZarrFocusTarget {
   labelChannel?: number;
   labelValue?: number;
   overlays: ZarrOverlay[];
+  vectors?: ZarrVectorOverlay;
   evidenceIds: string[];
   t: number;
   z: number;

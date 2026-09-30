@@ -177,6 +177,7 @@ import { HelpWindow } from "./components/HelpWindow";
 import { AnalysisHome } from "./components/AnalysisHome";
 import { AnalysisNavigation } from "./components/AnalysisNavigation";
 import { AnalysisRunsView } from "./components/AnalysisRunsView";
+import { CISegmentationResults } from "./components/CISegmentationResults";
 import { WorkspacePreparationScreen } from "./components/WorkspacePreparationScreen";
 import { ActionIcon, type ActionIconName } from "./components/ActionIcon";
 import {
@@ -8893,6 +8894,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onNewNotebook={() => void createUntitledNotebook()}
           />
         )}
+        {activeTab === "results" && <CISegmentationResults
+          bridge={bridge} files={analysisWorkspace.files} context={bootstrap.context || null}
+          hierarchy={hierarchy} viewer={zarrViewerStatus} />}
         {["methods", "pipelines", "notebooks"].includes(activeTab) && <div className="artifact-actions" role="toolbar" aria-label="Analysis item actions">
           {activeTab === "methods" && <>
             {editorEnabled && <Button disabled={busy} onClick={() => void createUntitledMethod()}>New Method</Button>}

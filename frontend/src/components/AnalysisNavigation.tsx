@@ -8,6 +8,7 @@ const iconForTab = (tab: AppTab) =>
       : tab === "pipelines" ? "pipeline" as const
         : tab === "assistant" ? "chat" as const
           : tab === "notebooks" ? "notebook" as const
+            : tab === "results" ? "run" as const
             : "edit" as const;
 
 export function AnalysisNavigation({
@@ -20,7 +21,7 @@ export function AnalysisNavigation({
   onNavigate: (tab: AppTab) => void;
 }) {
   const tabs: AppTab[] = [
-    "home", "methods", "pipelines", "notebooks", "assistant",
+    "home", "methods", "pipelines", "notebooks", "results", "assistant",
     ...(editorEnabled ? ["editor" as const] : [])
   ];
   return (
@@ -30,7 +31,7 @@ export function AnalysisNavigation({
           aria-current={activeTab === tab ? "page" : undefined}
           onClick={() => onNavigate(tab)}>
           <ActionIcon name={iconForTab(tab)} />
-          {tab[0].toUpperCase() + tab.slice(1)}
+          {tab === "results" ? "CISegmentation Results" : tab[0].toUpperCase() + tab.slice(1)}
         </Button>
       ))}
     </nav>

@@ -154,6 +154,7 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
   return {
     schema_version: 1,
     supported: true,
+    features: Array.isArray(body.features) ? body.features.filter((item: unknown) => typeof item === "string") : [],
     image: { id: image.id, name: image.name },
     store: {
       uuid: store.uuid.toLowerCase(),
@@ -568,6 +569,11 @@ function appendFocus(url: URL, focus: ZarrFocusTarget): URL {
   if (focus.overlays.length) {
     url.searchParams.set("overlays", JSON.stringify(focus.overlays));
   }
+  if (focus.vectors?.items.length) {
+    const fragment = new URLSearchParams();
+    fragment.set("vectors", JSON.stringify(focus.vectors));
+    url.hash = fragment.toString();
+  }
   return url;
 }
 
@@ -580,7 +586,10 @@ export function zarrViewerUrl(
   if (!status.viewer_url) throw new Error("ZarrViewer has no viewer route");
   const url = new URL(status.viewer_url, window.location.href);
   url.searchParams.set("image", String(capability.image.id));
-  return appendFocus(url, focus).toString();
+  return appendFocus(url, {
+    ...focus,
+    vectors: capability.features?.includes("zarr-vector-overlay-v1") ? focus.vectors : undefined
+  }).toString();
 }
 
 export async function renderZarrPreview(
@@ -599,6 +608,7 @@ export async function renderZarrPreview(
       z: focus.z,
       title: focus.title,
       overlays: focus.overlays,
+      ...(capability.features?.includes("zarr-vector-overlay-v1") && focus.vectors ? { vectors: focus.vectors } : {}),
       scaleBar: true
     }]
   };
