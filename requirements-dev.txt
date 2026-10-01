@@ -13,4 +13,6 @@ setuptools>=69
 wheel
 twine
 jsonschema
-skills-ref
+# Authoring validation runs in the Python 3.12 distribution job. The upstream
+# validator requires Python 3.11; backend/SDK support still includes Python 3.10.
+skills-ref; python_version >= "3.11"
