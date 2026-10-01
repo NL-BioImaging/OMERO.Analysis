@@ -1,3 +1,4 @@
+import { resultBytes } from "./resultMedia";
 import { samePlot } from "./plotGroups";
 import { exportWorkspace } from "./archive";
 import { sha256 } from "./storage";
@@ -111,7 +112,8 @@ async function itemFromBytes(
 
 export async function buildWorkspaceSyncPayload(
   workspace: AnalysisWorkspace,
-  context: OmeroContext
+  context: OmeroContext,
+  options: { inventoryOnly?: boolean; uploadKeys?: Set<string> } = {}
 ): Promise<SyncPayload> {
   const items: SyncInventoryItem[] = [];
   const bytes = new Map<string, Uint8Array>();
@@ -147,11 +149,13 @@ export async function buildWorkspaceSyncPayload(
     .sort((left, right) =>
       left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
     )) {
-    if (!file.data && !file.remoteResult) throw new Error(`Result ${file.name} is unavailable in this browser`);
-    const data = file.data ? new Uint8Array(file.data.slice(0)) : undefined;
+    if (!file.data && !file.mediaBlob && !file.remoteResult) throw new Error(`Result ${file.name} is unavailable in this browser`);
+    const expectedKey = `result-content:${file.type === "image/png" ? "png-image" : "result"}:${file.sha256}`;
+    const raw = options.inventoryOnly && Boolean(file.sha256) || options.uploadKeys && !options.uploadKeys.has(expectedKey) ? undefined : await resultBytes(file);
+    const data = raw ? new Uint8Array(raw) : undefined;
     const kind: SyncItemKind = file.type === "image/png" ? "png-image" : "result";
     const mimetype = file.type || "application/octet-stream";
-    const digest = data ? await sha256(data.slice().buffer) : file.remoteResult!.sha256;
+    const digest = file.sha256 || (data ? await sha256(data.slice().buffer) : file.remoteResult!.sha256);
     const groupKey = `${kind}:${mimetype}:${digest}`;
     const group = resultGroups.get(groupKey);
     if (group) {
@@ -163,7 +167,7 @@ export async function buildWorkspaceSyncPayload(
         mimetype,
         sha256: digest,
         data,
-        size: data?.byteLength ?? file.remoteResult!.size,
+        size: data?.byteLength ?? file.size,
         files: [file]
       });
     }
@@ -188,6 +192,7 @@ export async function buildWorkspaceSyncPayload(
       pipelineId: file.pipelineId || null,
       notebookId: file.notebookId || null,
       executionId: file.executionId || null,
+      resultGroupId: file.resultGroupId || null, movie: file.movie || null,
       viewer: file.viewer || null
     }));
     const plotImageKeys = group.kind === "result" && group.files.some((file) =>
@@ -356,10 +361,10 @@ export async function buildWorkspaceSyncPayload(
       createdAt: workspace.workspace.createdAt, updatedAt: workspace.workspace.createdAt }],
     files: workspace.files.filter(file => file.role !== "chat-attachment" &&
       (file.source !== "result" || Boolean(file.runId || file.methodId || file.pipelineId || file.notebookId)))
-      .map(file => resultReferences.has(file.id) ? { ...file, data: undefined,
+      .map(file => resultReferences.has(file.id) ? { ...file, data: undefined, mediaBlob: undefined,
         remoteResult: resultReferences.get(file.id) } : file)
       .map(file => file.source === "local" && file.role !== "template-input" && !/template/i.test(file.name)
-        ? { ...file, data: undefined, state: "missing" as const, error: "Reselect this browser-local input" } : file),
+        ? { ...file, data: undefined, mediaBlob: undefined, state: "missing" as const, error: "Reselect this browser-local input" } : file),
     executions: workspace.executions.filter(item => executionIds.has(item.id)),
     artifacts: workspace.artifacts.filter(item => item.runId || executionIds.has(item.executionId || "")),
     evidence: [], audits: []

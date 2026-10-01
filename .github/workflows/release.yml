@@ -1,56 +1,39 @@
-name: Publish release
-
+﻿name: Attach verified GitHub Release wheels
 on:
   release:
     types: [published]
-
 permissions:
   contents: read
-
+concurrency:
+  group: analysis-release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  build:
+  validation:
+    uses: ./.github/workflows/validate.yml
+  attach-release-assets:
+    needs: validation
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Require tag to match package version
-        shell: bash
-        run: |
-          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          test "${GITHUB_REF_NAME}" = "v${version}"
-      - run: python -m pip install build twine setuptools wheel jsonschema skills-ref
-      - run: npm ci && npm test
-        working-directory: frontend
-      - run: python scripts/build_frontend.py --skip-install
-      - run: python scripts/validate_agent_plugin.py
-      - run: agentskills validate skills/create-omero-analysis-notebook
-      - run: python -m build
-      - run: python -m build --outdir dist notebook-sdk
-      - run: python scripts/verify_wheel.py dist/omero_analysis-*.whl
-      - run: python -m twine check dist/*
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-distributions
-          path: dist/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/omero-analysis
+    timeout-minutes: 10
     permissions:
-      id-token: write
+      contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          name: release-distributions
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+          python-version: '3.12'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: analysis-distributions
+          path: dist/analysis/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: notebook-sdk-distributions
+          path: dist/notebook-sdk/
+      - name: Check tag and generate checksums from actual wheels
+        run: |
+          python scripts/check_release_version.py
+          python scripts/build_release_manifest.py --version "${GITHUB_REF_NAME#v}" --output dist/manifest.json dist/analysis/*.whl dist/notebook-sdk/*.whl
+      - name: Attach wheels and manifest (identical retries only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/upload_release_assets.py --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --manifest dist/manifest.json --directory dist/analysis --directory dist/notebook-sdk

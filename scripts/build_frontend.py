@@ -20,17 +20,7 @@ REQUIRED_RUNTIME = {
     "RUNTIME.json",
     "seaborn-0.13.2-py3-none-any.whl",
 }
-REQUIRED_PACKAGES = {
-    "duckdb",
-    "matplotlib",
-    "numpy",
-    "pandas",
-    "pyarrow",
-    "python-calamine",
-    "scipy",
-    "seaborn",
-    "xlrd",
-}
+REQUIRED_PACKAGES = set(json.loads((FRONTEND / "runtime-packages.json").read_text())["approved"])
 
 
 def npm():

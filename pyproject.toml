@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omero-analysis"
-version = "0.14.0"
+version = "0.15.0"
 description = "Browser-local reusable Methods, Pipelines, Notebooks, and a Method-authoring Assistant for OMERO.web"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -59,6 +59,13 @@ where = ["src"]
 omero_analysis = [
   "templates/**/*.html",
   "static/**/*",
+]
+
+[tool.setuptools.data-files]
+"share/omero-analysis" = [
+  "docker/49-omero-analysis-cleanup.py",
+  "docker/51-omero-analysis-navigation.py",
+  "docker/90-omero-analysis.omero",
 ]
 
 [tool.pytest.ini_options]

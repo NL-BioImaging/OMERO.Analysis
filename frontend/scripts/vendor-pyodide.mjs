@@ -10,18 +10,8 @@ const destination = resolve(
 );
 const version = JSON.parse(await readFile(resolve(source, "package.json"), "utf8")).version;
 const lock = JSON.parse(await readFile(resolve(source, "pyodide-lock.json"), "utf8"));
-const roots = [
-  "micropip",
-  "numpy",
-  "pandas",
-  "matplotlib",
-  "scipy",
-  "scikit-image",
-  "duckdb",
-  "pyarrow",
-  "python-calamine",
-  "xlrd"
-];
+const runtimePackages = JSON.parse(await readFile(resolve(frontend, "runtime-packages.json"), "utf8"));
+const roots = runtimePackages.vendored;
 const selected = new Set();
 
 function include(name) {
@@ -34,19 +24,7 @@ function include(name) {
 }
 roots.forEach(include);
 
-const extraWheels = [{
-  name: "seaborn",
-  version: "0.13.2",
-  fileName: "seaborn-0.13.2-py3-none-any.whl",
-  url: "https://files.pythonhosted.org/packages/83/11/00d3c3dfc25ad54e731d91449895a79e4bf2384dc3ac01809010ba88f6d5/seaborn-0.13.2-py3-none-any.whl",
-  sha256: "636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987"
-}, {
-  name: "pypdf",
-  version: "6.14.2",
-  fileName: "pypdf-6.14.2-py3-none-any.whl",
-  url: "https://files.pythonhosted.org/packages/49/e6/136aa8993a2ae7214e0b0ef2edaa0d2e08d1d4e4982635b08a835ff31ec8/pypdf-6.14.2-py3-none-any.whl",
-  sha256: "3f07891af76dc002657e04993ab9b4de81de29f9013b9761d0b7968bff12e946"
-}];
+const extraWheels = runtimePackages.extraWheels;
 
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });

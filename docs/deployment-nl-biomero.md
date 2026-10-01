@@ -4,19 +4,28 @@ Analysis is an OMERO.web wheel with a compiled frontend and self-hosted
 Pyodide runtime. It needs no second service, storage mount, or custom Nginx
 location.
 
-## Build and layer the plugin
+## Production release deployment
+
+Use the exact `OMERO_ANALYSIS_VERSION=X.Y.Z` pin in NL-BIOMERO. Its web Docker
+build prepares the tagged GitHub Release wheels and checksum manifest in a
+separate stage, then installs Analysis from that wheelhouse using `--no-index`.
+No Node/source build, PyPI publication, or live-container download is required.
+See [the release guide](github-releases.md) for prerequisites and strict failure
+behavior. The requested release must already contain both wheels and its manifest.
+
+## Development: build and layer a checkout
 
 ```bash
 python -m pip install build
 python scripts/build_frontend.py
 python -m build --wheel
 python scripts/verify_wheel.py dist/omero_analysis-*.whl
+python scripts/build_companion_wheelhouse.py --plugin-wheel dist/omero_analysis-<version>-py3-none-any.whl --output dist/wheelhouse
 
 docker build \
   --build-arg OMERO_WEB_IMAGE=<current-omeroweb-image> \
-  --build-arg ANALYSIS_WHEEL=dist/<wheel-file>.whl \
   --file docker/Dockerfile.omeroweb \
-  --tag local/nl-biomero-omeroweb-analysis:0.9.0 \
+  --tag local/nl-biomero-omeroweb-analysis:development \
   .
 ```
 
@@ -38,8 +47,9 @@ continues to route `/omero_analysis/` through OMERO.web.
 ## Verify
 
 1. Sign in to OMERO.web.
-2. Confirm the top navigation contains one **Analysis** link and no
-   **JupyterLab** link.
+2. Confirm Analysis is available through its top link or a compatible BIOMERO
+   Data Analysis host. An integration flag with an older host retains the direct
+   Analysis link and center-panel launch. Confirm there is no **JupyterLab** link.
 3. Select an Image, Dataset, Plate, or Screen and confirm the center panel
    contains one **Analysis** entry, with no separate Chat, Notebook, or
    Jupyter entry.

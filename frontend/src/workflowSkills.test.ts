@@ -91,3 +91,9 @@ it("loads required references and capability contracts into the first-turn instr
   expect(text).toContain("zarr-render-v2");
   expect(text).toContain("zarr-gallery-v1");
 });
+
+it("does not activate a domain skill for unrelated files or values resembling table names", () => {
+  const file = { name: "ordinary.duckdb", state: "ready" } as WorkspaceFile;
+  expect(matchWorkflowSkills(catalog, [file], [{ path: "x", format: "duckdb", size: 1,
+    summary: { tables: ["data"], preview: ["schema_info", "measurement_runs"] } }])).toEqual([]);
+});

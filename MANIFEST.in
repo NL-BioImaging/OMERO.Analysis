@@ -1,4 +1,5 @@
 recursive-include src/omero_analysis/templates *
 recursive-include src/omero_analysis/static *
 include LICENSE README.md
+include docker/49-omero-analysis-cleanup.py docker/51-omero-analysis-navigation.py docker/90-omero-analysis.omero
 

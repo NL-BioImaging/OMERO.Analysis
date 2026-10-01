@@ -78,7 +78,7 @@ export function zarrViewerStatusFrom(value: unknown): ZarrViewerIntegrationStatu
   return body as ZarrViewerIntegrationStatus;
 }
 
-export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
+export function zarrViewerCapabilityFrom(value: unknown, allowMissingUuid = false): ZarrViewerCapability {
   const body = object(value, "ZarrViewer capability");
   const image = object(body.image, "ZarrViewer image");
   const store = object(body.store, "ZarrViewer store");
@@ -88,8 +88,7 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
     !["image", "plate"].includes(body.kind) ||
     !Number.isInteger(image.id) ||
     typeof image.name !== "string" ||
-    typeof store.uuid !== "string" ||
-    !UUID.test(store.uuid) ||
+    (!allowMissingUuid && (typeof store.uuid !== "string" || !UUID.test(store.uuid))) ||
     typeof store.roi_url !== "string" ||
     typeof store.render_url !== "string" ||
     typeof body.initial_path !== "string" ||
@@ -157,11 +156,13 @@ export function zarrViewerCapabilityFrom(value: unknown): ZarrViewerCapability {
     features: Array.isArray(body.features) ? body.features.filter((item: unknown) => typeof item === "string") : [],
     image: { id: image.id, name: image.name },
     store: {
-      uuid: store.uuid.toLowerCase(),
+      uuid: typeof store.uuid === "string" ? store.uuid.toLowerCase() : "",
       name: typeof store.name === "string" ? store.name : undefined,
       roi_url: store.roi_url,
       render_url: store.render_url,
-      render_svg_url: typeof store.render_svg_url === "string" ? store.render_svg_url : undefined
+      render_svg_url: typeof store.render_svg_url === "string" ? store.render_svg_url : undefined,
+      movie_url: typeof store.movie_url === "string" ? store.movie_url : undefined,
+      binding_digest: typeof store.binding_digest === "string" ? store.binding_digest : undefined
     },
     kind: body.kind,
     initial_path: body.initial_path,
@@ -464,7 +465,8 @@ async function readJson(response: Response): Promise<any> {
 
 export async function fetchZarrCapability(
   status: ZarrViewerIntegrationStatus,
-  candidate: Pick<HierarchyItem, "type" | "id">
+  candidate: Pick<HierarchyItem, "type" | "id">,
+  allowMissingUuid = false
 ): Promise<ZarrViewerCapability> {
   if (!status.available) throw new Error(`ZarrViewer is unavailable: ${status.reason}`);
   const template = candidate.type === "Plate"
@@ -474,7 +476,7 @@ export async function fetchZarrCapability(
       : undefined;
   if (!template) throw new Error(`ZarrViewer cannot bind an OMERO ${candidate.type}`);
   const response = await fetch(route(template, candidate.id), { credentials: "same-origin" });
-  return zarrViewerCapabilityFrom(await readJson(response));
+  return zarrViewerCapabilityFrom(await readJson(response), allowMissingUuid);
 }
 
 function validFieldPaths(capability: ZarrViewerCapability): Set<string> {
@@ -660,15 +662,15 @@ export async function renderZarrRecipeSvg(
 }
 
 export function notebookZarrRenderRequest(preview: unknown):
-  { recipe: ZarrRenderRecipe; format: "png" | "svg" } | null {
+  { recipe: ZarrRenderRecipe; format: "png" | "svg" | "mp4" } | null {
   if (!preview || typeof preview !== "object" || Array.isArray(preview) ||
       !("omero_analysis_render_recipe" in preview)) return null;
   const value = preview as Record<string, unknown>;
   const format = value.omero_analysis_render_format ?? "png";
-  if (format !== "png" && format !== "svg") throw new Error("Notebook ZarrViewer format must be png or svg");
+  if (format !== "png" && format !== "svg" && format !== "mp4") throw new Error("ZarrViewer format must be png, svg, or mp4");
   const recipe = value.omero_analysis_render_recipe as ZarrRenderRecipe;
   if (!recipe || typeof recipe !== "object" ||
-      typeof recipe.storeUuid !== "string" || !Array.isArray(recipe.panels) || recipe.panels.length !== 1) {
+      (typeof recipe.storeUuid !== "string" && !(format === "mp4" && recipe.source?.kind === "current-image")) || !Array.isArray(recipe.panels) || recipe.panels.length !== 1) {
     throw new Error("Notebook ZarrViewer request requires one render panel and a store UUID");
   }
   const panel = recipe.panels[0];
@@ -691,6 +693,13 @@ export function notebookZarrRenderRequest(preview: unknown):
   if (panel.vectors && (panel.vectors.version !== 1 || !Array.isArray(panel.vectors.items) ||
       panel.vectors.items.length > 256 || JSON.stringify(panel.vectors).length > 16_384)) {
     throw new Error("Notebook track overlay exceeds the vector limit");
+  }
+  if (format === "mp4") {
+    const sequence = recipe.sequence;
+    const step = sequence?.step ?? 1, fps = sequence?.fps ?? 5;
+    if (sequence?.version !== 1 || !Number.isSafeInteger(sequence.start) || !Number.isSafeInteger(sequence.end) || sequence.start < 0 || sequence.end < sequence.start ||
+        !Number.isSafeInteger(step) || step < 1 || Math.floor((sequence.end - sequence.start) / step) + 1 > 600 || !Number.isFinite(fps) || fps <= 0 || fps > 60)
+      throw new Error("Movie requires a range of at most 600 frames and a valid FPS.");
   }
   return { recipe, format };
 }

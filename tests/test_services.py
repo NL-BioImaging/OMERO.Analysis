@@ -3,6 +3,14 @@ from types import SimpleNamespace
 import json
 import zipfile
 
+def test_image_hierarchy_does_not_ask_a_gateway_leaf_for_children():
+    from omero_analysis.services import object_hierarchy
+    def leaf_children():
+        raise NotImplementedError('ImageWrapper has no child wrapper')
+    image = SimpleNamespace(getId=lambda: 66, getName=lambda: 'Temporal image',
+                            listParents=lambda: [], listChildren=leaf_children)
+    assert object_hierarchy('Image', 66, image)['children'] == []
+
 
 def test_source_name_path_includes_project_and_hcs_ancestry():
     from omero_analysis.services import source_name_path

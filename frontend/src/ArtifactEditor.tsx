@@ -1,3 +1,4 @@
+import { methodContract } from "./methodExecution";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView, minimalSetup } from "codemirror";
 import { EditorState, type Extension } from "@codemirror/state";
@@ -490,10 +491,10 @@ function PipelineEditor({
                 </label>
               ))}
             </fieldset>
-            {(activeMethod?.parameters || []).length > 0 && (
+            {(activeMethod ? methodContract(activeMethod, activeMethod.versions.find(v => v.version === active.methodVersion)!).parameters : []).length > 0 && (
               <fieldset>
                 <legend>Parameters</legend>
-                {(activeMethod?.parameters || []).map((parameter) => (
+                {(activeMethod ? methodContract(activeMethod, activeMethod.versions.find(v => v.version === active.methodVersion)!).parameters : []).map((parameter) => (
                   <label key={parameter.name}>{parameter.label}
                     {parameter.type === "boolean" ? (
                       <input type="checkbox"

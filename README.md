@@ -1,5 +1,13 @@
 # OMERO.Analysis
 
+Production packages are distributed as pre-built wheels on
+[GitHub Releases](https://github.com/NL-BioImaging/OMERO.Analysis/releases).
+Each release includes Analysis, its separately versioned notebook SDK, and a
+SHA-256 `manifest.json`. Pin an exact release, download and verify its wheels
+before building the web image, and install from the offline wheelhouse. See
+[release and deployment instructions](docs/github-releases.md). No first-party
+PyPI publication, package-index service, or production source build is required.
+
 For paired DataQueryWorker upgrades, verified CSV saving, authorization, audit,
 mTLS, test commands and rollback, see the
 [production foundations guide](docs/data-query-production-foundations.md).
@@ -12,7 +20,7 @@ Hardware-specific offline model guidance is available in
 [docs/local-llm-recommendations.md](docs/local-llm-recommendations.md).
 
 OMERO.Analysis is a browser-local research workspace for OMERO.web. Its one
-Analysis shell has four standard routable tabs and one optional tab:
+Analysis shell has five standard routable tabs and one optional tab:
 
 - **Home** — run saved artifacts or create an input-ready Method, Pipeline, or Notebook, with optional assistant help.
 - **Methods** — run reusable Methods and inspect their durable run history and outputs.
@@ -98,7 +106,12 @@ OMERO.Analysis and OMERO.biomero releases. OMERO.Analysis then keeps its center
 panel but removes its redundant OMERO top link; BIOMERO shows **Data Analysis**
 beside Import and Analyze and hosts Analysis in a same-origin iframe. `false`
 or an absent setting retains the standalone Analysis top link and new-tab
-launch behavior.
+launch behavior. The flag alone never hides Analysis: the installed BIOMERO
+must also provide its `data_analysis_status` view contract, the matching
+`WEBCLIENT.UI.DATA_ANALYSIS_AVAILABLE` host template, a compiled frontend
+supporting embedded workspaces, and an enabled host route.
+Older BIOMERO releases retain the standalone link and launch directly into
+Analysis. This check is shared with container startup and survives rebuilds.
 
 Embedded launches use `embedded=biomero` and the same Dataset, Screen, Plate,
 Image, multi-selection, attachment, and saved-Workspace parameters as the
@@ -284,3 +297,14 @@ revisioned workspace copies. Open **Libraries** in the Analysis Explorer, or exp
 and synced `+AnalysisWorkspaces` libraries have separate collapsible panels.
 See [Shared library setup and usage](docs/shared-library.md)
 for layout, permissions, compatibility checks and multi-host requirements.
+
+## Movies and generic CSV measurements
+
+Movies are browser-local ZarrViewer exports with a default playback speed of
+5 FPS. Analysis displays MP4 results in the existing Inspector, run results,
+and Notebook outputs. See [Movie recipes](docs/movies.md).
+
+CSV exports, including CellProfiler outputs, remain generic inputs. Use explicit
+identifier dtypes or `ctx.read_csv("source", identifiers=["actual_column"], nrows=100)`
+for a bounded supporting-file preview. Relationships and units must be verified
+from the actual inputs. CellProfiler execution/workflow maintenance is separate.

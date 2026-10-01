@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchZarrCapability,
+  zarrViewerCapabilityFrom,
   notebookZarrRenderRequest,
   zarrCandidates,
   zarrFocusFromToolArgs,
@@ -10,6 +11,23 @@ import {
 import type { ZarrViewerIntegrationStatus } from "./types";
 
 const storeUuid = "ac680965-c76f-47f3-98f9-95f07ecae356";
+
+it('permits an explicit current-image movie source without inventing a UUID', () => {
+  const recipe = { version: 2, source: { kind: 'current-image' }, sequence: { version: 1, start: 0, end: 3 },
+    panels: [{ field: '.', roi: [0, 0, 128, 128], sourceChannels: [1], t: 3, z: 0, title: 'Raw image', overlays: [] }] };
+  expect(notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe, omero_analysis_render_format: 'mp4' })?.format).toBe('mp4');
+  expect(() => notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe, omero_analysis_render_format: 'png' })).toThrow();
+});
+it('keeps UUID-only consumers strict and sanitizes a current-image movie capability', () => {
+  const raw = { schema_version: 1, supported: true, kind: 'image', initial_path: '.', image: { id: 66, name: 'Raw image' },
+    channels: [], labels: [], store: { uuid: null, roi_url: '/roi', render_url: '/render', movie_url: '/viewer?image=66',
+      binding_digest: 'binding', context: 'secret-context', url: 'secret-store' } };
+  expect(() => zarrViewerCapabilityFrom(raw)).toThrow();
+  const sanitized = zarrViewerCapabilityFrom(raw, true);
+  expect(sanitized.store.uuid).toBe('');
+  expect(sanitized.store.binding_digest).toBe('binding');
+  expect(JSON.stringify(sanitized)).not.toContain('secret');
+});
 
 it("accepts a bounded notebook track projection request", () => {
   const recipe = { storeUuid, panels: [{ field: ".", roi: [0, 0, 128, 128],

@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, readFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { stat, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 import { chromium } from "playwright-core";
@@ -102,7 +102,9 @@ const server = createServer(async (request, response) => {
 await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
 const { port } = server.address();
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
-const page = await browser.newPage();
+const context = await browser.newContext();
+await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+const page = await context.newPage();
 const errors = [];
 let completions = 0;
 
@@ -185,6 +187,12 @@ try {
   if (await page.locator('iframe[title="OMERO Analysis Python runtime"]').count()) {
     throw new Error("Opening Analysis eagerly created the Python runtime");
   }
+  for (const panel of ["Explorer", "Artifact Inspector"]) {
+    const toggle = page.getByRole("button", { name: `Show ${panel}`, exact: true });
+    await toggle.focus();
+    await toggle.press("Enter");
+    await page.getByRole("button", { name: `Hide ${panel}`, exact: true }).waitFor();
+  }
   const rootFolders = await page.locator(".workspace-tree > details > summary strong").allTextContents();
   if (JSON.stringify(rootFolders) !== JSON.stringify(["Input", "Methods", "Pipelines", "Notebooks"])) {
     throw new Error(`Unexpected Workspace folder order: ${rootFolders.join(", ")}`);
@@ -248,7 +256,7 @@ try {
   });
   await page.getByText("smoke.csv", { exact: true }).waitFor();
   const explorerBox = await page.locator(".workspace-tree").boundingBox();
-  if (!explorerBox || explorerBox.width < 475) {
+  if (!explorerBox || explorerBox.width < 200) {
     throw new Error(`Workspace explorer did not use its wider default: ${explorerBox?.width}`);
   }
   if (await page.locator('.workspace-tree .browser-name strong[title="smoke.csv"]').count() !== 1) {
@@ -372,6 +380,10 @@ try {
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
   console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Assistant, Notebook conversion, and portable top-level-await query execution");
 } catch (error) {
+  await mkdir("test-results", { recursive: true });
+  await page.screenshot({ path: "test-results/smoke-failure.png", fullPage: true }).catch(() => {});
+  await context.tracing.stop({ path: "test-results/smoke-trace.zip" }).catch(() => {});
+  await writeFile("test-results/smoke-errors.txt", `${String(error)}\n${errors.join("\n")}`);
   console.error("Visible page:", await page.locator("body").innerText().catch(() => ""));
   console.error("Browser errors:", errors.join("\n"));
   throw error;

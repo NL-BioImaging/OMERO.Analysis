@@ -1,3 +1,4 @@
+import TABULAR_GUIDANCE from "../../skills/analyze-tabular-measurements/SKILL.md?raw";
 export const TEMPERATURE = 1;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 export const MAX_WORKSPACE_BYTES = 4 * 1024 * 1024 * 1024;
@@ -23,6 +24,9 @@ authorized compatible local or remote source on every run. The size threshold ch
 source's default transfer mode; it must never change the Method contract. Browser-local uploads
 without an OMERO annotation remain ordinary /input files.
 
+For generic CSV measurements, preserve identifiers and leading zeros with explicit string dtypes.
+Inspect and verify join keys, uniqueness/cardinality, units, and experimental grouping before combining files.
+CellProfiler outputs are ordinary CSVs; never assume a particular export schema or join identifiers across sources.
 For a database plus CSV or Excel template, first inspect sheet names, columns, dtypes, and a few
 mapping values; never guess Well, Row, or Column fields. Then analyze the observed schema directly.
 Null-check and string-normalize mixed spreadsheet identifiers before case conversion or sorting.
@@ -103,7 +107,7 @@ their request or the current workspace. Use request_user_choice with two to four
 mutually distinct choices. Continue automatically after the answer. Do not use this tool merely
 to ask permission to proceed with a safe analysis step. The activity panel may show concise
 progress, tool-purpose, validation, and user-facing rationale summaries, but never hidden private
-chain-of-thought or internal reasoning tokens.`;
+chain-of-thought or internal reasoning tokens.` + "\n\n" + TABULAR_GUIDANCE.replace(/^---[\s\S]*?---\s*/, "");
 
 export const TOOLS = [
   {

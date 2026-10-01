@@ -1,3 +1,4 @@
+import { Artifact } from "./ResultPreview";
 import { useEffect, useMemo, useState } from "react";
 import { executionActivityText } from "../presentation";
 import type { ExecutionRecord, WorkspaceFile } from "../types";
@@ -197,28 +198,4 @@ export function Preview({ value }: { value: unknown }) {
   return <pre className="preview">{JSON.stringify(value, null, 2)}</pre>;
 }
 
-export function Artifact({ file, companions = [file], onDownload }: { file: WorkspaceFile; companions?: WorkspaceFile[]; onDownload?: (file: WorkspaceFile) => void }) {
-  const [zoomed, setZoomed] = useState(false);
-  const url = useMemo(
-    () => file.data ? URL.createObjectURL(new Blob([file.data], { type: file.type })) : "",
-    [file.data, file.type]
-  );
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  return url ? (
-    <figure className={zoomed ? "artifact-zoomed" : ""}>
-      <Button className="plot-zoom" onClick={() => setZoomed((value) => !value)}>
-        {zoomed ? "Close full view" : "Open full view"}
-      </Button>
-      <img src={url} alt={file.name} onDoubleClick={() => setZoomed(true)} />
-      <figcaption>{file.name}<span className="plot-downloads">{companions.map(item =>
-        <Button key={item.id} disabled={!item.data && !onDownload} title={`Download ${item.name}`} onClick={() => {
-          if (onDownload) { onDownload(item); return; }
-          if (!item.data) return;
-          const href = URL.createObjectURL(new Blob([item.data], { type: item.type }));
-          const link = document.createElement("a"); link.href = href; link.download = item.name;
-          link.click(); window.setTimeout(() => URL.revokeObjectURL(href), 1000);
-        }}>{item.name.split(".").at(-1)?.toUpperCase()}</Button>
-      )}</span></figcaption>
-    </figure>
-  ) : null;
-}
+export { Artifact } from "./ResultPreview";

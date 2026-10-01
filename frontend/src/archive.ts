@@ -61,6 +61,7 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
   const files = workspace.files.map((file) => {
     const metadata: Omit<WorkspaceFile, "data"> & { archivePath?: string } = { ...file };
     delete (metadata as Partial<WorkspaceFile>).data;
+    delete (metadata as Partial<WorkspaceFile>).mediaBlob;
     const omitted = file.source === "local" && omitLocal;
     if (omitted) {
       omittedLocalInputs.push(file.name);
@@ -70,6 +71,8 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
         : "Local input was omitted because the Workspace snapshot exceeded its size limit.";
       return metadata;
     }
+    if (file.mediaBlob && !file.data && !file.remoteResult && file.source !== "omero")
+      throw new Error(`Load ${file.name} before exporting its movie bytes`);
     if (file.source === "omero" || !file.data) return metadata;
     const owner = file.notebookId
       ? `Notebook/${safeSegment(file.notebookId)}`

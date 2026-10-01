@@ -1,0 +1,98 @@
+[
+  {
+    "name": "generic-csv",
+    "valid": true,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "path-escape",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/../secret.csv",
+          "formats": [
+            "csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "duplicate-input",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ]
+        },
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "unknown-schema",
+    "valid": false,
+    "contract": {
+      "schema": "unsupported",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  }
+]

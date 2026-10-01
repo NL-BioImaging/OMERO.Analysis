@@ -24,19 +24,7 @@ REQUIRED = {
     "omero_analysis/templates/omero_analysis/runtime_sandbox.html",
     "omero_analysis/templates/omero_analysis/center_plugin.js.html",
 }
-PACKAGES = {
-    "duckdb",
-    "matplotlib",
-    "numpy",
-    "pandas",
-    "pyarrow",
-    "pypdf",
-    "python-calamine",
-    "scikit-image",
-    "scipy",
-    "seaborn",
-    "xlrd",
-}
+PACKAGES = set(json.loads((Path(__file__).resolve().parents[1] / "frontend/runtime-packages.json").read_text())["approved"])
 LOCK_PACKAGES = PACKAGES - {"pypdf", "seaborn"}
 
 

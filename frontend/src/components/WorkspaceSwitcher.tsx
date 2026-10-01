@@ -4,7 +4,7 @@ import { Button } from "./BlueprintControls";
 import { listContextWorkspaces } from "../storage";
 import type { OmeroContext, WorkspaceRecord, LibraryDataset } from "../types";
 
-export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen, onRename, onTrash, onLifecycle }: {
+export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen, onRename, onTrash, onLifecycle, onExport, onImport, onLibrary }: {
   workspace: WorkspaceRecord;
   context: OmeroContext | null;
   bridge: { workspaceLibrary(): Promise<LibraryDataset[]> };
@@ -12,6 +12,9 @@ export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen
   onOpen(id?: string): void;
   onRename(): void;
   onTrash(): void;
+  onExport?(): void;
+  onImport?(): void;
+  onLibrary?(): void;
   onLifecycle(id: string, action: "trash" | "restore" | "purge"): Promise<void>;
 }) {
   const [choices, setChoices] = useState<Array<{ id: string; name: string; state: string }>>([]);
@@ -50,8 +53,11 @@ export function WorkspaceSwitcher({ workspace, context, bridge, disabled, onOpen
       <div className="workspace-control-menu-items">
         <Button aria-label="New workspace" disabled={disabled} onClick={() => { closeMenu(); onOpen(); }}><Icon icon="add" /> New workspace</Button>
         <Button aria-label="Rename workspace" disabled={disabled || Boolean(workspace.deletedAt)} onClick={() => { closeMenu(); onRename(); }}><Icon icon="edit" /> Rename workspace</Button>
-        <Button aria-label="Trash" onClick={() => { closeMenu(); onTrash(); }}><Icon icon="trash" /> Trash</Button>
+        <Button aria-label="Open Trash" onClick={() => { closeMenu(); onTrash(); }}><Icon icon="trash" /> Open Trash</Button>
         <Button aria-label="Manage workspaces" disabled={disabled} onClick={() => { closeMenu(); setOpen(true); setRefresh(value => value + 1); }}><Icon icon="list" /> Manage workspaces</Button>
+        {onExport && <Button disabled={disabled} onClick={() => { closeMenu(); onExport(); }}><Icon icon="download" />Download workspace archive</Button>}
+        {onImport && <Button disabled={disabled} onClick={() => { closeMenu(); onImport(); }}><Icon icon="import" />Import workspace archive</Button>}
+        {onLibrary && <Button disabled={disabled} onClick={() => { closeMenu(); onLibrary(); }}><Icon icon="import" />Reuse analyses and templates</Button>}
       </div>
     </details>
     {open && <div className="dialog-backdrop"><section className="app-dialog trash-dialog" role="dialog" aria-modal="true" aria-label="Manage workspaces">

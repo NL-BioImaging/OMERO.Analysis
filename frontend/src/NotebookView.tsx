@@ -1,3 +1,4 @@
+import { Artifact } from "./components/ResultPreview";
 import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import { PythonRuntime } from "./runtime";
 import { MarkdownPreview, PythonPreview } from "./components/WorkspacePanels";
@@ -185,7 +186,11 @@ function executionOutputs(result: RuntimeOutput, count: number): NotebookOutput[
     });
   }
   for (const file of result.files) {
-    if (file.type === "image/png") {
+    if (file.type === "video/mp4") {
+      outputs.push({ output_type: "display_data", metadata: {}, data: {
+        "application/vnd.omero-analysis.result+json": { name: file.name, resultGroupId: file.resultGroupId }
+      } });
+    } else if (file.type === "image/png" && !(file.resultGroupId && result.files.some(movie => movie.type === "video/mp4" && movie.resultGroupId === file.resultGroupId))) {
       outputs.push({
         output_type: "display_data",
         metadata: {},
@@ -241,7 +246,19 @@ export function isDuckDbTechnicalOutput(output: NotebookOutput): boolean {
     String((value as Record<string, unknown>).engine || "").toLowerCase() === "duckdb");
 }
 
-function OutputView({ output }: { output: NotebookOutput }) {
+function NotebookMovie({ file, retrieve }: { file: WorkspaceFile; retrieve?: (file: WorkspaceFile) => Promise<WorkspaceFile> }) {
+  const [ready, setReady] = useState(file), [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setReady(file);
+    if (!file.data && !file.mediaBlob && retrieve) retrieve(file).then(value => { if (!cancelled) setReady(value); })
+      .catch(error => { if (!cancelled) setError(String(error)); });
+    return () => { cancelled = true; };
+  }, [file.id, file.data, file.mediaBlob, retrieve]);
+  return error ? <p role="alert">{error}</p> : <Artifact file={ready} />;
+}
+
+function OutputView({ output, files = [], retrieve }: { output: NotebookOutput; files?: WorkspaceFile[]; retrieve?: (file: WorkspaceFile) => Promise<WorkspaceFile> }) {
   if (output.output_type === "stream") {
     return <pre className={`notebook-stream ${output.name || ""}`}>{textValue(output.text)}</pre>;
   }
@@ -249,6 +266,12 @@ function OutputView({ output }: { output: NotebookOutput }) {
     return <pre className="notebook-error">{(output.traceback || [output.evalue || "Error"]).join("\n")}</pre>;
   }
   const data = output.data || {};
+  const reference = data["application/vnd.omero-analysis.result+json"] as { name?: string; resultGroupId?: string } | undefined;
+  if (reference && typeof reference.name === "string") {
+    const file = files.find(file => file.type === "video/mp4" && file.name === reference.name &&
+      Boolean(reference.resultGroupId) && file.resultGroupId === reference.resultGroupId);
+    return file ? <NotebookMovie file={file} retrieve={retrieve} /> : <p>Movie result is unavailable in this Workspace.</p>;
+  }
   const png = data["image/png"];
   if (typeof png === "string" && /^[A-Za-z0-9+/=\s]+$/.test(png)) {
     return <img className="notebook-image" alt="Notebook PNG output"
@@ -296,13 +319,13 @@ function DuckDbTechnicalOutputs({ outputs }: { outputs: NotebookOutput[] }) {
   );
 }
 
-function NotebookOutputs({ outputs }: { outputs: NotebookOutput[] }) {
+function NotebookOutputs({ outputs, files, retrieve }: { outputs: NotebookOutput[]; files: WorkspaceFile[]; retrieve?: (file: WorkspaceFile) => Promise<WorkspaceFile> }) {
   const duckDb = outputs.filter(isDuckDbTechnicalOutput);
   const visible = outputs.filter((output) => !isDuckDbTechnicalOutput(output));
   return (
     <>
       {duckDb.length > 0 && <DuckDbTechnicalOutputs outputs={duckDb} />}
-      {visible.map((output, index) => <OutputView output={output} key={index} />)}
+      {visible.map((output, index) => <OutputView output={output} files={files} retrieve={retrieve} key={index} />)}
     </>
   );
 }
@@ -322,6 +345,9 @@ interface Props {
   onPrepareProtocol?: (record: NotebookRecord) => Promise<NotebookRecord>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
+  resultFiles?: WorkspaceFile[];
+  onRetrieveResult?: (file: WorkspaceFile) => Promise<WorkspaceFile>;
+  onCancelRender?: () => void;
   onRenderRequest?: (record: NotebookRecord, preview: unknown) => Promise<RuntimeOutput["files"]>;
   onSelect?: (id: string) => void;
   onEdit?: (record: NotebookRecord) => void;
@@ -355,7 +381,7 @@ export default function NotebookView(props: Props) {
       checkStopped();
       const rendered = await onRenderRequest?.(base, result.preview) || [];
       checkStopped();
-      const generated = [...result.files, ...rendered];
+      const generated = [...result.files, ...rendered].map(file => file.type === "video/mp4" ? { ...file, resultGroupId: file.resultGroupId || crypto.randomUUID() } : file);
       const combined = { ...result, files: generated };
       const changed: NotebookRecord = {
         ...base,
@@ -542,6 +568,7 @@ export default function NotebookView(props: Props) {
 
   async function stopReset() {
     stopRequested.current = true;
+    props.onCancelRender?.();
     runtime.stop();
     setStatus("Stopping Notebook…");
   }
@@ -673,7 +700,7 @@ export default function NotebookView(props: Props) {
                 )}
                 {cell.cell_type === "code" && (
                   <div className="notebook-outputs">
-                    <NotebookOutputs outputs={cell.outputs || []} />
+                    <NotebookOutputs outputs={cell.outputs || []} files={props.resultFiles || []} retrieve={props.onRetrieveResult} />
                   </div>
                 )}
               </div>

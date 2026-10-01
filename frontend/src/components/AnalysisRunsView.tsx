@@ -10,6 +10,8 @@ import { ActionIcon } from "./ActionIcon";
 import { Button } from "./BlueprintControls";
 import { ExecutionCard, executionOutputFiles } from "./ExecutionCard";
 import { groupedResultFiles } from "../plotGroups";
+import { MethodParameters } from './MethodParameters';
+import { methodContract } from '../methodExecution';
 
 function bytesLabel(value: number): string {
   if (value < 1024) return `${value} bytes`;
@@ -61,7 +63,7 @@ interface AnalysisRunsViewProps {
   allFiles: WorkspaceFile[];
   onMethodIdChange: (id: string) => void;
   onPipelineIdChange: (id: string) => void;
-  onRunMethod: (method: MethodRecord) => void;
+  onRunMethod: (method: MethodRecord, parameters?: Record<string, string | number | boolean>) => void;
   onRunPipeline: (pipeline: PipelineRecord) => void;
   onEditMethod: (method: MethodRecord) => void;
   onEditPipeline: (pipeline: PipelineRecord) => void;
@@ -109,6 +111,7 @@ export function AnalysisRunsView({
 }: AnalysisRunsViewProps) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [parameterValues, setParameterValues] = useState<Record<string, Record<string, string | number | boolean>>>({});
   const selectedMethod = methods.find((item) => item.id === (methodId || methods[0]?.id));
   const selectedPipeline = pipelines.find((item) => item.id === (pipelineId || pipelines[0]?.id));
   const label = kind === "method" ? "Method" : "Pipeline";
@@ -142,7 +145,7 @@ export function AnalysisRunsView({
                 {methods.map((method) => <option key={method.id} value={method.id}>{method.name} · v{method.currentVersion}</option>)}
               </select>
               <Button disabled={!selectedMethod || busy}
-                onClick={() => selectedMethod && onRunMethod(selectedMethod)}>
+                onClick={() => selectedMethod && onRunMethod(selectedMethod, parameterValues[`${selectedMethod.id}:v${selectedMethod.currentVersion}`] || {})}>
                 <ActionIcon name="run" />Run Method
               </Button>
               {editorEnabled && <Button aria-label="Edit selected Method" disabled={!selectedMethod || busy}
@@ -174,11 +177,19 @@ export function AnalysisRunsView({
             </>
           )}
         </div>
+        {kind === 'method' && selectedMethod && <MethodParameters
+          definitions={methodContract(selectedMethod, selectedMethod.versions.find(v => v.version === selectedMethod.currentVersion)!).parameters}
+          values={parameterValues[`${selectedMethod.id}:v${selectedMethod.currentVersion}`] || {}} disabled={busy}
+          onChange={values => setParameterValues({ ...parameterValues, [`${selectedMethod.id}:v${selectedMethod.currentVersion}`]: values })} />}
         {busy
           ? <Button onClick={onStop}><ActionIcon name="stop" />Stop</Button>
           : selectedRun && <Button onClick={() => onRerun(selectedRun)}><ActionIcon name="reset" />Rerun</Button>}
       </div>
 
+      {!(kind === "method" ? methods.length : pipelines.length) && <p className="run-empty">
+        {kind === "method" ? "Create a Method from Home, or reuse one through Workspace ? Reuse analyses and templates."
+          : "Create Methods first, then choose Create Pipeline. You can also reuse a saved Pipeline from Workspace."}
+      </p>}
       {kind === "pipeline" && pipelineBuilderOpen && (
         <section className="pipeline-builder" aria-label="Create Pipeline">
           <header>

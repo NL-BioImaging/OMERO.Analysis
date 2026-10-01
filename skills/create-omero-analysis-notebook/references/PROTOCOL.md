@@ -89,3 +89,10 @@ backend (Analysis configures `Agg`) and save PNG/SVG files below `ctx.results`.
 Do not rely on an interactive window or on `plt.show()` as the durable result.
 Analysis suppresses the harmless `FigureCanvasAgg is non-interactive` warning,
 but portable notebooks should omit unnecessary `plt.show()` calls.
+
+## Supporting CSV preview
+
+`ctx.read_csv("input_id", identifiers=["actual_identifier_column"], nrows=100)`
+loads a supporting CSV using explicit string dtypes for named identifiers.
+Missing declared columns fail clearly. The same helper exists in browser and
+local SDK contexts. Remote query sources use ctx.query instead of filesystem access.

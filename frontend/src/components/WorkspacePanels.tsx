@@ -9,7 +9,7 @@ import type {
   TokenUsage,
   WorkspaceFile
 } from "../types";
-import { Artifact } from "./ExecutionCard";
+import { Artifact } from "./ResultPreview";
 import { ActionIcon } from "./ActionIcon";
 import { Button, TextArea } from "./BlueprintControls";
 
@@ -32,7 +32,7 @@ export function usageSummary(usage: TokenUsage | null, contextWindow: number): s
   return `${context} (${source}) · response: ${usage.completionTokens.toLocaleString()} tokens · session: ${usage.sessionTokens.toLocaleString()} tokens · ${compaction}`;
 }
 
-export function parseDelimited(text: string, delimiter: string): string[][] {
+export function parseDelimited(text: string, delimiter: string, completeOnly = false): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let value = "";
@@ -60,7 +60,7 @@ export function parseDelimited(text: string, delimiter: string): string[][] {
       value += character;
     }
   }
-  if (row.length || value) {
+  if (!completeOnly && !quoted && (row.length || value)) {
     row.push(value);
     if (row.some((cell) => cell.length)) rows.push(row);
   }
@@ -160,7 +160,7 @@ function FilePreview({
   file: WorkspaceFile;
   profile?: DataProfile;
 }) {
-  if (file.type === "image/png" || file.type === "image/svg+xml") {
+  if (file.type === "image/png" || file.type === "image/svg+xml" || file.type === "video/mp4") {
     return <Artifact file={file} />;
   }
   if (!file.data) return <p className="artifact-help">This file is not available locally.</p>;
@@ -176,9 +176,11 @@ function FilePreview({
     );
   }
   if (file.type.startsWith("text/") || /\.(csv|tsv|json|md|txt)$/i.test(file.name)) {
-    const text = new TextDecoder().decode(file.data);
+    const previewBytes = 2 * 1024 * 1024;
+    const truncated = file.data.byteLength > previewBytes;
+    const text = new TextDecoder().decode(file.data.slice(0, previewBytes));
     if (/\.(csv|tsv)$/i.test(file.name)) {
-      const rows = parseDelimited(text, /\.tsv$/i.test(file.name) ? "\t" : ",");
+      const rows = parseDelimited(text, /\.tsv$/i.test(file.name) ? "\t" : ",", truncated);
       const [header = [], ...body] = rows;
       return (
         <div className="table-wrap artifact-table">
@@ -190,7 +192,7 @@ function FilePreview({
               </tr>
             ))}</tbody>
           </table>
-          {rows.length >= 101 && <p className="artifact-help">Preview limited to 100 rows.</p>}
+          {(rows.length >= 101 || truncated) && <p className="artifact-help">Preview shows up to 100 complete rows and 50 columns. Download the file for all data.</p>}
         </div>
       );
     }

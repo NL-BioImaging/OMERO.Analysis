@@ -16,3 +16,6 @@ benchmark-data/
 .local-query-deployment/
 .local-query-gates/
 plans/
+
+frontend/test-results/
+/.local-deployment/

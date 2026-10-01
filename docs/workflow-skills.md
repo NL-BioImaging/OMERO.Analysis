@@ -1,6 +1,6 @@
 # Optional BIOMERO measurement skills
 
-OMERO.Analysis can use `biomero-workflow-skills>=0.3,<0.4` as an optional,
+OMERO.Analysis can use `biomero-workflow-skills>=0.4,<0.5` as an optional,
 framework-neutral catalog. It reads the existing BIOMERO pipeline
 configuration, resolves each configured GitHub tag, branch, or commit, and
 accepts only validated UTF-8 attachment-analysis skill instructions and text

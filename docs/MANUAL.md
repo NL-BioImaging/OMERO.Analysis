@@ -206,3 +206,10 @@ If the Assistant is unavailable, check that the Workspace inputs are ready and t
 If synchronization fails, confirm that the selected OMERO group permits Project/Dataset creation and FileAnnotation creation, then retry after the session keepalive has renewed the connection. Unexpected server failures show a short request ID; include it when checking server logs or reporting the problem.
 
 If a custom URL skill cannot be loaded, use a direct HTTPS Markdown URL or upload the file. GitHub `blob` URLs are converted to their raw-content form.
+
+## Movie results and workspace actions
+
+The header Workspace menu contains archive download/import and reuse actions
+alongside workspace management. They are available from every Analysis tab.
+Movie results use native playback controls in the Inspector, run results, and
+Notebook outputs. See [Movie recipes and limits](movies.md).

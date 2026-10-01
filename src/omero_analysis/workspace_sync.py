@@ -876,11 +876,6 @@ def _validate_payload(item, uploaded):
                 )
             ):
                 raise UnsupportedMedia("Pipeline bundle has an unsupported schema")
-        elif (
-            not isinstance(value, dict)
-            or value.get("schema") != "nl.bioimaging.analysis.chat.v1"
-        ):
-            raise UnsupportedMedia("Chat bundle has an unsupported schema")
     elif item["kind"] == "method-python":
         try:
             data.decode("utf-8")

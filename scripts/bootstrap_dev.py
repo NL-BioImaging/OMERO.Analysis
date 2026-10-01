@@ -18,19 +18,9 @@ def main():
     parser.add_argument("--skip-frontend", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    if sys.platform == "win32":
-        # ZeroC Ice 3.6 (pulled in by omero-web) does not build with current
-        # Windows/Python toolchains. OMERO integration is provided by the
-        # deployment container; local unit tests use controlled gateway doubles.
-        run(
-            sys.executable, "-m", "pip", "install",
-            "Django>=3.2,<6", "pytest>=8", "pytest-django>=4.8", "build>=1.2",
-            "packaging>=23", "numpy>=1.24,<3", "Pillow>=10,<13",
-            "cryptography>=42,<50",
-        )
-        run(sys.executable, "-m", "pip", "install", "--no-deps", "-e", str(root))
-    else:
-        run(sys.executable, "-m", "pip", "install", "-e", f"{root}[test]")
+    run(sys.executable, "-m", "pip", "install", "-r", str(root / "requirements-dev.txt"))
+    run(sys.executable, "-m", "pip", "install", "--no-deps", "-e", str(root))
+    run(sys.executable, "-m", "pip", "install", "-e", f"{root / 'notebook-sdk'}[test,run,widgets]")
     if not args.skip_frontend:
         npm = shutil.which("npm")
         if npm is None:

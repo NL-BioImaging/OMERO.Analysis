@@ -1,88 +1,22 @@
 name: CI
-
 on:
   push:
   pull_request:
   workflow_dispatch:
-
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  backend:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install --no-deps -e .
-      - run: >-
-          python -m pip install
-          "Django>=3.2,<6"
-          "cryptography>=42,<50"
-          "numpy>=1.24,<3"
-          "Pillow>=10,<13"
-          "requests>=2.31,<3"
-          "requests-toolbelt>=1,<2"
-          "duckdb>=1.2,<2"
-          pytest pytest-django build setuptools wheel
-      - run: >-
-          python -m pip install
-          "biomero-workflow-skills @ git+https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills.git@v0.4.0"
-      - run: python -m pytest tests
-      - run: python -m pip install -e "./notebook-sdk[test,run,widgets]"
-      - run: python -m pytest notebook-sdk/tests
-
-  frontend-and-wheel:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-        working-directory: frontend
-      - run: npm test
-        working-directory: frontend
-      - run: npm run typecheck
-        working-directory: frontend
-      - run: npm audit --audit-level=high
-        working-directory: frontend
-      - run: python -m pip install build setuptools wheel twine jsonschema skills-ref
-      - run: python scripts/validate_agent_plugin.py
-      - run: agentskills validate skills/create-omero-analysis-notebook
-      - run: python scripts/build_frontend.py --skip-install
-      - run: npm run smoke:runtime
-        working-directory: frontend
-      - run: npm run smoke:browser
-        working-directory: frontend
-      - run: python -m build --wheel --no-isolation
-      - run: python -m build --wheel --no-isolation --outdir dist notebook-sdk
-      - run: python scripts/verify_wheel.py dist/omero_analysis-*.whl
-      - run: python -m twine check dist/omero_analysis_notebook-*.whl
-      - uses: actions/checkout@v4
-        with:
-          repository: NL-BioImaging/BIOMERO.WorkflowSkills
-          ref: v0.4.0
-          path: BIOMERO.WorkflowSkills
-      - run: >-
-          python scripts/build_companion_wheelhouse.py
-          --plugin-wheel dist/omero_analysis-*.whl
-          --output dist/wheelhouse
-          --catalog-repo BIOMERO.WorkflowSkills
-
+  validation:
+    uses: ./.github/workflows/validate.yml
   deployment-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && vars.OMERO_SMOKE_URL != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python scripts/smoke_omero_deployment.py "${{ vars.OMERO_SMOKE_URL }}"
         env:
           OMERO_ANALYSIS_SMOKE_COOKIE: ${{ secrets.OMERO_SMOKE_COOKIE }}

@@ -1,3 +1,10 @@
+import { typedNotebookQueryParameters, importedNotebookProtocol } from "./notebookPreparation";
+import { scheduleWorkspaceCheck } from "./workspaceSyncController";
+import { AssistantSkillLoader } from "./assistantSkillLoader";
+import { createSavedMethodExecutor, type ExecutionContext, type ExecutionOrigin } from "./artifactExecutionController";
+import { settingsBundle } from "./settingsController";
+import { movieRenderRequest, renderZarrMovie } from "./zarrMovie";
+import { methodContract, captureCurrentMethodContract, resolveMethodParameters, parameterizedMethodCode } from "./methodExecution";
 import { trashBlockers, purgeBlockers, pipelineRestoreBlockers, type TrashKind } from "./artifactLifecycle";
 import { editorDraft } from "./editorDraft";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
@@ -485,38 +492,6 @@ function notebookQueryFormat(name: string): "duckdb" | "sqlite" | "sqlite3" | "c
   throw new Error(`${name} is not a supported notebook query source`);
 }
 
-function typedNotebookQueryParameters(parameters: Record<string, unknown>): Record<string, {
-  type: "null" | "boolean" | "integer" | "float" | "string";
-  value: unknown;
-}> {
-  return Object.fromEntries(Object.entries(parameters).map(([name, value]) => {
-    if (value == null) return [name, { type: "null", value: null }];
-    if (typeof value === "boolean") return [name, { type: "boolean", value }];
-    if (typeof value === "number" && Number.isSafeInteger(value)) return [name, { type: "integer", value }];
-    if (typeof value === "number" && Number.isFinite(value)) return [name, { type: "float", value }];
-    if (typeof value === "string") return [name, { type: "string", value }];
-    throw new Error(`Notebook query parameter ${name} must be a JSON scalar`);
-  }));
-}
-
-function importedNotebookProtocol(document: NotebookRecord["document"]): Pick<
-  NotebookRecord,
-  "document" | "parameterValues" | "portabilityWarning"
-> {
-  const protocol = parseNotebookProtocol(document);
-  return protocol
-    ? {
-        document: sanitizeProtocolNotebook(document),
-        parameterValues: parameterDefaults(protocol),
-        portabilityWarning: undefined
-      }
-    : {
-        document,
-        parameterValues: undefined,
-        portabilityWarning: "Legacy notebook: convert it to the portable protocol to rebind between Local and Remote query sources."
-      };
-}
-
 function workspaceBytes(analysisWorkspace: AnalysisWorkspace | null): number {
   return analysisWorkspace?.files.filter(
     (file) => !file.deletedAt && file.dataQueryMode !== "remote"
@@ -567,15 +542,6 @@ interface InspectorSelection {
   kind: InspectorItem["kind"];
   id: string;
 }
-
-interface ExecutionOrigin {
-  methodId?: string;
-  pipelineId?: string;
-}
-
-type ExecutionContext =
-  | { kind: "chat"; chatId: string; promptId: string }
-  | { kind: "run"; runId: string };
 
 function executionOwner(context: ExecutionContext) {
   return context.kind === "chat"
@@ -643,7 +609,6 @@ export default function App() {
   const [workflowSkillCatalog, setWorkflowSkillCatalog] =
     useState<WorkflowSkillCatalog | null>(null);
   const workflowSkillCatalogRef = useRef<WorkflowSkillCatalog | null>(null);
-  const workflowSkillPackages = useRef(new Map<string, WorkflowSkillPackage>());
   const [workflowSkillWarning, setWorkflowSkillWarning] = useState("");
   const [zarrViewerStatus, setZarrViewerStatus] =
     useState<ZarrViewerIntegrationStatus | null>(null);
@@ -699,6 +664,8 @@ export default function App() {
   const [homeNotebookPipelineId, setHomeNotebookPipelineId] = useState("");
   const [pipelineBuilderOpen, setPipelineBuilderOpen] = useState(false);
   const stoppedRunIds = useRef(new Set<string>());
+  const movieController = useRef<AbortController | null>(null);
+  const assistantSkillLoader = useRef(new AssistantSkillLoader());
   const [editorSaving, setEditorSaving] = useState(false);
   const [explorerQuery, setExplorerQuery] = useState("");
   const [status, setStatus] = useState("Preparing workspace…");
@@ -1119,48 +1086,29 @@ export default function App() {
       workspaceSyncDeferredForRun.current = true;
       return;
     }
-    let cancelled = false;
-    const delay = workspaceSyncDeferredForRun.current ? 0 : 1000;
-    let timer: number;
-    let attempts = 0;
-    const check = () => {
-      workspaceSyncDeferredForRun.current = false;
-      void Promise.all([
-        buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!),
-        bridge.syncStatus(analysisWorkspace.workspace.id)
-      ]).then(async ([payload, remote]) => {
-        if (cancelled) return;
+    return scheduleWorkspaceCheck({
+      delay: workspaceSyncDeferredForRun.current ? 0 : 1000,
+      prepare: () => {
+        workspaceSyncDeferredForRun.current = false;
+        return buildWorkspaceSyncPayload(analysisWorkspace, bootstrap.context!, { inventoryOnly: true });
+      },
+      status: () => bridge.syncStatus(analysisWorkspace.workspace.id),
+      receive: async (payload, remote, active) => {
         setLocalSyncDigest(payload.contentDigest || payload.inventory.digest);
-        setRemoteSync(remote);
-        setSyncError("");
+        setRemoteSync(remote); setSyncError("");
         setSyncPhase(phase => phase === "waiting" ? "" : phase);
         await observeLifecycle(remote);
-        if (remote.lifecycle && !["active", "unavailable"].includes(remote.lifecycle)) return;
+        if (!active() || remote.lifecycle && !["active", "unavailable"].includes(remote.lifecycle)) return;
         if (remoteWorkspaceWasDeleted(analysisWorkspace.workspace, remote)) {
-          await discardWorkspaceDeletedInOmero(analysisWorkspace.workspace);
-          return;
+          await discardWorkspaceDeletedInOmero(analysisWorkspace.workspace); return;
         }
         if (remote.canSync && (payload.inventory.items.length > 0 || remote.linked) &&
-          (!remote.linked || syncHasChanges(
-          payload.contentDigest || payload.inventory.digest,
-          remote.inventoryDigest
-        ))) {
+          (!remote.linked || syncHasChanges(payload.contentDigest || payload.inventory.digest, remote.inventoryDigest)))
           await synchronizeWorkspace(payload);
-        }
-      }).catch((error) => {
-        if (cancelled) return;
-        if (error instanceof OmeroApiError && error.code === "sync_busy") {
-          setSyncPhase("waiting");
-          setStatus("Waiting for another workspace synchronization to finish…");
-          timer = window.setTimeout(check, Math.min(30000, 2500 * ++attempts));
-        } else { setSyncPhase(""); setSyncError(String(error)); }
-      });
-    };
-    timer = window.setTimeout(check, delay);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+      },
+      onBusy: () => { setSyncPhase("waiting"); setStatus("Waiting for another workspace synchronization to finish?"); },
+      onError: error => { setSyncPhase(""); setSyncError(String(error)); }
+    });
   }, [workspaceSyncSignature, bootstrap.context, bridge, syncRunBarrierActive]);
 
   useEffect(() => () => {
@@ -2414,6 +2362,8 @@ export default function App() {
 
   function upsertFiles(values: WorkspaceFile[]) {
     if (!values.length) return;
+    values = values.map(file => file.type === "video/mp4" && file.source === "result" && file.data
+      ? { ...file, mediaBlob: new Blob([file.data], { type: file.type }), data: undefined } : file);
     const current = workspaceRef.current;
     if (!current) return;
     const ids = new Set(values.map((value) => value.id));
@@ -2710,25 +2660,12 @@ export default function App() {
     settingsSyncInFlight.current = true;
     setSettingsSyncing(true);
     setSettingsSyncMessage("Saving settings automatically…");
-    const profiles = {
-      ...aiProfileStore,
-      profiles: aiProfileStore.profiles.map((profile) =>
-        profile.id === aiProfileStore.activeProfileId
-          ? { ...profile, settings }
-          : profile
-      )
-    };
+    const bundle = settingsBundle(aiProfileStore, settings, {
+      plotCsv: current.workspace.plotCsv, theme, editorEnabled
+    }, customSkills);
+    const profiles = bundle.ai;
     try {
-      const synced = await bridge.syncAnalysisSettings({
-        schema: "nl.bioimaging.analysis.settings.bundle.v1",
-        analysis: {
-          plotCsv: current.workspace.plotCsv,
-          theme,
-          editorEnabled
-        },
-        ai: profiles,
-        skills: customSkills
-      });
+      const synced = await bridge.syncAnalysisSettings(bundle);
       setSettingsSync(synced);
       setSettingsSyncMessage(
         `Settings saved automatically: ${profiles.profiles.length} AI profile(s), ${customSkills.length} skill(s)`
@@ -3421,6 +3358,7 @@ export default function App() {
         source: "result",
         state: "ready",
         data,
+        resultGroupId: output.resultGroupId, movie: output.movie,
         createdAt: now()
       });
     }
@@ -3435,11 +3373,35 @@ export default function App() {
     if (!request) return [];
     if (!zarrViewerStatus?.available) throw new Error(zarrViewerWarning || "ZarrViewer is unavailable");
     const { recipe, format } = request;
-    const { capability } = await resolveZarrTarget(recipe.storeUuid);
+    let capability: ZarrViewerCapability;
+    if (format === "mp4" && recipe.source?.kind === "current-image") {
+      const context = bootstrap.context;
+      if (!context || context.object_type !== "Image") throw new Error("Open an Image workspace to use the current-image movie source.");
+      capability = await fetchZarrCapability(zarrViewerStatus!, { type: "Image", id: context.object_id }, true);
+      recipe.storeUuid = capability.store.uuid;
+      recipe.sourceBinding = capability.store.binding_digest;
+    } else ({ capability } = await resolveZarrTarget(recipe.storeUuid));
     const panel = recipe.panels[0];
     if ((panel.vectors || panel.timeProjection) &&
         !capability.features?.includes("zarr-review-export-v1")) {
       throw new Error("This ZarrViewer does not support track or temporal-projection exports");
+    }
+    if (format === "mp4") {
+      movieController.current?.abort();
+      const controller = new AbortController(); movieController.current = controller;
+      try {
+        const boundedRecipe = { ...recipe, sequence: { ...recipe.sequence!,
+          maxBytes: Math.min(recipe.sequence?.maxBytes ?? 256 * 1024 * 1024, bootstrap.context?.max_snapshot_bytes ?? 256 * 1024 * 1024) } };
+        const movie = await renderZarrMovie(capability, boundedRecipe, controller.signal,
+          (completed, total) => setStatus(`Creating movie frame ${completed} of ${total}?`));
+        const stem = slug(String(recipe.filename || "zarr-movie").replace(/\.mp4$/i, ""));
+        const resultGroupId = id();
+        return [
+          { name: `${stem}.mp4`, type: "video/mp4", data: movie.data, resultGroupId, movie: { fps: movie.provenance.fps, frameCount: movie.provenance.frameCount, recipe } },
+          { name: `${stem}-poster.png`, type: "image/png", data: movie.poster, resultGroupId },
+          { name: `${stem}-recipe.json`, type: "application/json", data: new TextEncoder().encode(JSON.stringify(movie.provenance, null, 2)).buffer, resultGroupId }
+        ];
+      } finally { if (movieController.current === controller) movieController.current = null; }
     }
     const data = format === "svg"
       ? await renderZarrRecipeSvg(capability, recipe)
@@ -4613,6 +4575,22 @@ export default function App() {
     recipe?: ZarrRenderRecipe,
     origin: ExecutionOrigin = {}
   ): Promise<string | null> {
+    const executionIdForRender = String(JSON.parse(executionResult).execution_id || "");
+    const originalPreview = workspaceRef.current?.executions.find(item => item.id === executionIdForRender)?.preview;
+    const movie = movieRenderRequest(originalPreview) || movieRenderRequest(executionResult);
+    if (movie) {
+      const generated = await renderNotebookZarrRequest({} as NotebookRecord, movie);
+      const executionId = String(JSON.parse(executionResult).execution_id || "");
+      const additions: WorkspaceFile[] = [];
+      for (const file of generated) additions.push({ id: id(), workspaceId: workspaceRef.current!.workspace.id,
+        ...executionOwner(executionContext), ...origin, executionId, name: file.name, logicalPath: `/output/${file.name}`,
+        type: file.type, size: file.data.byteLength, sha256: await sha256(file.data), source: "result", state: "ready",
+        data: file.data, resultGroupId: file.resultGroupId, movie: file.movie, createdAt: now() });
+      upsertFiles(additions);
+      const execution = workspaceRef.current!.executions.find(item => item.id === executionId);
+      if (execution) upsertExecution({ ...execution, outputFileIds: [...execution.outputFileIds, ...additions.map(file => file.id)], preview: null });
+      return JSON.stringify({ ok: true, file_names: generated.map(file => file.name) });
+    }
     const request = savedGalleryRequest(
       executionResult,
       scriptName,
@@ -4626,41 +4604,15 @@ export default function App() {
     return createSavedZarrRecipeResult(replay, executionContext, origin);
   }
 
-  async function executeSavedMethodVersion(
-    method: MethodRecord,
-    version: MethodVersion,
-    code: string,
-    executionContext: ExecutionContext,
-    origin: ExecutionOrigin = {},
-    force = false
-  ): Promise<{ executionResult: string; renderResult: string | null }> {
-    const executionResult = await executeCode(
-      code,
-      executionContext,
-      force,
-      origin.pipelineId ? "pipeline" : "method",
-      origin
-    );
-    const renderResult = await replaySavedRender(
-      executionResult,
-      executionContext,
-      method.name,
-      version.renderRecipe || zarrRenderRecipeFromCode(code),
-      origin
-    );
-    return { executionResult, renderResult };
-  }
+  const executeSavedMethodVersion = createSavedMethodExecutor(executeCode, replaySavedRender);
 
   async function loadWorkflowSkill(
     workflowKey: string,
     skillName: string
   ): Promise<WorkflowSkillPackage> {
-    const key = `${workflowKey}/${skillName}`;
-    const cached = workflowSkillPackages.current.get(key);
-    if (cached) return cached;
-    const loaded = await bridge.loadWorkflowSkill(workflowKey, skillName);
-    workflowSkillPackages.current.set(key, loaded);
-    return loaded;
+    const expected = workflowSkillCatalogRef.current?.workflows.find(entry => entry.source.workflow_key === workflowKey)
+      ?.skills.find(skill => skill.name === skillName)?.sha256;
+    return assistantSkillLoader.current.load(workflowKey, skillName, expected, () => bridge.loadWorkflowSkill(workflowKey, skillName));
   }
 
   async function executeCode(
@@ -5363,7 +5315,7 @@ export default function App() {
     const activeSkillPackages: WorkflowSkillPackage[] = [];
     let activeSkillWarning = "";
     const visualIntent =
-      /\b(show|render|view|open|gallery|montage|image|field|well|contour|mask|overlay|png)\b/i.test(text);
+      /\b(show|render|view|open|gallery|montage|image|field|well|contour|mask|overlay|png|mp4|movie|video)\b/i.test(text);
     const compatibleSkills = matchWorkflowSkills(
       workflowSkillCatalogRef.current,
       current.files,
@@ -5809,6 +5761,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   function stop() {
+    movieController.current?.abort();
     abort.current?.abort();
     const running = workspaceRef.current?.runs
       .filter((run) => run.status === "running")
@@ -5945,6 +5898,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         updatedAt: now()
       };
     method.inputContract = inputContractFromCode(portableScriptCode);
+    Object.assign(method, captureCurrentMethodContract(method));
     const latest = workspaceRef.current;
     if (latest) {
       const updated = {
@@ -6035,6 +5989,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           createdAt: now(),
           updatedAt: now()
         };
+      Object.assign(method, captureCurrentMethodContract(method));
       const recipeBytes = new TextEncoder().encode(`${JSON.stringify(bundle.recipe, null, 2)}\n`);
       const manifestBytes = new TextEncoder().encode(`${JSON.stringify(bundle.manifest, null, 2)}\n`);
       const componentSpecs = [
@@ -6100,7 +6055,8 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     method: MethodRecord,
     fromEditor = false,
     force = false,
-    requestedVersion = method.currentVersion
+    requestedVersion = method.currentVersion,
+    suppliedParameters: Record<string, unknown> = {}
   ) {
     let current = workspaceRef.current;
     if (!current || busy) return;
@@ -6113,6 +6069,10 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setActiveTab("methods");
     const version = method.versions.find((item) => item.version === requestedVersion);
     if (!version) return;
+    const contract = methodContract(method, version);
+    let parameters: Record<string, string | number | boolean>;
+    try { parameters = resolveMethodParameters(contract.parameters, suppliedParameters); }
+    catch (error) { setStatus(String(error)); return; }
     const runId = id();
     const createdAt = now();
     let run: AnalysisRunRecord = {
@@ -6122,6 +6082,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       artifactId: method.id,
       artifactName: method.name,
       artifactVersion: requestedVersion,
+      parameters, contractProvenance: contract.provenance,
       status: "running",
       executionIds: [],
       resolvedBindings: {},
@@ -6131,7 +6092,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     selectRun(runId);
     upsertRun(run);
     let bound: ReturnType<typeof bindMethodInputs>;
-    let executionBindings = method.remoteQueryBindings || [];
+    let executionBindings = contract.remoteQueryBindings;
     try {
       current = await materializeRemoteQueryBindings(
         executionBindings, current
@@ -6180,7 +6141,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
       const { renderResult } = await executeSavedMethodVersion(
         method,
         version,
-        bound.code,
+        parameterizedMethodCode(bound.code, parameters),
         { kind: "run", runId },
         { methodId: method.id },
         force
@@ -6490,6 +6451,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         name: step.name,
         methodId: step.methodId,
         methodVersion: step.methodVersion,
+        inputBindings: { ...step.inputBindings },
         status: "pending",
         executionIds: [],
         resolvedBindings: {}
@@ -6499,11 +6461,11 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     selectRun(runId);
     upsertRun(run);
     try {
-      const methodBindings = pipeline.steps.flatMap((step) =>
-        current!.methods.find(
-          (method) => method.id === step.methodId
-        )?.remoteQueryBindings || []
-      );
+      const methodBindings = pipeline.steps.flatMap(step => {
+        const method = current!.methods.find(method => method.id === step.methodId);
+        const version = method?.versions.find(version => version.version === step.methodVersion);
+        return method && version ? methodContract(method, version).remoteQueryBindings : [];
+      });
       current = await materializeRemoteQueryBindings(
         [...(pipeline.remoteQueryBindings || []), ...methodBindings], current
       );
@@ -6531,7 +6493,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         setStatus(`Pipeline ${pipeline.name}: step ${index + 1} of ${pipeline.steps.length}`);
         await runtime.beginTurn();
         turnOutputNames.current.clear();
-        let stepBindings = method.remoteQueryBindings || [];
+        const contract = methodContract(method, version);
+        const parameters = resolveMethodParameters(contract.parameters, step.parameters || {});
+        let stepBindings = contract.remoteQueryBindings;
         let portableCode = bindRemoteQueryCode(version.code, stepBindings);
         let bound: ReturnType<typeof bindPipelineStepCodeStrict>;
         try {
@@ -6575,14 +6539,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           ...run,
           resolvedBindings: { ...run.resolvedBindings, ...resolvedBindings },
           steps: run.steps.map((item) => item.stepId === step.id
-            ? { ...item, resolvedBindings }
+            ? { ...item, resolvedBindings, parameters, contractProvenance: contract.provenance }
             : item)
         };
         upsertRun(run);
         const outcome = await executeSavedMethodVersion(
           method,
           version,
-          bound.code,
+          parameterizedMethodCode(bound.code, parameters),
           { kind: "run", runId },
           { methodId: method.id, pipelineId: pipeline.id }
         );
@@ -6787,7 +6751,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   }
 
   async function restoreResult(file: WorkspaceFile): Promise<WorkspaceFile> {
-    if (file.data || !file.remoteResult) return file;
+    if (file.data) return file;
+    if (file.mediaBlob) return { ...file, data: await file.mediaBlob.arrayBuffer() };
+    if (!file.remoteResult) return file;
     const pending = restoringResults.current.get(file.id);
     if (pending) return pending;
     const task = bridge.downloadWorkspaceResult(file.remoteResult).then(data => {
@@ -6998,7 +6964,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     setSyncPhase("checking");
     setSyncError("");
     try {
-      const payload = prepared || await buildWorkspaceSyncPayload(current, context);
+      let payload = prepared || await buildWorkspaceSyncPayload(current, context, { inventoryOnly: true });
       const remote = await bridge.syncStatus(current.workspace.id);
       setRemoteSync(remote);
       if (!remote.canSync) { setSyncError(remote.reason || "OMERO synchronization is unavailable"); return; }
@@ -7024,6 +6990,14 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
         return;
       }
       let plan = await bridge.planWorkspaceSync(payload.inventory);
+      if (plan.uploadKeys.some(key => !payload.bytes.has(key))) {
+        const materialized = await buildWorkspaceSyncPayload(current, context, { uploadKeys: new Set(plan.uploadKeys) });
+        // Preserve the signed inventory: snapshot archives have time-dependent container bytes.
+        if (materialized.inventory.digest !== payload.inventory.digest) {
+          payload = materialized;
+          plan = await bridge.planWorkspaceSync(payload.inventory);
+        } else payload = { ...payload, bytes: materialized.bytes };
+      }
       let synced: SyncStatus;
       setSyncPhase("saving");
       try {
@@ -7567,7 +7541,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           current
         );
         const nextVersion = session.isNew ? 1 : source.currentVersion + 1;
-        const updated: MethodRecord = {
+        const updated: MethodRecord = captureCurrentMethodContract({
           ...source,
           remoteQueryBindings: portableBindings,
           currentVersion: nextVersion,
@@ -7589,7 +7563,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             createdAt: now()
           }],
           updatedAt: now()
-        };
+        });
         const nextWorkspace = {
           ...current,
           methods: session.isNew ? [...current.methods, updated] : current.methods.map((item) => item.id === updated.id ? updated : item)
@@ -7829,11 +7803,13 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     if (!current || busy) return;
     if (run.kind === "method") {
       const method = current.methods.find((item) => item.id === run.artifactId && !item.deletedAt);
-      if (method) void runMethod(method, false, true, run.artifactVersion);
+      if (method) void runMethod(method, false, true, run.artifactVersion, run.parameters || {});
       return;
     }
     const pipeline = current.pipelines.find((item) => item.id === run.artifactId && !item.deletedAt);
-    if (pipeline) void runPipeline(pipeline);
+    if (pipeline) void runPipeline({ ...pipeline, version: run.artifactVersion,
+      steps: run.steps.map(step => ({ id: step.stepId, name: step.name, methodId: step.methodId,
+        methodVersion: step.methodVersion, parameters: step.parameters || {}, inputBindings: step.inputBindings || {} })) });
   }
 
   if (!analysisWorkspace || !workspace || !activeChat) {
@@ -8086,22 +8062,6 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
     },
     { label: "Refresh", run: () => void refreshWorkspace() }
   ];
-  const workspaceActionsMenu = () => (
-    <details className="workspace-actions">
-      <summary>Workspace</summary>
-      <div>
-        <span className="menu-heading">Browser Workspace</span>
-        <button onClick={() => void renameWorkspace(workspace)}><ActionIcon name="edit" />Rename AnalysisWorkspace</button>
-        <button onClick={() => void downloadArchive()}><ActionIcon name="download" />Export Workspace archive</button>
-        <button onClick={() => importInput.current?.click()}><ActionIcon name="import" />Import Workspace archive</button>
-        <span className="menu-heading">OMERO synchronization</span>
-        <span className="menu-note">Methods, Pipelines, Notebooks, direct run results, and settings save automatically. Assistant content stays browser-local.</span>
-        <button onClick={() => void openWorkspaceLibrary()}>
-          <ActionIcon name="import" />Reuse analyses and plate templates
-        </button>
-      </div>
-    </details>
-  );
   const resultFolder = (
     title: string,
     inspectorId: string,
@@ -8126,7 +8086,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             </button>
             <button disabled={!selected.length}
               onClick={() => void trashOutputs(selected.map((file) => file.id))}>
-              Delete selected
+              Move selected to Trash
             </button>
           </div>
         )}
@@ -8193,7 +8153,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
           <WorkspaceSwitcher workspace={workspace} context={bootstrap.context} bridge={bridge}
             disabled={syncing || busy || Boolean(editorSession?.dirty)}
             onOpen={openAnalysisWorkspace} onRename={() => void renameWorkspace(workspace)}
-            onTrash={() => setShowTrash(true)} onLifecycle={changeWorkspaceLifecycle} />
+            onTrash={() => setShowTrash(true)} onLifecycle={changeWorkspaceLifecycle}
+            onExport={() => void downloadArchive()} onImport={() => importInput.current?.click()}
+            onLibrary={() => void openWorkspaceLibrary()} />
           <Button
             className="panel-visibility-toggle"
             aria-pressed={explorerVisible}
@@ -8955,7 +8917,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             allFiles={analysisWorkspace.files}
             onMethodIdChange={setHomeMethodId}
             onPipelineIdChange={setHomePipelineId}
-            onRunMethod={(method) => void runMethod(method)}
+            onRunMethod={(method, parameters) => void runMethod(method, false, false, method.currentVersion, parameters || {})}
             onRunPipeline={(pipeline) => void runPipeline(pipeline)}
             onEditMethod={(method) => void openArtifactEditor("method", method.id, "methods")}
             onEditPipeline={(pipeline) => void openArtifactEditor("pipeline", pipeline.id, "pipelines")}
@@ -8983,7 +8945,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             </label>
             <Button onClick={() => void newConversation()}><ActionIcon name="add" />New Assistant Chat</Button>
             <Button onClick={() => void renameChat(activeChat)}><ActionIcon name="edit" />Rename Assistant Chat</Button>
-            {workspaceActionsMenu()}
+
           </div>
           <div className="messages" aria-live="polite" ref={messagesElement}>
             {!activeChat.messages.length && (
@@ -9161,7 +9123,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onRunStateChange={(running) => setRunSyncBarrier(
               `notebook:${activeNotebook?.id || "active"}`, running
             )}
-            workspaceActions={workspaceActionsMenu()}
+            workspaceActions={null}
             onBeforeRun={(record) => activeNotebook
               ? prepareNotebookRuntime(record)
               : ensureRuntime(analysisWorkspace.files).then(() => analysisWorkspace.files)}
@@ -9169,6 +9131,9 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
             onChange={updateNotebook}
             onFiles={saveNotebookFiles}
             onRenderRequest={renderNotebookZarrRequest}
+            onCancelRender={() => movieController.current?.abort()}
+            resultFiles={analysisWorkspace.files}
+            onRetrieveResult={restoreResult}
             onSelect={(notebookId) => {
               setActiveNotebookId(notebookId);
               setInspectorSelection({ kind: "notebook", id: notebookId });

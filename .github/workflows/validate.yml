@@ -1,0 +1,137 @@
+name: Validate Analysis
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install --no-deps -e .
+      - run: python -m pip install -r requirements-dev.txt
+      - run: >-
+          python -m pip install
+          "biomero-workflow-skills @ git+https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills.git@v0.4.0"
+      - run: python -m pytest tests
+      - run: python -m pip install -e "./notebook-sdk[test,run,widgets]"
+      - run: python -m pytest notebook-sdk/tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - run: npm audit --audit-level=high
+        working-directory: frontend
+  distributions:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: frontend
+      - name: Verify release version
+        if: github.event_name == 'release'
+        run: python scripts/check_release_version.py
+      - name: Use commit time for reproducible distribution timestamps
+        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - run: python -m pip install build setuptools wheel twine jsonschema skills-ref
+      - run: python scripts/validate_agent_plugin.py
+      - run: |
+          for skill in skills/*; do agentskills validate "$skill"; done
+      - run: python scripts/build_frontend.py --skip-install
+      - run: python -m build --outdir dist/analysis --no-isolation
+      - run: python -m build --wheel --no-isolation --outdir dist/notebook-sdk notebook-sdk
+      - run: python scripts/verify_wheel.py dist/analysis/omero_analysis-*.whl
+      - run: python -m twine check dist/analysis/*
+      - run: python -m twine check dist/notebook-sdk/omero_analysis_notebook-*.whl
+      - name: Verify release manifest generation
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          python scripts/build_release_manifest.py --version "$VERSION" --output dist/manifest.json dist/analysis/*.whl dist/notebook-sdk/*.whl
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NL-BioImaging/BIOMERO.WorkflowSkills
+          ref: v0.4.0
+          path: BIOMERO.WorkflowSkills
+      - run: >-
+          python scripts/build_companion_wheelhouse.py
+          --plugin-wheel dist/analysis/omero_analysis-*.whl
+          --output dist/wheelhouse
+          --catalog-repo BIOMERO.WorkflowSkills
+
+      - run: python scripts/verify_installed_distribution.py dist/analysis dist/notebook-sdk
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: analysis-distributions
+          path: dist/analysis/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: notebook-sdk-distributions
+          path: dist/notebook-sdk/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-assets
+          path: src/omero_analysis/static/omero_analysis/
+
+  chrome-smoke:
+    needs: distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: frontend
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: browser-assets
+          path: src/omero_analysis/static/omero_analysis/
+      - run: node node_modules/playwright-core/cli.js install --with-deps chrome
+        working-directory: frontend
+      - run: npm run smoke:runtime
+        working-directory: frontend
+      - run: npm run smoke:browser
+        working-directory: frontend
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: chrome-failure-evidence
+          path: frontend/test-results/
+          if-no-files-found: warn

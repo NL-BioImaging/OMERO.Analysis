@@ -34,7 +34,7 @@ describe("Python sandbox", () => {
     expect(worker).toContain('message.type === "remote_query_file"');
     expect(worker).toContain('message.type === "notebook_config"');
     expect(worker).toContain("ensureNotebookRequirements(message.value?.contract?.requirements)");
-    expect(worker).toContain('loadedPackages.add("seaborn")');
+    expect(worker).toContain('await ensureExtras(requested)');
     expect(worker).toContain('type: "notebook_query"');
     expect(worker).toContain('message.type === "notebook_query_result"');
     expect(worker).toContain('frame.attrs["omero_analysis_query"] = metrics');

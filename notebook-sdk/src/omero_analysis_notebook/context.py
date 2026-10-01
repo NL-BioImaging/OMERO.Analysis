@@ -38,6 +38,22 @@ class NotebookContext:
             raise FileNotFoundError(f"Required notebook input is missing: {path}")
         return path
 
+    def read_csv(self, source: str, *, identifiers=(), **options):
+        """Read a supporting CSV, preserving explicitly named text identifiers.
+
+        Use nrows for previews. For large query sources prefer an aggregated ctx.query.
+        """
+        import pandas as pd
+        path = self.input(source)
+        header_options = {key: value for key, value in options.items() if key not in {"nrows", "dtype", "usecols"}}
+        columns = pd.read_csv(path, nrows=0, **header_options).columns
+        missing = [name for name in identifiers if name not in columns]
+        if missing:
+            raise ProtocolError("CSV identifier columns are missing: " + ", ".join(missing))
+        dtypes = dict(options.pop("dtype", {}) or {})
+        dtypes.update({name: "string" for name in identifiers})
+        return pd.read_csv(path, dtype=dtypes, **options)
+
     def _query_sync(
         self,
         source: str,
@@ -98,7 +114,11 @@ class NotebookContext:
 
             connection = duckdb.connect(":memory:")
             try:
-                connection.register("data", pd.read_csv(path))
+                text_columns = {column["name"]: "VARCHAR" for table in item.get("schema", {}).get("tables", [])
+                                if table.get("name") == "data" for column in table.get("columns", [])
+                                if str(column.get("type", "")).lower() in {"varchar", "text", "string"}}
+                connection.register("data", connection.read_csv(str(path), dtype=text_columns or None))
+                connection.execute("SET allowed_paths = ?", [[path.as_posix()]])
                 connection.execute("SET enable_external_access=false")
                 connection.execute("SET autoinstall_known_extensions=false")
                 connection.execute("SET autoload_known_extensions=false")

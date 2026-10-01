@@ -15,20 +15,25 @@ on:
         default: 80dae969f8ff0d4a9cb1699caed31a36fef9328f
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   http-matrix:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: OMERO.Analysis
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NL-BioImaging/OMERO.DataQueryWorker
           ref: ${{ inputs.worker_ref || '80dae969f8ff0d4a9cb1699caed31a36fef9328f' }}
           fetch-depth: 0
           path: OMERO.DataQueryWorker
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - run: python -m venv OMERO.DataQueryWorker/.venv

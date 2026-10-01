@@ -74,7 +74,7 @@ from .staged_attachments import (
     stage_attachment,
 )
 from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
-from .settings import integrated_data_analysis, notebook_cell_timeout_seconds
+from .settings import integrated_data_analysis_available, notebook_cell_timeout_seconds
 from .storage_policy import require_storage_write, storage_policy
 from .workspace_sync import (
     SYNC_NAMESPACE,
@@ -411,6 +411,7 @@ def analysis(request, conn=None, **kwargs):
         "script-src 'self'; "
         f"style-src 'self' 'nonce-{style_nonce}'; "
         "img-src 'self' data: blob:; "
+        "media-src 'self' blob:; "
         "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; "
         "worker-src blob:; "
         "frame-src 'self' blob:; "
@@ -680,7 +681,7 @@ def panel(request, object_type, object_id, conn=None, **kwargs):
         "omero_analysis/panel.html",
         {
             "context": context,
-            "integrated_data_analysis": integrated_data_analysis(),
+            "integrated_data_analysis": integrated_data_analysis_available(),
         },
     )
 

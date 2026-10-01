@@ -13,9 +13,17 @@ The SDK supports Python 3.10–3.12 and has no OMERO dependency.
 
 ```console
 python -m venv .venv
-.venv/Scripts/pip install "omero-analysis-notebook[widgets,run]==0.1.0"
+python scripts/download_analysis_release.py --version 0.15.0 --output dist/wheelhouse
+.venv/Scripts/pip install "./dist/wheelhouse/omero_analysis_notebook-0.1.0-py3-none-any.whl[widgets,run]"
 .venv/Scripts/oan new analysis.ipynb
 ```
+
+Run the downloader from an Analysis checkout, or obtain both wheels and
+`manifest.json` from the exact [GitHub Release](https://github.com/NL-BioImaging/OMERO.Analysis/releases)
+and verify them as described in [the release guide](github-releases.md).
+The release must contain these assets; older source-only releases fail explicitly.
+The SDK version is independent of Analysis and is recorded in the manifest.
+Third-party notebook dependencies still use normal upstream package sources.
 
 Recommended layout:
 

@@ -1,0 +1,3 @@
+ImageNumber,Metadata_Well,Metadata_Batch,FileName_DNA
+1,001,batch-a,"field,one.tif"
+2,002,batch-a,field-two.tif

@@ -28,17 +28,14 @@ function globMatches(name: string, glob: string): boolean {
 
 function profileTerms(profiles: DataProfile[]): Set<string> {
   const terms = new Set<string>();
-  const visit = (value: unknown) => {
-    if (typeof value === "string") terms.add(value.toLowerCase());
-    else if (Array.isArray(value)) value.forEach(visit);
-    else if (value && typeof value === "object") {
-      Object.entries(value).forEach(([key, item]) => {
-        terms.add(key.toLowerCase());
-        visit(item);
-      });
+  for (const profile of profiles) {
+    const tables = (profile.summary as { tables?: unknown })?.tables;
+    const values = Array.isArray(tables) ? tables : tables && typeof tables === "object" ? Object.keys(tables) : [];
+    for (const table of values) {
+      const name = typeof table === "string" ? table : (table as { name?: string })?.name;
+      if (name) terms.add(name.toLowerCase());
     }
-  };
-  profiles.forEach((profile) => visit(profile.summary));
+  }
   return terms;
 }
 
@@ -57,7 +54,10 @@ export function matchWorkflowSkills(
   const matches: MatchedWorkflowSkill[] = [];
   for (const entry of catalog.workflows) {
     for (const skill of entry.skills) {
-      let score = skill.match.auto_activate ? 1 : 0;
+      if (!skill.match.auto_activate) continue;
+      const requiredTables = skill.match.required_tables.map(value => value.toLowerCase());
+      if (requiredTables.length && !profiles.some(profile => requiredTables.every(table => profileTerms([profile]).has(table)))) continue;
+      let score = 1;
       const reasons: string[] = [];
       const extension = skill.match.extensions.find((value) =>
         names.some((name) => name.toLowerCase().endsWith(value.toLowerCase()))

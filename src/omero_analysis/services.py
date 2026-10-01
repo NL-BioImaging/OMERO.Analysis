@@ -33,6 +33,7 @@ LEGACY_NOTEBOOK_NAMESPACES = {
     "nl.bioimaging.omero-jupyterlite.notebook.v1",
 }
 INPUT_EXTENSIONS = {
+    ".mp4",
     ".csv",
     ".tsv",
     ".json",
@@ -46,6 +47,7 @@ INPUT_EXTENSIONS = {
     ".sqlite3",
 }
 RESULT_MIMETYPES = {
+    ".mp4": {"video/mp4"},
     ".csv": {"text/csv", "application/csv", "text/plain"},
     ".tsv": {"text/tab-separated-values", "text/plain"},
     ".json": {"application/json", "text/json", "text/plain"},
@@ -426,7 +428,7 @@ def object_hierarchy(object_type, object_id, obj):
         except (AttributeError, TypeError):
             pass
     children_method = getattr(obj, "listChildren", None)
-    if callable(children_method):
+    if object_type != "Image" and callable(children_method):
         try:
             for value in children_method():
                 add(value, children)

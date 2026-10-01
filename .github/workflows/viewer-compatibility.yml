@@ -1,0 +1,37 @@
+name: ZarrViewer compatibility
+on:
+  pull_request:
+    paths:
+      - 'src/omero_analysis/integrations.py'
+      - 'frontend/src/zarr*'
+      - 'tests/test_integrations.py'
+      - 'tests/test_installed_viewer.py'
+      - '.github/workflows/viewer-compatibility.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-provider:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: Analysis
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NL-BioImaging/BIOMERO.ZarrViewer
+          ref: analysis_skills
+          fetch-depth: 0
+          path: Viewer
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r Analysis/requirements-dev.txt 'zarr>=2.18,<4' setuptools-scm
+      - run: python -m pip install --no-deps -e Analysis -e Viewer
+      - run: git -C Viewer rev-parse HEAD
+      - run: python -m pytest tests/test_integrations.py tests/test_installed_viewer.py -q
+        working-directory: Analysis

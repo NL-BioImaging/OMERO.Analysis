@@ -567,7 +567,8 @@ def test_panel_renders_source_guidance_and_multi_selection_variants(settings):
         RequestFactory().get("/panel/Image/11/"),
         "Image", 11, conn=SelectionConnection(source)
     )
-    assert b'data-integrated-data-analysis="true"' in integrated_response.content
+    # The flag alone must never redirect to a BIOMERO without an Analysis host.
+    assert b'data-integrated-data-analysis="false"' in integrated_response.content
 
     multiple_response = views.panel(
         RequestFactory().get("/panel/Image/11/?selection_id=11&selection_id=12"),

@@ -7,6 +7,27 @@ import {
 } from "./workspaceSync";
 import type { AnalysisWorkspace, OmeroContext, SyncStatus } from "./types";
 import { unzipSync, strFromU8 } from "fflate";
+import { Blob as NodeBlob } from 'node:buffer';
+import { sha256 } from './storage';
+
+it('synchronizes movie metadata without loading unchanged bytes, then supplies only requested movie data', async () => {
+  const value = workspace();
+  const raw = new TextEncoder().encode('movie-bytes').buffer;
+  const hash = await sha256(raw);
+  const blob = new NodeBlob([raw], { type: 'video/mp4' }) as unknown as Blob;
+  value.files.push({ ...value.files[2], id: 'movie', name: 'movie.mp4', type: 'video/mp4', size: raw.byteLength,
+    sha256: hash, data: undefined, mediaBlob: blob, chatId: undefined, methodId: 'method-1',
+    resultGroupId: 'movie-group', movie: { fps: 5, frameCount: 4 } });
+  const key = `result-content:result:${hash}`;
+  const metadata = await buildWorkspaceSyncPayload(value, context, { inventoryOnly: true });
+  expect(metadata.bytes.has(key)).toBe(false);
+  expect(metadata.inventory.items.find(item => item.key === key)?.metadata.sources).toEqual(expect.arrayContaining([
+    expect.objectContaining({ resultGroupId: 'movie-group', movie: { fps: 5, frameCount: 4 } })
+  ]));
+  const materialized = await buildWorkspaceSyncPayload(value, context, { uploadKeys: new Set([key]) });
+  expect(Array.from(materialized.bytes.get(key)!)).toEqual(Array.from(new Uint8Array(raw)));
+  expect(metadata.contentDigest).toBe(materialized.contentDigest);
+});
 
 it("skips redundant saves but never skips import, mirror, or cleanup recovery", () => {
   const remote = { linked: true, inventoryDigest: "digest", syncState: "complete", browseState: "ready" } as SyncStatus;

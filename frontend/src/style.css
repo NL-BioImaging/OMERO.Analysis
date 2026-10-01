@@ -1753,6 +1753,7 @@ th { position: sticky; top: 0; background: #183040; }
 }
 .workspace-control-menu-items button { justify-content: flex-start; width: 100%; white-space: nowrap; }
 .workspace-control-menu-items .bp5-button-text { gap: .75rem; }
+
 .app-shell[data-theme="light"] .workspace-control-menu > summary,
 .app-shell[data-theme="light"] .workspace-control-menu-items { background: var(--biomero-card); color: var(--biomero-text); }
 .workspace-trash-banner { padding: 1rem; background: var(--panel); }
@@ -1806,6 +1807,13 @@ th { position: sticky; top: 0; background: #183040; }
 .shared-library-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
 .shared-library-controls .library-search { flex: 1 1 260px; margin: 0; }
 .shared-library-controls label { font-size: .8rem; }
+
+.method-parameters { display: flex; flex-wrap: wrap; gap: .75rem; border: 1px solid var(--border, #344653); border-radius: 5px; }
+.method-parameters label, .movie-controls label { display: flex; align-items: center; gap: .4rem; }
+.movie-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .5rem 0; }
+figure video { display: block; width: 100%; max-width: 100%; max-height: 70vh; background: #000; }
+.notebook-cells { grid-auto-rows: max-content; align-content: start; }
+
 
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,

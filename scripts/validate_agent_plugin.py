@@ -35,6 +35,9 @@ def main() -> int:
         if not description or not description.group(1).strip():
             raise ValueError(f"Skill description is missing: {skill}")
         found.append(directory.name)
+    declared = manifest.get("extensions", {}).get("nl.bioimaging.biomero", {}).get("skills", {})
+    if set(found) != set(declared):
+        raise ValueError("Plugin skill metadata does not match the shipped skill directories")
     if not found:
         raise ValueError("Plugin has no skills")
     print(f"Validated Agent Plugin {manifest['name']} {manifest.get('version')} with {len(found)} skill(s)")

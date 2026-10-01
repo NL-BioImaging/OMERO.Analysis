@@ -115,6 +115,7 @@ def test_analysis_navigation_registration_is_conditional_and_idempotent(monkeypa
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(navigation, "run", fake_run)
+    monkeypatch.setattr(navigation, "analysis_host_enabled", lambda: True)
     monkeypatch.setenv("INTEGRATE_DATA_ANALYSIS", "TRUE")
     navigation.main()
     assert calls[0][0][0] == navigation.OMERO_PYTHON
@@ -139,6 +140,22 @@ def test_analysis_navigation_registration_is_conditional_and_idempotent(monkeypa
         navigation.TOP_LINK_KEY,
         navigation.TOP_LINK_VALUE,
     ]
+
+    calls.clear()
+    monkeypatch.setenv("INTEGRATE_DATA_ANALYSIS", "TRUE")
+    monkeypatch.setattr(navigation, "analysis_host_enabled", lambda: False)
+    navigation.main()
+    assert calls[-1][0][2] == "append"
+
+
+def test_navigation_does_not_hide_analysis_when_host_app_is_disabled(monkeypatch):
+    navigation = load_script("51-omero-analysis-navigation.py")
+    monkeypatch.setattr(navigation, "analysis_host_installed", lambda: True)
+    for output in ('["omero_analysis"]', 'invalid config', 'null'):
+        monkeypatch.setattr(navigation, "run", lambda *_, **__: SimpleNamespace(returncode=0, stdout=output))
+        assert navigation.analysis_host_enabled() is False
+    monkeypatch.setattr(navigation, "run", lambda *_, **__: SimpleNamespace(returncode=0, stdout='["omero_analysis", "omero_biomero"]'))
+    assert navigation.analysis_host_enabled() is True
 
 
 def test_analysis_shell_includes_notebook_runtime_contract():

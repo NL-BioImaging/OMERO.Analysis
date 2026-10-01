@@ -6,7 +6,7 @@ from django.conf import settings
 PREFIX = "omero.web.analysis."
 DEFAULT_EXTENSIONS = (
     ".csv,.tsv,.json,.xlsx,.xls,.parquet,.npy,.npz,.duckdb,.sqlite,.sqlite3,"
-    ".png,.svg,.pdf,.txt,.md"
+    ".png,.svg,.mp4,.pdf,.txt,.md"
 )
 TRUE_VALUES = {"1", "true"}
 
@@ -37,6 +37,20 @@ def integrated_data_analysis():
     if hasattr(settings, "INTEGRATE_DATA_ANALYSIS"):
         return _boolean(getattr(settings, "INTEGRATE_DATA_ANALYSIS"))
     return _boolean(os.environ.get("INTEGRATE_DATA_ANALYSIS", "false"))
+
+
+def integrated_data_analysis_available():
+    """Use an embedded host only when its installed contract and route exist."""
+    from django.urls import NoReverseMatch, reverse
+    from .host_capabilities import biomero_analysis_host_installed
+
+    if not integrated_data_analysis() or not biomero_analysis_host_installed():
+        return False
+    try:
+        reverse("biomero")
+    except NoReverseMatch:
+        return False
+    return True
 
 
 def context_ttl_seconds():

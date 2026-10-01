@@ -262,6 +262,9 @@ export interface ChatRecord {
 }
 
 export interface WorkspaceFile {
+  mediaBlob?: Blob;
+  resultGroupId?: string;
+  movie?: { fps: number; frameCount: number; recipe?: ZarrRenderRecipe };
   remoteResult?: { workspaceId: string; key: string; sha256: string; size: number };
   id: string;
   workspaceId: string;
@@ -415,6 +418,7 @@ export interface EvidenceRecord {
 }
 
 export interface MethodVersion {
+  executionContract?: import('./methodExecution').MethodExecutionContract;
   version: number;
   code: string;
   codeHash: string;
@@ -492,6 +496,9 @@ export type AnalysisRunStatus =
   | "stopped";
 
 export interface AnalysisRunStepRecord {
+  inputBindings?: Record<string, string>;
+  parameters?: Record<string, string | number | boolean>;
+  contractProvenance?: 'versioned' | 'legacy';
   stepId: string;
   name: string;
   methodId: string;
@@ -503,6 +510,8 @@ export interface AnalysisRunStepRecord {
 }
 
 export interface AnalysisRunRecord {
+  parameters?: Record<string, string | number | boolean>;
+  contractProvenance?: 'versioned' | 'legacy';
   id: string;
   workspaceId: string;
   kind: "method" | "pipeline";
@@ -552,7 +561,7 @@ export interface ZarrViewerCapability {
   supported: true;
   features?: string[];
   image: { id: number; name: string };
-  store: { uuid: string; name?: string; roi_url: string; render_url: string; render_svg_url?: string };
+  store: { uuid: string; name?: string; roi_url: string; render_url: string; render_svg_url?: string; movie_url?: string; binding_digest?: string };
   kind: "image" | "plate";
   initial_path: string;
   channels: Array<{ index: number; label: string; active: boolean }>;
@@ -611,6 +620,10 @@ export interface ZarrVectorItem {
 export interface ZarrVectorOverlay { version: 1; items: ZarrVectorItem[] }
 
 export interface ZarrRenderRecipe {
+  source?: { kind: "current-image" };
+  sourceBinding?: string;
+  version?: 2;
+  sequence?: { version: 1; start: number; end: number; step?: number; fps?: number; maxBytes?: number; trailFrames?: number };
   storeUuid: string;
   title?: string;
   filename?: string;
@@ -767,7 +780,7 @@ export interface RuntimeOutput {
   stderr: string;
   preview: unknown;
   modelPayload: ModelPayload;
-  files: Array<{ name: string; type: string; data: ArrayBuffer }>;
+  files: Array<{ name: string; type: string; data: ArrayBuffer; resultGroupId?: string; movie?: WorkspaceFile["movie"] }>;
 }
 
 export interface RuntimeProgress {

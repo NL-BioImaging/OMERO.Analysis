@@ -76,3 +76,16 @@ python scripts/validate_notebook.py notebook.ipynb --write
 Run the notebook against the same local fixture as its source or reference
 implementation. Compare bounded CSV tables numerically and expected PNG/SVG/CSV
 output names. State what was not comparable.
+
+## CSV identifiers and movies
+
+For supporting CSVs, `ctx.read_csv(input_id, identifiers=["observed_column"], nrows=100)`
+preserves declared text identifiers and leading zeros in a bounded preview.
+Use ctx.query for aggregated large query sources; declare VARCHAR columns where
+identifier inference would be ambiguous. Never infer joins across unrelated files.
+
+Temporal MP4 output uses the existing structured render recipe with
+`omero_analysis_render_format="mp4"` and a version-1 sequence declaration.
+Default playback is 5 FPS, separate from acquisition timing. ZarrViewer handles
+authenticated pixels and browser encoding; Python never invokes an encoder or
+network request. See the movie authoring skill and docs/movies.md in the repository.

@@ -1,3 +1,5 @@
+import runtimePackages from "../runtime-packages.json";
+import { RESULT_MIME_TYPES } from "./resultMedia";
 import type { OmeroContext, RuntimeOutput, RuntimeProgress, WorkspaceFile } from "./types";
 import type {
   NotebookProtocolBinding,
@@ -34,14 +36,8 @@ export interface NotebookRuntimeConfiguration {
   parameters: Record<string, boolean | number | string | null>;
 }
 
-const PACKAGES = [
-  "micropip",
-  "numpy",
-  "pandas",
-  "matplotlib",
-  "duckdb"
-];
-export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.11";
+const PACKAGES = runtimePackages.bootstrap;
+export const RUNTIME_VERSION = "pyodide-314.0.3-oa-0.12";
 
 export function runtimeWorker(runtimeBase: string): string {
   const base = JSON.stringify(runtimeBase.replace(/\/$/, ""));
@@ -77,9 +73,8 @@ function requestNotebookQuery(source, sql, parameters) {
   });
 }
 const inputSecrets = new Set();
-const mime = (name) => name.endsWith(".png") ? "image/png" : name.endsWith(".svg") ? "image/svg+xml" :
-  name.endsWith(".csv") ? "text/csv" : name.endsWith(".json") ? "application/json" :
-  name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
+const resultMimeTypes = ${JSON.stringify(RESULT_MIME_TYPES)};
+const mime = (name) => resultMimeTypes[name.split(".").pop().toLowerCase()] || "application/octet-stream";
 async function boot() {
   progress(12, "Loading the browser Python engine…");
   const module = await import(runtimeBase + "/pyodide.mjs");
@@ -94,15 +89,6 @@ import matplotlib as _oa_matplotlib
 _oa_matplotlib.use("Agg", force=True)
 \`);
   progress(78, "Loading vendored Python support…");
-  const micropip = pyodide.pyimport("micropip");
-  try {
-    await micropip.install(runtimeBase + "/seaborn-0.13.2-py3-none-any.whl", {deps: false});
-    await micropip.install(runtimeBase + "/pypdf-6.14.2-py3-none-any.whl", {deps: false});
-    loadedPackages.add("seaborn");
-    loadedPackages.add("pypdf");
-  } finally {
-    micropip.destroy();
-  }
   progress(90, "Preparing the browser workspace…");
   pyodide.FS.mkdirTree("/input");
   pyodide.FS.mkdirTree("/output");
@@ -173,6 +159,18 @@ class _OANotebookContext:
         if binding.get("kind") == "query" and binding.get("mode") == "remote":
             raise RuntimeError("Remote query sources do not expose a filesystem path; use await ctx.query(...)")
         return _oa_pathlib.Path(binding["path"])
+
+    def read_csv(self, source, *, identifiers=(), **options):
+        import pandas as _oa_pd
+        path = self.input(source)
+        header_options = {key: value for key, value in options.items() if key not in {"nrows", "dtype", "usecols"}}
+        columns = _oa_pd.read_csv(path, nrows=0, **header_options).columns
+        missing = [name for name in identifiers if name not in columns]
+        if missing:
+            raise ValueError("CSV identifier columns are missing: " + ", ".join(missing))
+        dtypes = dict(options.pop("dtype", {}) or {})
+        dtypes.update({name: "string" for name in identifiers})
+        return _oa_pd.read_csv(path, dtype=dtypes, **options)
 
     async def query(self, source, sql, parameters=None):
         _oa_validate_query(sql)
@@ -253,7 +251,11 @@ class _OANotebookContext:
             import duckdb as _oa_duckdb, pandas as _oa_pd
             connection = _oa_duckdb.connect(":memory:")
             try:
-                connection.register("data", _oa_pd.read_csv(path))
+                text_columns = {column["name"]: "VARCHAR" for table in next((item.get("schema", {}) for item in self.contract.get("inputs", []) if item["id"] == source), {}).get("tables", [])
+                                if table.get("name") == "data" for column in table.get("columns", [])
+                                if str(column.get("type", "")).lower() in {"varchar", "text", "string"}}
+                connection.register("data", connection.read_csv(str(path), dtype=text_columns or None))
+                connection.execute("SET allowed_paths = ?", [[str(path)]])
                 connection.execute("SET enable_external_access=false")
                 connection.execute("SET autoinstall_known_extensions=false")
                 connection.execute("SET autoload_known_extensions=false")
@@ -294,7 +296,21 @@ _oa_sys.modules["omero_analysis_notebook"] = _oa_notebook
   globalThis.WebSocket = class { constructor() { throw new Error("Network access is disabled"); } };
   globalThis.EventSource = class { constructor() { throw new Error("Network access is disabled"); } };
 }
+const extraWheels = ${JSON.stringify(runtimePackages.extraWheels)};
+async function ensureExtras(names) {
+  const missing = extraWheels.filter(item => names.includes(item.name) && !loadedPackages.has(item.name));
+  if (!missing.length) return;
+  globalThis.fetch = runtimeFetch;
+  const micropip = pyodide.pyimport("micropip");
+  try {
+    for (const item of missing) {
+      await micropip.install(runtimeBase + "/" + item.fileName, {deps: false});
+      loadedPackages.add(item.name);
+    }
+  } finally { micropip.destroy(); globalThis.fetch = denyNetwork; }
+}
 async function ensurePackages(code) {
+  await ensureExtras(extraWheels.filter(item => code.includes(item.name)).map(item => item.name));
   const required = [];
   if (/\\b(import|from)\\s+scipy\\b/.test(code)) required.push("scipy");
   if (/\\b(import|from)\\s+pyarrow\\b|read_parquet|to_parquet/.test(code)) required.push("pyarrow");
@@ -313,13 +329,11 @@ async function ensurePackages(code) {
   }
 }
 async function ensureNotebookRequirements(requirements) {
-  const approved = new Set([
-    "duckdb", "matplotlib", "numpy", "pandas", "pyarrow", "pypdf",
-    "python-calamine", "scikit-image", "scipy", "seaborn", "xlrd"
-  ]);
+  const approved = new Set(${JSON.stringify(runtimePackages.approved)});
   const requested = Array.from(new Set((Array.isArray(requirements) ? requirements : [])
     .map((item) => String(item).split(/[<>=!~]/, 1)[0].toLowerCase().replace(/[_.]/g, "-"))
     .filter((name) => approved.has(name))));
+  await ensureExtras(requested);
   const missing = requested.filter((name) => !loadedPackages.has(name));
   const constrained = (requirements || []).filter((item) => /[<>=!~]/.test(item));
   if (constrained.length && !loadedPackages.has("packaging")) missing.push("packaging");
@@ -450,6 +464,23 @@ function modelPayload(preview, stderr, files) {
 }
 const previewCode = \`
 import json as _oa_json, math as _oa_math
+def _oa_recipe(value, depth=0):
+    if depth > 12:
+        raise ValueError("Render recipe is too deeply nested")
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, dict):
+        if len(value) > 100:
+            raise ValueError("Render recipe has too many fields")
+        return {str(key): _oa_recipe(item, depth+1) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        if len(value) > 10000:
+            raise ValueError("Render recipe contains too many observations")
+        return [_oa_recipe(item, depth+1) for item in value]
+    if hasattr(value, "item"):
+        return _oa_recipe(value.item(), depth+1)
+    raise ValueError("Render recipe must contain JSON values")
+
 def _oa_clean(value, max_items=100):
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -461,7 +492,12 @@ def _oa_clean(value, max_items=100):
             frame = frame.iloc[:, :50]
         return {"kind": "table", "data": frame.to_dict(orient="split")}
     if isinstance(value, dict):
-        return {str(k): _oa_clean(v, 256 if k == "omero_analysis_render_recipe" else max_items)
+        recipe = value.get("omero_analysis_render_recipe")
+        if recipe is not None:
+            recipe = _oa_recipe(recipe)
+            if len(_oa_json.dumps(recipe).encode("utf-8")) > 1024 * 1024:
+                raise ValueError("Render recipe exceeds 1 MiB")
+        return {str(k): recipe if k == "omero_analysis_render_recipe" else _oa_clean(v, max_items)
                 for k, v in list(value.items())[:max_items]}
     if isinstance(value, (list, tuple)):
         return [_oa_clean(v, max_items) for v in value[:max_items]]
@@ -471,7 +507,7 @@ def _oa_clean(value, max_items=100):
     return str(value)
 _oa_json.dumps(_oa_clean(globals().get("result")), ensure_ascii=False)
 \`;
-addEventListener("message", async (event) => {
+async function handleRuntimeMessage(event) {
   const message = event.data;
   if (!message || message.source !== "oa-parent") return;
   if (message.type === "notebook_query_result") {
@@ -554,6 +590,7 @@ for _oa_name in list(globals()):
       pyodide.FS.writeFile("/input/.omero/context.json", encoded);
       send(message.id, "context", true);
     } else if (message.type === "extract_attachment") {
+      if (message.value.kind === "pdf") await ensureExtras(["pypdf"]);
       const bytes = new Uint8Array(message.value.data);
       if (bytes.length > 25 * 1024 * 1024) throw new Error("Attachment exceeds 25 MiB");
       const safe = String(message.value.name || "attachment").replace(/[^A-Za-z0-9._ -]/g, "_");
@@ -682,10 +719,13 @@ for _path in sorted(_Path("/input").iterdir()):
                 _active_sheet = _sheet_names[0] if _sheet_names else None
                 _frame = _book.parse(sheet_name=_active_sheet)
             elif _suffix == ".json": _frame = _pd.read_json(_path)
-            else: _frame = _pd.read_csv(_path, sep="\\t" if _suffix == ".tsv" else ",")
+            else: _frame = _pd.read_csv(_path, sep="\\t" if _suffix == ".tsv" else ",", nrows=101, dtype=str, keep_default_na=False)
             _preview = _json.loads(_frame.iloc[:100, :50].to_json(orient="split", date_format="iso"))
             _entry["summary"] = {
-                "rows": int(len(_frame)),
+                "rows": None if _suffix in {".csv", ".tsv"} and len(_frame) > 100 else int(len(_frame)),
+                "preview_only": _suffix in {".csv", ".tsv"},
+                "statistics_scope": "preview" if _suffix in {".csv", ".tsv"} else "source",
+                "preview_rows": min(100, len(_frame)),
                 "columns": [{"name": str(c), "type": str(_frame[c].dtype), "nulls": int(_frame[c].isna().sum()), "distinct": int(_frame[c].nunique(dropna=True))} for c in list(_frame.columns)[:100]],
                 "preview": {
                     "columns": [str(_column) for _column in _preview.get("columns", [])],
@@ -750,6 +790,11 @@ del _oa_original_savefig
   } catch (error) {
     send(message.id, "error", String(error && error.stack || error));
   }
+}
+let runtimeQueue = Promise.resolve();
+addEventListener("message", event => {
+  if (event.data?.type === "notebook_query_result") void handleRuntimeMessage(event);
+  else runtimeQueue = runtimeQueue.then(() => handleRuntimeMessage(event));
 });
 `;
 }
