@@ -134,6 +134,7 @@ export async function buildWorkspaceSyncPayload(
   };
 
   const resultGroups = new Map<string, {
+    parameterKey?: string;
     kind: SyncItemKind;
     mimetype: string;
     sha256: string;
@@ -150,19 +151,21 @@ export async function buildWorkspaceSyncPayload(
       left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
     )) {
     if (!file.data && !file.mediaBlob && !file.remoteResult) throw new Error(`Result ${file.name} is unavailable in this browser`);
-    const expectedKey = `result-content:${file.type === "image/png" ? "png-image" : "result"}:${file.sha256}`;
+    const scope = file.notebookParameterKey ? `:${file.notebookParameterKey}` : "";
+    const expectedKey = `result-content:${file.type === "image/png" ? "png-image" : "result"}:${file.sha256}${scope}`;
     const raw = options.inventoryOnly && Boolean(file.sha256) || options.uploadKeys && !options.uploadKeys.has(expectedKey) ? undefined : await resultBytes(file);
     const data = raw ? new Uint8Array(raw) : undefined;
     const kind: SyncItemKind = file.type === "image/png" ? "png-image" : "result";
     const mimetype = file.type || "application/octet-stream";
     const digest = file.sha256 || (data ? await sha256(data.slice().buffer) : file.remoteResult!.sha256);
-    const groupKey = `${kind}:${mimetype}:${digest}`;
+    const groupKey = `${kind}:${mimetype}:${digest}${scope}`;
     const group = resultGroups.get(groupKey);
     if (group) {
       group.files.push(file);
       if (!group.data && data) group.data = data;
     } else {
       resultGroups.set(groupKey, {
+        parameterKey: file.notebookParameterKey,
         kind,
         mimetype,
         sha256: digest,
@@ -176,7 +179,7 @@ export async function buildWorkspaceSyncPayload(
   const sortedResultGroups = Array.from(resultGroups.values())
     .sort((left, right) => left.sha256.localeCompare(right.sha256));
   const resultKey = (group: typeof sortedResultGroups[number]) =>
-    `result-content:${group.kind}:${group.sha256}`;
+    `result-content:${group.kind}:${group.sha256}${group.parameterKey ? `:${group.parameterKey}` : ""}`;
   const pngGroups = sortedResultGroups.filter((group) => group.kind === "png-image");
 
   for (const group of sortedResultGroups) {
@@ -191,6 +194,8 @@ export async function buildWorkspaceSyncPayload(
       methodId: file.methodId || null,
       pipelineId: file.pipelineId || null,
       notebookId: file.notebookId || null,
+      notebookParameterKey: file.notebookParameterKey || null,
+      notebookRunStartedAt: file.notebookRunStartedAt || null,
       executionId: file.executionId || null,
       resultGroupId: file.resultGroupId || null, movie: file.movie || null,
       viewer: file.viewer || null
@@ -199,7 +204,7 @@ export async function buildWorkspaceSyncPayload(
       file.type === "text/csv" || file.type === "image/svg+xml" || /\.(csv|svg)$/i.test(file.name)
     )
       ? pngGroups.filter((pngGroup) => group.files.some((companion) =>
-          pngGroup.files.some((image) => isPlotPair(companion, image))
+          pngGroup.files.some((image) => !companion.deletedAt && !image.deletedAt && isPlotPair(companion, image))
         )).map(resultKey).sort()
       : [];
     const metadata = {

@@ -273,6 +273,8 @@ export interface WorkspaceFile {
   methodId?: string;
   pipelineId?: string;
   notebookId?: string;
+  notebookParameterKey?: string;
+  notebookRunStartedAt?: string;
   executionId?: string;
   name: string;
   logicalPath: string;

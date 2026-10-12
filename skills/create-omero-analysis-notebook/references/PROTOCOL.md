@@ -90,6 +90,35 @@ Do not rely on an interactive window or on `plt.show()` as the durable result.
 Analysis suppresses the harmless `FigureCanvasAgg is non-interactive` warning,
 but portable notebooks should omit unnecessary `plt.show()` calls.
 
+## Figure companions and reruns
+
+Use a stable, unique stem for each figure and its PNG, SVG and plotted-data CSV.
+The CSV must contain the actual plotted values, identifiers, grouping and units;
+include thresholds/parameters needed to interpret the figure. For heatmaps,
+retain well coordinates and distinguish masked/unmeasured values from zero.
+A general summary CSV with a different filename is not attached to that figure.
+
+```python
+# plot_data is the bounded table used to draw this figure.
+stem = "control-stability"
+plot_data.to_csv(ctx.results / f"{stem}.csv", index=False)
+fig.savefig(ctx.results / f"{stem}.png", dpi=160, bbox_inches="tight")
+fig.savefig(ctx.results / f"{stem}.svg", bbox_inches="tight",
+            metadata={"Date": None})
+plt.close(fig)
+```
+
+Place each requested figure in its own plotting cell. Keep composites when
+adding separate panels, and save a distinct CSV for each panel's subset. The
+host previews saved PNGs; the SVG and CSV are download companions. Do not embed
+arbitrary HTML or file links to create attachment buttons.
+
+Portable notebook outputs are grouped by effective parameters and bound input
+identity. Different settings remain separate even if they render identical
+pixels. After a successful repeat with the same settings and inputs, prior
+outputs move to Workspace Trash; a failed replacement preserves the prior set.
+Do not encode changing timestamps in plot filenames to work around reruns.
+
 ## Supporting CSV preview
 
 `ctx.read_csv("input_id", identifiers=["actual_identifier_column"], nrows=100)`

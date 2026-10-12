@@ -4,7 +4,7 @@ description: Create, convert, validate, repair, or explain offline-first OMERO.A
 license: AGPL-3.0-or-later
 metadata:
   author: NL-BioImaging
-  version: "0.13.0"
+  version: "0.13.1"
 ---
 
 # Create OMERO.Analysis Notebooks
@@ -25,8 +25,10 @@ and widgets with the protocol SDK.
    `ctx.results`.
 5. Query data through `await ctx.query(...)`; aggregate and bound SQL before
    returning rows to pandas.
-6. Make plotting backend-independent and save durable plots below
-   `ctx.results`; do not depend on an interactive window or `plt.show()`.
+6. Save every requested figure below `ctx.results` as a same-stem PNG, SVG,
+   and CSV of its plotted data. Use one plotting cell per figure; when separate
+   panels are requested, retain the composite and add each panel in its own cell.
+   See the plotting example in [references/PROTOCOL.md](references/PROTOCOL.md).
 7. Run offline and validate with `scripts/validate_notebook.py --write` so
    stale cell outputs, execution counts, and widget state are removed.
 
@@ -76,6 +78,11 @@ python scripts/validate_notebook.py notebook.ipynb --write
 Run the notebook against the same local fixture as its source or reference
 implementation. Compare bounded CSV tables numerically and expected PNG/SVG/CSV
 output names. State what was not comparable.
+
+Verify the live figure's attachments, not just files on disk: each PNG should
+have its own same-stem SVG and CSV from the same parameter set. Repeat an
+unchanged-parameter run to check replacement, and preserve different-parameter
+results. Do not delete ambiguous historical outputs to hide duplicate links.
 
 ## CSV identifiers and movies
 

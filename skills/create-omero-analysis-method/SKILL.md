@@ -24,4 +24,7 @@ from a filename or silently change an algorithm.
 Validate with `scripts/validate_method.py path.py`. This checks syntax and the
 parameter declaration without executing code. Run the Method separately against
 the fixture and report the observed output. Save plots as PNG/SVG with the plotted
-data when requested. Movie outputs use the movie skill's authenticated host recipe.
+data when requested. Give each figure's PNG, SVG and plotted-data CSV the same
+filename stem so Analysis links the correct companions; a differently named
+summary table does not attach to that plot. Movie outputs use the movie skill's
+authenticated host recipe.

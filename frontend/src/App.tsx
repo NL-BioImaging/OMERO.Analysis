@@ -1,4 +1,5 @@
 import { typedNotebookQueryParameters, importedNotebookProtocol } from "./notebookPreparation";
+import { completeNotebookResults, notebookParameterKey, notebookResultPath } from "./notebookResults";
 import { scheduleWorkspaceCheck } from "./workspaceSyncController";
 import { AssistantSkillLoader } from "./assistantSkillLoader";
 import { createSavedMethodExecutor, type ExecutionContext, type ExecutionOrigin } from "./artifactExecutionController";
@@ -3328,13 +3329,20 @@ export default function App() {
   async function updateNotebook(record: NotebookRecord) {
     const current = workspaceRef.current;
     if (!current) return;
+    const completed = record.protocolRuns?.at(-1);
+    const previous = current.notebooks.find(item => item.id === record.id)?.protocolRuns?.at(-1);
+    const files = completed?.status === "success" && completed.completedAt !== previous?.completedAt
+      ? await completeNotebookResults(current.files, record, current.workspace.rootPath)
+      : current.files;
     const updated = {
       ...current,
+      files,
       notebooks: current.notebooks.map((item) => item.id === record.id ? record : item)
     };
     workspaceRef.current = updated;
     setWorkspace(updated);
     await saveNotebook(record);
+    await Promise.all(files.filter((file, index) => file !== current.files[index]).map(saveFile));
   }
 
   async function saveNotebookFiles(
@@ -3344,14 +3352,20 @@ export default function App() {
     const current = workspaceRef.current;
     if (!current || !generated.length) return;
     const additions: WorkspaceFile[] = [];
+    const run = record.protocolRuns?.at(-1);
+    const parameterKey = run ? await notebookParameterKey(record.id, run) : undefined;
     for (const output of generated) {
       const data = output.data.slice(0);
       additions.push({
         id: id(),
         workspaceId: current.workspace.id,
         notebookId: record.id,
+        notebookParameterKey: parameterKey,
+        notebookRunStartedAt: run?.startedAt,
         name: output.name,
-        logicalPath: `${current.workspace.rootPath}/Notebooks/Results/${record.name}/${output.name}`,
+        logicalPath: parameterKey
+          ? notebookResultPath(current.workspace.rootPath, record.name, parameterKey, output.name)
+          : `${current.workspace.rootPath}/Notebooks/Results/${record.name}/${output.name}`,
         type: output.type,
         size: data.byteLength,
         sha256: await sha256(data),

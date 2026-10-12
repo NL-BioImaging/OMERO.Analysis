@@ -216,6 +216,22 @@ describe("Workspace synchronization inventory", () => {
     expect(syncHasChanges("same", "same")).toBe(false);
   });
 
+  it('keeps identical PNGs from different notebook parameter sets separate and excludes retired companions', async () => {
+    const value = workspace();
+    const png = { ...value.files[2], chatId: undefined, notebookId: 'nb', notebookParameterKey: 'settings-a', sha256: 'same-png' };
+    const svg = { ...png, id: 'svg-a', name: 'plot.svg', type: 'image/svg+xml', logicalPath: '/output/plot.svg', sha256: 'svg-a' };
+    value.files = [png, svg, { ...png, id: 'png-b', notebookParameterKey: 'settings-b' },
+      { ...svg, id: 'svg-b', notebookParameterKey: 'settings-b', sha256: 'svg-b' },
+      { ...svg, id: 'svg-old', sha256: 'svg-old', deletedAt: '2026-10-12T12:00:00Z' }];
+    const payload = await buildWorkspaceSyncPayload(value, context, { inventoryOnly: true });
+    const images = payload.inventory.items.filter(item => item.kind === 'png-image');
+    expect(images).toHaveLength(2);
+    const companion = (hash: string) => payload.inventory.items.find(item => item.sha256 === hash)!;
+    expect(companion('svg-a').metadata.plotImageKeys).toEqual([images.find(item => item.key.endsWith(':settings-a'))!.key]);
+    expect(companion('svg-b').metadata.plotImageKeys).toEqual([images.find(item => item.key.endsWith(':settings-b'))!.key]);
+    expect(companion('svg-old').metadata.plotImageKeys).toBeUndefined();
+  });
+
   it("always excludes Assistant conversations, attachments, and Assistant-owned results", async () => {
     const value = workspace();
     value.files.push({
