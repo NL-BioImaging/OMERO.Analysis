@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ArtifactEditor, { type ArtifactEditorSession } from "./ArtifactEditor";
 import type { MethodRecord, NotebookRecord, PipelineRecord } from "./types";
 
@@ -148,5 +148,39 @@ describe("ArtifactEditor", () => {
       dirty: true,
       draft: expect.objectContaining({ steps: [expect.objectContaining({ methodId: "method" })] })
     }));
+  });
+
+  it('reads and applies all notebook cells through one source field without saving or running', async () => {
+    const prototype = HTMLDialogElement.prototype;
+    const originals = ['showModal', 'close'].map(name => Object.getOwnPropertyDescriptor(prototype, name));
+    Object.defineProperty(prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.setAttribute('open', ''); } });
+    Object.defineProperty(prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.removeAttribute('open'); } });
+    try {
+    const notebook: NotebookRecord = { id: 'nb', workspaceId: 'w', name: 'test.ipynb',
+      attachmentIds: [], selectedDataFileIds: [], createdAt, updatedAt: createdAt,
+      document: { nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [
+        { id: 'one', cell_type: 'code', source: 'x = 1', metadata: {} },
+        { id: 'two', cell_type: 'markdown', source: 'Notes', metadata: {} }] } };
+    const options = props({ kind: 'notebook', id: notebook.id, name: notebook.name, originTab: 'notebooks',
+      original: notebook, draft: notebook, bindingCount: 0, dirty: true });
+    render(<ArtifactEditor {...options} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Whole notebook' }));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Whole notebook source' })).toBeVisible());
+    const textbox = screen.getByRole('textbox', { name: 'Whole notebook JSON' }) as HTMLTextAreaElement;
+    const source = JSON.parse(textbox.value);
+    expect(source.document.cells).toHaveLength(2);
+    source.document.cells[0].source = 'x = 2';
+    fireEvent.change(textbox, { target: { value: JSON.stringify(source) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply source to draft' }));
+    await waitFor(() => expect(options.onChange).toHaveBeenCalled());
+    expect(options.onChange.mock.calls[0][0].draft.document.cells[0].source).toBe('x = 2');
+    expect(options.onSave).not.toHaveBeenCalled();
+    expect(options.onSaveRun).not.toHaveBeenCalled();
+    } finally {
+      ['showModal', 'close'].forEach((name, index) => {
+        if (originals[index]) Object.defineProperty(prototype, name, originals[index]!);
+        else Reflect.deleteProperty(prototype, name);
+      });
+    }
   });
 });

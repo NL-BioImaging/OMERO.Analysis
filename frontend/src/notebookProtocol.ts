@@ -11,6 +11,7 @@ export type NotebookQueryFormat = "duckdb" | "sqlite" | "sqlite3" | "csv";
 export type NotebookParameterType = "boolean" | "integer" | "number" | "string" | "choice";
 
 export interface NotebookQueryInput {
+  filename_globs?: string[];
   id: string;
   kind: "query";
   path: string;
@@ -20,6 +21,7 @@ export interface NotebookQueryInput {
 }
 
 export interface NotebookFileInput {
+  filename_globs?: string[];
   id: string;
   kind: "file";
   path: string;
@@ -140,6 +142,12 @@ export function validateNotebookContract(value: unknown, allowUnsupportedPackage
     const path = portablePath(candidate.path, "input", `Input ${candidate.id} path`);
     const required = candidate.required ?? true;
     if (typeof required !== "boolean") throw new Error(`Input ${candidate.id} required must be boolean`);
+    if (candidate.filename_globs !== undefined && (!Array.isArray(candidate.filename_globs) ||
+        !candidate.filename_globs.length || candidate.filename_globs.length > 20 ||
+        candidate.filename_globs.some((pattern: unknown) => typeof pattern !== "string" ||
+          !pattern.trim() || pattern.length > 180 || /[\\/\x00-\x1f\[\]]/.test(pattern)))) {
+      throw new Error(`Input ${candidate.id} filename_globs must contain 1..20 basename patterns using * or ?`);
+    }
     if (candidate.kind === "query") {
       const allowed = new Set<NotebookQueryFormat>(["duckdb", "sqlite", "sqlite3", "csv"]);
       if (!Array.isArray(candidate.formats) || !candidate.formats.length || candidate.formats.some((format: unknown) => !allowed.has(format as NotebookQueryFormat))) {
@@ -276,9 +284,29 @@ export function extensionOf(name: string): string {
   return name.toLowerCase().match(/(\.[^.\\/]+)$/)?.[1] || "";
 }
 
-export function inputCandidates(input: NotebookProtocolInput, files: WorkspaceFile[]): WorkspaceFile[] {
+export function inputCandidates(input: NotebookProtocolInput, files: WorkspaceFile[], preferredFileId?: string): WorkspaceFile[] {
+  return files.filter((file) => file.source !== "result" && !file.deletedAt && file.state === "ready" &&
+    inputFileNameMatches(file.id === preferredFileId ? { ...input, filename_globs: undefined } : input, file.name));
+}
+
+export function inputFileNameMatches(input: NotebookProtocolInput, name: string): boolean {
   const extensions = input.kind === "query"
     ? input.formats.flatMap((format) => format === "sqlite" ? [".sqlite"] : format === "sqlite3" ? [".sqlite3"] : [`.${format}`])
     : input.extensions;
-  return files.filter((file) => file.source !== "result" && !file.deletedAt && file.state === "ready" && extensions.includes(extensionOf(file.name)));
+  if (!extensions.includes(extensionOf(name))) return false;
+  if (!input.filename_globs) return true;
+  if (name.toLowerCase() === input.path.split(/[\\/]/).at(-1)?.toLowerCase()) return true;
+  return input.filename_globs.some(pattern => {
+    // Match wildcards directly: repeated stars must not create regex backtracking.
+    const value = name.toLowerCase(), glob = pattern.toLowerCase();
+    let i = 0, j = 0, star = -1, matched = 0;
+    while (i < value.length) {
+      if (glob[j] === "?" || glob[j] === value[i]) { i++; j++; }
+      else if (glob[j] === "*") { star = j++; matched = i; }
+      else if (star >= 0) { j = star + 1; i = ++matched; }
+      else return false;
+    }
+    while (glob[j] === "*") j++;
+    return j === glob.length;
+  });
 }

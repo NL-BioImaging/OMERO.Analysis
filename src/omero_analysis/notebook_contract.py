@@ -48,6 +48,11 @@ def prepare_notebook(document):
             item.setdefault("required", True)
             if not isinstance(item["required"], bool):
                 raise ValueError("Input required must be boolean")
+            patterns = item.get("filename_globs")
+            if "filename_globs" in item and (not isinstance(patterns, list) or not 1 <= len(patterns) <= 20
+                    or any(not isinstance(p, str) or not p.strip() or len(p) > 180
+                           or re.search(r"[\\/\x00-\x1f\[\]]", p) for p in patterns)):
+                raise ValueError("filename_globs must contain 1..20 basename patterns using * or ?")
             if item["kind"] == "query":
                 formats = item["formats"]
                 if not isinstance(formats, list) or not formats or any(

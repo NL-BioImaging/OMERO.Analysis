@@ -94,5 +94,108 @@
       "parameters": [],
       "packages": []
     }
+  },
+  {
+    "name": "template-filename-globs",
+    "valid": true,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "file",
+          "path": "input/template.xlsx",
+          "extensions": [
+            ".xlsx",
+            ".csv"
+          ],
+          "filename_globs": [
+            "*template*.xlsx",
+            "*template*.csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "glob-directory",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "file",
+          "path": "input/template.xlsx",
+          "extensions": [
+            ".xlsx",
+            ".csv"
+          ],
+          "filename_globs": [
+            "../*.csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "empty-globs",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "file",
+          "path": "input/template.xlsx",
+          "extensions": [
+            ".xlsx",
+            ".csv"
+          ],
+          "filename_globs": []
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "glob-character-class",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "file",
+          "path": "input/template.xlsx",
+          "extensions": [
+            ".xlsx",
+            ".csv"
+          ],
+          "filename_globs": [
+            "[ab]*.csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
   }
 ]

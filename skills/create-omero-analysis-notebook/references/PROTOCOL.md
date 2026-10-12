@@ -51,6 +51,11 @@ Input IDs are stable logical names; physical files are rebound per Workspace.
 Query inputs accept DuckDB, SQLite, SQLite3, and single-table CSV (`data`). File
 inputs declare explicit extensions.
 
+Inputs may declare `filename_globs` for case-insensitive basename discovery in
+the host (`*` and `?`, 1–20 patterns). The exact declared basename and valid
+saved binding remain accepted. See [AUTHORING.md](AUTHORING.md) for selection
+and ambiguity behavior; the offline SDK continues to use the declared path.
+
 Parameter types are `boolean`, `integer`, `number`, `string`, and `choice`.
 Numeric parameters may declare `minimum`, `maximum`, and positive `step`.
 Choices may be static or loaded through a bounded `choices_query` with

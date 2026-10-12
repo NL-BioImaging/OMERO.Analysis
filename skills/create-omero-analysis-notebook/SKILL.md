@@ -4,7 +4,7 @@ description: Create, convert, validate, repair, or explain offline-first OMERO.A
 license: AGPL-3.0-or-later
 metadata:
   author: NL-BioImaging
-  version: "0.13.1"
+  version: "0.13.2"
 ---
 
 # Create OMERO.Analysis Notebooks
@@ -13,6 +13,13 @@ Build portable notebooks around the literal
 `nl.bioimaging.omero-analysis-notebook.v1` contract. Preserve scientific
 meaning while replacing machine-specific paths, direct database connections,
 and widgets with the protocol SDK.
+
+## Read or edit an open notebook
+
+Use **Edit Notebook → Whole notebook** to read all cells and current unsaved
+draft changes in one JSON field; do not collect cells individually when this
+interface is available. Follow [references/AUTHORING.md](references/AUTHORING.md)
+for the revision-checked source transport and template-file discovery rules.
 
 ## Create a notebook
 

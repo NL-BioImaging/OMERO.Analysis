@@ -1,5 +1,5 @@
-import { _ as i, a as o, b as c, c as u } from "./main-8c5EogWM.js";
-var h = function(n, s) {
+import { _ as i, b as o, d as c, f as u } from "./main-DqOkBN52.js";
+var d = function(n, s) {
   return i(void 0, void 0, void 0, function() {
     var a, r;
     return o(this, function(e) {
@@ -25,5 +25,5 @@ var h = function(n, s) {
   });
 };
 export {
-  h as splitPathsBySizeLoader
+  d as splitPathsBySizeLoader
 };

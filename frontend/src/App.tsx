@@ -54,6 +54,7 @@ import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
 import {
   extensionOf,
   inputCandidates,
+  inputFileNameMatches,
   parameterDefaults,
   parseNotebookProtocol,
   sanitizeProtocolNotebook,
@@ -1480,7 +1481,7 @@ export default function App() {
       );
       for (const notebook of prepared.notebooks) {
         const contract = parseNotebookProtocol(notebook.document);
-        if (contract) prepared = await discoverExactNotebookInputs(contract, prepared);
+        if (contract) prepared = await discoverExactNotebookInputs(contract, prepared, notebook, false);
       }
       if (!alive) return;
       setWorkspace(prepared);
@@ -2959,8 +2960,8 @@ export default function App() {
     record: NotebookRecord,
     current: AnalysisWorkspace
   ): Promise<NotebookProtocolBinding | null> {
-    const candidates = inputCandidates(input, current.files);
     const previous = record.protocolBindings?.find((binding) => binding.inputId === input.id);
+    const candidates = inputCandidates(input, current.files, previous?.fileId);
     let source = previous
       ? candidates.find((file) => file.id === previous.fileId)
       : undefined;
@@ -3028,9 +3029,12 @@ export default function App() {
 
   async function discoverExactNotebookInputs(
     contract: NotebookProtocolContract,
-    current: AnalysisWorkspace
+    current: AnalysisWorkspace,
+    record: NotebookRecord,
+    interactive = true
   ): Promise<AnalysisWorkspace> {
-    const missing = contract.inputs.filter((input) => inputCandidates(input, current.files).length === 0);
+    const missing = contract.inputs.filter((input) => inputCandidates(input, current.files,
+      record.protocolBindings?.find(binding => binding.inputId === input.id)?.fileId).length === 0);
     const localQueryInputs = contract.inputs.filter((input) => input.kind === "query").flatMap((input) =>
       inputCandidates(input, current.files).filter((file) =>
         file.source === "omero" && file.dataQueryMode !== "remote" &&
@@ -3067,10 +3071,18 @@ export default function App() {
     for (const input of missing) {
       const expectedName = input.path.split(/[\\/]/).pop()?.toLowerCase();
       if (!expectedName) continue;
-      const attachment = attachments.find((candidate) =>
-        candidate.supported && candidate.name.toLowerCase() === expectedName &&
+      const matches = attachments.filter((candidate) =>
+        candidate.supported && inputFileNameMatches(input, candidate.name) &&
+        (Boolean(input.filename_globs) || candidate.name.toLowerCase() === expectedName) &&
         !next.files.some((file) => file.annotationId === candidate.annotation_id)
       );
+      let attachment = matches.length === 1 ? matches[0] : undefined;
+      if (matches.length > 1 && interactive) {
+        const selected = await dialogs.choose(`Choose notebook input “${input.id}”`, matches.map(item => ({
+          value: String(item.annotation_id), label: item.name, description: "Attached to the current source"
+        })), "Several attachments match. Choose the file for this analysis.");
+        attachment = matches.find(item => String(item.annotation_id) === selected);
+      }
       if (!attachment) continue;
 
       const remote = input.kind === "query" && attachment.default_mode === "remote" &&
@@ -3166,10 +3178,13 @@ export default function App() {
       runtime.setNotebookQueryHandler(null);
       return record;
     }
-    current = await discoverExactNotebookInputs(contract, current);
-    const bindings = (await Promise.all(
-      contract.inputs.map((input) => resolveNotebookProtocolBinding(input, record, current))
-    )).filter((binding): binding is NotebookProtocolBinding => binding != null);
+    current = await discoverExactNotebookInputs(contract, current, record);
+    // Input choices share one dialog host; resolve them sequentially.
+    const bindings: NotebookProtocolBinding[] = [];
+    for (const input of contract.inputs) {
+      const binding = await resolveNotebookProtocolBinding(input, record, current);
+      if (binding) bindings.push(binding);
+    }
     const parameters = {
       ...parameterDefaults(contract),
       ...(record.parameterValues || {})

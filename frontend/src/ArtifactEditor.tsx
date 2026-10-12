@@ -1,4 +1,5 @@
 import { methodContract } from "./methodExecution";
+import { exportNotebookSource, applyNotebookSource } from "./notebookSource";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView, minimalSetup } from "codemirror";
 import { EditorState, type Extension } from "@codemirror/state";
@@ -550,6 +551,33 @@ function NotebookEditor({
   onChange: (session: NotebookEditorSession) => void;
 }) {
   const cells = session.draft.document.cells;
+  const [wholeSource, setWholeSource] = useState("");
+  const [sourceError, setSourceError] = useState("");
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const sourceDialog = useRef<HTMLDialogElement>(null);
+  const currentSession = useRef(session);
+  currentSession.current = session;
+  const openWholeNotebook = async () => {
+    setSourceBusy(true);
+    try {
+      setWholeSource(await exportNotebookSource(currentSession.current.draft));
+      setSourceError("");
+      sourceDialog.current?.showModal();
+    } finally { setSourceBusy(false); }
+  };
+  const applyWholeNotebook = async () => {
+    setSourceBusy(true);
+    try {
+      const captured = currentSession.current;
+      const document = await applyNotebookSource(captured.draft, wholeSource);
+      if (currentSession.current !== captured) throw new Error("The draft changed while applying source. Reopen Whole notebook.");
+      onChange({ ...captured, dirty: true, error: undefined,
+        draft: { ...captured.draft, document, updatedAt: new Date().toISOString() } });
+      setActiveIndex(0);
+      sourceDialog.current?.close();
+    } catch (error) { setSourceError(String(error instanceof Error ? error.message : error)); }
+    finally { setSourceBusy(false); }
+  };
   const active = cells[activeIndex] || null;
   const managed = active ? isInputBindingsCell(active) : false;
   const updateCells = (nextCells: NotebookCell[]) => onChange({
@@ -580,7 +608,9 @@ function NotebookEditor({
   return (
     <>
       <aside className="editor-outline notebook-outline">
-        <div className="editor-outline-actions"><strong>Notebook cells</strong></div>
+        <div className="editor-outline-actions"><strong>Notebook cells</strong>
+          <Button disabled={sourceBusy} onClick={() => void openWholeNotebook()}>Whole notebook</Button>
+        </div>
         <div className="notebook-add-cell">
           <Button onClick={() => addCell("code")}><span className="cell-type-icon code" />Add Code</Button>
           <Button onClick={() => addCell("markdown")}><span className="cell-type-icon markdown" />Add Markdown</Button>
@@ -604,6 +634,16 @@ function NotebookEditor({
           ))}
         </ol>
       </aside>
+      <dialog ref={sourceDialog} aria-label="Whole notebook source" style={{ width: "min(1100px, 92vw)", maxHeight: "90vh" }}>
+        <h2>Whole notebook source</h2>
+        <p>All cells, including unsaved draft edits, in one JSON document. Outputs are omitted.
+          Keep schema, notebook_id and base_revision unchanged. Apply updates the draft; Save and Run remain separate.</p>
+        <textarea aria-label="Whole notebook JSON" value={wholeSource} onChange={event => setWholeSource(event.target.value)}
+          spellCheck={false} style={{ width: "100%", height: "60vh", fontFamily: "monospace" }} />
+        {sourceError && <p role="alert">{sourceError}</p>}
+        <Button disabled={sourceBusy} onClick={() => void applyWholeNotebook()}>Apply source to draft</Button>
+        <Button disabled={sourceBusy} onClick={() => sourceDialog.current?.close()}>Cancel</Button>
+      </dialog>
       <div className="editor-detail notebook-cell-editor">
         {!active ? <p>Add a cell to this Notebook.</p> : (
           <>

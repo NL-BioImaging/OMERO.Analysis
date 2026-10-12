@@ -157,6 +157,11 @@ def validate_contract(value: dict[str, Any]) -> dict[str, Any]:
         if kind not in {"query", "file"}:
             raise ProtocolError(f"Input {identifier} kind must be query or file")
         item = dict(raw)
+        patterns = raw.get("filename_globs")
+        if "filename_globs" in raw and (not isinstance(patterns, list) or not 1 <= len(patterns) <= 20
+                or any(not isinstance(p, str) or not p.strip() or len(p) > 180
+                       or re.search(r"[\\/\x00-\x1f\[\]]", p) for p in patterns)):
+            raise ProtocolError("filename_globs must contain 1..20 basename patterns using * or ?")
         item["path"] = _portable_path(raw.get("path"), f"Input {identifier} path", "input")
         item["required"] = raw.get("required", True)
         if not isinstance(item["required"], bool):
