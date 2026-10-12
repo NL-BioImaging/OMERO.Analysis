@@ -469,6 +469,8 @@ def sync_status(conn, obj, workspace_id):
         "lastSyncedAt": (manifest or {}).get("updated_at"),
         "storage": storage_status,
         "syncState": "complete",
+        "attachmentRepairNeeded": bool(dataset is not None and _dataset_attachment_repair_needed(
+            dataset, (manifest or {}).get("items") or [])),
         "browseState": (
             "unavailable" if policy.operation_mode == "omero"
             else lifecycle.get("browseState", "ready")
@@ -983,6 +985,9 @@ def _remote_object(conn, remote):
 
 
 def _linked_annotation_ids(parent):
+    unload = getattr(parent, "unloadAnnotationLinks", None)
+    if callable(unload):
+        unload()
     return {
         int(annotation.getId())
         for annotation in _annotations(parent)
@@ -991,13 +996,47 @@ def _linked_annotation_ids(parent):
 
 
 def _link_annotation(parent, annotation):
-    if int(annotation.getId()) not in _linked_annotation_ids(parent):
+    if not _annotation_parent_links(parent, annotation):
         parent.linkAnnotation(annotation)
 
 
-def _unlink_annotation(parent, annotation):
-    if int(annotation.getId()) in _linked_annotation_ids(parent):
-        parent.unlinkAnnotation(annotation)
+def _annotation_parent_links(parent, annotation):
+    parent_type = parent.OMERO_CLASS
+    if parent_type not in {"Dataset", "Image"}:
+        raise InvalidObject("Unsupported result attachment parent")
+    # Query persisted links rather than a wrapper's annotation cache.
+    return list(annotation.getParentLinks(parent_type, pids=[int(parent.getId())]))
+
+
+def _unlink_annotation(conn, parent, annotation):
+    links = _annotation_parent_links(parent, annotation)
+    if links:
+        conn.deleteObjects(f"{parent.OMERO_CLASS}AnnotationLink",
+                           [int(link.getId()) for link in links], wait=True)
+        unload = getattr(parent, "unloadAnnotationLinks", None)
+        if callable(unload):
+            unload()
+
+
+def _result_is_retired(item):
+    sources = (item.get("metadata") or {}).get("sources")
+    return (item.get("kind") == "result" and isinstance(sources, list) and bool(sources)
+            and all(isinstance(source, dict) and source.get("deletedAt") for source in sources))
+
+
+def _dataset_attachment_repair_needed(dataset, items):
+    redundant = set()
+    for item in items:
+        if item.get("kind") == "result" and (
+                (item.get("metadata") or {}).get("plotImageKeys") or _result_is_retired(item)):
+            remote = item.get("remote") or {}
+        elif item.get("kind") == "png-image":
+            remote = item.get("payload") or {}
+        else:
+            continue
+        if remote.get("object_type") == "Annotation" and remote.get("object_id"):
+            redundant.add(int(remote["object_id"]))
+    return bool(redundant and redundant.intersection(_linked_annotation_ids(dataset)))
 
 
 def _reconcile_result_attachments(
@@ -1005,6 +1044,14 @@ def _reconcile_result_attachments(
 ):
     """Attach plot CSV/SVG companions to their PNG Images; keep other results on the Dataset."""
     for item in inventory_items:
+        if item.get("kind") == "png-image":
+            payload = (old_items.get(item["key"]) or item).get("payload") or {}
+            if payload.get("object_type") == "Annotation":
+                annotation = _remote_object(conn, payload)
+                if annotation is not None:
+                    _link_annotation(remote_objects[item["key"]], annotation)
+                    _unlink_annotation(conn, dataset, annotation)
+            continue
         if item.get("kind") != "result":
             continue
         annotation = remote_objects[item["key"]]
@@ -1016,12 +1063,14 @@ def _reconcile_result_attachments(
             old_image_item = old_items.get(image_key) or {}
             old_image = _remote_object(conn, old_image_item.get("remote") or {})
             if old_image is not None:
-                _unlink_annotation(old_image, annotation)
+                _unlink_annotation(conn, old_image, annotation)
 
         if desired_keys:
-            _unlink_annotation(dataset, annotation)
             for image_key in desired_keys:
                 _link_annotation(remote_objects[image_key], annotation)
+            _unlink_annotation(conn, dataset, annotation)
+        elif _result_is_retired(item):
+            _unlink_annotation(conn, dataset, annotation)
         else:
             _link_annotation(dataset, annotation)
 
@@ -1271,6 +1320,9 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             lifecycle_storage.write_json(lifecycle_path, lifecycle_state)
 
     if _inventory_matches_manifest(inventory, old_manifest):
+        _reconcile_result_attachments(conn, dataset, inventory["items"], {
+            key: _remote_object(conn, item.get("remote") or {}) for key, item in old_items.items()
+        }, old_items)
         return sync_status(conn, obj, inventory["workspace"]["id"])
 
     # When all runtime capabilities are present, every changed byte first gets

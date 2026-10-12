@@ -1105,7 +1105,7 @@ export default function App() {
           await discardWorkspaceDeletedInOmero(analysisWorkspace.workspace); return;
         }
         if (remote.canSync && (payload.inventory.items.length > 0 || remote.linked) &&
-          (!remote.linked || syncHasChanges(payload.contentDigest || payload.inventory.digest, remote.inventoryDigest)))
+          (!remote.linked || remote.attachmentRepairNeeded || syncHasChanges(payload.contentDigest || payload.inventory.digest, remote.inventoryDigest)))
           await synchronizeWorkspace(payload);
       },
       onBusy: () => { setSyncPhase("waiting"); setStatus("Waiting for another workspace synchronization to finish?"); },
@@ -8059,7 +8059,7 @@ while the listed source and skill hashes are unchanged; reuse matching evidence 
   );
   const syncChanged = Boolean(
     remoteSync?.linked &&
-    syncHasChanges(localSyncDigest, remoteSync.inventoryDigest)
+    (remoteSync.attachmentRepairNeeded || syncHasChanges(localSyncDigest, remoteSync.inventoryDigest))
   );
   const syncButtonLabel = workspace.purgedAt ? "Remote workspace removed — local copy retained"
     : workspace.deletedAt ? "In Trash — synchronization suspended"

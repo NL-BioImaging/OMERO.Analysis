@@ -45,7 +45,13 @@ def result_payload(conn, obj, workspace_id, key):
                     linked = True
                     break
     if not linked:
-        raise AttachmentNotFound("Result was unlinked from this workspace")
+        # Retired results leave the visible Dataset, but remain recoverable by
+        # their owner through this manifest, current group and checked bytes.
+        retired_owned = (kind == "Annotation" and ws._result_is_retired(item)
+                         and ws._owner_id(asset) is not None
+                         and ws._owner_id(asset) == ws._user_id(conn))
+        if not retired_owned:
+            raise AttachmentNotFound("Result was unlinked from this workspace")
     blob = (item.get("storage") or {}).get("blob") or {}
     if storage and not getattr(storage, "is_omero_state", False) and blob.get("relativePath"):
         path = storage._ensure_inside(storage.analysis_root / Path(blob["relativePath"]))

@@ -40,6 +40,20 @@ def test_exact_recovery_bytes(payload):
     assert item["sha256"] == hashlib.sha256(payload.content).hexdigest()
 
 
+@pytest.mark.parametrize('owner,active_source,allowed', [(7,False,True),(8,False,False),(7,True,False)])
+def test_unlinked_retired_result_recovery_remains_owner_scoped(payload, owner, active_source, allowed):
+    payload.conn.getUserId = lambda: 7
+    payload.asset.getParentLinks = lambda kind: []
+    payload.asset.getDetails = lambda: NS(getOwner=lambda: NS(getId=lambda: owner))
+    payload.item['metadata']={'sources':[{'deletedAt':'now'}] + ([{'deletedAt':None}] if active_source else [])}
+    if allowed:
+        _,handle,_ = results.result_payload(payload.conn,payload.source,'one','result')
+        with handle: assert handle.read()==payload.content
+    else:
+        with pytest.raises(AttachmentNotFound):
+            results.result_payload(payload.conn,payload.source,'one','result')
+
+
 @pytest.mark.parametrize("failure", ["source", "group", "unlink", "purged", "checksum", "size", "original-file", "storage-scope"])
 def test_recovery_rechecks_access_and_integrity(payload, failure):
     error = AttachmentNotFound

@@ -1303,7 +1303,7 @@ function Wg() {
   function eo(t) {
     return t = t.pendingLanes & -1073741825, t !== 0 ? t : t & 1073741824 ? 1073741824 : 0;
   }
-  function Be() {
+  function Ye() {
     var t = Ya;
     return Ya <<= 1, (Ya & 4194240) === 0 && (Ya = 64), t;
   }
@@ -2136,19 +2136,19 @@ function Wg() {
         if (Ai) e: {
           switch (t) {
             case "compositionstart":
-              var Ye = "onCompositionStart";
+              var Be = "onCompositionStart";
               break e;
             case "compositionend":
-              Ye = "onCompositionEnd";
+              Be = "onCompositionEnd";
               break e;
             case "compositionupdate":
-              Ye = "onCompositionUpdate";
+              Be = "onCompositionUpdate";
               break e;
           }
-          Ye = void 0;
+          Be = void 0;
         }
-        else Ta ? Id(t, o) && (Ye = "onCompositionEnd") : t === "keydown" && o.keyCode === 229 && (Ye = "onCompositionStart");
-        Ye && (qo && o.locale !== "ko" && (Ta || Ye !== "onCompositionStart" ? Ye === "onCompositionEnd" && Ta && (Ze = zo()) : (Gr = ve, Io = "value" in Gr ? Gr.value : Gr.textContent, Ta = !0)), Qe = lo(ne, Ye), 0 < Qe.length && (Ye = new Pa(Ye, t, null, o, ve), Se.push({ event: Ye, listeners: Qe }), Ze ? Ye.data = Ze : (Ze = Tp(o), Ze !== null && (Ye.data = Ze)))), (Ze = Od ? $s(t, o) : lr(t, o)) && (ne = lo(ne, "onBeforeInput"), 0 < ne.length && (ve = new Pa("onBeforeInput", "beforeinput", null, o, ve), Se.push({ event: ve, listeners: ne }), ve.data = Ze));
+        else Ta ? Id(t, o) && (Be = "onCompositionEnd") : t === "keydown" && o.keyCode === 229 && (Be = "onCompositionStart");
+        Be && (qo && o.locale !== "ko" && (Ta || Be !== "onCompositionStart" ? Be === "onCompositionEnd" && Ta && (Ze = zo()) : (Gr = ve, Io = "value" in Gr ? Gr.value : Gr.textContent, Ta = !0)), Qe = lo(ne, Be), 0 < Qe.length && (Be = new Pa(Be, t, null, o, ve), Se.push({ event: Be, listeners: Qe }), Ze ? Be.data = Ze : (Ze = Tp(o), Ze !== null && (Be.data = Ze)))), (Ze = Od ? $s(t, o) : lr(t, o)) && (ne = lo(ne, "onBeforeInput"), 0 < ne.length && (ve = new Pa("onBeforeInput", "beforeinput", null, o, ve), Se.push({ event: ve, listeners: ne }), ve.data = Ze));
       }
       Gd(Se, n);
     });
@@ -2564,50 +2564,50 @@ function Wg() {
       return null;
     }
     function Ve(Y, W, B, Ne) {
-      for (var We = null, Qe = null, Ze = W, Ye = W = 0, dn = null; Ze !== null && Ye < B.length; Ye++) {
-        Ze.index > Ye ? (dn = Ze, Ze = null) : dn = Ze.sibling;
-        var mt = ge(Y, Ze, B[Ye], Ne);
+      for (var We = null, Qe = null, Ze = W, Be = W = 0, dn = null; Ze !== null && Be < B.length; Be++) {
+        Ze.index > Be ? (dn = Ze, Ze = null) : dn = Ze.sibling;
+        var mt = ge(Y, Ze, B[Be], Ne);
         if (mt === null) {
           Ze === null && (Ze = dn);
           break;
         }
-        t && Ze && mt.alternate === null && n(Y, Ze), W = k(mt, W, Ye), Qe === null ? We = mt : Qe.sibling = mt, Qe = mt, Ze = dn;
+        t && Ze && mt.alternate === null && n(Y, Ze), W = k(mt, W, Be), Qe === null ? We = mt : Qe.sibling = mt, Qe = mt, Ze = dn;
       }
-      if (Ye === B.length) return o(Y, Ze), Et && fo(Y, Ye), We;
+      if (Be === B.length) return o(Y, Ze), Et && fo(Y, Be), We;
       if (Ze === null) {
-        for (; Ye < B.length; Ye++) Ze = Se(Y, B[Ye], Ne), Ze !== null && (W = k(Ze, W, Ye), Qe === null ? We = Ze : Qe.sibling = Ze, Qe = Ze);
-        return Et && fo(Y, Ye), We;
+        for (; Be < B.length; Be++) Ze = Se(Y, B[Be], Ne), Ze !== null && (W = k(Ze, W, Be), Qe === null ? We = Ze : Qe.sibling = Ze, Qe = Ze);
+        return Et && fo(Y, Be), We;
       }
-      for (Ze = d(Y, Ze); Ye < B.length; Ye++) dn = Ie(Ze, Y, Ye, B[Ye], Ne), dn !== null && (t && dn.alternate !== null && Ze.delete(dn.key === null ? Ye : dn.key), W = k(dn, W, Ye), Qe === null ? We = dn : Qe.sibling = dn, Qe = dn);
+      for (Ze = d(Y, Ze); Be < B.length; Be++) dn = Ie(Ze, Y, Be, B[Be], Ne), dn !== null && (t && dn.alternate !== null && Ze.delete(dn.key === null ? Be : dn.key), W = k(dn, W, Be), Qe === null ? We = dn : Qe.sibling = dn, Qe = dn);
       return t && Ze.forEach(function(ls) {
         return n(Y, ls);
-      }), Et && fo(Y, Ye), We;
+      }), Et && fo(Y, Be), We;
     }
     function Ue(Y, W, B, Ne) {
       var We = ae(B);
       if (typeof We != "function") throw Error(a(150));
       if (B = We.call(B), B == null) throw Error(a(151));
-      for (var Qe = We = null, Ze = W, Ye = W = 0, dn = null, mt = B.next(); Ze !== null && !mt.done; Ye++, mt = B.next()) {
-        Ze.index > Ye ? (dn = Ze, Ze = null) : dn = Ze.sibling;
+      for (var Qe = We = null, Ze = W, Be = W = 0, dn = null, mt = B.next(); Ze !== null && !mt.done; Be++, mt = B.next()) {
+        Ze.index > Be ? (dn = Ze, Ze = null) : dn = Ze.sibling;
         var ls = ge(Y, Ze, mt.value, Ne);
         if (ls === null) {
           Ze === null && (Ze = dn);
           break;
         }
-        t && Ze && ls.alternate === null && n(Y, Ze), W = k(ls, W, Ye), Qe === null ? We = ls : Qe.sibling = ls, Qe = ls, Ze = dn;
+        t && Ze && ls.alternate === null && n(Y, Ze), W = k(ls, W, Be), Qe === null ? We = ls : Qe.sibling = ls, Qe = ls, Ze = dn;
       }
       if (mt.done) return o(
         Y,
         Ze
-      ), Et && fo(Y, Ye), We;
+      ), Et && fo(Y, Be), We;
       if (Ze === null) {
-        for (; !mt.done; Ye++, mt = B.next()) mt = Se(Y, mt.value, Ne), mt !== null && (W = k(mt, W, Ye), Qe === null ? We = mt : Qe.sibling = mt, Qe = mt);
-        return Et && fo(Y, Ye), We;
+        for (; !mt.done; Be++, mt = B.next()) mt = Se(Y, mt.value, Ne), mt !== null && (W = k(mt, W, Be), Qe === null ? We = mt : Qe.sibling = mt, Qe = mt);
+        return Et && fo(Y, Be), We;
       }
-      for (Ze = d(Y, Ze); !mt.done; Ye++, mt = B.next()) mt = Ie(Ze, Y, Ye, mt.value, Ne), mt !== null && (t && mt.alternate !== null && Ze.delete(mt.key === null ? Ye : mt.key), W = k(mt, W, Ye), Qe === null ? We = mt : Qe.sibling = mt, Qe = mt);
+      for (Ze = d(Y, Ze); !mt.done; Be++, mt = B.next()) mt = Ie(Ze, Y, Be, mt.value, Ne), mt !== null && (t && mt.alternate !== null && Ze.delete(mt.key === null ? Be : mt.key), W = k(mt, W, Be), Qe === null ? We = mt : Qe.sibling = mt, Qe = mt);
       return t && Ze.forEach(function(Tg) {
         return n(Y, Tg);
-      }), Et && fo(Y, Ye), We;
+      }), Et && fo(Y, Be), We;
     }
     function Ut(Y, W, B, Ne) {
       if (typeof B == "object" && B !== null && B.type === ce && B.key === null && (B = B.props.children), typeof B == "object" && B !== null) {
@@ -3063,7 +3063,7 @@ function Wg() {
     return d !== null && n !== null && Bi(n, d[1]) ? d[0] : (t = t(), o.memoizedState = [t, n], t);
   }
   function le(t, n, o) {
-    return (yo & 21) === 0 ? (t.baseState && (t.baseState = !1, fn = !0), t.memoizedState = o) : (dr(o, n) || (o = Be(), Nt.lanes |= o, Ys |= o, t.baseState = !0), n);
+    return (yo & 21) === 0 ? (t.baseState && (t.baseState = !1, fn = !0), t.memoizedState = o) : (dr(o, n) || (o = Ye(), Nt.lanes |= o, Ys |= o, t.baseState = !0), n);
   }
   function ke(t, n) {
     var o = ft;
@@ -4580,7 +4580,7 @@ Error generating stack: ` + k.message + `
     return (ut & 6) !== 0 ? xt() : vu !== -1 ? vu : vu = xt();
   }
   function os(t) {
-    return (t.mode & 1) === 0 ? 1 : (ut & 2) !== 0 && hn !== 0 ? hn & -hn : Dp.transition !== null ? (bu === 0 && (bu = Be()), bu) : (t = ft, t !== 0 || (t = window.event, t = t === void 0 ? 16 : Dl(t.type)), t);
+    return (t.mode & 1) === 0 ? 1 : (ut & 2) !== 0 && hn !== 0 ? hn & -hn : Dp.transition !== null ? (bu === 0 && (bu = Ye()), bu) : (t = ft, t !== 0 || (t = window.event, t = t === void 0 ? 16 : Dl(t.type)), t);
   }
   function ia(t, n, o, d) {
     if (50 < Zc) throw Zc = 0, Zp = null, Error(a(185));
@@ -7392,14 +7392,14 @@ function Iv(e) {
         case 1:
           return a !== "all" ? [3, 3] : [4, import(
             /* webpackChunkName: "blueprint-icons-all-paths-loader" */
-            "./allPathsLoader-C6pkdvRd.js"
+            "./allPathsLoader-Dih7Iha3.js"
           )];
         case 2:
           return [2, i.sent().allPathsLoader];
         case 3:
           return [4, import(
             /* webpackChunkName: "blueprint-icons-split-paths-by-size-loader" */
-            "./splitPathsBySizeLoader-CTTjjz9z.js"
+            "./splitPathsBySizeLoader-D8We5kKr.js"
           )];
         case 4:
           return [2, i.sent().splitPathsBySizeLoader];
@@ -15179,7 +15179,7 @@ function Cb(e) {
 }
 const Du = new TextEncoder();
 function Ab(e, r) {
-  return !!(e && r.linked && r.syncState !== "pending" && r.syncState !== "failed" && r.browseState !== "failed" && !r.cleanupPending && !lm(e, r.inventoryDigest));
+  return !!(e && r.linked && r.syncState !== "pending" && r.syncState !== "failed" && r.browseState !== "failed" && !r.cleanupPending && !r.attachmentRepairNeeded && !lm(e, r.inventoryDigest));
 }
 function P0(e, r, a) {
   if (!r.linked || !r.projectId || !r.datasetId || !r.manifestAnnotationId)
@@ -15963,7 +15963,7 @@ function Fu(e, r, a = {}) {
   const i = Yb(e, r, a);
   return !i || window.parent === window ? !1 : (window.parent.postMessage(i, window.location.origin), !0);
 }
-const Bb = 1e3, ek = R.lazy(() => import("./ArtifactEditor-1Qu-QxXd.js")), tk = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i, F0 = 256 * 1024 * 1024, fp = "default", Of = (e) => `analysis:artifact-editor:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, V0 = (e) => `analysis:explorer-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, q0 = (e) => `analysis:inspector-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, U0 = () => ({
+const Bb = 1e3, ek = R.lazy(() => import("./ArtifactEditor-BHLSqydH.js")), tk = /\.(duckdb|sqlite3?|csv|tsv|json|xlsx?|parquet|npy|npz)$/i, F0 = 256 * 1024 * 1024, fp = "default", Of = (e) => `analysis:artifact-editor:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, V0 = (e) => `analysis:explorer-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, q0 = (e) => `analysis:inspector-visible:${(e == null ? void 0 : e.user_id) || 0}:${(e == null ? void 0 : e.group_id) || 0}`, U0 = () => ({
   activeProfileId: fp,
   profiles: [{
     id: fp,
@@ -16129,7 +16129,7 @@ function ik() {
   ), [gi, sr] = R.useState(""), [As, Xa] = R.useState(""), [Cp, kd] = R.useState(""), [xd, Sd] = R.useState(""), [Cd, Ad] = R.useState(!1), Nl = R.useRef(/* @__PURE__ */ new Set()), xt = R.useRef(null), Ap = R.useRef(new fw()), [Rl, Pl] = R.useState(!1), [ga, jp] = R.useState(""), [jd, pe] = R.useState("Preparing workspace…"), [, zn] = R.useState(!0), [_p, Pt] = R.useState({
     percent: 3,
     message: "Opening the current Analysis Workspace…"
-  }), [Ep, _d] = R.useState(""), [wa, Ya] = R.useState(null), [kr, xr] = R.useState(/* @__PURE__ */ new Set()), [Ba, Tl] = R.useState(/* @__PURE__ */ new Set()), [va, eo] = R.useState(/* @__PURE__ */ new Set()), [Be, ba] = R.useState(null), [js, wi] = R.useState(""), [Lo, ft] = R.useState(!1), [Ll, ka] = R.useState(""), [xa, Dn] = R.useState(""), [Ed, Mo] = R.useState(!1), Ml = R.useCallback(() => {
+  }), [Ep, _d] = R.useState(""), [wa, Ya] = R.useState(null), [kr, xr] = R.useState(/* @__PURE__ */ new Set()), [Ba, Tl] = R.useState(/* @__PURE__ */ new Set()), [va, eo] = R.useState(/* @__PURE__ */ new Set()), [Ye, ba] = R.useState(null), [js, wi] = R.useState(""), [Lo, ft] = R.useState(!1), [Ll, ka] = R.useState(""), [xa, Dn] = R.useState(""), [Ed, Mo] = R.useState(!1), Ml = R.useCallback(() => {
     Fu(e, "session-expired");
   }, [e]);
   Jb(
@@ -16349,7 +16349,7 @@ function ik() {
             await Us(y.workspace);
             return;
           }
-          p.canSync && (s.inventory.items.length > 0 || p.linked) && (!p.linked || lm(s.contentDigest || s.inventory.digest, p.inventoryDigest)) && await Gn(s);
+          p.canSync && (s.inventory.items.length > 0 || p.linked) && (!p.linked || p.attachmentRepairNeeded || lm(s.contentDigest || s.inventory.digest, p.inventoryDigest)) && await Gn(s);
         }
       },
       onBusy: () => {
@@ -21455,7 +21455,7 @@ ${rt.trim()}
         (p) => (p.workflowSkills || []).map((h) => h.sha256)
       )
     )
-  ), su = !!(Be != null && Be.linked && lm(js, Be.inventoryDigest)), tn = at.purgedAt ? "Remote workspace removed — local copy retained" : at.deletedAt ? "In Trash — synchronization suspended" : Ll === "waiting" ? "Waiting for another synchronization…" : Lo ? Ll === "checking" ? "Checking for changes…" : "Saving to OMERO…" : zl ? "Sync queued until run finishes" : xa ? "Automatic sync paused" : (Be == null ? void 0 : Be.operationalMode) === "blocked" ? "Blocked — storage configuration required" : (Be == null ? void 0 : Be.syncState) === "pending" ? "Waiting for plot imports…" : Be != null && Be.linked ? su ? "Waiting to save…" : "Saved automatically" : "Automatic sync ready", Bi = () => [
+  ), su = !!(Ye != null && Ye.linked && (Ye.attachmentRepairNeeded || lm(js, Ye.inventoryDigest))), tn = at.purgedAt ? "Remote workspace removed — local copy retained" : at.deletedAt ? "In Trash — synchronization suspended" : Ll === "waiting" ? "Waiting for another synchronization…" : Lo ? Ll === "checking" ? "Checking for changes…" : "Saving to OMERO…" : zl ? "Sync queued until run finishes" : xa ? "Automatic sync paused" : (Ye == null ? void 0 : Ye.operationalMode) === "blocked" ? "Blocked — storage configuration required" : (Ye == null ? void 0 : Ye.syncState) === "pending" ? "Waiting for plot imports…" : Ye != null && Ye.linked ? su ? "Waiting to save…" : "Saved automatically" : "Automatic sync ready", Bi = () => [
     { label: "Add files", run: () => {
       var s;
       return (s = Si.current) == null ? void 0 : s.click();
@@ -21668,20 +21668,20 @@ ${rt.trim()}
             "Browser: ",
             Ql ? "save failed — keep this tab open" : Gl ? "saving…" : "saved locally"
           ] }),
-          /* @__PURE__ */ l.jsxs("span", { title: xa || (Be == null ? void 0 : Be.reason), children: [
+          /* @__PURE__ */ l.jsxs("span", { title: xa || (Ye == null ? void 0 : Ye.reason), children: [
             "OMERO: ",
             tn
           ] }),
           /* @__PURE__ */ l.jsxs("span", { children: [
             "Imports: ",
-            (Be == null ? void 0 : Be.pendingOrderCount) || 0,
+            (Ye == null ? void 0 : Ye.pendingOrderCount) || 0,
             " pending"
           ] }),
           /* @__PURE__ */ l.jsxs("span", { children: [
             "Filesystem: ",
-            (Be == null ? void 0 : Be.browseState) === "unavailable" || (Be == null ? void 0 : Be.operationalMode) === "omero" ? "unavailable (OMERO-only)" : (Be == null ? void 0 : Be.browseState) === "failed" ? "copy failed" : Be != null && Be.linked ? "available" : "not synchronized"
+            (Ye == null ? void 0 : Ye.browseState) === "unavailable" || (Ye == null ? void 0 : Ye.operationalMode) === "omero" ? "unavailable (OMERO-only)" : (Ye == null ? void 0 : Ye.browseState) === "failed" ? "copy failed" : Ye != null && Ye.linked ? "available" : "not synchronized"
           ] }),
-          !!(Be != null && Be.cleanupPending) && /* @__PURE__ */ l.jsx("span", { children: "Cleanup pending — retry synchronization" }),
+          !!(Ye != null && Ye.cleanupPending) && /* @__PURE__ */ l.jsx("span", { children: "Cleanup pending — retry synchronization" }),
           Ql && /* @__PURE__ */ l.jsx(Ce, { onClick: () => void jo(y).then(() => Ni("")).catch((s) => Ni(String(s))), children: "Retry browser save" }),
           xa && /* @__PURE__ */ l.jsx(Ce, { disabled: Lo, onClick: () => void Gn(), children: "Retry OMERO sync" })
         ] }),
@@ -21839,16 +21839,16 @@ ${rt.trim()}
                       }
                     ),
                     /* @__PURE__ */ l.jsxs("div", { className: `workspace-sync-bar ${xa ? "error" : su ? "changes" : ""}`, children: [
-                      /* @__PURE__ */ l.jsxs("span", { title: xa || (Be == null ? void 0 : Be.reason) || "Reusable Analysis items save automatically to OMERO", children: [
+                      /* @__PURE__ */ l.jsxs("span", { title: xa || (Ye == null ? void 0 : Ye.reason) || "Reusable Analysis items save automatically to OMERO", children: [
                         /* @__PURE__ */ l.jsx(qe, { name: "sync" }),
                         tn
                       ] }),
                       xa && r.canSync && /* @__PURE__ */ l.jsx("button", { onClick: () => void Gn(), children: "Retry" }),
-                      (Be == null ? void 0 : Be.linked) && /* @__PURE__ */ l.jsxs("small", { title: Be.datasetName, children: [
+                      (Ye == null ? void 0 : Ye.linked) && /* @__PURE__ */ l.jsxs("small", { title: Ye.datasetName, children: [
                         "revision ",
-                        Be.remoteRevision,
+                        Ye.remoteRevision,
                         " · ",
-                        Be.itemCount,
+                        Ye.itemCount,
                         " items"
                       ] })
                     ] }),

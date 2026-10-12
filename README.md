@@ -139,7 +139,10 @@ Method, Pipeline, and Notebook runs become real grayscale or RGB OMERO Images;
 their other outputs, complete Method history, Pipelines, and validated Python
 notebooks are stored as typed FileAnnotations. Same-stem CSV and SVG plot
 companions are linked directly to the corresponding PNG Image instead of the
-managed Dataset. Source inputs are excluded,
+managed Dataset. Synchronization repairs redundant Dataset links even when
+the result bytes have not changed. Superseded result attachments leave the
+Dataset listing but remain owner-recoverable through Workspace Trash; the
+underlying files are not deleted. Source inputs are excluded,
 except that ready inputs containing `template` anywhere in their filename are
 synchronized under Templates for reuse. Assistant conversations, attachments,
 and Assistant validation results always remain browser-local and are never

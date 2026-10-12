@@ -16,7 +16,7 @@ const encoder = new TextEncoder();
 
 export function syncAlreadyCurrent(digest: string, remote: SyncStatus): boolean {
   return Boolean(digest && remote.linked && remote.syncState !== "pending" && remote.syncState !== "failed" &&
-    remote.browseState !== "failed" && !remote.cleanupPending &&
+    remote.browseState !== "failed" && !remote.cleanupPending && !remote.attachmentRepairNeeded &&
     !syncHasChanges(digest, remote.inventoryDigest));
 }
 

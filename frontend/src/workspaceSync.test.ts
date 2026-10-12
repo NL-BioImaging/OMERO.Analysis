@@ -39,6 +39,7 @@ it("skips redundant saves but never skips import, mirror, or cleanup recovery", 
   expect(syncAlreadyCurrent("digest", { ...remote, syncState: "failed" })).toBe(false);
   expect(syncAlreadyCurrent("digest", { ...remote, browseState: "failed" })).toBe(false);
   expect(syncAlreadyCurrent("digest", { ...remote, cleanupPending: 1 })).toBe(false);
+  expect(syncAlreadyCurrent("digest", { ...remote, attachmentRepairNeeded: true })).toBe(false);
   expect(syncAlreadyCurrent("digest", { ...remote, operationalMode: "omero", browseState: "unavailable" })).toBe(true);
 });
 

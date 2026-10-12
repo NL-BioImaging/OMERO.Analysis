@@ -23,6 +23,8 @@ from omero_analysis.workspace_sync import (
     _upload_png_payload,
     _validate_payload,
     _reconcile_result_attachments,
+    _dataset_attachment_repair_needed,
+    _unlink_annotation,
     plan_sync,
     resolve_workspace_dataset,
     sync_status,
@@ -312,6 +314,31 @@ def test_plot_csv_must_reference_a_synchronized_png_image():
         validate_inventory(payload, "workspace-1", "Screen", 151, obj, conn)
 
 
+def attachment_connection(dataset, image, annotations):
+    """Model persisted AnnotationLink rows, distinct from cached wrapper lists."""
+    dataset.OMERO_CLASS, image.OMERO_CLASS = "Dataset", "Image"
+    parents = [dataset, image]
+    conn = FakeConnection(dataset)
+    for annotation in annotations:
+        def links(kind, pids=None, annotation=annotation):
+            return [SimpleNamespace(getId=lambda parent=parent: parent.getId()*10000+annotation.getId(),
+                                    getParent=lambda parent=parent: parent)
+                    for parent in parents if parent.OMERO_CLASS == kind and
+                    (pids is None or parent.getId() in pids) and
+                    annotation in parent.annotations + parent.linked]
+        annotation.getParentLinks = links
+    def delete(kind, ids, wait=True):
+        assert kind in {"DatasetAnnotationLink", "ImageAnnotationLink"}
+        conn.deleted.append((kind, ids, wait))
+        for parent in parents:
+            for annotation in annotations:
+                if kind == parent.OMERO_CLASS+'AnnotationLink' and parent.getId()*10000+annotation.getId() in ids:
+                    parent.unlinkAnnotation(annotation)
+    conn.deleteObjects = delete
+    conn.getObject = lambda kind, identifier: next((obj for obj in parents+annotations if obj.getId()==int(identifier)), None)
+    return conn
+
+
 def test_plot_csv_is_linked_to_image_instead_of_dataset():
     annotation = FakeAnnotation(42, "plot.csv")
     dataset = FakeObject(object_id=20, annotations=[annotation])
@@ -324,7 +351,7 @@ def test_plot_csv_is_linked_to_image_instead_of_dataset():
     }
 
     _reconcile_result_attachments(
-        FakeConnection(),
+        attachment_connection(dataset, image, [annotation]),
         dataset,
         [item],
         {"result:csv": annotation, "result:image": image},
@@ -347,13 +374,51 @@ def test_plot_svg_is_linked_to_image_instead_of_dataset():
     }
 
     _reconcile_result_attachments(
-        FakeConnection(),
+        attachment_connection(dataset, image, [annotation]),
         dataset,
         [item],
         {"result:svg": annotation, "result:image": image},
         {},
     )
 
+    assert annotation not in dataset.annotations
+    assert annotation in image.linked
+
+
+def test_unlink_queries_persisted_links_and_removes_only_the_requested_parent_link():
+    annotation, unrelated = FakeAnnotation(42, "plot.svg"), FakeAnnotation(43, "user.svg")
+    dataset = FakeObject(object_id=20, annotations=[annotation, unrelated])
+    image = FakeObject(object_id=30, annotations=[annotation])
+    conn = attachment_connection(dataset, image, [annotation, unrelated])
+    dataset.listAnnotations = lambda: []  # A stale cache must not hide the real link.
+    _unlink_annotation(conn, dataset, annotation)
+    assert conn.deleted == [("DatasetAnnotationLink", [200042], True)]
+    assert dataset.annotations == [unrelated]
+    assert image.annotations == [annotation]
+    _unlink_annotation(conn, dataset, annotation)
+    assert len(conn.deleted) == 1
+
+
+def test_retired_results_leave_dataset_but_current_summaries_and_unmanaged_files_remain():
+    retired, current, unmanaged = [FakeAnnotation(i, name) for i, name in [(42,'old.csv'),(43,'summary.csv'),(44,'notes.csv')]]
+    dataset = FakeObject(object_id=20, annotations=[retired, current, unmanaged])
+    image = FakeObject(object_id=30)
+    conn = attachment_connection(dataset, image, [retired,current,unmanaged])
+    items = [{'key':'old','kind':'result','metadata':{'sources':[{'deletedAt':'now'}]},'remote':{'object_type':'Annotation','object_id':42}},
+             {'key':'current','kind':'result','metadata':{'sources':[{'deletedAt':None}]}}]
+    assert _dataset_attachment_repair_needed(dataset, items)
+    _reconcile_result_attachments(conn, dataset, items, {'old':retired,'current':current}, {})
+    assert dataset.annotations == [current,unmanaged]
+    assert not _dataset_attachment_repair_needed(dataset, items)
+
+
+def test_exact_png_payload_stays_on_image_only():
+    annotation = FakeAnnotation(42,'plot.png')
+    dataset, image = FakeObject(object_id=20,annotations=[annotation]),FakeObject(object_id=30)
+    conn = attachment_connection(dataset,image,[annotation])
+    item={'key':'png','kind':'png-image','payload':{'object_type':'Annotation','object_id':42}}
+    assert _dataset_attachment_repair_needed(dataset,[item])
+    _reconcile_result_attachments(conn,dataset,[item],{'png':image},{'png':item})
     assert annotation not in dataset.annotations
     assert annotation in image.linked
 

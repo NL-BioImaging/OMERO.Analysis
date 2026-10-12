@@ -999,6 +999,7 @@ export interface SyncPayload {
 }
 
 export interface SyncStatus {
+  attachmentRepairNeeded?: boolean;
   lifecycle?: "active" | "trashed" | "purging" | "purged" | "unavailable";
   lifecycleRevision?: number;
   browseState?: "ready" | "failed" | "unavailable";
