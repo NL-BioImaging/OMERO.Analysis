@@ -1698,6 +1698,15 @@ export default function App() {
       next = { ...next, files: [...next.files, file] };
       existing.set(attachment.annotation_id, file);
     }
+    // A transient worker failure must not leave a persisted input unusable forever.
+    // Retry only references already present when opening this Workspace; the broker
+    // reauthorizes them against the current source and group on every request.
+    const remoteRetries = initial.files.filter(file => file.source === "omero" &&
+      file.dataQueryMode === "remote" && file.annotationId && file.state !== "ready" && !file.deletedAt);
+    for (const file of remoteRetries) {
+      const prepared = await prepareRemoteInput(file, () => bridge.remoteSchema(file.annotationId!));
+      next = { ...next, files: next.files.map(item => item.id === file.id ? prepared : item) };
+    }
     const candidates = next.files.filter(
       (file) => file.source === "omero" && file.dataQueryMode !== "remote" &&
         file.annotationId && (!file.data || file.state !== "ready")

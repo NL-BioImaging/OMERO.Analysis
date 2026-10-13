@@ -19,4 +19,8 @@ it("restores a prepared remote database reference after reopening without launch
   const failed = (await loadWorkspace(workspace.workspace.id))?.files.find(item => item.id === file.id);
   expect(failed?.state).toBe("failed");
   expect(failed?.error).toContain("Worker unavailable");
+  await prepareRemoteInput(failed!, async () => ({ schema_digest: "recovered" }));
+  const recovered = (await loadWorkspace(workspace.workspace.id))?.files.find(item => item.id === file.id);
+  expect(recovered).toMatchObject({ state: "ready", remoteSchemaDigest: "recovered" });
+  expect(recovered?.error).toBeUndefined();
 });
