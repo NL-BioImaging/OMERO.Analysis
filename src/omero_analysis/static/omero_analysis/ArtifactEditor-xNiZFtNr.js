@@ -1,5 +1,5 @@
-import { p as Md, c as Ed, s as Vd, r as pe, i as Ui, j as S, e as ra, a as jO, B as ne, A as Rt, I as na, m as sa } from "./main-BU_lUnkU.js";
-import { p as Yd } from "./notebookCompatibility-BITbFC-6.js";
+import { p as Md, c as Ed, s as Vd, r as pe, i as Ui, j as S, e as ra, a as jO, B as ne, A as Rt, I as na, m as sa } from "./main-U3ba3HGB.js";
+import { p as Yd } from "./notebookCompatibility-BPEctqs4.js";
 const zO = "nl.bioimaging.notebook-source.v1", Ld = 32 * 1024 * 1024;
 function nl(r) {
   const e = Ed(r), { widgets: t, ...i } = e.metadata || {};

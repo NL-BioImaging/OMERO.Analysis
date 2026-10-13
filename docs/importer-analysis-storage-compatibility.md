@@ -54,11 +54,16 @@ A non-terminal tracking stage older than `OMERO_ANALYSIS_IMPORT_TIMEOUT_SECONDS`
 
 | Package | Accepted range | Validated version |
 | --- | --- | --- |
-| OMERO.biomero | `>=1.6,<2` | `1.6.0` |
-| BIOMERO.importer | `>=1.4,<2` | `1.4.1` |
+| OMERO.biomero | `>=1.6,<2` | `1.6.0`; integrated host `1.6.1+analysis.host3` |
+| BIOMERO.importer | `>=1.4,<2` | `1.4.1`; `1.4.2` in the integrated web environment |
 | omero-upload | `>=0.4,<0.5` | `0.4.0` |
 
 Version checks use installed distribution metadata followed by symbol and signature checks. Do not broaden these ranges based only on semantic-version expectations.
+
+The October integration run used filesystem mirrors with copied OMERO
+FileAnnotations (hybrid mode); `omero-upload` was not installed in that web
+environment. This verifies the supported fallback, not a new end-to-end test
+of true in-place attachment registration. See the [release matrix](release-readiness.md).
 
 ## Deployment requirements
 

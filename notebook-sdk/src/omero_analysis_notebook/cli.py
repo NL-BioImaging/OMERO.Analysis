@@ -7,6 +7,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from . import __version__
 
 from .notebook import extract_contract, inspect, read_notebook, safe_convert, sanitize, starter_document
 from .protocol import ProtocolError
@@ -111,7 +112,7 @@ def command_validate(path: Path, write: bool) -> int:
             schema_requirements[item["id"]] = requirement
     clean.setdefault("metadata", {})["omero_analysis"] = {
         "protocol": contract["schema"],
-        "validated_by": "omero-analysis-notebook/0.1.0",
+        "validated_by": f"omero-analysis-notebook/{__version__}",
         "requirements": contract.get("requirements", []),
         "input_requirements": [
             {key: item[key] for key in ("id", "kind", "formats", "extensions") if key in item}

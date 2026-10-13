@@ -4,7 +4,7 @@ description: Create, convert, validate, repair, or explain offline-first OMERO.A
 license: AGPL-3.0-or-later
 metadata:
   author: NL-BioImaging
-  version: "0.13.2"
+  version: "0.13.3"
 ---
 
 # Create OMERO.Analysis Notebooks
@@ -90,6 +90,11 @@ Verify the live figure's attachments, not just files on disk: each PNG should
 have its own same-stem SVG and CSV from the same parameter set. Repeat an
 unchanged-parameter run to check replacement, and preserve different-parameter
 results. Do not delete ambiguous historical outputs to hide duplicate links.
+
+Result sets also include input identities. Equal parameters over changed inputs
+must remain distinct. Failed or stopped reruns must preserve the previous
+successful set. Superseded output is recoverable in Workspace Trash; do not
+interpret its removal from the Dataset attachment list as file deletion.
 
 ## CSV identifiers and movies
 

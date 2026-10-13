@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "omero-analysis",
-  "version": "0.15.0",
+  "version": "1.0.0",
   "description": "Portable authoring skills for Analysis Methods, Pipelines, Notebooks, movies, and generic measurements.",
   "author": {
     "name": "NL-BioImaging",
@@ -29,7 +29,8 @@
           "auto_activate": false,
           "required_resources": [
             "references/PROTOCOL.md",
-            "references/CONVERSION.md"
+            "references/CONVERSION.md",
+            "references/AUTHORING.md"
           ],
           "preferred_capabilities": [
             "omero-data-query-v1"

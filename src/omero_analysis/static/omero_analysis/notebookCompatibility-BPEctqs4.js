@@ -236,11 +236,11 @@ function L(r, s) {
 const z = { compatible: "Compatible", incompatible: "Incompatible", unchecked: "Not checked" };
 export {
   x as a,
-  C as b,
+  v as b,
   z as c,
   N as d,
   $ as e,
-  v as i,
+  C as i,
   L as n,
   O as p,
   S as s,

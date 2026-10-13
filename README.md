@@ -1,5 +1,8 @@
 # OMERO.Analysis
 
+For maintainers preparing the first 1.0 release, see the
+[release-readiness checks and integration matrix](docs/release-readiness.md).
+
 Production packages are distributed as pre-built wheels on
 [GitHub Releases](https://github.com/NL-BioImaging/OMERO.Analysis/releases).
 Each release includes Analysis, its separately versioned notebook SDK, and a

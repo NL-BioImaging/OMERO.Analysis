@@ -14,7 +14,8 @@ and NL-BIOMERO's `OMERO_ANALYSIS_VERSION=X.Y.Z` must agree. The SDK version is
 independent; a release always includes its actual built wheel even if unchanged.
 
 Publishing a GitHub Release runs shared backend/SDK/frontend, plugin/skill,
-Chrome, build, wheel, and clean-install validation before attaching:
+Chrome, build, wheel, clean-install, and paired DataQueryWorker, ZarrViewer and
+BIOMERO host validation before attaching:
 
 - `omero_analysis-X.Y.Z-py3-none-any.whl`
 - `omero_analysis_notebook-<SDK version>-py3-none-any.whl`
@@ -31,8 +32,8 @@ version when artifact bytes change. Source archives are not production inputs.
 From an Analysis checkout (substitute an actual release containing wheel assets):
 
 ```console
-python scripts/download_analysis_release.py --version 0.15.0 --output dist/wheelhouse
-python -m pip install --no-index --no-deps dist/wheelhouse/omero_analysis-0.15.0-py3-none-any.whl
+python scripts/download_analysis_release.py --version 1.0.0 --output dist/wheelhouse
+python -m pip install --no-index --no-deps dist/wheelhouse/omero_analysis-1.0.0-py3-none-any.whl
 ```
 
 The `--no-deps` example requires runtime dependencies to be installed already.
@@ -60,7 +61,11 @@ Analysis, review the diff, and run the release asset tests in both repositories.
 
 ## Maintainer process
 
-1. Update Analysis's package version (and the SDK version when its API changes).
+1. Complete the [release-readiness checks](release-readiness.md). Update
+   Analysis's package version in `pyproject.toml`, `src/omero_analysis/__init__.py`,
+   `frontend/package.json`, its lockfile and `plugin.json`. Update the independent
+   SDK version in `notebook-sdk/pyproject.toml` when its shipped code changes;
+   never reuse a released wheel filename for different bytes.
 2. Commit, test and merge the changes. The release tag must include this new
    workflow, not the old publishing workflow from a historical tag.
 3. Create `vX.Y.Z` at that tested commit and publish its GitHub Release.
@@ -69,12 +74,12 @@ Analysis, review the diff, and run the release asset tests in both repositories.
 5. Set `OMERO_ANALYSIS_VERSION=X.Y.Z` in NL-BIOMERO and rebuild/test only the web
    service as appropriate. Missing releases intentionally stop the build.
 
-During migration the obsolete remote PyPI release workflow was disabled to
-prevent old tags from invoking it, and the empty `pypi` environment was removed.
-Once the new workflow is on the remote default branch, enable `release.yml`
-(`gh workflow enable release.yml`) before publishing a new tag containing it.
 Existing source-only releases are not silently repackaged; publish a new release
 for changed code. No wheel binaries should be committed to either repository.
+The compatibility workflows pin reviewed companion commits so release results
+are reproducible. Advance those pins with the paired tests when upgrading a
+companion. They test source/package compatibility and do not replace a smoke
+test of the exact deployed container images.
 
 ## Development
 

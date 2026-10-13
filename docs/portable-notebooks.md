@@ -1,7 +1,7 @@
 # Offline-first notebooks for OMERO.Analysis
 
-OMERO.Analysis 0.13 introduces a portable notebook contract and the separate
-`omero-analysis-notebook` 0.1 SDK. A developer can build and test a normal
+OMERO.Analysis provides a portable notebook contract and the separately versioned
+`omero-analysis-notebook` SDK. A developer can build and test a normal
 Jupyter project on a PC and upload the same notebook. Analysis binds its logical
 inputs to the current OMERO Workspace, renders parameters, and executes the
 notebook without exposing worker credentials or requiring source-specific
@@ -13,8 +13,8 @@ The SDK supports Python 3.10–3.12 and has no OMERO dependency.
 
 ```console
 python -m venv .venv
-python scripts/download_analysis_release.py --version 0.15.0 --output dist/wheelhouse
-.venv/Scripts/pip install "./dist/wheelhouse/omero_analysis_notebook-0.1.0-py3-none-any.whl[widgets,run]"
+python scripts/download_analysis_release.py --version 1.0.0 --output dist/wheelhouse
+.venv/Scripts/pip install "./dist/wheelhouse/omero_analysis_notebook-0.2.0-py3-none-any.whl[widgets,run]"
 .venv/Scripts/oan new analysis.ipynb
 ```
 
@@ -79,6 +79,27 @@ When opened in Analysis:
 Each run captures parameter values, source/schema digests, output names/sizes,
 timestamps, and status. Query CSV transport remains transient and never appears
 in Workspace Input. Attaching an executed notebook remains an explicit action.
+
+Successful reruns with equal effective parameters and input identities replace
+their previous active output set. Different parameters or input identities keep
+separate result sets; failed/cancelled runs preserve previous successful results.
+Write each figure in its own plotting cell and save a same-stem PNG, SVG and CSV
+containing its plotted data. Companions are attached to that figure within the
+same parameter set, rather than duplicated on the Workspace Dataset.
+
+## Editing and supporting-file discovery
+
+Use **Edit Notebook → Whole notebook** to read or edit all cells in one
+revision-checked JSON document. Applying it changes only the draft; save and run
+remain separate actions. See the [whole-notebook authoring reference](../skills/create-omero-analysis-notebook/references/AUTHORING.md).
+
+Supporting file declarations can use `filename_globs`, for example
+`["*template*.xlsx", "*template*.csv"]`, together with matching `extensions`.
+Matching is case-insensitive and scoped to the Workspace and accessible source
+attachments. A valid saved binding takes precedence; one match binds automatically
+and multiple matches require a choice. Local SDK execution still uses the
+declared path. Filename matching does not add an Excel or CSV parser to the
+notebook: validate the actual layout and identifiers in the reader.
 
 ## Convert an existing notebook
 

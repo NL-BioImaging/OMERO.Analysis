@@ -1,8 +1,10 @@
 # Deploy with NL-BIOMERO
 
 Analysis is an OMERO.web wheel with a compiled frontend and self-hosted
-Pyodide runtime. It needs no second service, storage mount, or custom Nginx
-location.
+Pyodide runtime. Browser-local analysis needs no second service. Large remote
+DuckDB, SQLite and CSV inputs require the private DataQueryWorker service;
+importer-backed filesystem mirrors and in-place attachments require the
+mounts and permissions in the [storage contract](importer-analysis-storage-compatibility.md).
 
 ## Production release deployment
 

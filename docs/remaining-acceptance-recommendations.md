@@ -3,6 +3,10 @@
 Recorded on 9 September 2026 for the reliability and interface changes on
 `analysis_integration`.
 
+This is a historical acceptance backlog. Use the current
+[release-readiness matrix](release-readiness.md) for the tested revision pair
+and current release decision; the dated evidence below remains unchanged.
+
 These items are primarily **verification gaps, not confirmed bugs**. Normal
 workflows passed, but the remaining checks are needed to establish confidence
 in recovery, authorization and less common interactions. See the

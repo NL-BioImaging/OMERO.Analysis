@@ -1,6 +1,11 @@
 # Data query production foundations
 
-Candidate pair: **Analysis 0.14.0**, based on `analysis_integration` commit `4db7f8b`, with **DataQueryWorker 0.2.0**, based on `2115594`. Existing notebook results, manual saving, Methods v1/v2 and local/remote query selection are retained. The new worker can be deployed first; the new Analysis broker accepts workers without provenance capability and keeps query/download behavior compatible.
+Analysis supports the DataQueryWorker 0.2.0 protocol, including compatibility
+with the baseline worker that lacks provenance promotion. The worker can be
+upgraded first. Query/download behavior, notebook results, Methods v1/v2 and
+local/remote query selection are retained. The [release-readiness matrix](release-readiness.md)
+records the current tested pair; the September measurements below describe
+Analysis 0.14.0 (`4db7f8b`) and worker 0.2.0 (`2115594`).
 
 ## Authorization and exact CSV saving
 
@@ -53,7 +58,7 @@ npm --prefix frontend test
 npm --prefix frontend run typecheck
 python scripts/build_frontend.py --skip-install --skip-runtime
 python -m build --wheel --no-isolation
-python scripts/verify_wheel.py dist/omero_analysis-0.14.0-py3-none-any.whl
+python scripts/verify_wheel.py dist/omero_analysis-<version>-py3-none-any.whl
 npm --prefix frontend run smoke:runtime
 npm --prefix frontend run smoke:browser
 python scripts/test_local_omero_queries.py
@@ -80,6 +85,6 @@ The [10M export and recovery runbook](data-query-large-export-recovery.md) recor
 
 ## Deployment and rollback
 
-Build paired images/wheels from the reviewed commits and record their digests. Deploy worker first and verify the current Analysis, then deploy enhanced Analysis from `analysis_integration`. Verify direct saving with a disposable source before enabling the optional mTLS profile and rotating credentials. Persistent audit and lock storage must be configured independently from worker cache. Keep old/new keyring credentials overlapping while switching the broker; remove the old credential only after all callers have moved.
+Build paired images/wheels from the reviewed commits and record their digests. Deploy worker first and verify the current Analysis, then deploy the verified Analysis release wheels. Verify direct saving with a disposable source before enabling the optional mTLS profile and rotating credentials. Persistent audit and lock storage must be configured independently from worker cache. Keep old/new keyring credentials overlapping while switching the broker; remove the old credential only after all callers have moved.
 
 For rollback, restore the saved image references and matching bearer/TLS configuration. Keep OMERO result/provenance annotations, Analysis audit/state and worker cache volumes. Old Analysis safely ignores additional response fields; saved Methods and notebooks retain their existing protocols. The worker computes version-specific result keys, so rollback safely reuses readable sources or recomputes results. No registry publication or production rollout is performed by these scripts.

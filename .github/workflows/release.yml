@@ -10,8 +10,14 @@ concurrency:
 jobs:
   validation:
     uses: ./.github/workflows/validate.yml
+  query-compatibility:
+    uses: ./.github/workflows/query-compatibility.yml
+  viewer-compatibility:
+    uses: ./.github/workflows/viewer-compatibility.yml
+  host-compatibility:
+    uses: ./.github/workflows/host-compatibility.yml
   attach-release-assets:
-    needs: validation
+    needs: [validation, query-compatibility, viewer-compatibility, host-compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
