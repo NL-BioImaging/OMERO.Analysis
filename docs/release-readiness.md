@@ -14,7 +14,7 @@ The 13 October 2026 review uses the integration branches where available:
 | OMERO.Analysis | `main`, starting at `97e9d15`, plus the readiness changes | Workspace, notebooks, query broker, synchronization |
 | OMERO.biomero | `analysis_integration`, `75adc97` | Authenticated embedded host and source/workspace routing |
 | NL-BIOMERO | `analysis_integration`, `108a047`, plus the readiness changes | Verified wheels, private worker, shared mounts and proxy configuration |
-| BIOMERO.ZarrViewer | `analysis_skills`, release `v0.7.0` (`9f5735f`) | Result identity, image/label rendering and application skill |
+| BIOMERO.ZarrViewer | `analysis_skills`, release `v0.7.1` (`c9a5149`) | Result identity, image/label rendering and application skill |
 | OMERO.DataQueryWorker | `main`, `62fdb1e`, version `0.2.0` | Bounded read-only DuckDB, SQLite and CSV queries |
 
 An integration branch being current does not imply its changes are in the
