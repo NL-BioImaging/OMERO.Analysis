@@ -1,6 +1,11 @@
 # 10M-row exports and crash recovery
 
-This is an opt-in deployment profile for Analysis 0.14.0 with DataQueryWorker 0.2.0. The normal defaults, request protocols, saved Methods v1/v2, notebook `ctx.query()` and manual saving remain compatible. The release version pair and baseline commits are recorded in [query-version-pair.json](testing/query-version-pair.json).
+This opt-in deployment profile was validated with Analysis 0.14.0 and
+DataQueryWorker 0.2.0. The normal defaults, request protocols, saved Methods
+v1/v2, notebook `ctx.query()` and manual saving remain compatible. The original
+version pair and baseline commits are recorded in [query-version-pair.json](testing/query-version-pair.json).
+Use the [release-readiness matrix](release-readiness.md) for the current candidate;
+the large-export and crash measurements below are historical evidence.
 
 ## Limits and deployment
 

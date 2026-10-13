@@ -11,6 +11,12 @@ concurrency:
 jobs:
   validation:
     uses: ./.github/workflows/validate.yml
+  query-compatibility:
+    uses: ./.github/workflows/query-compatibility.yml
+  viewer-compatibility:
+    uses: ./.github/workflows/viewer-compatibility.yml
+  host-compatibility:
+    uses: ./.github/workflows/host-compatibility.yml
   deployment-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && vars.OMERO_SMOKE_URL != '' }}
     runs-on: ubuntu-latest

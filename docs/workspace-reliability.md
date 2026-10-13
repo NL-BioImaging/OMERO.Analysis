@@ -1,9 +1,8 @@
 # Workspace reliability and lifecycle
 
-The `analysis_integration` implementation preserves browser data when OMERO
+Workspace synchronization preserves browser data when OMERO
 content is missing or inaccessible, adds explicit Trash/Restore/permanent
-cleanup, and separates recovery metadata from large result bytes. It includes
-the earlier uncommitted multiple-workspace and readable-storage work.
+cleanup, and separates recovery metadata from large result bytes.
 
 ## User-visible behavior
 
@@ -59,13 +58,13 @@ that transport for older servers.
 
 ## Installation and local deployment
 
-Build from this branch, keeping the prior frontend/runtime version pins:
+For production use the verified wheels described in the
+[release guide](github-releases.md). To validate a development checkout:
 
 ```powershell
-cd C:\rahoebe\biomero\OMERO.Analysis
 .venv/Scripts/python scripts/build_frontend.py --skip-install --skip-runtime
 .venv/Scripts/python -m build --wheel --no-isolation
-.venv/Scripts/python scripts/verify_wheel.py dist/omero_analysis-0.14.0-py3-none-any.whl
+.venv/Scripts/python scripts/verify_wheel.py dist/omero_analysis-<version>-py3-none-any.whl
 ```
 
 The build helper cleans setuptools staging to avoid stale hashed bundles.
@@ -74,11 +73,10 @@ then reload Gunicorn workers. Close/reload old Analysis pages before lifecycle
 testing. No OMERO database schema migration is required. The existing
 group-mapped durable Analysis storage must be available for lifecycle changes.
 
-The local candidate is `omero-analysis-web:reliability`. Its compose overlay and
-Dockerfile are under `.local-query-deployment/reliability/`; the overlay is
-machine-specific and intentionally untracked. The running web container was
-updated with the same wheel and gracefully reloaded to preserve the login.
-The worker and its 10M-row deployment profile are unchanged by this release.
+Record the installed image digest and package version alongside test results.
+Container-local patches are useful for diagnosis but must also be included in
+the reproducible image before deployment. The [release matrix](release-readiness.md)
+separates current evidence from historical reliability tests.
 
 ## Retired fixture extension
 

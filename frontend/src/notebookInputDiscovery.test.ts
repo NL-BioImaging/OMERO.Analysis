@@ -1,6 +1,9 @@
 import { inputCandidates, inputFileNameMatches } from './notebookProtocol';
 import type { NotebookFileInput } from './notebookProtocol';
 import type { WorkspaceFile } from './types';
+import type { Attachment } from './types';
+import type { NotebookProtocolBinding, NotebookQueryInput } from './notebookProtocol';
+import { notebookAttachmentCandidates } from './notebookInputDiscovery';
 
 const input: NotebookFileInput = { id: 'template', kind: 'file', path: 'input/PlateLayout.xlsx',
   extensions: ['.xlsx', '.csv'], required: true, filename_globs: ['*template*.xlsx', '*template*.csv'] };
@@ -25,4 +28,17 @@ it('retains a valid saved binding but never includes deleted, failed or result f
 it('handles literal punctuation, question marks and many wildcard segments', () => {
   expect(inputFileNameMatches({ ...input, filename_globs: ['Template (?).csv'] }, 'TEMPLATE (A).csv')).toBe(true);
   expect(inputFileNameMatches({ ...input, filename_globs: ['*a'.repeat(60) + 'b.csv'] }, 'a'.repeat(120) + '.csv')).toBe(false);
+});
+
+it('recovers an accessible saved remote binding even when its name differs from the portable path', () => {
+  const query = { id: 'measurements', kind: 'query', path: 'input/measurements.duckdb',
+    formats: ['duckdb'], required: true } as NotebookQueryInput;
+  const attached = { annotation_id: 1515, file_id: 42, name: 'full-plate-results.duckdb',
+    supported: true } as Attachment;
+  const binding = { inputId: 'measurements', annotationId: 1515, originalFileId: 42 } as NotebookProtocolBinding;
+  expect(notebookAttachmentCandidates(query, [attached])).toEqual([]);
+  expect(notebookAttachmentCandidates(query, [attached], binding)).toEqual([attached]);
+  expect(notebookAttachmentCandidates(query, [], binding)).toEqual([]);
+  expect(notebookAttachmentCandidates(query, [{ ...attached, file_id: 43 }], binding)).toEqual([]);
+  expect(notebookAttachmentCandidates(query, [{ ...attached, name: 'unrelated.xlsx' }], binding)).toEqual([]);
 });

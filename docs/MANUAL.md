@@ -105,7 +105,7 @@ The status strip reports browser saving, OMERO synchronization, pending imports,
 
 Plots show one PNG preview with compact PNG/SVG/CSV download buttons. SVG-only plots remain visible. All formats remain in saved results and archives; separate runs with the same filenames retain their distinct provenance.
 
-Identical result bytes are stored only once in the synchronized Dataset, even when the same PNG or CSV belongs to multiple direct Method, Pipeline, or Notebook runs. A managed Key-Value Pair records every originating Workspace item, so deduplication does not discard provenance.
+Notebook results are grouped by effective parameters and input identities. A successful rerun with the same parameters and inputs replaces the previous active output set; the previous files remain recoverable in Workspace Trash. Different parameter sets or changed inputs keep separate results, even when their plots look identical. Failed or cancelled reruns preserve the previous successful results. Each figure keeps its own same-stem SVG and CSV within that parameter set. Analysis also repairs redundant Dataset links without deleting the underlying files.
 
 ## Reusing AnalysisWorkspaces
 
@@ -116,6 +116,10 @@ The single Analysis OMERO panel can import Methods, Pipelines, and Notebooks.
 ## Analysis Settings
 
 **Enable artifact editor** is off by default. Enabling it adds the **Editor** tab beside the standard Analysis tabs and adds **Edit** to Method, Pipeline, and Notebook menus and Artifact Inspector views. Methods save as a new version, Pipelines increment their version, and Notebooks update in place. **Save and Run** always saves before delegating to the existing runner. Use Ctrl+S or Cmd+S to save; leaving a dirty editor asks before discarding changes. The preference applies to the current user and group and is saved automatically.
+
+In the Notebook editor, **Whole notebook** shows all cells and the current draft in one JSON field. **Apply source to draft** validates the edited source; **Save** persists it and **Save and Run** also executes it. A stale source revision is rejected so an older copy cannot overwrite intervening edits. This view omits execution outputs and widget state.
+
+Portable notebooks may declare filename patterns for supporting files. For example, `*template*.xlsx` and `*template*.csv` discover matching accessible attachments, ignoring filename case. A valid existing binding is retained; multiple matches require a choice. The notebook must support the selected file's actual format and layout.
 
 **Plot + CSV** asks the Assistant-authored Method to save both a visual plot and the corresponding tabular data. This preference is saved automatically.
 

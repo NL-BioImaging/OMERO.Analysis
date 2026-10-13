@@ -1,5 +1,7 @@
 import { typedNotebookQueryParameters, importedNotebookProtocol } from "./notebookPreparation";
 import { completeNotebookResults, notebookParameterKey, notebookResultPath } from "./notebookResults";
+import { prepareRemoteInput } from "./workspaceInputs";
+import { notebookAttachmentCandidates } from "./notebookInputDiscovery";
 import { scheduleWorkspaceCheck } from "./workspaceSyncController";
 import { AssistantSkillLoader } from "./assistantSkillLoader";
 import { createSavedMethodExecutor, type ExecutionContext, type ExecutionOrigin } from "./artifactExecutionController";
@@ -54,7 +56,6 @@ import NotebookView, { parseNotebook, serializeNotebook } from "./NotebookView";
 import {
   extensionOf,
   inputCandidates,
-  inputFileNameMatches,
   parameterDefaults,
   parseNotebookProtocol,
   sanitizeProtocolNotebook,
@@ -1679,25 +1680,20 @@ export default function App() {
         createdAt: now()
       };
       if (selectedMode === "remote") {
-        try {
-          const started = Date.now();
-          const describe = (value: Record<string, any> = {}) => {
-            const sent = Number(value.sent || 0);
-            const transferring = value.stage === "transferring";
-            setWorkspaceProgress({
-              percent: transferring ? sent / Math.max(1, attachment.size) * 100 : 0,
-              indeterminate: !transferring,
-              message: `${transferring ? "Transferring to DataQueryWorker" : value.stage === "inspecting" ? "Checking database on DataQueryWorker" : "Preparing DataQueryWorker source"}: ${attachment.name}`,
-              detail: `${transferring ? `${bytesLabel(sent)} of ` : ""}${bytesLabel(attachment.size)} · ${Math.floor((Date.now() - started) / 1000)} seconds elapsed. The database stays on the server; only query results are returned to your browser.`
-            });
-          };
-          describe();
-          const schema = await bridge.remoteSchema(attachment.annotation_id, describe);
-          file.remoteSchemaDigest = String(schema.schema_digest || "");
-        } catch (error) {
-          file.state = "failed";
-          file.error = `Remote query setup failed: ${String(error)}`;
-        }
+        const started = Date.now();
+        const describe = (value: Record<string, any> = {}) => {
+          const sent = Number(value.sent || 0);
+          const transferring = value.stage === "transferring";
+          setWorkspaceProgress({
+            percent: transferring ? sent / Math.max(1, attachment.size) * 100 : 0,
+            indeterminate: !transferring,
+            message: `${transferring ? "Transferring to DataQueryWorker" : value.stage === "inspecting" ? "Checking database on DataQueryWorker" : "Preparing DataQueryWorker source"}: ${attachment.name}`,
+            detail: `${transferring ? `${bytesLabel(sent)} of ` : ""}${bytesLabel(attachment.size)} · ${Math.floor((Date.now() - started) / 1000)} seconds elapsed. The database stays on the server; only query results are returned to your browser.`
+          });
+        };
+        describe();
+        Object.assign(file, await prepareRemoteInput(file,
+          () => bridge.remoteSchema(attachment.annotation_id, describe)));
       }
       next = { ...next, files: [...next.files, file] };
       existing.set(attachment.annotation_id, file);
@@ -3071,9 +3067,8 @@ export default function App() {
     for (const input of missing) {
       const expectedName = input.path.split(/[\\/]/).pop()?.toLowerCase();
       if (!expectedName) continue;
-      const matches = attachments.filter((candidate) =>
-        candidate.supported && inputFileNameMatches(input, candidate.name) &&
-        (Boolean(input.filename_globs) || candidate.name.toLowerCase() === expectedName) &&
+      const previous = record.protocolBindings?.find(binding => binding.inputId === input.id);
+      const matches = notebookAttachmentCandidates(input, attachments, previous).filter((candidate) =>
         !next.files.some((file) => file.annotationId === candidate.annotation_id)
       );
       let attachment = matches.length === 1 ? matches[0] : undefined;

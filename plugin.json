@@ -29,7 +29,8 @@
           "auto_activate": false,
           "required_resources": [
             "references/PROTOCOL.md",
-            "references/CONVERSION.md"
+            "references/CONVERSION.md",
+            "references/AUTHORING.md"
           ],
           "preferred_capabilities": [
             "omero-data-query-v1"

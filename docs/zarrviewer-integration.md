@@ -10,7 +10,7 @@ normally when it is absent or disabled.
 The model never selects an OMERO ID or constructs an authenticated URL.
 Generated Python first queries the measurement database for:
 
-- the canonical OME-Zarr store UUID;
+- the OME-Zarr store UUID recorded for the measured result;
 - a field path such as `A/1/5`;
 - image dimensions and zero-based `t` and `z`;
 - one-based source-channel numbers;
@@ -28,6 +28,12 @@ import.
 The database therefore does not need an OMERO Image or Plate ID. The store
 UUID is the portable identity; OMERO IDs are deployment-local and are resolved
 from the authenticated hierarchy.
+
+For shallow segmentation results, preserve the result store identity even when
+original pixels resolve to a canonical source store. The canonical source UUID
+is not a substitute for the measured result UUID. Capabilities and render
+validation must agree on that identity, and pixel/label caches must include the
+physical store to avoid mixing arrays with the same internal name.
 
 ## Preview behavior
 
@@ -93,3 +99,11 @@ viewer is enabled. If a preview cannot be created:
    OME-Zarr store UUID recorded in the database;
 4. confirm the database field path, dimensions, channels, label path, and
    label value are present rather than inferred.
+
+The minimum version above covers the base integration, not every optional
+render feature or large shallow-plate fix. Review the installed capabilities
+and the [release-readiness matrix](release-readiness.md) before a coordinated
+upgrade. Large shallow plates need the bounded 100 MiB manifest support and
+fail-fast resolver. The current full-plate signed context can also exceed
+default proxy/request-header limits; follow the deployment's tested header
+configuration until a compact-context implementation is available.
