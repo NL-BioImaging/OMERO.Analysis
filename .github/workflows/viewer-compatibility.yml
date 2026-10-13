@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NL-BioImaging/BIOMERO.ZarrViewer
-          ref: b8cada3618f2acfe997fd1d9e690b38622274e7e
+          ref: 9f5735f66f3e47abdc59233b8392d8676847fb5b # v0.7.0
           fetch-depth: 0
           path: Viewer
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
