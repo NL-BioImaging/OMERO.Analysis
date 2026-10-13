@@ -32,8 +32,8 @@ version when artifact bytes change. Source archives are not production inputs.
 From an Analysis checkout (substitute an actual release containing wheel assets):
 
 ```console
-python scripts/download_analysis_release.py --version 0.15.0 --output dist/wheelhouse
-python -m pip install --no-index --no-deps dist/wheelhouse/omero_analysis-0.15.0-py3-none-any.whl
+python scripts/download_analysis_release.py --version 1.0.0 --output dist/wheelhouse
+python -m pip install --no-index --no-deps dist/wheelhouse/omero_analysis-1.0.0-py3-none-any.whl
 ```
 
 The `--no-deps` example requires runtime dependencies to be installed already.

@@ -84,9 +84,10 @@ or interrupt imports on a shared scientific-data instance for an acceptance test
 
 ## Publication gate
 
-Publish 1.0 only after the final candidate's GitHub checks and deployment smoke
-pass and remaining verification limits have been reviewed. The version is not
-bumped merely to make the package appear ready.
+The approved release candidate uses Analysis `1.0.0` and notebook SDK `0.2.0`.
+Publish only after the final candidate's GitHub checks and deployment smoke
+pass and remaining verification limits have been reviewed. The additional
+production acceptance cases above remain explicit deployment responsibilities.
 
 1. Freeze tested companion commits and select published provider versions (or
    an explicitly supported integration image) containing the required fixes.

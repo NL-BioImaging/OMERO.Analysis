@@ -13,8 +13,8 @@ The SDK supports Python 3.10–3.12 and has no OMERO dependency.
 
 ```console
 python -m venv .venv
-python scripts/download_analysis_release.py --version 0.15.0 --output dist/wheelhouse
-.venv/Scripts/pip install "./dist/wheelhouse/omero_analysis_notebook-0.1.0-py3-none-any.whl[widgets,run]"
+python scripts/download_analysis_release.py --version 1.0.0 --output dist/wheelhouse
+.venv/Scripts/pip install "./dist/wheelhouse/omero_analysis_notebook-0.2.0-py3-none-any.whl[widgets,run]"
 .venv/Scripts/oan new analysis.ipynb
 ```
 
