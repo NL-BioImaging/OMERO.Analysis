@@ -81,6 +81,6 @@ jobs:
           mkdir -p dist/pypi
           cp "dist/wheelhouse/omero_analysis-${RELEASE_VERSION}-py3-none-any.whl" dist/pypi/
       - name: Publish identical wheel through PyPI Trusted Publishing
-        uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/pypi/
