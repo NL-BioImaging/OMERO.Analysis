@@ -12,16 +12,16 @@ The integration baseline was refreshed on 14 October 2026:
 | Component | Reviewed source | Responsibility |
 | --- | --- | --- |
 | OMERO.Analysis | Released `1.0.0` plus compatibility CI updates | Workspace, notebooks, query broker, synchronization |
-| OMERO.biomero | `analysis_integration`, `33fe5d728e57638c3ea72e389074f0b3cfe51ce6` | Current BIOMERO backend, authenticated host and source/workspace routing |
-| NL-BIOMERO | Updated `analysis_integration`; exact host commit and first-party dependency pins | Verified wheels, private worker, shared mounts and proxy configuration |
+| OMERO.biomero | Published PyPI wheel `1.7.0b7` | Current BIOMERO backend, authenticated host and source/workspace routing |
+| NL-BIOMERO | Updated `analysis_integration`; versioned packages and opt-in startup | Released packages, private worker, shared mounts and proxy configuration |
 | BIOMERO.ZarrViewer | `analysis_skills`, release `v0.7.1` (`c9a5149`) | Result identity, image/label rendering and application skill |
 | OMERO.DataQueryWorker | `v0.2.2`, `adfea48b7309fe30cc46815b49e274a7835b0c3f` | Bounded read-only DuckDB, SQLite and CSV queries |
 | BIOMERO.WorkflowSkills | Released `0.4.0` | Validated workflow-owned skill catalog and stateless package retrieval |
 
 An integration branch being current does not imply its changes are in the
-default branch or in a published package. The updated NL-BIOMERO source builds
-the exact reconciled host commit, replacing the older 1.6.1 deployment patch.
-Its first-party backend pins are BIOMERO 2.9.0b11 and importer 1.5.0b8.
+default branch or in a published package. NL-BIOMERO installs the published
+1.7.0b7 host package, replacing both the old deployment patch and Git builds.
+The host requires BIOMERO >=2.9.0b11 and importer >=1.5.0b8.
 Stock BIOMERO without that host contract retains the standalone Analysis link.
 The viewer's base minimum version does not guarantee review/movie capabilities
 or the large shallow-manifest and result-identity fixes.

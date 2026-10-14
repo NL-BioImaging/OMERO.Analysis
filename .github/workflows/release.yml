@@ -1,4 +1,4 @@
-﻿name: Attach verified GitHub Release wheels
+name: Publish verified release wheels
 on:
   release:
     types: [published]
