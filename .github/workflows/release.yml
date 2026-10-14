@@ -2,6 +2,13 @@
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing GitHub Release version to publish unchanged to PyPI
+        required: true
+        default: '1.0.0'
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -9,14 +16,19 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validation:
+    if: github.event_name == 'release'
     uses: ./.github/workflows/validate.yml
   query-compatibility:
+    if: github.event_name == 'release'
     uses: ./.github/workflows/query-compatibility.yml
   viewer-compatibility:
+    if: github.event_name == 'release'
     uses: ./.github/workflows/viewer-compatibility.yml
   host-compatibility:
+    if: github.event_name == 'release'
     uses: ./.github/workflows/host-compatibility.yml
   skills-compatibility:
+    if: github.event_name == 'release'
     uses: ./.github/workflows/skills-compatibility.yml
   attach-release-assets:
     needs: [validation, query-compatibility, viewer-compatibility, host-compatibility, skills-compatibility]
@@ -45,3 +57,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/upload_release_assets.py --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --manifest dist/manifest.json --directory dist/analysis --directory dist/notebook-sdk
+  publish-pypi:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/p/omero-analysis
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Verify and select the existing application wheel
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          python scripts/download_analysis_release.py --version "$RELEASE_VERSION" --output dist/wheelhouse
+          python scripts/verify_wheel.py "dist/wheelhouse/omero_analysis-${RELEASE_VERSION}-py3-none-any.whl"
+          mkdir -p dist/pypi
+          cp "dist/wheelhouse/omero_analysis-${RELEASE_VERSION}-py3-none-any.whl" dist/pypi/
+      - name: Publish identical wheel through PyPI Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+        with:
+          packages-dir: dist/pypi/
