@@ -16,8 +16,10 @@ jobs:
     uses: ./.github/workflows/viewer-compatibility.yml
   host-compatibility:
     uses: ./.github/workflows/host-compatibility.yml
+  skills-compatibility:
+    uses: ./.github/workflows/skills-compatibility.yml
   attach-release-assets:
-    needs: [validation, query-compatibility, viewer-compatibility, host-compatibility]
+    needs: [validation, query-compatibility, viewer-compatibility, host-compatibility, skills-compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

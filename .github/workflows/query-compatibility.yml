@@ -13,7 +13,7 @@ on:
       worker_ref:
         description: Exact worker commit or branch to test with this Analysis revision
         required: true
-        default: 62fdb1eff654b1a2510058bee4f4c8391c59645b
+        default: adfea48b7309fe30cc46815b49e274a7835b0c3f
 permissions:
   contents: read
 concurrency:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NL-BioImaging/OMERO.DataQueryWorker
-          ref: ${{ inputs.worker_ref || '62fdb1eff654b1a2510058bee4f4c8391c59645b' }}
+          ref: ${{ inputs.worker_ref || 'adfea48b7309fe30cc46815b49e274a7835b0c3f' }} # v0.2.2
           fetch-depth: 0
           path: OMERO.DataQueryWorker
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

@@ -16,7 +16,7 @@ jobs:
         with:
           repository: NL-BioImaging/OMERO.biomero
           # analysis_integration; advance only after testing the installed wheel.
-          ref: 75adc977a2de5ab86e032bc25713a8185bbc841e
+          ref: 33fe5d728e57638c3ea72e389074f0b3cfe51ce6
           fetch-depth: 0
           path: Host
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

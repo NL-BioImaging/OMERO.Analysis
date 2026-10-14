@@ -7,19 +7,21 @@ reviewed frontend, provider capabilities or configuration.
 
 ## Integration baseline
 
-The 13 October 2026 review uses the integration branches where available:
+The integration baseline was refreshed on 14 October 2026:
 
 | Component | Reviewed source | Responsibility |
 | --- | --- | --- |
-| OMERO.Analysis | `main`, starting at `97e9d15`, plus the readiness changes | Workspace, notebooks, query broker, synchronization |
-| OMERO.biomero | `analysis_integration`, `75adc97` | Authenticated embedded host and source/workspace routing |
-| NL-BIOMERO | `analysis_integration`, `108a047`, plus the readiness changes | Verified wheels, private worker, shared mounts and proxy configuration |
+| OMERO.Analysis | Released `1.0.0` plus compatibility CI updates | Workspace, notebooks, query broker, synchronization |
+| OMERO.biomero | `analysis_integration`, `33fe5d728e57638c3ea72e389074f0b3cfe51ce6` | Current BIOMERO backend, authenticated host and source/workspace routing |
+| NL-BIOMERO | Updated `analysis_integration`; exact host commit and first-party dependency pins | Verified wheels, private worker, shared mounts and proxy configuration |
 | BIOMERO.ZarrViewer | `analysis_skills`, release `v0.7.1` (`c9a5149`) | Result identity, image/label rendering and application skill |
-| OMERO.DataQueryWorker | `main`, `62fdb1e`, version `0.2.0` | Bounded read-only DuckDB, SQLite and CSV queries |
+| OMERO.DataQueryWorker | `v0.2.2`, `adfea48b7309fe30cc46815b49e274a7835b0c3f` | Bounded read-only DuckDB, SQLite and CSV queries |
+| BIOMERO.WorkflowSkills | Released `0.4.0` | Validated workflow-owned skill catalog and stateless package retrieval |
 
 An integration branch being current does not imply its changes are in the
-default branch or in a published package. The tested NL-BIOMERO image builds a
-BIOMERO host from the exact 1.6.1 baseline plus its maintained integration patch.
+default branch or in a published package. The updated NL-BIOMERO source builds
+the exact reconciled host commit, replacing the older 1.6.1 deployment patch.
+Its first-party backend pins are BIOMERO 2.9.0b11 and importer 1.5.0b8.
 Stock BIOMERO without that host contract retains the standalone Analysis link.
 The viewer's base minimum version does not guarantee review/movie capabilities
 or the large shallow-manifest and result-identity fixes.
@@ -52,8 +54,14 @@ With the worker installed in an adjacent checkout, run:
 DQW_RUN_INTEGRATION=1 python -m pytest tests/test_worker_contract.py
 BIOMERO_RUN_INTEGRATION=1 python -m pytest tests/test_installed_biomero.py
 python -m pytest tests/test_installed_viewer.py
+WORKFLOW_SKILLS_RUN_INTEGRATION=1 python -m pytest tests/test_installed_workflow_skills.py
 python scripts/check_release_version.py --source-only
 ```
+
+WorkflowSkills compatibility uses the real released provider with an offline
+repository fixture, exercising catalog v2, capability metadata, package URLs
+and stateless package retrieval through the Analysis HTTP adapters. It is a
+required release-attachment job alongside the worker, host and viewer checks.
 
 The host check requires an installed compatible BIOMERO wheel, including its
 compiled assets. `DQW_REPO` and `DQW_PYTHON` select another worker checkout and
