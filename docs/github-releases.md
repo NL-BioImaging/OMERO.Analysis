@@ -3,7 +3,7 @@
 OMERO.Analysis and `omero-analysis-notebook` have validated wheels on
 [GitHub Releases](https://github.com/NL-BioImaging/OMERO.Analysis/releases).
 The Analysis application is also available on
-[PyPI](https://pypi.org/project/omero-analysis/1.0.0/). Analysis 1.0.0 uses the
+[PyPI](https://pypi.org/project/omero-analysis/). Release publication uses the
 identical wheel bytes on both platforms. The SDK is independently versioned;
 publishing the application to PyPI does not implicitly publish the SDK.
 
@@ -12,13 +12,13 @@ publishing the application to PyPI does not implicitly publish the SDK.
 For an ordinary installation, including NL-BIOMERO:
 
 ```console
-python -m pip install omero-analysis==1.0.0
+python -m pip install omero-analysis==1.0.1
 ```
 
 The exact GitHub Release wheel is an alternative:
 
 ```console
-python -m pip install https://github.com/NL-BioImaging/OMERO.Analysis/releases/download/v1.0.0/omero_analysis-1.0.0-py3-none-any.whl
+python -m pip install https://github.com/NL-BioImaging/OMERO.Analysis/releases/download/v1.0.1/omero_analysis-1.0.1-py3-none-any.whl
 ```
 
 NL-BIOMERO uses normal versioned PyPI installation, matching its other web
@@ -72,8 +72,8 @@ From a source checkout, the maintained download tool can prepare and verify
 both wheels for an offline wheelhouse:
 
 ```console
-python scripts/download_analysis_release.py --version 1.0.0 --output dist/wheelhouse
-python -m pip install --no-index --no-deps dist/wheelhouse/omero_analysis-1.0.0-py3-none-any.whl
+python scripts/download_analysis_release.py --version 1.0.1 --output dist/wheelhouse
+python -m pip install --no-index --no-deps dist/wheelhouse/omero_analysis-1.0.1-py3-none-any.whl
 ```
 
 The `--no-deps` example requires runtime dependencies to be installed already.

@@ -1,15 +1,15 @@
 # OMERO.Analysis
 
-For maintainers preparing the first 1.0 release, see the
+For maintainers preparing a release, see the
 [release-readiness checks and integration matrix](docs/release-readiness.md).
 
-Production packages are distributed as pre-built wheels on
-[GitHub Releases](https://github.com/NL-BioImaging/OMERO.Analysis/releases).
-Each release includes Analysis, its separately versioned notebook SDK, and a
-SHA-256 `manifest.json`. Pin an exact release, download and verify its wheels
-before building the web image, and install from the offline wheelhouse. See
-[release and deployment instructions](docs/github-releases.md). No first-party
-PyPI publication, package-index service, or production source build is required.
+Install the released application with `pip install omero-analysis==1.0.1` from
+[PyPI](https://pypi.org/project/omero-analysis/). The identical application wheel
+is also available on [GitHub Releases](https://github.com/NL-BioImaging/OMERO.Analysis/releases),
+alongside the independently versioned notebook SDK and a SHA-256 `manifest.json`.
+Pin an exact version when building the web image. Verified GitHub Release wheels
+remain available for offline deployments; see the
+[release and deployment instructions](docs/github-releases.md).
 
 For paired DataQueryWorker upgrades, verified CSV saving, authorization, audit,
 mTLS, test commands and rollback, see the

@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+const stylesheet = readFileSync(resolve(process.cwd(), "src/style.css"), "utf8");
+const token = (name: string) => stylesheet.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`))![1];
 
 function channel(value: number): number {
   const normalized = value / 255;
@@ -20,8 +24,8 @@ function contrast(foreground: string, background: string): number {
 
 describe("theme contrast", () => {
   it("keeps normal and muted dark text readable", () => {
-    expect(contrast("#e5eef5", "#0b1117")).toBeGreaterThanOrEqual(7);
-    expect(contrast("#8fa8b8", "#0b1117")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("--theme-text"), token("--theme-background"))).toBeGreaterThanOrEqual(7);
+    expect(contrast(token("--theme-muted"), token("--theme-background"))).toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps normal and muted light text readable", () => {
