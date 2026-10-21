@@ -1,3 +1,5 @@
+import { remoteResultName } from "./notebookResults";
+import { notebookWorkspace } from "./notebookMigration";
 import { resultBytes } from "./resultMedia";
 import { samePlot } from "./plotGroups";
 import { exportWorkspace } from "./archive";
@@ -13,6 +15,20 @@ import type {
 } from "./types";
 
 const encoder = new TextEncoder();
+
+/** Server deletion receipts are authoritative, including after snapshot restore. */
+export function reconcileResultDeletions(workspace: AnalysisWorkspace, remote: SyncStatus): AnalysisWorkspace {
+  const removed = new Map((remote.externalResultDeletions || []).flatMap(record => record.fileIds.map(id => [id, record.deletedAt] as const)));
+  let changed = false;
+  const files = workspace.files.map(file => {
+    const timestamp = removed.get(file.id);
+    if (file.source !== "result" || !timestamp || file.deletedInOmeroAt) return file;
+    changed = true;
+    return {...file, deletedAt: timestamp, deletedInOmeroAt: timestamp, data: undefined, mediaBlob: undefined, remoteResult: undefined,
+      state: "missing" as const, error: "Removed in OMERO"};
+  });
+  return changed ? {...workspace, files} : workspace;
+}
 
 export function syncAlreadyCurrent(digest: string, remote: SyncStatus): boolean {
   return Boolean(digest && remote.linked && remote.syncState !== "pending" && remote.syncState !== "failed" &&
@@ -115,6 +131,7 @@ export async function buildWorkspaceSyncPayload(
   context: OmeroContext,
   options: { inventoryOnly?: boolean; uploadKeys?: Set<string> } = {}
 ): Promise<SyncPayload> {
+  workspace = notebookWorkspace(workspace);
   const items: SyncInventoryItem[] = [];
   const bytes = new Map<string, Uint8Array>();
   const add = async (
@@ -135,6 +152,7 @@ export async function buildWorkspaceSyncPayload(
 
   const resultGroups = new Map<string, {
     parameterKey?: string;
+    runId?: string;
     kind: SyncItemKind;
     mimetype: string;
     sha256: string;
@@ -144,16 +162,15 @@ export async function buildWorkspaceSyncPayload(
   }>();
   for (const file of workspace.files
     .filter((entry) =>
-      entry.source === "result" &&
-      Boolean(entry.runId || entry.methodId || entry.pipelineId || entry.notebookId)
+      entry.source === "result" && !entry.deletedInOmeroAt && !entry.supersededAt
     )
     .sort((left, right) =>
       left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
     )) {
     if (!file.data && !file.mediaBlob && !file.remoteResult) throw new Error(`Result ${file.name} is unavailable in this browser`);
-    const scope = file.notebookParameterKey ? `:${file.notebookParameterKey}` : "";
+    const scope = `${file.notebookParameterKey ? `:${file.notebookParameterKey}` : ""}${file.notebookRunId ? `:run:${file.notebookRunId}` : ""}`;
     const expectedKey = `result-content:${file.type === "image/png" ? "png-image" : "result"}:${file.sha256}${scope}`;
-    const raw = options.inventoryOnly && Boolean(file.sha256) || options.uploadKeys && !options.uploadKeys.has(expectedKey) ? undefined : await resultBytes(file);
+    const raw = Boolean(file.sha256) && (options.inventoryOnly || options.uploadKeys && !options.uploadKeys.has(expectedKey)) ? undefined : await resultBytes(file);
     const data = raw ? new Uint8Array(raw) : undefined;
     const kind: SyncItemKind = file.type === "image/png" ? "png-image" : "result";
     const mimetype = file.type || "application/octet-stream";
@@ -166,6 +183,7 @@ export async function buildWorkspaceSyncPayload(
     } else {
       resultGroups.set(groupKey, {
         parameterKey: file.notebookParameterKey,
+        runId: file.notebookRunId,
         kind,
         mimetype,
         sha256: digest,
@@ -179,11 +197,13 @@ export async function buildWorkspaceSyncPayload(
   const sortedResultGroups = Array.from(resultGroups.values())
     .sort((left, right) => left.sha256.localeCompare(right.sha256));
   const resultKey = (group: typeof sortedResultGroups[number]) =>
-    `result-content:${group.kind}:${group.sha256}${group.parameterKey ? `:${group.parameterKey}` : ""}`;
+    `result-content:${group.kind}:${group.sha256}${group.parameterKey ? `:${group.parameterKey}` : ""}${group.runId ? `:run:${group.runId}` : ""}`;
   const pngGroups = sortedResultGroups.filter((group) => group.kind === "png-image");
 
   for (const group of sortedResultGroups) {
     const canonicalFile = group.files[0];
+    // Existing content keeps its stable remote key; new runs have their own scope.
+    const displayName = remoteResultName(canonicalFile, workspace.notebooks);
     const sources = group.files.map((file) => ({
       fileId: file.id,
       deletedAt: file.deletedAt || null,
@@ -196,6 +216,7 @@ export async function buildWorkspaceSyncPayload(
       notebookId: file.notebookId || null,
       notebookParameterKey: file.notebookParameterKey || null,
       notebookRunStartedAt: file.notebookRunStartedAt || null,
+      notebookRunId: file.notebookRunId || null,
       executionId: file.executionId || null,
       resultGroupId: file.resultGroupId || null, movie: file.movie || null,
       viewer: file.viewer || null
@@ -212,10 +233,10 @@ export async function buildWorkspaceSyncPayload(
       ...(plotImageKeys.length ? { plotImageKeys } : {})
     };
     if (group.data) {
-      await add(resultKey(group), group.kind, canonicalFile.name, group.mimetype,
+      await add(resultKey(group), group.kind, displayName, group.mimetype,
         `Results/${canonicalFile.name}`, group.data, metadata);
     } else {
-      items.push({ key: resultKey(group), kind: group.kind, name: canonicalFile.name,
+      items.push({ key: resultKey(group), kind: group.kind, name: displayName,
         mimetype: group.mimetype, logicalPath: `Results/${canonicalFile.name}`,
         size: group.size, sha256: group.sha256, metadata });
     }
@@ -250,86 +271,6 @@ export async function buildWorkspaceSyncPayload(
     );
   }
 
-  for (const method of workspace.methods
-    .filter((entry) => !entry.deletedAt)
-    .sort((left, right) => left.id.localeCompare(right.id))) {
-    const bundle = encoder.encode(canonicalJson({
-      schema: "nl.bioimaging.analysis.method.v1",
-      version: 1,
-      method
-    }));
-    await add(
-      `method:${method.id}`,
-      "method",
-      `${slug(method.name.replace(/\.py$/i, ""))}.oa-method.json`,
-      "application/json",
-      `Methods/${method.name}`,
-      bundle,
-      {
-        methodId: method.id,
-        description: method.description,
-        currentVersion: method.currentVersion,
-        requiredCapabilities: method.requiredCapabilities || [],
-        requiredFormats: method.inputContract?.formats || []
-      }
-    );
-    const current = method.versions.find(
-      (version) => version.version === method.currentVersion
-    );
-    if (current) {
-      await add(
-        `method:${method.id}:python`,
-        "method-python",
-        method.name,
-        "text/x-python",
-        `Methods/${method.name}`,
-        encoder.encode(`${current.code.trimEnd()}\n`),
-        {
-          methodId: method.id,
-          currentVersion: method.currentVersion,
-          canonicalItemKey: `method:${method.id}`
-        }
-      );
-    }
-  }
-
-  for (const pipeline of workspace.pipelines
-    .filter((entry) => !entry.deletedAt)
-    .sort((left, right) => left.id.localeCompare(right.id))) {
-    const dependencies = Array.from(new Set(
-      pipeline.steps.map((step) => `method:${step.methodId}`)
-    )).sort();
-    const dependencyMethods = pipeline.steps
-      .map((step) => workspace.methods.find((method) =>
-        method.id === step.methodId && !method.deletedAt
-      ))
-      .filter((method) => Boolean(method));
-    await add(
-      `pipeline:${pipeline.id}`,
-      "pipeline",
-      `${slug(pipeline.name)}.oa-pipeline.json`,
-      "application/json",
-      `Pipelines/${pipeline.name}`,
-      encoder.encode(canonicalJson({
-        schema: "nl.bioimaging.analysis.pipeline.v1",
-        version: 1,
-        pipeline
-      })),
-      {
-        pipelineId: pipeline.id,
-        description: pipeline.description,
-        version: pipeline.version,
-        dependencies,
-        requiredCapabilities: Array.from(new Set(
-          dependencyMethods.flatMap((method) => method?.requiredCapabilities || [])
-        )).sort(),
-        requiredFormats: Array.from(new Set(
-          dependencyMethods.flatMap((method) => method?.inputContract?.formats || [])
-        )).sort()
-      }
-    );
-  }
-
   for (const notebook of workspace.notebooks
     .filter(item => !item.deletedAt)
     .sort((left, right) => left.id.localeCompare(right.id))) {
@@ -347,12 +288,6 @@ export async function buildWorkspaceSyncPayload(
     );
   }
 
-  const executionIds = new Set([
-    ...workspace.runs.flatMap(run => run.executionIds),
-    ...workspace.methods.flatMap(method => method.versions.map(version => version.executionId))
-  ]);
-  // Automatic synchronization retains the existing reusable-analysis boundary.
-  // Assistant conversations and private Chat attachments stay browser-local.
   const resultReferences = new Map(sortedResultGroups.flatMap(group => group.files.map(file =>
     [file.id, { workspaceId: workspace.workspace.id, key: resultKey(group), sha256: group.sha256, size: group.size }] as const)));
   for (const item of items.filter(item => item.kind === "template-input")) {
@@ -361,17 +296,13 @@ export async function buildWorkspaceSyncPayload(
   }
   const reusableSnapshot: AnalysisWorkspace = {
     ...workspace,
-    chats: [{ id: workspace.workspace.activeChatId, workspaceId: workspace.workspace.id,
-      title: "Assistant", summary: "", messages: [],
-      createdAt: workspace.workspace.createdAt, updatedAt: workspace.workspace.createdAt }],
-    files: workspace.files.filter(file => file.role !== "chat-attachment" &&
-      (file.source !== "result" || Boolean(file.runId || file.methodId || file.pipelineId || file.notebookId)))
+    files: workspace.files.filter(file => !file.supersededAt)
+      .map(file => file.deletedInOmeroAt ? {...file, data: undefined, mediaBlob: undefined, remoteResult: undefined} : file)
       .map(file => resultReferences.has(file.id) ? { ...file, data: undefined, mediaBlob: undefined,
         remoteResult: resultReferences.get(file.id) } : file)
       .map(file => file.source === "local" && file.role !== "template-input" && !/template/i.test(file.name)
         ? { ...file, data: undefined, mediaBlob: undefined, state: "missing" as const, error: "Reselect this browser-local input" } : file),
-    executions: workspace.executions.filter(item => executionIds.has(item.id)),
-    artifacts: workspace.artifacts.filter(item => item.runId || executionIds.has(item.executionId || "")),
+    executions: [], artifacts: [],
     evidence: [], audits: []
   };
   const snapshot = exportWorkspace(reusableSnapshot, context.max_snapshot_bytes ?? 64 * 1024 * 1024);

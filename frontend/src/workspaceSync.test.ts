@@ -1,5 +1,6 @@
 import {
   buildWorkspaceSyncPayload,
+  reconcileResultDeletions,
   canonicalJson,
   syncHasChanges,
   syncAlreadyCurrent,
@@ -133,7 +134,7 @@ describe("Workspace synchronization inventory", () => {
     const first = await buildWorkspaceSyncPayload(workspace(), context);
     const second = await buildWorkspaceSyncPayload(workspace(), context);
     expect(first.contentDigest).toEqual(second.contentDigest);
-    expect(first.inventory.items.map((item) => item.key)).toEqual([
+    expect(first.inventory.items.filter(item => item.kind !== "png-image").map((item) => item.key)).toEqual([
       "template-input:template-1", "workspace-snapshot:workspace-1"
     ]);
     expect(first.bytes.has("input-1")).toBe(false);
@@ -143,7 +144,7 @@ describe("Workspace synchronization inventory", () => {
     expect(first.bytes.has("template-input:template-1")).toBe(true);
   });
 
-  it("synchronizes direct reusable output while excluding identical Assistant output", async () => {
+  it("preserves and deduplicates both reusable and legacy Assistant result files", async () => {
     const value = workspace();
     value.files.push({
       ...value.files[2],
@@ -159,8 +160,9 @@ describe("Workspace synchronization inventory", () => {
     );
     expect(results).toHaveLength(1);
     expect(results[0].metadata).toMatchObject({
-      sourceCount: 1,
+      sourceCount: 2,
       sources: [
+        { fileId: "result-1", chatId: "chat-1" },
         { fileId: "result-2", chatId: null, methodId: "method-1" }
       ]
     });
@@ -184,7 +186,7 @@ describe("Workspace synchronization inventory", () => {
     const payload = await buildWorkspaceSyncPayload(value, context);
     const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
     const csv = payload.inventory.items.find((item) =>
-      item.kind === "result" && item.name === "plot.csv"
+      item.kind === "result" && item.name.endsWith("__plot.csv")
     )!;
     expect(csv.metadata.plotImageKeys).toEqual([image.key]);
   });
@@ -204,7 +206,7 @@ describe("Workspace synchronization inventory", () => {
     const payload = await buildWorkspaceSyncPayload(value, context);
     const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
     const svg = payload.inventory.items.find((item) =>
-      item.kind === "result" && item.name === "plot.svg"
+      item.kind === "result" && item.name.endsWith("__plot.svg")
     )!;
     expect(svg.metadata.plotImageKeys).toEqual([image.key]);
   });
@@ -233,7 +235,7 @@ describe("Workspace synchronization inventory", () => {
     expect(companion('svg-old').metadata.plotImageKeys).toBeUndefined();
   });
 
-  it("always excludes Assistant conversations, attachments, and Assistant-owned results", async () => {
+  it("removes Assistant records while retaining existing result files and input references", async () => {
     const value = workspace();
     value.files.push({
       id: "attachment-1",
@@ -254,7 +256,7 @@ describe("Workspace synchronization inventory", () => {
     const payload = await buildWorkspaceSyncPayload(value, context);
     expect(payload.inventory.items.some((item) => String(item.kind).startsWith("chat-")))
       .toBe(false);
-    expect(payload.inventory.items.some((item) => item.kind === "png-image")).toBe(false);
+    expect(payload.inventory.items.some((item) => item.kind === "png-image")).toBe(true);
     expect(JSON.stringify(payload.inventory)).not.toContain("secret.example");
     const snapshot = unzipSync(payload.bytes.get(`workspace-snapshot:${value.workspace.id}`)!);
     const manifest = JSON.parse(strFromU8(snapshot["workspace.json"]));
@@ -308,4 +310,44 @@ describe("Workspace synchronization inventory", () => {
     expect(repeated.inventory.items.find(item => item.kind === "png-image")?.sha256).toBe(restored.remoteResult.sha256);
   });
 
+});
+
+
+it("honors OMERO deletions after browser/snapshot restoration without uploading their bytes", async () => {
+  const original = workspace();
+  const result = original.files.find(file => file.source === "result")!;
+  const remote = {externalResultDeletions: [{key: "old", fileIds: [result.id], deletedAt: "2026-10-21T12:00:00Z"}]} as SyncStatus;
+  const next = reconcileResultDeletions(original, remote);
+  const deleted = next.files.find(file => file.id === result.id)!;
+  expect(deleted.deletedAt).toBe(remote.externalResultDeletions![0].deletedAt);
+  expect(deleted.data).toBeUndefined();
+  expect(next.notebooks).toBe(original.notebooks);
+  expect(reconcileResultDeletions(next, remote)).toBe(next);
+  const payload = await buildWorkspaceSyncPayload(next, context);
+  expect(payload.inventory.items.filter(item => ["result", "png-image"].includes(item.kind)).flatMap(item => item.metadata.sources as {fileId: string}[]).some(source => source.fileId === result.id)).toBe(false);
+  const snapshot = payload.inventory.items.find(item => item.kind === "workspace-snapshot")!;
+  const state = JSON.parse(strFromU8(unzipSync(payload.bytes.get(snapshot.key)!)["workspace.json"]));
+  expect(state.files.find((file: {id: string}) => file.id === result.id)).toMatchObject({deletedInOmeroAt: deleted.deletedAt});
+});
+
+it("keeps identical bytes from different new runs separate with readable OMERO names", async () => {
+  const original = workspace();
+  const first = {...original.files.find(file => file.source === "result")!, notebookRunId: "run-a", notebookRunStartedAt: "2026-10-21T12:00:00.000Z", notebookId: "example-notebook"};
+  original.files = [first, {...first, id: "other-run", notebookRunId: "run-b", notebookRunStartedAt: "2026-10-21T12:01:00.000Z"}];
+  const payload = await buildWorkspaceSyncPayload(original, context);
+  const results = payload.inventory.items.filter(item => ["result", "png-image"].includes(item.kind));
+  expect(results).toHaveLength(2);
+  expect(results[0].name).not.toBe(results[1].name);
+  expect(results.every(item => item.name.includes("20261021T12"))).toBe(true);
+});
+
+it("omits superseded file versions from both the OMERO inventory and the single recovery snapshot", async () => {
+  const original = workspace();
+  const file = original.files.find(file => file.source === "result")!;
+  file.supersededAt = "2026-10-21T12:00:00Z"; file.deletedAt = file.supersededAt;
+  const payload = await buildWorkspaceSyncPayload(original, context);
+  expect(payload.inventory.items.some(item=>item.kind==="png-image")).toBe(false);
+  const snapshot=payload.inventory.items.find(item=>item.kind==="workspace-snapshot")!;
+  const state=JSON.parse(strFromU8(unzipSync(payload.bytes.get(snapshot.key)!)["workspace.json"]));
+  expect(state.files.some((item:{id:string})=>item.id===file.id)).toBe(false);
 });

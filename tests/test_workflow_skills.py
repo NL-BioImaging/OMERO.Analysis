@@ -120,3 +120,25 @@ def test_refresh_is_admin_only(monkeypatch):
         b'"/api/workflow-skills/cisegmentation/'
         b'analyze-cisegmentation-measurements/"'
     ) in allowed.content
+
+
+def test_notebook_download_requires_the_reviewed_immutable_revision(monkeypatch):
+    asset = {"sha256": "b" * 64, "resolved_commit": "a" * 40, "content": '{"nbformat":4}'}
+    calls = []
+    def get_notebook(*args):
+        calls.append(args)
+        return asset
+    monkeypatch.setattr(views, "_workflow_skill_catalog",
+                        lambda: SimpleNamespace(get_notebook=get_notebook))
+    factory = RequestFactory()
+    for query in ({}, {"sha256": asset["sha256"], "commit": "c" * 40}):
+        response = views.workflow_notebook(factory.get("/", query), "workflow", "example", conn=object())
+        assert response.status_code == 409
+        assert asset["content"].encode() not in response.content
+    response = views.workflow_notebook(factory.get("/", {"sha256": asset["sha256"], "commit": asset["resolved_commit"]}),
+                                       "workflow", "example", conn=object())
+    assert response.status_code == 200
+    assert response.content == asset["content"].encode()
+    assert response["Cache-Control"] == "private, no-store"
+    assert response["X-Content-Type-Options"] == "nosniff"
+    assert all(call == ("workflow", "example", "omero-analysis") for call in calls)

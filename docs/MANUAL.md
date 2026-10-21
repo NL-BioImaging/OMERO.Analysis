@@ -1,219 +1,204 @@
-# OMERO.Analysis Manual
+# OMERO.Analysis user manual — 1.1 beta
 
-For group-mapped `.analysis` storage, see [BIOMERO importer and `.analysis` storage compatibility](importer-analysis-storage-compatibility.md). That contract is authoritative for optional dependency versions, environment/mount requirements, capability failure codes, pending imports, and backfill.
+## Quick start: from data to a result
 
-OMERO.Analysis combines browser-local data analysis, reusable Methods and Pipelines, run-only Notebooks, and automatic synchronization with OMERO. Notebook code and generated Python run locally in the browser. Source data are not sent to the configured AI provider.
+1. Open BIOMERO Data Analysis from your OMERO image, plate or screen. Choose the source, select the input attachments and create or open a workspace. Back and Next keep your choices. Recent workspaces are available on this launch screen.
+2. In Analysis, Explorer opens on the left and Inspector selects the first database or CSV. Check that this is the intended data. Select a spreadsheet, image or another input to inspect it instead.
+3. Open Libraries and import a starter or workflow example. Alternatively, choose New or Upload in Notebooks. Importing a library notebook makes a workspace copy.
+4. Check compatibility and Notebook setup. Select the intended input if more than one matches. Set Run parameters if the notebook declares them.
+5. Review the Python cells, then choose Run all. Outputs appear below each cell. Generated files appear below the notebook in Explorer.
+6. Check the thin status row for successful OMERO synchronization before closing. Download the notebook if you also want a portable copy.
 
-## Getting started
+An Analysis workspace combines input references, notebooks, run settings and generated files. It does not change the source measurements. Remote database inspection uses bounded read-only queries; opening a large database does not download it into the browser.
 
-1. Select an Image, Dataset, Plate, or Screen in OMERO.web. Multiple Images or multiple Plates may be selected together to create one selection-specific Workspace.
-2. Choose **Analysis** in the center-panel menu.
-3. Select the data attachments needed for the analysis.
-4. Open Analysis. Inputs appear in the Workspace **Input** folder.
+## Find your way around
 
-While Analysis restores OMERO data, settings, reusable artifacts, and input bindings, a **Preparing Workspace** progress indicator reports each stage. Explorer is rooted directly at the Workspace launched by the OMERO center panel; it does not browse parent OMERO objects or alternate local Workspaces.
+The four tabs are Inspector, Notebooks, Libraries and Skills. Explorer is always visible. Selecting a file opens Inspector; selecting a notebook opens Notebooks. Switching tabs does not restart notebook Python. The highlighted Explorer row shows the current selection.
 
-The OMERO.web middle pane adapts to the selected object:
+The top row names this workspace. The icons on the right rename it, change the standalone theme and open this help. Embedded Analysis follows BIOMERO's theme. The smaller second row shows loading, local saving, OMERO synchronization and destination information. Hover over an icon for its explanation.
 
-- ordinary Datasets, Screens, Plates, and Images offer a new or existing source Workspace;
-- multiple Images or Plates create one Workspace while remaining distinct from each individually opened object;
-- a managed Dataset under `+AnalysisWorkspaces` offers to resume its source Workspace and summarizes its revision and reusable contents;
-- a synchronized result Image links back to its source Workspace;
-- the `+AnalysisWorkspaces` Project explains and displays the managed library;
-- `~AnalysisSettings`, **AI Settings**, and **Skills** show information only;
-- Projects, Wells, mixed selections, and unsupported objects explain which Dataset, Screen, Plate, or Image selection to use.
+Open another workspace from the BIOMERO launch screen. Analysis deliberately does not contain a workspace switcher. Open in new tab opens the current workspace separately; it does not create a copy. Avoid editing the same notebook simultaneously in several tabs.
 
-Analysis opens on **Home**. Choose **Run a Method**, **Run a Pipeline**, **Run a Notebook**, **Create a Method**, **Create a Pipeline**, or **Create a Notebook**.
+## Explorer, attachments and selection
 
-## Workspace structure
+Inputs contains attached measurement files, supporting spreadsheets/templates and source image or plate entries. Use Attach input to add data. A local file is available in this browser; a remote OMERO attachment retains its source reference. Hover over a filename for its origin, path and size.
 
-Use the workspace selector to keep multiple analyses for the same source. **New workspace** assigns a numbered name prefixed by the full source path; **Rename** changes its analysis label while keeping that prefix. Workspaces have stable IDs, so renaming does not mix their Methods, runs, or conversations.
+Drag the vertical splitter to resize Explorer. When the splitter is focused, arrow keys also adjust its width. Expand or collapse folders with their arrows. Find a file narrows visible rows without changing the files in the workspace. Refresh workspace updates the available workspace data; it is not a kernel restart.
 
-**Manage workspaces** offers **Move to Trash**, **Restore**, and **Delete permanently**. Trash has no automatic expiry. Methods, Pipelines, and Notebooks have equivalent controls in **Trash and Restore**. A Method used by an active Pipeline cannot be trashed until that dependency is replaced or the Pipeline is trashed. Historical runs and pinned versions remain protected.
+Click a filename to inspect it. Database and CSV/TSV inputs have no deletion checkbox or Delete menu and are excluded from bulk removal. Other checkboxes select items for removal without opening them. Select all includes selectable workspace items. A Results-folder, run-folder or plot-group checkbox includes all its children, including files currently hidden by search. A partial checkbox means only some children are selected.
 
-- **Input** contains OMERO attachments and browser-local files used by analyses.
-- **Methods** contains reusable Python analyses and Method results. Its nested **Assistant** folder contains Method-development conversations, attachments, and browser-local validation results.
-- **Pipelines** contains ordered Method executions and Pipeline results.
-- **Notebooks** contains attached, uploaded, or converted notebooks and Notebook results.
+Right-click a row with a checkbox, or focus it and press Shift+F10, to open its context menu. Delete removes only that row and its children. It does not remove other checked items. Remove selected items applies to the entire checked selection. Escape closes the context menu.
 
-The Artifact Inspector can inspect every selectable Workspace item. The left Explorer and right Artifact Inspector are resizable and can each be hidden or restored with the buttons in the application header. This visibility choice is remembered for the current user and group in the browser.
+Removing an input detaches it from this workspace; it does not delete its source OMERO image or plate. Source image/plate rows do not offer deletion checkboxes. Undo last removal recovers the last Analysis removal, including after reload. Results deleted in OMERO itself cannot be recovered with Analysis Undo.
 
-## Home and Method-authoring Assistant
+## Inspect database tables and CSV
 
-Home is the default landing page and keeps reusable analyses prominent. The Assistant inspects supported data locally and may test Python in the isolated browser runtime, but its final deliverable must be a complete reusable Python Method script. The final Assistant card starts with a concise **Summary**, **Review**, and **Recommendations**; its complete script is kept in a collapsed **Show reusable Method code** section. If a model returns only prose, plots, files, or source code without the review, Analysis asks it for the complete structured response. Saved Methods and Pipelines are run from Home, Explorer, the Artifact Inspector, or the **Methods** and **Pipelines** tabs, not from the Assistant. The Home **Create a Method** card offers **With Assistant** and, while the artifact editor is enabled, **New Method**. New Methods include explicit paths for all ready Workspace inputs. Editing existing artifacts is available in the corresponding **Methods**, **Pipelines**, or **Notebooks** tab and in Explorer and Artifact Inspector actions, keeping Home focused on running and creating.
+Select a DuckDB, SQLite or CSV input. Choose a table or view to see its columns and types, then browse its rows. Database results use 100-row pages by default. Page navigation fetches the next bounded page rather than the complete database.
 
-For offline and fallback model choices by CPU, GPU memory, context budget, and LM Studio profile, see [Local LLM Recommendations](local-llm-recommendations.md).
+Choose visible columns to focus on useful measurements. Sort a column, apply the available filters and request a column summary when you need ranges, missing-value counts or distributions. Summaries run on demand; a wide table does not automatically trigger a query for every column.
 
-Use **Attach files** or **File URL** beside the composer to add up to ten Assistant-wide attachments of at most 25 MiB each. Supported formats are UTF-8 TXT, searchable PDF, DOCX, PNG, JPEG, and WebP. Direct URLs must be public HTTPS file URLs that the browser can fetch without credentials; webpages are not supported. PDF and DOCX extraction runs in browser Python, and OCR is not performed. A missing, unreadable, oversized, or image-only document blocks sending until it is reselected or removed.
+Inspector uses a query environment separate from the notebook kernel. Changing the inspected input or viewing a result does not clear notebook variables. A local inspection environment may need a first-time download, then stays warm across local files. Remote sources use the configured DataQueryWorker.
 
-Attachment text must fit the displayed model-context budget and is never silently truncated. Images require a vision-capable model; Analysis uses local server metadata when available and performs one harmless cached image probe when support is unknown. Changing to a non-vision model keeps the originals but blocks sending while image attachments remain active.
+Use column names and types from the actual schema. A file being a measurement database does not guarantee it contains cells, nuclei, tracking or a particular biological measurement. Missing tables are different from tables containing measured zero counts.
 
-Every user message is followed by a collapsed **AI activity** card. The final Assistant response appears next, followed by any **Analysis (local)** results. Local plots remain hidden until the Assistant turn has finished. Expand the activity card to see the live response, concise progress and validation steps, tool purposes, and the completed user-facing AI transcript for that turn. Private model chain-of-thought is neither displayed nor stored.
+## Database diagram and relationships
 
-When the assistant cannot continue without a real choice, the activity card opens automatically and presents two to four answer buttons. Selecting an answer resumes the same AI turn. **Stop** cancels a waiting question as well as the running analysis. A question restored after reloading the page is shown as inactive; answer it as a new Assistant message.
+Choose Diagram to see table cards with their columns. Select a card to inspect that table. Lines can help identify possible joins between tables, such as an image identifier shared by object measurements and an image table.
 
-Each assistant response has two small controls:
+Dashed relationships inferred from identifier names are suggestions, not proof of a declared foreign-key constraint. Check the columns, identifier values and expected relationship before joining. Joining two tables with several rows per identifier can multiply rows and inflate counts. Aggregate at the intended biological level before combining many-to-many data.
 
-- The **copy icon** immediately before the star copies the complete assistant response, including its Markdown, to the clipboard.
-- The **star** pins or unpins the message. An empty star means the message is not pinned; a filled star means it is pinned. Pinned messages are retained in the context sent to the AI even when an older, long conversation is compacted. Use this for important decisions, definitions, caveats, or results that later questions still need. Pinning does not save a Method, attach anything to OMERO, or prevent the Assistant conversation itself from being deleted.
+## SQL, export and query notebooks
 
-Recent messages are included automatically, so it is not necessary to pin every response. Pin only information that should remain available throughout a long Assistant conversation. Click the filled star again to unpin it.
+Use the SQL editor for bounded, read-only inspection. Start with a small query and the actual table/column names shown in Inspector. For example, if your schema has an images table:
 
-Saving is available only after the assistant has finished the turn. A saved Method contains the final assistant summary as Python comments above the reproducible code.
-
-When an answer is supported by generated files, **Supporting results** buttons name the actual image or data file they open in the Artifact Inspector. Repeated executions that produced identical bytes are shown only once; an image and its corresponding CSV remain separate because they are different forms of evidence.
-
-## Methods and Pipelines
-
-A Method is reusable Python with version history and an inferred input contract. Select at least two Methods and use **To Pipeline** to create an ordered Pipeline. Use **To Notebook** to convert selected Methods or Pipelines that do not depend on ZarrViewer.
-
-Methods and Pipelines provide **New**, **Edit**, **Rename**, **Run**, **Download**, and **Move to Trash** where applicable. Use **Trash and Restore** to restore items or permanently remove unreferenced items. Restore a Pipeline's required Methods before restoring the Pipeline.
-
-With **Enable artifact editor** on, saved Methods and Pipelines open unchanged, including when input data is missing. Repair unresolved inputs explicitly in the binding panel. Execution validates inputs separately. Pipelines show ordered steps and pinned Method versions; changing a pin requires an explicit edit. Historical runs retain their original versions and bindings.
-
-**New Method** opens an `untitled01.py`-style draft. The first **Save** or **Save and Run** persists version 1. Closing an untouched draft leaves no saved item. Python uses semantic syntax colors, and SQL in a triple-quoted `sql`, `query`, or `statement` assignment is highlighted as SQL.
-
-Home **Create a Pipeline** opens the Pipeline builder in **Pipelines**. Select Methods in execution order and create the Pipeline with the same shared flow as **To Pipeline** in Explorer.
-
-Running a Method opens **Methods** and running a Pipeline opens **Pipelines**. Both tabs have independent, type-specific run histories. Each direct run has durable status, resolved bindings, execution details, and generated files. A Pipeline additionally shows the status of every ordered step. On the first run after opening Analysis, a progress bar reports browser-Python startup and package-loading progress. Direct runs do not add synthetic prompts or results to the Assistant, and deleting an Assistant conversation does not delete their run history or outputs.
-
-## Notebooks
-
-Notebooks are Python nbformat-4 documents. Outside the optional artifact Editor they are read-only and never run automatically. Use **Open** to inspect a Notebook and **Run** to reset the kernel, attach current inputs, and execute all cells in order.
-
-The Notebook menu provides **Open**, **Run**, **Rename**, **Download**, and **Move to Trash**. Restore it from **Trash and Restore**. Permanent deletion is separate and is blocked while its saved result provenance is still needed.
-
-With the artifact editor enabled, **Edit** opens the saved document unchanged. Missing inputs remain editable; use **Apply input bindings** explicitly to repair them before running. The generated input-binding cell is read-only for legacy notebooks. Portable notebooks instead retain their visible tagged protocol cell as the first cell. Saving edited content clears stored execution counts and outputs so stale results are not presented as current. Code cells use Python and embedded SQL syntax highlighting. Markdown cells render formatted text when run or previewed. Raw text cells preserve text exactly and are neither executed nor formatted. The Notebooks folder **New** button creates the first available `untitled01.ipynb`-style name and opens it in the Editor. Home **Create a Notebook** uses the same creation path, or converts a selected Pipeline. A new Notebook is a draft until its first **Save** or **Save and Run**. Closing an untouched draft leaves no saved item. It contains the read-only OMERO.Analysis input-binding cell, an editable code cell, and references to all ready Workspace inputs.
-
-An uploaded portable notebook uses the `nl.bioimaging.omero-analysis-notebook.v1` contract. Analysis validates and sanitizes it, binds query sources and supporting files separately, and shows a native parameter form above the cells. The same `await ctx.query(...)` code can run against a compatible small Local or large Remote DuckDB, SQLite, SQLite3, or CSV attachment. Query transport files are transient and never appear in Workspace Input. Generated files under `ctx.results` appear below the Notebook's results folder. See [the developer guide](portable-notebooks.md).
-
-Remote query limits depend on the worker deployment. The tested large-export profile supports up to 10,000,000 rows and 2 GiB of CSV, including the header. Other profiles can impose smaller limits, and the browser still needs enough memory to consume a result. An oversized query fails explicitly. Use SQL aggregation when only a summary is needed; existing scientific sampling choices are not changed automatically.
-
-Use **Reattach input data** after the Workspace inputs change. Analysis synchronizes the ready local inputs under `/input`, adds or updates one visible first code cell named **OMERO.Analysis input bindings**, and updates unambiguous `/input/...` filenames in the remaining code cells. Reattaching the same inputs updates that binding cell instead of creating duplicates. For a portable notebook, Reattach preserves the protocol cell and rebinds logical input IDs instead.
-
-Notebook execution does not load AI providers, Assistant skills, JupyterLab, widget JavaScript, shell commands, or network package downloads. Developers may use `ctx.display_parameters()` for optional ipywidgets offline; Analysis always uses its native form.
-
-## Workspace synchronization
-
-Analysis automatically mirrors reusable Workspace content into the marked `+AnalysisWorkspaces` Project for the current user and group. It sends only changed items and does not create or upload a large Workspace ZIP. PNG results from direct Method, Pipeline, and Notebook runs become OMERO Images. Other direct results, Methods, Pipelines, and Notebooks become typed attachments. Same-stem plot CSV and SVG FileAnnotations are linked to the corresponding PNG Image rather than to the managed Dataset. Saved Method and Pipeline executions automatically create an SVG companion whenever Matplotlib writes a PNG.
-
-Ready input files with `template` anywhere in the filename are also synchronized under `Templates`. Other source inputs are excluded. Assistant conversations, attachments, and validation results are always excluded. They remain browser-local; extracted text and source URLs are never synchronized.
-
-Synchronization is automatic and incremental. Creating, editing, trashing, or running a reusable artifact schedules an incremental save. Missing, unlinked, inaccessible, or remotely purged data never silently deletes the browser copy. Automatic republishing pauses while access or lifecycle conflicts are unresolved. Use workspace management to review recovery. Other tabs observe lifecycle changes, and stale saves cannot resurrect a trashed workspace.
-
-The status strip reports browser saving, OMERO synchronization, pending imports, and the readable filesystem copy separately. A failed save or partial cleanup stays visible and can be retried. Automatic recovery snapshots reference saved result bytes by identity and checksum instead of packaging them again. Restoring those bytes rechecks access and integrity. Explicit portable ZIP downloads have a size limit and fail clearly when they cannot include the requested content.
-
-Plots show one PNG preview with compact PNG/SVG/CSV download buttons. SVG-only plots remain visible. All formats remain in saved results and archives; separate runs with the same filenames retain their distinct provenance.
-
-Notebook results are grouped by effective parameters and input identities. A successful rerun with the same parameters and inputs replaces the previous active output set; the previous files remain recoverable in Workspace Trash. Different parameter sets or changed inputs keep separate results, even when their plots look identical. Failed or cancelled reruns preserve the previous successful results. Each figure keeps its own same-stem SVG and CSV within that parameter set. Analysis also repairs redundant Dataset links without deleting the underlying files.
-
-## Reusing AnalysisWorkspaces
-
-Use **Reuse from +AnalysisWorkspaces** to browse synchronized Datasets and copy Methods, Pipelines, or Notebooks into the current browser Workspace. Imports are independent copies and do not modify the library original.
-
-The single Analysis OMERO panel can import Methods, Pipelines, and Notebooks.
-
-## Analysis Settings
-
-**Enable artifact editor** is off by default. Enabling it adds the **Editor** tab beside the standard Analysis tabs and adds **Edit** to Method, Pipeline, and Notebook menus and Artifact Inspector views. Methods save as a new version, Pipelines increment their version, and Notebooks update in place. **Save and Run** always saves before delegating to the existing runner. Use Ctrl+S or Cmd+S to save; leaving a dirty editor asks before discarding changes. The preference applies to the current user and group and is saved automatically.
-
-In the Notebook editor, **Whole notebook** shows all cells and the current draft in one JSON field. **Apply source to draft** validates the edited source; **Save** persists it and **Save and Run** also executes it. A stale source revision is rejected so an older copy cannot overwrite intervening edits. This view omits execution outputs and widget state.
-
-Portable notebooks may declare filename patterns for supporting files. For example, `*template*.xlsx` and `*template*.csv` discover matching accessible attachments, ignoring filename case. A valid existing binding is retained; multiple matches require a choice. The notebook must support the selected file's actual format and layout.
-
-**Plot + CSV** asks the Assistant-authored Method to save both a visual plot and the corresponding tabular data. This preference is saved automatically.
-
-Analysis Settings, AI profiles, and user-added skills are saved automatically to the encrypted `~AnalysisSettings` bundle for the current user and group. There are no synchronization switches or manual Settings sync button.
-
-Use the sun/moon button immediately before **Settings** to switch between the default dark interface and the BIOMERO-inspired light interface. The selected theme is remembered in the browser and saved automatically.
-
-## AI profiles
-
-An AI profile contains:
-
-- A profile name
-- OpenAI-compatible Chat Completions or Anthropic Messages protocol
-- Provider endpoint
-- Authentication-header type
-- Model or deployment name
-- API key
-- Optional context-window size
-
-Use **Validate connection** after editing a profile. The validation request is small but may be billed by the provider. When validation succeeds in an OMERO context that supports Settings synchronization, Analysis synchronizes the updated profiles and other Settings automatically.
-
-The **Local AI server** panel is collapsed by default. Expand it to detect LM Studio or Ollama, enter another local OpenAI-compatible URL, select a detected model, or create a local AI profile.
-
-All profiles are saved automatically in the marked `~AnalysisSettings` Project and its **AI Settings** Dataset. The settings JSON is placed in an encrypted server-side bundle before it is attached to OMERO. Encryption is scoped to the current OMERO user and group.
-
-## Skills
-
-A skill is Markdown guidance that helps the Assistant understand a data format or domain. It does not execute code and is never loaded by Notebook.
-
-Automatically discovered BIOMERO and ZarrViewer skills are shown as collapsed cards. Their source links open the provider repository or skill URL.
-
-You can upload a Markdown skill or link a direct HTTPS Markdown URL. User skills can be enabled or disabled. Enabled skills match all inputs unless their metadata lists file extensions.
-
-## Simple skill format
-
-A simple skill can be one Markdown file:
-
-```markdown
----
-name: my-table-guide
-description: Explains the exported measurement tables
-extensions: csv, xlsx
----
-
-# Tables
-
-`objects.csv` contains one row per segmented object.
-`images.csv` contains image metadata.
-
-# Relationships
-
-Join `objects.image_id` to `images.id`.
-
-# Analysis guidance
-
-Use `well` as the experimental unit and do not treat individual objects as
-independent replicates.
+```sql
+SELECT * FROM images LIMIT 20
 ```
 
-Useful skill content includes table meanings, primary keys, relationships, units, missing-value conventions, experimental units, and analysis caveats. Do not put API keys or other secrets in skill files.
+Read-only restrictions, timeouts and row limits also apply to custom SQL. Modification statements, attaching arbitrary databases and unrestricted file access are not supported. An error names the failed query or requirement; changing a source is not a solution to a syntax error.
 
-Uploaded skills are copied into the **Skills** Dataset in `~AnalysisSettings` automatically.
+Export downloads the returned result as CSV. A paged preview or bounded query export is not a full database backup. Create notebook from query puts the query into an editable notebook so you can develop the analysis further. Review its inputs and compatibility before running.
 
-## Settings synchronization
+## Spreadsheets, templates and image viewers
 
-Analysis automatically synchronizes:
+Select an Excel workbook to preview its sheets. Choose the intended sheet and inspect its headings before using it in a notebook. A plate template is an ordinary supporting input; attaching one does not automatically join it to measurements. Match well identifiers, plate identifiers and timepoints explicitly.
 
-- Analysis Settings
-- Every AI profile
-- User-added skills
+Select the source image or plate entry in Explorer to see provenance and available viewer links. Open source in OMERO opens the validated source object. A ZarrViewer link appears only when that viewer is installed and the source has a supported, validated Zarr reference. Selecting a CSV or plot does not show unrelated image links.
 
-Settings are scoped to the current OMERO user and group. Opening Analysis in the same group restores the latest synchronized settings when available.
+A missing viewer link can mean the source has no supported viewer reference. It does not mean the measurement file is unusable. Analysis never builds viewer URLs from arbitrary database filenames or filesystem paths.
 
-## Privacy and security
+## Choose a notebook and understand compatibility
 
-- Data analysis and Notebook execution run in the browser.
-- Ordinary Workspace input files remain browser-local. AI requests contain prompts, generated code, bounded previews and summaries, errors, and—for selected Assistant attachments only—extracted text or metadata-stripped image pixels. Original PDF and DOCX bytes are never sent to the provider.
-- API keys synchronized to OMERO are encrypted at rest.
-- Custom skills are instructions and can influence Assistant behavior. Add skills only from sources you trust.
-- Notebook HTML and JavaScript output are not executed.
+Libraries and Notebooks show compatibility beside notebook entries. Ready means the notebook's declared checks passed for the current input and supported packages. It does not validate the scientific interpretation of the analysis.
 
-## Troubleshooting
+Missing requirements lists the absent input format, required file, table, column, package or workflow readiness condition. Not checked means checks have not completed or could not complete; inspect the message before proceeding. Choose input means a compatible binding needs a decision, often because several inputs match.
 
-Browser Python starts lazily when the Assistant, a Method, a Pipeline, a Notebook, or a database inspection first needs it. Merely opening Analysis, Settings, or a Notebook does not copy inputs into Python.
+Analysis automatically binds an unambiguous compatible input. Recheck after attaching or changing data. Importing or editing an incompatible notebook is allowed so you can adapt it. Execution requires resolved prerequisites. Fix a wrong declaration only after checking the code really supports the data; removing a warning alone does not make an analysis correct.
 
-If the Assistant is unavailable, check that the Workspace inputs are ready and that the active AI profile has an endpoint, model, and any required key. Use **Validate connection** for specific endpoint, authentication, model, CORS, or response-format errors.
+Workflow examples come from configured workflow revisions and retain source/checksum provenance. Local, unreleased examples can be imported explicitly. Their presence does not change the workflow execution version. CI Segmentation examples are owned by that workflow, not built into Analysis.
 
-If synchronization fails, confirm that the selected OMERO group permits Project/Dataset creation and FileAnnotation creation, then retry after the session keepalive has renewed the connection. Unexpected server failures show a short request ID; include it when checking server logs or reporting the problem.
+## New, upload, download and rename
 
-If a custom URL skill cannot be loaded, use a direct HTTPS Markdown URL or upload the file. GitHub `blob` URLs are converted to their raw-content form.
+New creates an editable notebook. Upload imports a valid .ipynb file. It does not execute imported code. Download saves the current notebook as an .ipynb, including its saved cell outputs. Rename changes its workspace name. Notebook files and whole-workspace recovery snapshots are different artifacts.
 
-## Movie results and workspace actions
+Use Libraries to reuse an existing notebook or template. Importing makes a copy, preserving access and publication rules on the original. Shared content still follows OMERO owner/group permissions. Library imports do not grant access to another user's input data.
 
-The header Workspace menu contains archive download/import and reuse actions
-alongside workspace management. They are available from every Analysis tab.
-Movie results use native playback controls in the Inspector, run results, and
-Notebook outputs. See [Movie recipes and limits](movies.md).
+## Notebook setup: describe what the notebook needs
+
+Open Notebook setup above the cells. It describes input roles, file formats, portable paths, required tables/columns, parameters, packages and results. This is the notebook author's configuration, shared with anyone who reuses the notebook.
+
+Inspect input structure loads the available tables and columns using read-only inspection. Only the requirements you select are added. It does not download a large remote database or restart notebook Python. Give inputs meaningful roles, for example measurements and plate_template. Existing input IDs remain fixed because Python cells may refer to them.
+
+Advanced options cover filename patterns, column types, bounded read-only readiness checks and database-backed parameter choices. Readiness checks should answer a small question such as whether tracking observations exist. They should not perform the analysis or modify data.
+
+Apply setup validates the form and updates the existing first Python configuration cell. Surrounding code, cell IDs, notebook metadata and supported unknown contract fields are preserved. Cancel returns to the saved setup. Preview configuration source shows the proposed Python change before applying it.
+
+Unapplied setup drafts are stored locally and can survive a reload. If the Python configuration changed while a form draft was open, Reload setup discards that draft in favor of current source; conflicting drafts cannot overwrite each other. Legacy notebooks gain a contract only through Add portable setup. Their analysis is not automatically converted.
+
+## Run parameters: values for this execution
+
+Run parameters is separate from Notebook setup. Setup defines a parameter's type, meaning, default and valid choices. Run parameters selects its value for this notebook's next execution. Changing a run value does not rewrite the Python default. The chosen values are stored with the notebook and recorded in run provenance.
+
+For example, setup might define minimum_count with a default of 10. Choosing 20 in Run parameters runs with 20, while the reusable notebook still declares default 10. Reset to defaults is explicit.
+
+Load choices performs bounded read-only queries in the inspection service. Select the intended values after loading. Missing choices, invalid numbers or other invalid values block running and explain what needs correction. Notebooks without declared parameters do not need a run-parameter form.
+
+Setup, input binding and parameter edits mark earlier outputs stale. They do not restart the kernel while you are editing. Initialize setup prepares the current configuration explicitly. Use Run all for a complete clean execution.
+
+## Edit Python and Markdown cells
+
+Existing Python cells start collapsed, with outputs visible below them. Expand a cell to inspect or edit its source. New cells and cells in a newly created notebook open for editing. Markdown cells hold headings, explanations and interpretation. Raw is not offered as a cell type.
+
+Add or delete a cell, move it up or down, or change it between Python and Markdown. Keep the portable configuration cell first. Edit setup in Python opens that cell directly. Valid source changes update the graphical setup; the Python source remains the portable source of truth.
+
+An invalid configuration or source draft remains recoverable locally and cannot overwrite the last valid notebook. Correct the highlighted issue before running. An edited cell's old output is marked stale until rerun. A plot shown under stale code is historical output, not evidence that the edited code executed.
+
+## Run cells, Run all, Stop and Restart
+
+Run cell or Shift+Enter executes that cell with the current notebook variables. It does not silently run earlier analytical cells. If a portable analysis cell needs initialization, choose Initialize setup first, then run the needed cells in order. A NameError often means a variable was never created in this kernel.
+
+Run all starts a clean kernel, binds inputs and runs code cells from top to bottom. Use this to check the complete notebook is reproducible. A single-cell execution retains variables for an interactive edit/run loop. Both complete and individual-cell executions have their own run identity for generated files.
+
+Stop cancels execution. Restart kernel clears variables. Outputs already saved may remain visible; restarting is not the same as deleting results. If preparation was still loading inputs when you stopped, Analysis does not continue running afterward.
+
+Switching between Inspector, Notebooks, Libraries and Skills keeps notebook state. Selecting another notebook or executing after changing input bindings starts the appropriate clean state. Inspecting a CSV, database table or plot must not reset the notebook kernel.
+
+## Input paths and portable Python
+
+Use the actual binding examples shown with the selected notebook. Portable notebook inputs live under input/ and generated files under results/. These logical paths are not server filesystem paths. A remote database binding uses the read-only query service rather than copying the database into Python.
+
+Use the selected authoring skill for the exact SDK contract and remote-query examples. For supporting spreadsheets, obtain the declared path through the notebook context, inspect sheet names and headings, then read the intended sheet. Never assume a plate template is available merely because the source is a plate.
+
+Packages must be supported by the browser Python runtime and declared when required. A package installed on your workstation is not automatically installed in the notebook kernel. A notebook using unrestricted local filesystem paths or a desktop-only library needs adaptation before running here.
+
+## Results, plot companions and different runs
+
+Generated files appear under their notebook's Results folder. Current outputs have Run folders labeled with UTC time and a short unique identifier. Only one current version of each result filename is kept per notebook, parameter combination and input binding. Different parameter combinations remain separate. Inside a run, matching PNG, SVG and CSV basenames form a plot group. The PNG is a convenient preview, SVG supports scalable graphics, and CSV holds exported tabular values. Check that a notebook actually writes the formats you need.
+
+OMERO filenames include the notebook name, run timestamp/identifier and original output filename. For example, counts__20261021T120000000Z-a1b2c3d4__cells_per_well.png has companions ending in .svg and .csv with the same run prefix. After a successful Run all with the same parameters and inputs, its outputs replace the previous matching run. Other parameter combinations remain available. A successful single-cell run replaces only the filenames it generated, preserving other current results. Failed or stopped runs do not replace saved results. Downloaded workspace files retain their original useful basenames.
+
+On first use of this version, older duplicate result versions are compacted to the most recently created active file per notebook, parameter/input identity and filename. Analysis does not invent missing legacy run provenance. Superseded versions are removed from the synchronized inventory and recovery snapshot. Keep an explicit download outside the workspace if you need a historical comparison.
+
+CSV/SVG companions are attached to their plot Image in OMERO. Standalone files are attached to the workspace Dataset. Legacy results without a reliable notebook owner stay under Other results. Select a file to inspect or download it; remove a group or run with its checkbox or context menu.
+
+## Automatic saving and OMERO synchronization
+
+Local drafts are saved in this browser. Valid notebooks, generated results, templates and workspace recovery state synchronize automatically to the managed OMERO workspace destination. The status row distinguishes saving, saved, pending imports and sync failure. A plot may wait for the configured image importer after its bytes have been saved.
+
+Wait for synchronization to complete before relying on another browser or computer. Local saved does not guarantee OMERO has received the latest change. A network failure preserves local work and reports a retryable sync error. An unavailable importer or query worker needs its service/configuration restored; repeatedly changing notebook parameters will not fix it.
+
+Analysis checks remote workspace status on focus and periodically while open. Results deleted or unlinked directly in OMERO disappear from Explorer after reconciliation. There is one current synchronized notebook and recovery snapshot per workspace, and one result version per parameter/input combination. Replaced objects are cleaned after the new manifest commits successfully. Deletion receipts persist on the server, so stale browser copies and old snapshots cannot upload those result records again. Re-running a notebook can intentionally generate a new result with a new identity.
+
+Analysis Undo applies only to reversible removals made inside Analysis. It cannot restore a file deleted in OMERO. Deletion reconciliation preserves notebook source, inputs, templates and unrelated OMERO objects. Historical inline outputs saved inside a notebook can still show a past figure even after its separate generated file was deleted.
+
+## Skills: ask an external browser assistant
+
+1. Open Skills and describe your question, including the intended biological level: object, image, well, plate or timepoint. Choose the available notebook-authoring, workflow measurement and optional viewer guidance.
+2. Review Share input names and table structure, selected by default. The preview includes attached input names, formats, roles, portable paths, table/column names and capabilities. Uncheck it if you do not want this context shared. It excludes measurement rows, notebook outputs, passwords and tokens by default.
+3. Choose the browser instruction for ChatGPT with Chrome or Claude in Chrome. Copy it into your browser-enabled chat and keep Analysis signed in. Your assistant's browser/site permissions must allow access to this local page. A cloud-only browser cannot reach your localhost.
+4. The assistant uses Browser assistant area → Read guidance to retrieve the selected skills and approved context. It can inspect the input list, including plate_template.xlsx. Supporting spreadsheets/templates offer on-request downloads up to 32 MiB; database inputs remain remote. Approve sharing file contents in your external chat if needed.
+5. The assistant creates a compatible portable .ipynb and submits Notebook filename and Notebook JSON through Import created notebook. This uses the normal parser, contract validation and workspace import API. It preserves existing notebooks and does not execute the new notebook.
+6. Review compatibility, bindings, code and run values in Notebooks, then choose Run all yourself. Invalid imports remain editable for correction.
+
+Analysis does not connect an AI account, send a prompt to an AI provider or run an in-application assistant. Your external chat controls its own browser access. Guidance is not a guarantee that generated code is correct. Review code and interpretation before running it.
+
+For a chat without browser access, download the skills bundle, unzip it and attach the selected guidance/context yourself. Copy the prepared prompt. Download the generated .ipynb and use Notebooks → Upload. Individual skill previews and downloads are also available.
+
+## Counts, segmentation and tracking examples
+
+Generic CSV/database starters belong to Analysis. Workflow examples supply their own measurement assumptions. CI Segmentation can contain cells/nuclei, other objects/spots, tracking, or combinations of these. Check actual label types and available tables before choosing an example.
+
+Cell counts per well should aggregate fields while keeping timepoints and label sets separate. For an ordinary image, report the appropriate image-level count. No template should be required for a basic count. A missing cell label set means cells were not measured; it must not be displayed as zero cells.
+
+Object/spot counts can work without cell or nucleus segmentation. Tracking examples require recorded tracking tables and must use the recorded time/speed units. A measured zero is distinct from missing data. Plate-quality plots, distributions and focus summaries need the relevant measurements; absence of a quality measurement is not evidence of good quality.
+
+## Troubleshooting and readable errors
+
+**I deleted results in OMERO but still see them.** Bring Analysis to the foreground or refresh it. Reconciliation checks the managed result links and hides externally removed files. Allow a periodic status check to finish. A figure inside a notebook cell may be a historical inline output; it is separate from its generated file. Do not rerun merely to refresh Explorer, because rerunning creates new outputs.
+
+**Not checked or missing requirements.** Read the specific reason. Attach the intended file, choose a matching input, or use a notebook for this schema. Check available label sets before interpreting counts. Tracking absent is a missing prerequisite, not a track count of zero.
+
+**Remote query worker unavailable.** The input can still be listed while remote querying is unavailable. Ask the deployment maintainer to restore DataQueryWorker/configuration. A permission denial needs access correction; an expired session needs login; a network failure needs connectivity. These are distinct conditions.
+
+**A Python cell fails.** Read the message below it and expand the traceback. Check that setup was initialized, preceding required analytical cells ran, names match the schema and packages are supported. Run all from a clean state to find hidden dependencies on previous interactive work.
+
+**A setup draft cannot apply.** Correct the validation message. If Python changed concurrently, copy any useful draft values before Reload setup. Invalid source remains local, while the last valid notebook stays safe.
+
+**The plot looks old.** Check stale markers and the run timestamp. Edits do not recalculate outputs. Review Run parameters, then run the intended cell or Run all. A matching filename alone does not identify an execution.
+
+**Saving or importing stays pending.** Check the status row and Retry when offered. A pending plot import may require the importer to finish. Avoid several tabs saving the same workspace. Keep the tab open or download your notebook before clearing browser storage.
+
+**A notebook cannot find a template.** Check Inputs and its exact portable path, sheet names and headings. Import a template from Libraries or attach it explicitly. A plate source does not imply an attached template.
+
+## Login, privacy and keyboard reference
+
+An expired OMERO session preserves local drafts and redirects the top-level window to login, with a same-origin return destination. Sign in again to resume. Permission denial does not mean your session expired. Embedded theme follows the host; use the standalone theme control only outside it.
+
+Do not clear browser site data to solve a sync error without first saving/downloading your local work. Browser-only inputs and unapplied drafts are not guaranteed to exist elsewhere. Skills context sharing is visible and optional; no raw measurements or credentials are included by default.
+
+- Shift+Enter in a Python cell runs that cell.
+- Shift+F10 on a selectable Explorer row opens its context menu.
+- Escape closes the Explorer context menu or this help dialog.
+- Arrow keys on the focused Explorer splitter resize it.
+- Tab and Shift+Tab move between controls. The help dialog keeps focus inside until closed.
+- Search manual filters these help sections; use Contents to jump to a topic. Clear the search to see the full manual.

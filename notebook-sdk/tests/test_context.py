@@ -105,3 +105,24 @@ def test_database_backed_widget_choices_are_bounded(tmp_path: Path, monkeypatch)
     box = ctx.display_parameters()
     assert box.children[0].options == [("DAPI", 1), ("GFP", 2)]
     assert ctx.params["channel"] == 1
+
+
+def test_readiness_distinguishes_missing_measurement_from_measured_zero(tmp_path):
+    inputs = tmp_path / "input"
+    inputs.mkdir()
+    path = inputs / "data.sqlite"
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE label_sets (object_type TEXT)")
+    connection.execute("INSERT INTO label_sets VALUES ('spots')")
+    connection.commit()
+    contract = make_contract("input/data.sqlite", ["sqlite"])
+    contract["inputs"][0]["readiness"] = [{
+        "sql": "SELECT 1 FROM label_sets WHERE object_type='cells'",
+        "message": "No cell segmentation was measured",
+    }]
+    ctx = configure(contract, project_root=tmp_path)
+    assert asyncio.run(ctx.check_readiness()) == {"measurements": ["No cell segmentation was measured"]}
+    connection.execute("INSERT INTO label_sets VALUES ('cells')")
+    connection.commit()
+    assert asyncio.run(ctx.check_readiness()) == {}
+    connection.close()

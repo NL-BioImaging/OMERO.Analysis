@@ -1,3 +1,4 @@
+import { NOTEBOOK_STORAGE_VERSION, RETIRED_STORES, retiredValueKey, upgradeNotebookStorage, notebookWorkspace } from "./notebookMigration";
 import { scopedWorkspaceName } from "./workspaceModel";
 import type {
   ChatRecord,
@@ -5,7 +6,6 @@ import type {
   OmeroContext,
   WorkspaceRecord,
   AnalysisWorkspace,
-  ProviderSettings,
   MethodRecord,
   PipelineRecord,
   NotebookRecord,
@@ -17,7 +17,8 @@ import type {
 } from "./types";
 
 const DB_NAME = "omero-analysis-workspaces";
-const DB_VERSION = 2;
+// Version 3 backs up and removes retired records in one upgrade transaction.
+const DB_VERSION = NOTEBOOK_STORAGE_VERSION;
 const STORES = [
   "workspaces",
   "chats",
@@ -66,9 +67,10 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 function openDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(name, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = event => {
       const db = request.result;
       if (!db.objectStoreNames.contains("values")) db.createObjectStore("values");
+      if (DB_VERSION >= NOTEBOOK_STORAGE_VERSION) upgradeNotebookStorage(db, request.transaction!, event.oldVersion);
       for (const name of STORES) {
         const store = db.objectStoreNames.contains(name)
           ? request.transaction!.objectStore(name)
@@ -87,7 +89,10 @@ function openDatabase(name: string): Promise<IDBDatabase> {
         }
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => { request.result.close(); databasePromise = undefined; };
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -106,6 +111,7 @@ export async function getValue<T>(key: string): Promise<T | undefined> {
 }
 
 export async function setValue<T>(key: string, value: T): Promise<void> {
+  if (retiredValueKey(key)) throw new Error("AI settings and custom skills were retired in Analysis 1.1");
   const db = await database();
   const tx = db.transaction("values", "readwrite");
   tx.objectStore("values").put(value, key);
@@ -120,6 +126,7 @@ export async function deleteValue(key: string): Promise<void> {
 }
 
 async function putEntity<T extends { id: string }>(store: EntityStore, value: T): Promise<void> {
+  if (RETIRED_STORES.has(store)) throw new Error("This record type was retired in Analysis 1.1");
   const db = await database();
   const tx = db.transaction(store, "readwrite");
   tx.objectStore(store).put(value);
@@ -127,6 +134,7 @@ async function putEntity<T extends { id: string }>(store: EntityStore, value: T)
 }
 
 let writeQueue: Promise<unknown> = Promise.resolve();
+export const flushLocalWrites = () => writeQueue;
 
 function serializedWrite<T>(operation: () => Promise<T>): Promise<T> {
   const next = writeQueue.then(operation, operation);
@@ -142,6 +150,7 @@ async function deleteEntity(store: EntityStore, id: string): Promise<void> {
 }
 
 async function entitiesForWorkspace<T>(store: Exclude<EntityStore, "workspaces">, workspaceId: string): Promise<T[]> {
+  if (RETIRED_STORES.has(store)) return [];
   const db = await database();
   const tx = db.transaction(store, "readonly");
   return requestValue(tx.objectStore(store).index("workspaceId").getAll(workspaceId)) as Promise<T[]>;
@@ -174,68 +183,12 @@ export const saveWorkspaceRecord = (value: WorkspaceRecord): Promise<WorkspaceRe
     await transactionDone(tx);
     return updated;
   });
-export const saveChat = (value: ChatRecord) =>
-  serializedWrite(() => putEntity("chats", value));
 export const saveFile = (value: WorkspaceFile) =>
   serializedWrite(() => putEntity("files", value));
-export const saveExecution = (value: ExecutionRecord) =>
-  serializedWrite(() => putEntity("executions", value));
-export const saveRun = (value: AnalysisRunRecord) =>
-  serializedWrite(() => putEntity("runs", value));
-export const saveMethod = (value: MethodRecord) =>
-  serializedWrite(() => putEntity("methods", value));
-export const savePipeline = (value: PipelineRecord) =>
-  serializedWrite(() => putEntity("pipelines", value));
 export const saveNotebook = (value: NotebookRecord) =>
   serializedWrite(() => putEntity("notebooks", value));
-export const saveArtifact = (value: ArtifactRecord) =>
-  serializedWrite(() => putEntity("artifacts", value));
-export const saveAudit = (value: OutboundPayloadAudit) =>
-  serializedWrite(() => putEntity("audits", value));
-export const saveEvidence = (value: EvidenceRecord) =>
-  serializedWrite(() => putEntity("evidence", value));
-export const saveEvidenceLedger = (chatId: string, values: EvidenceRecord[]) =>
-  serializedWrite(async () => {
-    const db = await database();
-    const tx = db.transaction("evidence", "readwrite");
-    const store = tx.objectStore("evidence");
-    const keys = await requestValue(store.index("chatId").getAllKeys(chatId));
-    keys.forEach((key) => store.delete(key));
-    values.forEach((value) => store.put(value));
-    await transactionDone(tx);
-  });
 export const deleteFile = (id: string) => serializedWrite(() => deleteEntity("files", id));
-export const deleteChat = (id: string) => serializedWrite(() => deleteEntity("chats", id));
-export const deleteMethod = (id: string) => serializedWrite(() => deleteEntity("methods", id));
 export const deleteNotebook = (id: string) => serializedWrite(() => deleteEntity("notebooks", id));
-
-export async function deleteChatCascade(chatId: string): Promise<void> {
-  await serializedWrite(async () => {
-    const db = await database();
-    const relatedStores = ["files", "executions", "artifacts", "audits", "evidence"] as const;
-    const tx = db.transaction(["chats", ...relatedStores], "readwrite");
-    tx.objectStore("chats").delete(chatId);
-    const pending = relatedStores.map((storeName) => {
-      const store = tx.objectStore(storeName);
-      const indexed = store.indexNames.contains("chatId");
-      const request = indexed
-        ? store.index("chatId").getAllKeys(chatId)
-        : store.getAll();
-      return { store, indexed, request };
-    });
-    const results = await Promise.all(pending.map(({ request }) => requestValue(request)));
-    pending.forEach(({ store, indexed }, index) => {
-      if (indexed) {
-        (results[index] as IDBValidKey[]).forEach((key) => store.delete(key));
-      } else {
-        (results[index] as Array<{ id: string; chatId?: string }>)
-          .filter((value) => value.chatId === chatId)
-          .forEach((value) => store.delete(value.id));
-      }
-    });
-    await transactionDone(tx);
-  });
-}
 
 export async function deleteWorkspaceCascade(workspaceId: string, permanently = false): Promise<void> {
   await serializedWrite(async () => {
@@ -296,20 +249,6 @@ export async function sha256(data: ArrayBuffer | string): Promise<string> {
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-export function newChat(workspaceId: string, title = "New Assistant Chat"): ChatRecord {
-  const now = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    workspaceId,
-    title,
-    titleEdited: title !== "New Assistant Chat",
-    summary: "",
-    messages: [],
-    createdAt: now,
-    updatedAt: now
-  };
-}
-
 async function findWorkspace(key: string): Promise<WorkspaceRecord | undefined> {
   const db = await database();
   const tx = db.transaction("workspaces", "readonly");
@@ -324,6 +263,7 @@ async function findWorkspace(key: string): Promise<WorkspaceRecord | undefined> 
  * potentially multi-gigabyte file blob in IndexedDB.
  */
 export async function replaceWorkspace(workspace: AnalysisWorkspace): Promise<AnalysisWorkspace> {
+  workspace = notebookWorkspace(workspace);
   return serializedWrite(async () => {
     const db = await database();
     const tx = db.transaction([...STORES, "values"], "readwrite");
@@ -373,9 +313,9 @@ export async function loadOrCreateWorkspace(
   let workspaceRecord = await findWorkspace(key);
   if (!workspaceRecord) {
     const now = new Date().toISOString();
-    const chat = newChat(crypto.randomUUID());
+    const workspaceId = crypto.randomUUID();
     workspaceRecord = {
-      id: chat.workspaceId,
+      id: workspaceId,
       contextKey: key,
       rootPath: name ? `${workspaceRoot(context)}--${slug(name)}` : workspaceRoot(context),
       name: scopedWorkspaceName(context, name || (context ? "Analysis 1" : "Local workspace")),
@@ -383,14 +323,14 @@ export async function loadOrCreateWorkspace(
       objectId: context?.object_id,
       userId: context?.user_id || 0,
       groupId: context?.group_id || 0,
-      activeChatId: chat.id,
+      activeChatId: "",
       plotCsv: true,
       createdAt: now,
       updatedAt: now
     };
     const workspace = {
       workspace: workspaceRecord,
-      chats: [chat],
+      chats: [],
       files: [],
       executions: [],
       runs: [],
@@ -415,26 +355,7 @@ export async function loadOrCreateWorkspace(
     entitiesForWorkspace<OutboundPayloadAudit>("audits", workspaceRecord.id),
     entitiesForWorkspace<EvidenceRecord>("evidence", workspaceRecord.id)
   ]);
-  if (!chats.length) {
-    const chat = newChat(workspaceRecord.id);
-    workspaceRecord = { ...workspaceRecord, activeChatId: chat.id, updatedAt: new Date().toISOString() };
-    const replaced = await replaceWorkspace({
-      workspace: workspaceRecord,
-      chats: [chat],
-      files,
-      executions,
-      runs,
-      methods,
-      pipelines,
-      notebooks,
-      artifacts,
-      audits,
-      evidence
-    });
-    workspaceRecord = replaced.workspace;
-    chats.push(chat);
-  }
-  return { workspace: workspaceRecord, chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence };
+  return notebookWorkspace({ workspace: workspaceRecord, chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence });
 }
 
 export async function listContextWorkspaces(context: OmeroContext | null): Promise<WorkspaceRecord[]> {
@@ -467,7 +388,7 @@ export async function loadWorkspace(workspaceId: string): Promise<AnalysisWorksp
     entitiesForWorkspace<OutboundPayloadAudit>("audits", workspaceRecord.id),
     entitiesForWorkspace<EvidenceRecord>("evidence", workspaceRecord.id)
   ]);
-  return { workspace: workspaceRecord, chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence };
+  return notebookWorkspace({ workspace: workspaceRecord, chats, files, executions, runs, methods, pipelines, notebooks, artifacts, audits, evidence });
 }
 
 export async function storageEstimate(): Promise<{ usage: number; quota: number }> {
@@ -475,16 +396,4 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
   return { usage: value?.usage || 0, quota: value?.quota || 0 };
 }
 
-export const settingsKey = "provider:generic";
-export const aiProfilesKey = "provider:profiles:v1";
-export const customSkillsKey = "skills:custom:v1";
 export const uiThemeKey = "ui:theme:v1";
-export const defaultSettings: ProviderSettings = {
-  protocol: "openai",
-  endpoint: "",
-  authMode: "bearer",
-  apiKey: "",
-  model: "",
-  contextWindow: 0,
-  rememberKey: false
-};

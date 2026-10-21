@@ -26,7 +26,7 @@ SUPPORTED_OBJECT_TYPES = ("Image", "Dataset", "Plate", "Screen")
 RESULT_NAMESPACE = "nl.bioimaging.analysis.result.v1"
 WORKSPACE_NAMESPACE = "nl.bioimaging.analysis.workspace.v1"
 LEGACY_RESULT_NAMESPACES = {"nl.bioimaging.analysis-chat.result"}
-PIPELINE_NAMESPACE = "nl.bioimaging.analysis.pipeline.v1"
+from .retired_content import RETIRED_FILE_NAMESPACES, validate_notebook_archive
 NOTEBOOK_NAMESPACE = "nl.bioimaging.analysis.notebook.v1"
 LEGACY_NOTEBOOK_NAMESPACES = {
     "nl.bioimaging.jupyter.notebook",
@@ -168,8 +168,8 @@ def attachment_info(annotation, obj=None, direct=True):
     kind = (
         "workspace"
         if namespace == WORKSPACE_NAMESPACE
-        else "pipeline"
-        if namespace == PIPELINE_NAMESPACE
+        else "retired"
+        if namespace in RETIRED_FILE_NAMESPACES
         else "notebook"
         if (
             namespace == NOTEBOOK_NAMESPACE
@@ -225,7 +225,7 @@ def direct_file_annotations(obj):
 
 
 def list_attachment_dicts(obj):
-    return [info.to_dict() for _, info in direct_file_annotations(obj)]
+    return [info.to_dict() for _, info in direct_file_annotations(obj) if info.kind != "retired"]
 
 
 def attachment_scope_objects(obj):
@@ -332,9 +332,6 @@ def object_context(object_type, object_id, obj, conn=None):
         "attachments": attachments,
         "workspace_snapshots": [
             attachment for attachment in attachments if attachment["kind"] == "workspace"
-        ],
-        "pipeline_templates": [
-            attachment for attachment in attachments if attachment["kind"] == "pipeline"
         ],
         "notebooks": [
             attachment for attachment in attachments if attachment["kind"] == "notebook"
@@ -468,15 +465,6 @@ def checked_workspace_snapshot_download(obj, annotation_id):
     return annotation, info
 
 
-def checked_pipeline_download(obj, annotation_id):
-    annotation, info = get_direct_attachment(obj, annotation_id)
-    if info.kind != "pipeline":
-        raise UnsupportedMedia(f"{info.name} is not an Analysis pipeline template")
-    if info.size > max_download_bytes():
-        raise FileTooLarge(
-            f"Pipeline is {info.size} bytes; the limit is {max_download_bytes()}"
-        )
-    return annotation, info
 
 
 def checked_notebook_download(obj, annotation_id):
@@ -536,12 +524,7 @@ def validate_workspace_snapshot(uploaded_file):
         raise UnsupportedMedia("Workspace snapshot is not a valid ZIP stream")
     try:
         with zipfile.ZipFile(uploaded_file) as archive:
-            names = archive.namelist()
-            if "workspace.json" not in names:
-                raise UnsupportedMedia("Workspace snapshot must contain workspace.json")
-            if len(names) > 50000:
-                raise UnsupportedMedia("Workspace snapshot contains too many entries")
-            manifest = json.loads(archive.read("workspace.json"))
+            manifest = validate_notebook_archive(archive)
     except UnsupportedMedia:
         raise
     except (zipfile.BadZipFile, KeyError, ValueError, UnicodeDecodeError) as exc:
@@ -554,25 +537,6 @@ def validate_workspace_snapshot(uploaded_file):
     return filename, "application/zip"
 
 
-def validate_pipeline_template(uploaded_file):
-    if uploaded_file is None:
-        raise UnsupportedMedia("Multipart field 'file' is required")
-    if int(uploaded_file.size) > min(max_upload_bytes(), 4 * 1024 * 1024):
-        raise FileTooLarge("Pipeline templates are limited to 4 MiB")
-    filename = safe_filename(uploaded_file.name)
-    if not filename.lower().endswith(".oa-pipeline.json"):
-        raise UnsupportedMedia("Pipeline templates must use .oa-pipeline.json")
-    position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
-    try:
-        payload = json.load(uploaded_file)
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise UnsupportedMedia("Pipeline template must contain valid JSON") from exc
-    finally:
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(position)
-    if payload.get("format") != PIPELINE_NAMESPACE:
-        raise UnsupportedMedia("Unsupported pipeline template format")
-    return filename, "application/json"
 
 
 def validate_notebook(uploaded_file):
@@ -671,15 +635,6 @@ def upload_workspace_snapshot_annotation(conn, obj, uploaded_file):
     )
 
 
-def upload_pipeline_annotation(conn, obj, uploaded_file):
-    return _upload_annotation(
-        conn,
-        obj,
-        uploaded_file,
-        validate_pipeline_template,
-        PIPELINE_NAMESPACE,
-        "Reusable OMERO Analysis pipeline template",
-    )
 
 
 def upload_notebook_annotation(conn, obj, uploaded_file):

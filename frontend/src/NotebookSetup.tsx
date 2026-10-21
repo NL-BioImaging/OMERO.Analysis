@@ -1,0 +1,106 @@
+import {useEffect,useRef,useState} from "react";
+import {Button} from "./components/BlueprintControls";
+import {APPROVED_NOTEBOOK_PACKAGES,inputCandidates,validateNotebookContract,validateParameterValues,type NotebookProtocolContract} from "./notebookProtocol";
+import {applyNotebookSetup,convertNotebookSetup,setupContract,setupFingerprint} from "./notebookConfiguration";
+import type {CompatibilitySource} from "./notebookCompatibility";
+import type {NotebookRecord,WorkspaceFile} from "./types";
+
+type Schema=CompatibilitySource["schema"];
+type Props={record:NotebookRecord;inputs:WorkspaceFile[];disabled:boolean;onApply:(value:NotebookRecord,expected?:string)=>Promise<void>;onDraftState:(dirty:boolean)=>void;onPython:()=>void;
+  onBind:(id:string,fileId:string)=>Promise<void>;onInspect?:(file:WorkspaceFile)=>Promise<Schema>};
+const list=(value:string)=>value.split(",").map(v=>v.trim()).filter(Boolean);
+
+export function NotebookSetup({record,inputs,disabled,onApply,onDraftState,onPython,onBind,onInspect}:Props){
+  let parsed:NotebookProtocolContract|null=null,parseError="";
+  try{parsed=setupContract(record.document);}catch(e){parseError=String(e);}
+  const fingerprint=setupFingerprint(record.document);
+  const key=`omero-analysis:setup-draft:${record.workspaceId}:${record.id}`;
+  const [draft,setDraft]=useState<any>(()=>{try{return JSON.parse(localStorage.getItem(key)||"null")?.draft||parsed;}catch{return parsed;}});
+  const [base,setBase]=useState(()=>{try{return JSON.parse(localStorage.getItem(key)||"null")?.base||fingerprint;}catch{return fingerprint;}});
+  const [dirty,setDirty]=useState(()=>Boolean(localStorage.getItem(key)));
+  const [error,setError]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [schemas,setSchemas]=useState<Record<string,Schema>>({});
+  const [inspection,setInspection]=useState<Record<string,string>>({});
+  const serial=useRef(0);
+  const [tableNamesDraft,setTableNamesDraft]=useState<Record<number,string>>({});
+  const [columnNamesDraft,setColumnNamesDraft]=useState<Record<string,string>>({});
+  const originalIds=new Set(parsed?.inputs.map(i=>i.id)||[]),originalParameters=new Set(parsed?.parameters.map(p=>p.name)||[]);
+  useEffect(()=>{if(!dirty){setDraft(parsed);setBase(fingerprint);}},[fingerprint,dirty]);
+  const conflict=dirty&&base!==fingerprint;
+  useEffect(()=>{onDraftState(dirty);},[dirty]);
+  useEffect(()=>()=>{onDraftState(false);},[]);
+  function edit(value:any){setDraft(value);setDirty(true);setError("");try{localStorage.setItem(key,JSON.stringify({base,draft:value}));}catch{setError("Draft storage is full. Copy the proposed source before leaving.");}}
+  function cancel(){serial.current++;localStorage.removeItem(key);setDraft(parsed);setBase(fingerprint);setDirty(false);setError("");}
+  function input(index:number,patch:any){edit({...draft,inputs:draft.inputs.map((v:any,i:number)=>i===index?{...v,...patch}:v)});}
+  function parameter(index:number,patch:any){edit({...draft,parameters:draft.parameters.map((v:any,i:number)=>i===index?{...v,...patch}:v)});}
+  let candidate:NotebookRecord|null=null,validation="";
+  try{if(draft){validateNotebookContract(draft);validateParameterValues(draft,{});candidate=applyNotebookSetup(record,draft,base);}}catch(e){validation=String(e);}
+  async function apply(){if(!candidate)return;setSaving(true);try{await onApply(candidate,base);localStorage.removeItem(key);setDirty(false);setError("");}catch(e){setError(String(e));}finally{setSaving(false);}}
+  async function inspect(file:WorkspaceFile){const request=serial.current;setInspection(v=>({...v,[file.id]:"Reading structure…"}));try{const schema=await onInspect?.(file);if(request!==serial.current)return;setSchemas(v=>({...v,[file.id]:schema}));setInspection(v=>({...v,[file.id]:schema?.tables?"Structure loaded. Select only what this notebook needs.":"Not checked. Inspect this input in Inspector, then retry."}));}catch(e){if(request===serial.current)setInspection(v=>({...v,[file.id]:String(e)}));}}
+  function addInput(){let n=1;while(draft.inputs.some((v:any)=>v.id===`input_${n}`))n++;edit({...draft,inputs:[...draft.inputs,{id:`input_${n}`,kind:"query",path:`input/data-${n}.csv`,formats:["csv"],required:true}]});}
+  function addParameter(){let n=1;while(draft.parameters.some((v:any)=>v.name===`parameter_${n}`))n++;edit({...draft,parameters:[...draft.parameters,{name:`parameter_${n}`,label:`Parameter ${n}`,type:"number",default:0}]});}
+  return <details className="notebook-setup notebook-form-panel"><summary><strong>Notebook setup</strong><small>{parsed?`${parsed.inputs.length} input(s) · ${parsed.parameters.length} parameter definition(s) · ${parsed.requirements.length} package(s)`:"Add or correct portable setup"}{dirty?" · Unsaved setup draft":""}</small></summary>
+    <div className="notebook-form-body">
+    <p>Define what this reusable notebook needs. Run values are separate below. Python stays editable.</p>
+    {!parsed?<><p role={parseError?"alert":undefined}>{parseError||"This legacy notebook has no portable setup. Its current Python is unchanged."}</p><Button onClick={onPython}>Edit setup in Python</Button>
+      {!parseError&&<><p>Adding setup inserts a tagged first cell. Review analytical cells yourself: existing file access is not rewritten.</p><Button disabled={disabled} onClick={async()=>{try{await onApply(convertNotebookSetup(record,inputs));}catch(e){setError(String(e));}}}>Add portable setup</Button></>}</>:
+    draft&&<fieldset disabled={disabled||saving}>
+      {conflict&&<p role="alert">Python setup changed while this form was open. Your form draft is retained. Reload setup to use current Python, or keep editing Python.</p>}
+      <div className="notebook-form-actions"><Button onClick={onPython}>Edit setup in Python</Button><Button onClick={cancel}>{conflict?"Reload setup":"Cancel changes"}</Button></div>
+      <h3>Inputs</h3><p>Binding a workspace file does not change accepted formats or required structure.</p>
+      {draft.inputs.map((value:any,index:number)=>{
+        const candidates=inputCandidates(value,inputs,record.protocolBindings?.find(b=>b.inputId===value.id)?.fileId);
+        const bound=record.protocolBindings?.find(b=>b.inputId===value.id)?.fileId;
+        const file=inputs.find(f=>f.id===bound)||(candidates.length===1?candidates[0]:undefined);
+        const tables=value.schema?.tables||[];
+        const available=schemas[file?.id||""]?.tables||[];
+        const tableNames=[...new Set<string>([...available.map(t=>t.name),...tables.map((t:any)=>t.name)])];
+        return <section className="setup-card" key={index} aria-label={`Input ${index+1}`}>
+          <div className="notebook-form-grid"><label>Input name<input aria-label={`Input ${index+1} name`} value={value.id} readOnly={originalIds.has(value.id)} onChange={e=>input(index,{id:e.target.value})}/></label>
+          <label>Kind<select value={value.kind} onChange={e=>{const next={...value,kind:e.target.value};if(next.kind==="file"){delete next.formats;delete next.schema;delete next.readiness;next.extensions=[".xlsx"];next.path=`input/${value.id}.xlsx`;}else{delete next.extensions;next.formats=["csv"];next.path=`input/${value.id}.csv`;}input(index,next);}}><option value="query">Database or CSV</option><option value="file">Supporting file</option></select></label>
+          <label>Workspace input<select aria-label={`Workspace input for ${value.id}`} value={bound||""} disabled={!originalIds.has(value.id)} onChange={e=>void onBind(value.id,e.target.value).catch(e=>setError(String(e)))}><option value="">{file&&!bound?`Automatic: ${file.name}`:"Choose input / automatic"}</option>{candidates.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+          <label className="setup-check"><input type="checkbox" checked={value.required!==false} onChange={e=>input(index,{required:e.target.checked})}/>Required input</label></div>
+          {!originalIds.has(value.id)&&<small>Apply this new input declaration before choosing its workspace binding.</small>}
+          {!candidates.length&&<p role="status">Missing requirements: no attached file matches this input’s formats and filename rules.</p>}
+          <details><summary>Advanced input options</summary><div className="notebook-form-grid">
+            <label>Portable path<input value={value.path} onChange={e=>input(index,{path:e.target.value})}/></label>
+            <label>{value.kind==="query"?"Accepted formats (comma separated)":"Accepted extensions (comma separated)"}<input value={(value.formats||value.extensions||[]).join(", ")} onChange={e=>input(index,{[value.kind==="query"?"formats":"extensions"]:list(e.target.value)})}/></label>
+            <label>Filename patterns (optional)<input value={(value.filename_globs||[]).join(", ")} onChange={e=>input(index,{filename_globs:e.target.value.trim()?list(e.target.value):undefined})}/></label>
+          </div><small>Existing input IDs stay fixed because Python may refer to them. Edit Python to rename them deliberately.</small></details>
+          {value.kind==="query"&&<details><summary>Required tables and columns ({tables.length})</summary>
+            <Button disabled={!file||!onInspect} onClick={()=>file&&void inspect(file)}>Inspect input structure</Button>
+            <p role="status">{file?inspection[file.id]||"Not checked here. Load the structure, then choose requirements.":"Choose an input to inspect its structure."}</p>
+            {tableNames.map(name=>{const required=tables.find((t:any)=>t.name===name);const actual=available.find(t=>t.name===name);const columns=[...new Set<string>([...(actual?.columns||[]).map(c=>c.name),...(required?.columns||[]).map((c:any)=>c.name)])];
+              return <details className="setup-table" key={name}><summary><label className="setup-check"><input type="checkbox" aria-label={`Require table ${name}`} checked={!!required} onClick={e=>e.stopPropagation()} onChange={e=>input(index,{schema:{...value.schema,tables:e.target.checked?[...tables,{name,columns:[]}]:tables.filter((t:any)=>t.name!==name)}})}/><strong>{name}</strong><small>{required?`${(required.columns||[]).length} required columns`:"Optional table"}</small></label></summary>
+              {required&&columns.map(column=>{const selected=required.columns?.find((c:any)=>c.name===column);return <div className="setup-column" key={column}><label className="setup-check"><input type="checkbox" checked={!!selected} onChange={e=>input(index,{schema:{...value.schema,tables:tables.map((t:any)=>t.name!==name?t:{...t,columns:e.target.checked?[...(t.columns||[]),{name:column}]:(t.columns||[]).filter((c:any)=>c.name!==column)})}})}/>{column}</label>{selected&&<label>Required type (optional)<input aria-label={`Required type for ${name}.${column}`} value={selected.type||""} placeholder={actual?.columns?.find(c=>c.name===column)?.type||"Any type"} onChange={e=>input(index,{schema:{...value.schema,tables:tables.map((t:any)=>t.name!==name?t:{...t,columns:t.columns.map((c:any)=>c.name!==column?c:{...c,type:e.target.value||undefined})})}})}/></label>}</div>;})}{required&&<div className="notebook-form-actions"><label>Additional required column<input value={columnNamesDraft[`${index}:${name}`]||""} onChange={e=>setColumnNamesDraft(v=>({...v,[`${index}:${name}`]:e.target.value}))}/></label><Button onClick={()=>{const column=columnNamesDraft[`${index}:${name}`]?.trim();if(column&&!required.columns?.some((c:any)=>c.name===column)){input(index,{schema:{...value.schema,tables:tables.map((t:any)=>t.name!==name?t:{...t,columns:[...(t.columns||[]),{name:column}]})}});setColumnNamesDraft(v=>({...v,[`${index}:${name}`]:""}));}}}>Add column requirement</Button></div>}</details>;})}
+            <div className="notebook-form-actions"><label>Additional required table<input value={tableNamesDraft[index]||""} onChange={e=>setTableNamesDraft(v=>({...v,[index]:e.target.value}))}/></label><Button onClick={()=>{const name=tableNamesDraft[index]?.trim();if(name&&!tables.some((t:any)=>t.name===name)){input(index,{schema:{...value.schema,tables:[...tables,{name,columns:[]}]}});setTableNamesDraft(v=>({...v,[index]:""}));}}}>Add table requirement</Button></div>
+          </details>}
+          {value.kind==="query"&&<details><summary>Advanced readiness checks ({(value.readiness||[]).length})</summary><p>Bounded read-only SQL; each check must return at least one row. At most four checks.</p>
+            {(value.readiness||[]).map((check:any,i:number)=><div className="setup-card" key={i}><label>Readiness SQL<textarea value={check.sql} onChange={e=>input(index,{readiness:value.readiness.map((c:any,n:number)=>n===i?{...c,sql:e.target.value}:c)})}/></label><label>Message when requirement is missing<input value={check.message} onChange={e=>input(index,{readiness:value.readiness.map((c:any,n:number)=>n===i?{...c,message:e.target.value}:c)})}/></label><Button onClick={()=>input(index,{readiness:value.readiness.filter((_:any,n:number)=>n!==i)})}>Remove check</Button></div>)}
+            <Button disabled={(value.readiness||[]).length>=4} onClick={()=>input(index,{readiness:[...(value.readiness||[]),{sql:"SELECT TRUE AS ready",message:"Required data is missing"}]})}>Add readiness check</Button></details>}
+          <Button disabled={draft.inputs.length===1} onClick={()=>edit({...draft,inputs:draft.inputs.filter((_:any,i:number)=>i!==index)})}>Remove input declaration</Button>
+        </section>;
+      })}<Button onClick={addInput}>Add input</Button>
+      <h3>Parameter definitions</h3><p>Define labels and defaults here. Use Run parameters to choose values for an analysis.</p>
+      {draft.parameters.map((value:any,index:number)=><section className="setup-card" key={index} aria-label={`Parameter definition ${index+1}`}><div className="notebook-form-grid">
+        <label>Parameter name<input aria-label={`Parameter ${index+1} name`} readOnly={originalParameters.has(value.name)} value={value.name} onChange={e=>parameter(index,{name:e.target.value})}/></label>
+        <label>Label<input aria-label={`Parameter ${index+1} label`} value={value.label||""} onChange={e=>parameter(index,{label:e.target.value})}/></label>
+        <label>Type<select aria-label={`Parameter ${index+1} type`} value={value.type} onChange={e=>{const type=e.target.value;parameter(index,{type,default:type==="boolean"?false:type==="number"||type==="integer"?0:"",choices:type==="choice"?["First"]:undefined,choices_query:undefined,minimum:undefined,maximum:undefined,step:undefined});}}>{[["number","Number"],["integer","Whole number"],["string","Text"],["boolean","Checkbox"],["choice","Choice"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+        <label>Default{(value.type==="boolean"||(value.type==="choice"&&typeof value.default==="boolean"))?<input aria-label={`Parameter ${index+1} default`} type="checkbox" checked={!!value.default} onChange={e=>parameter(index,{default:e.target.checked})}/>:value.type==="choice"&&!value.choices_query?<select aria-label={`Parameter ${index+1} default`} value={(value.choices||[]).findIndex((c:any)=>Object.is(c,value.default))} onChange={e=>parameter(index,{default:value.choices[Number(e.target.value)]})}><option value={-1}>No default</option>{(value.choices||[]).map((c:any,i:number)=><option key={i} value={i}>{String(c)}</option>)}</select>:<input aria-label={`Parameter ${index+1} default`} type={(["number","integer"].includes(value.type)||(value.type==="choice"&&typeof value.default==="number"))?"number":"text"} step={value.type==="integer"?1:"any"} value={value.default??""} onChange={e=>parameter(index,{default:e.target.value===""?undefined:(["number","integer"].includes(value.type)||(value.type==="choice"&&typeof value.default==="number"))?Number(e.target.value):e.target.value})}/>}</label>
+        <label>Help text<input value={value.help||""} onChange={e=>parameter(index,{help:e.target.value})}/></label>
+        {["number","integer"].includes(value.type)&&["minimum","maximum","step"].map(k=><label key={k}>{k}<input type="number" step="any" value={value[k]??""} onChange={e=>parameter(index,{[k]:e.target.value===""?undefined:Number(e.target.value)})}/></label>)}
+      </div>{value.type==="choice"&&value.choices_query&&<label>Default value type<select value={value.default===undefined?"none":typeof value.default} onChange={e=>parameter(index,{default:e.target.value==="none"?undefined:e.target.value==="number"?0:e.target.value==="boolean"?false:""})}><option value="none">No default</option><option value="string">Text</option><option value="number">Number</option><option value="boolean">Checkbox</option></select></label>}{value.type==="choice"&&<div><label>Choices source<select value={value.choices_query?"query":"static"} onChange={e=>parameter(index,e.target.value==="query"?{choices:undefined,choices_query:{source:draft.inputs.find((i:any)=>i.kind==="query")?.id||"",sql:"SELECT DISTINCT value FROM data",limit:100},default:undefined}:{choices_query:undefined,choices:["First"],default:"First"})}><option value="static">Fixed choices</option><option value="query">Database query</option></select></label>
+        {value.choices_query?<details><summary>Advanced database choices</summary><label>Query input<select value={value.choices_query.source} onChange={e=>parameter(index,{choices_query:{...value.choices_query,source:e.target.value}})}>{draft.inputs.filter((i:any)=>i.kind==="query").map((i:any)=><option key={i.id}>{i.id}</option>)}</select></label><label>Choices SQL<textarea value={value.choices_query.sql} onChange={e=>parameter(index,{choices_query:{...value.choices_query,sql:e.target.value}})}/></label><div className="notebook-form-grid">{["value_column","label_column","limit"].map(k=><label key={k}>{k.replace("_"," ")}<input type={k==="limit"?"number":"text"} value={value.choices_query[k]??""} min={1} max={1000} onChange={e=>parameter(index,{choices_query:{...value.choices_query,[k]:k==="limit"?Number(e.target.value):e.target.value||undefined}})}/></label>)}</div></details>:
+          <div>{(value.choices||[]).map((choice:any,i:number)=><div className="notebook-form-actions" key={i}><label>Choice type<select value={typeof choice} onChange={e=>parameter(index,{choices:value.choices.map((c:any,n:number)=>n!==i?c:e.target.value==="number"?0:e.target.value==="boolean"?false:"")})}><option value="string">Text</option><option value="number">Number</option><option value="boolean">Checkbox</option></select></label><label>Choice value{typeof choice==="boolean"?<input type="checkbox" checked={choice} onChange={e=>parameter(index,{choices:value.choices.map((c:any,n:number)=>n===i?e.target.checked:c)})}/>:<input type={typeof choice==="number"?"number":"text"} value={choice} onChange={e=>parameter(index,{choices:value.choices.map((c:any,n:number)=>n===i?typeof choice==="number"?Number(e.target.value):e.target.value:c)})}/>}</label><Button onClick={()=>parameter(index,{choices:value.choices.filter((_:any,n:number)=>n!==i)})}>Remove choice</Button></div>)}<Button onClick={()=>parameter(index,{choices:[...(value.choices||[]),"New choice"]})}>Add choice</Button></div>}</div>}
+        <Button onClick={()=>edit({...draft,parameters:draft.parameters.filter((_:any,i:number)=>i!==index)})}>Remove parameter</Button></section>)}<Button onClick={addParameter}>Add parameter</Button>
+      <h3>Packages</h3><div className="setup-packages">{[...APPROVED_NOTEBOOK_PACKAGES].sort().map(name=><label className="setup-check" key={name}><input type="checkbox" checked={draft.requirements.some((r:string)=>r.split(/[<>=!~]/)[0].replace(/[_.]/g,"-").toLowerCase()===name)} onChange={e=>edit({...draft,requirements:e.target.checked?[...draft.requirements,name]:draft.requirements.filter((r:string)=>r.split(/[<>=!~]/)[0].replace(/[_.]/g,"-").toLowerCase()!==name)})}/>{name}</label>)}</div>
+      <details><summary>Advanced packages and results</summary><label>Package declarations (one per line)<textarea value={draft.requirements.join("\n")} onChange={e=>edit({...draft,requirements:e.target.value.split("\n").filter(Boolean)})}/></label><label>Results folder<input value={draft.results.path} onChange={e=>edit({...draft,results:{...draft.results,path:e.target.value}})}/></label><p>Exports stay below results/. Existing input IDs and parameter names should be renamed in Python with their references.</p><small>Protocol: {draft.schema}</small></details>
+      {record.document.metadata?.omero_analysis?.schema_requirements&&<p>The preview includes legacy metadata requirements. Apply moves them into the configuration source so metadata cannot override your selections.</p>}
+      <p>Removing declarations can affect Python references. Apply marks existing outputs stale; the next execution needs updated setup.</p>
+      {validation&&!conflict&&<p role="alert">{validation}</p>}
+      <details><summary>Preview configuration source</summary><pre>{candidate?.document.cells[0].source as string||"Correct the setup fields to preview valid Python."}</pre></details>
+      <div className="notebook-form-actions"><Button disabled={!dirty||!!validation||conflict} onClick={()=>void apply()}>Apply setup</Button><Button onClick={cancel}>Cancel changes</Button></div>
+    </fieldset>}{error&&<p role="alert">{error}</p>}
+    </div></details>;
+}

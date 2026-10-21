@@ -141,3 +141,52 @@ def test_staged_workspace_input_is_included_in_purge_journal(environment, monkey
 
     assert result["complete"] is True
     assert ("Annotation", 901) in deleted
+
+
+def test_cleanup_checkpoints_batch_and_recovers_after_process_interruption(environment,monkeypatch):
+    dataset=SimpleNamespace(getId=lambda:10)
+    deleted=set()
+    asset=SimpleNamespace(getParentLinks=lambda kind:[])
+    conn=SimpleNamespace(getObject=lambda kind,identifier: dataset if kind=="Dataset" else None if identifier in deleted else asset)
+    monkeypatch.setattr(sync,"_read_manifest",lambda _: (None,{"items":[]}))
+    writes=[]
+    original=environment.write_json
+    def write(path,value):
+        writes.append(str(path));return original(path,value)
+    monkeypatch.setattr(environment,"write_json",write)
+    def interrupted(conn,kind,identifier):
+        if identifier==2: raise KeyboardInterrupt()
+        deleted.add(identifier)
+    monkeypatch.setattr(sync,"_delete",interrupted)
+    with pytest.raises(KeyboardInterrupt): lifecycle.cleanup_replaced(conn,None,"one",dataset,[("Annotation",1),("Annotation",2)],1)
+    assert len(environment.read_json("workspaces/one/pending-cleanup.json")["pending"])==2
+    monkeypatch.setattr(sync,"_delete",lambda c,k,i: deleted.add(i))
+    writes.clear()
+    lifecycle.cleanup_replaced(conn,None,"one",dataset,[],1)
+    assert deleted=={1,2}
+    assert environment.read_json("workspaces/one/pending-cleanup.json")["pending"]==[]
+    assert len(writes)==2
+
+
+def test_shared_replaced_annotation_is_only_detached_from_current_workspace(environment,monkeypatch):
+    dataset=SimpleNamespace(getId=lambda:10)
+    asset=SimpleNamespace(getParentLinks=lambda kind:[SimpleNamespace(getParent=lambda:SimpleNamespace(getId=lambda:99))] if kind=="Dataset" else [])
+    conn=SimpleNamespace(getObject=lambda kind,identifier:dataset if kind=="Dataset" else asset)
+    monkeypatch.setattr(sync,"_read_manifest",lambda _: (None,{"items":[]}))
+    unlinked=[]
+    monkeypatch.setattr(sync,"_unlink_annotation",lambda c,d,a:unlinked.append((d,a)))
+    monkeypatch.setattr(sync,"_delete",lambda *args:pytest.fail("Shared bytes must remain"))
+    lifecycle.cleanup_replaced(conn,None,"one",dataset,[("Annotation",30)],1)
+    assert unlinked==[(dataset,asset)]
+
+
+def test_shared_image_version_leaves_workspace_without_deleting_other_links(environment,monkeypatch):
+    dataset=SimpleNamespace(getId=lambda:10)
+    image=SimpleNamespace(listParents=lambda:[SimpleNamespace(getId=lambda:99)])
+    conn=SimpleNamespace(getObject=lambda kind,identifier:dataset if kind=="Dataset" else image)
+    monkeypatch.setattr(sync,"_read_manifest",lambda _: (None,{"items":[]}))
+    detached=[]
+    monkeypatch.setattr(sync,"_unlink_image",lambda c,d,i:detached.append((d,i)))
+    monkeypatch.setattr(sync,"_delete",lambda *args:pytest.fail("Shared Image must be retained"))
+    lifecycle.cleanup_replaced(conn,None,"one",dataset,[("Image",30)],1)
+    assert detached==[(dataset,image)]

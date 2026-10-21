@@ -1,6 +1,7 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import NotebookView, {
+  NotebookTable,
   duckDbProgressSummary,
   clearNotebookInlineState,
   isDuckDbTechnicalOutput,
@@ -39,7 +40,7 @@ describe("run-only notebook validation", () => {
       runRequest: null, workspaceActions: null,
       onBeforeRun: async () => undefined, onChange, onFiles, onRenderRequest
     }));
-    fireEvent.click(view.getByRole("button", { name: "Run" }));
+    fireEvent.click(view.getByRole("button", { name: "Run all" }));
     await waitFor(() => expect(onFiles).toHaveBeenCalled());
     expect(onRenderRequest).toHaveBeenCalledWith(expect.objectContaining({ id: notebook.id }), preview);
     expect(onFiles.mock.calls[0][1]).toEqual([file]);
@@ -66,14 +67,14 @@ describe("run-only notebook validation", () => {
       runRequest: null, workspaceActions: null, onBeforeRun,
       onChange: async () => undefined, onFiles: async () => undefined
     }));
-    fireEvent.click(view.getByRole("button", { name: "Run" }));
+    fireEvent.click(view.getByRole("button", { name: "Run all" }));
     await waitFor(() => expect(onBeforeRun).toHaveBeenCalled());
     fireEvent.click(view.getByRole("button", { name: "Stop" }));
     finishPreparation();
     await waitFor(() => expect(view.getByText("Notebook stopped.")).toBeTruthy());
     expect(stop).toHaveBeenCalledOnce();
     expect(runNotebookCell).not.toHaveBeenCalled();
-    expect((view.getByRole("button", { name: "Run" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((view.getByRole("button", { name: "Run all" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("clears only code-cell outputs and execution counts", () => {
@@ -161,7 +162,7 @@ describe("run-only notebook validation", () => {
     expect(runNotebookCell).not.toHaveBeenCalled();
   });
 
-  it("collapses code source by default while keeping output visible", () => {
+  it("shows the inline editor alongside existing output", () => {
     const notebook = {
       id: "notebook", workspaceId: "workspace", name: "result.ipynb",
       attachmentIds: [], selectedDataFileIds: [],
@@ -181,11 +182,9 @@ describe("run-only notebook validation", () => {
       onChange: async () => undefined, onFiles: async () => undefined
     }));
 
-    const code = container.querySelector(".notebook-code") as HTMLDetailsElement;
-    expect(code.open).toBe(false);
+    expect(container.querySelector(".cm-content")?.textContent).toContain("value = 1");
     expect(container.querySelector(".notebook-outputs")?.textContent).toContain("visible result");
-    fireEvent.click(code.querySelector("summary")!);
-    expect(code.open).toBe(true);
+
   });
 
   it("persists cleared inline state before starting a run", async () => {
@@ -210,7 +209,7 @@ describe("run-only notebook validation", () => {
       reset,
       syncInputs: vi.fn(async () => undefined),
       runNotebookCell: vi.fn(async () => ({
-        stdout: "", stderr: "", preview: null, modelPayload: {} as never, files: []
+        stdout: "", stderr: "", preview: null, files: []
       }))
     } as unknown as PythonRuntime;
     const { getByRole } = render(createElement(NotebookView, {
@@ -219,7 +218,7 @@ describe("run-only notebook validation", () => {
       onChange, onFiles: async () => undefined, onRunStateChange
     }));
 
-    fireEvent.click(getByRole("button", { name: "Run" }));
+    fireEvent.click(getByRole("button", { name: "Run all" }));
     await waitFor(() => expect(reset).toHaveBeenCalled());
 
     const firstChange = onChange.mock.calls[0][0] as NotebookRecord;
@@ -249,7 +248,7 @@ describe("run-only notebook validation", () => {
       onRunStateChange
     }));
 
-    fireEvent.click(getByRole("button", { name: "Run" }));
+    fireEvent.click(getByRole("button", { name: "Run all" }));
     await waitFor(() => expect(onRunStateChange).toHaveBeenLastCalledWith(false));
     expect(onRunStateChange.mock.calls.map(([value]) => value)).toEqual([true, false]);
   });
@@ -280,7 +279,7 @@ describe("run-only notebook validation", () => {
       onRunStateChange
     }));
 
-    fireEvent.click(getByRole("button", { name: "Run" }));
+    fireEvent.click(getByRole("button", { name: "Run all" }));
     await waitFor(() => expect(runtime.runNotebookCell).toHaveBeenCalled());
     expect(onRunStateChange).toHaveBeenLastCalledWith(true);
     fireEvent.click(getByRole("button", { name: "Stop" }));
@@ -412,4 +411,35 @@ describe("run-only notebook validation", () => {
     expect(container.querySelector(".notebook-image")).not.toBeNull();
     expect(container.querySelectorAll(".notebook-duckdb-progress")).toHaveLength(1);
   });
+});
+
+
+it("renders bounded notebook tables as text without executing notebook markup", () => {
+  const rows = Array.from({length: 101}, (_, index) => [index, "<script>unsafe()</script>"]);
+  const view = render(createElement(NotebookTable, { value: {
+    kind: "table", data: {columns: ["number", "label"], data: rows}
+  }}));
+  expect(view.getAllByRole("row")).toHaveLength(101);
+  expect(view.getAllByRole("columnheader").map(el => el.textContent)).toEqual(["number", "label"]);
+  expect(view.container.querySelector("script")).toBeNull();
+  expect(view.getByText("Showing the first 100 rows of this output.")).toBeTruthy();
+});
+
+it("gives individual cells distinct run identities without resetting Python", async () => {
+  const notebook = {id:"cell-runs",workspaceId:"workspace",name:"counts.ipynb",attachmentIds:[],selectedDataFileIds:[],
+    document:{nbformat:4,nbformat_minor:5,metadata:{},cells:[{id:"code",cell_type:"code",metadata:{},source:"print(1)",outputs:[]}]},
+    createdAt:"2026-10-21",updatedAt:"2026-10-21"} as NotebookRecord;
+  const reset = vi.fn(async () => undefined), onFiles = vi.fn(async (_record: NotebookRecord, _files: unknown) => undefined);
+  const view = render(createElement(NotebookView,{notebook,inputs:[],runtime:{reset,syncInputs:async()=>undefined,
+    runNotebookCell:async()=>({stdout:"1",stderr:"",files:[]})} as unknown as PythonRuntime,
+    runRequest:null,workspaceActions:null,onBeforeRun:async()=>undefined,onChange:async()=>undefined,onFiles}));
+  const run = view.getByRole("button",{name:"Run cell 1"});
+  fireEvent.click(run);
+  await waitFor(()=>expect(view.getByText("Cell 1 completed. Kernel variables retained.")).toBeTruthy());
+  fireEvent.click(run);
+  await waitFor(()=>expect(onFiles).toHaveBeenCalledTimes(2));
+  const records = onFiles.mock.calls.map(call=>call[0].protocolRuns!.at(-1)!);
+  expect(records.every(record=>record.mode==="cell" && record.cellIndex===0 && record.id)).toBe(true);
+  expect(records[0].id).not.toBe(records[1].id);
+  expect(reset).toHaveBeenCalledOnce();
 });

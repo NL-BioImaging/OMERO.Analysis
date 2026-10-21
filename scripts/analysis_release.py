@@ -17,7 +17,7 @@ MAX_WHEEL_BYTES = 512 * 1024 * 1024
 
 
 def release_version(value):
-    if not isinstance(value, str) or not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", value):
+    if not isinstance(value, str) or not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:b[1-9]\d*)?", value):
         raise ValueError("Analysis version must be an exact X.Y.Z version without v (no main/latest)")
     return value
 

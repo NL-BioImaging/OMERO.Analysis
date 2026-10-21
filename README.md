@@ -1,316 +1,73 @@
 # OMERO.Analysis
 
-For maintainers preparing a release, see the
-[release-readiness checks and integration matrix](docs/release-readiness.md).
+OMERO.Analysis is a notebook-focused research workspace for OMERO.web.
+This branch develops **1.1.0-beta1**. It is a local development version, not
+a published release.
 
-Install the released application with `pip install omero-analysis==1.0.1` from
-[PyPI](https://pypi.org/project/omero-analysis/). The identical application wheel
-is also available on [GitHub Releases](https://github.com/NL-BioImaging/OMERO.Analysis/releases),
-alongside the independently versioned notebook SDK and a SHA-256 `manifest.json`.
-Pin an exact version when building the web image. Verified GitHub Release wheels
-remain available for offline deployments; see the
-[release and deployment instructions](docs/github-releases.md).
+The workspace has four tabs:
 
-For paired DataQueryWorker upgrades, verified CSV saving, authorization, audit,
-mTLS, test commands and rollback, see the
-[production foundations guide](docs/data-query-production-foundations.md).
+- **Inspector** opens the selected input. Browse database tables and CSV data,
+  inspect schema, filter and sort bounded pages, run read-only SQL, export a
+  result, or create a notebook from a query.
+- **Notebooks** edits and runs Python notebooks in one place. Switch between
+  individual cells and a complete Python/Markdown source document.
+- **Libraries** provides saved workspaces, notebooks, templates, shared content,
+  and examples supplied by configured workflows.
+- **Skills** previews and downloads notebook, workflow, and viewer guidance for
+  use in an external AI chat. Optional context contains schema, not measurements.
 
-Administrators enabling BIOMERO.importer-backed storage should read the [`.analysis` storage compatibility contract](docs/importer-analysis-storage-compatibility.md). It documents the optional runtime APIs, capability checks, versions, deployment, fallback rules, and integration-test matrix.
+The compact Explorer opens by default and selects the first database or CSV
+input. Explicit notebook and library links retain their destination.
+Analysis is workflow-agnostic: CI Segmentation owns its measurement examples
+and compatibility requirements in the cisegmentation repository.
 
-The maintained user manual is available in [docs/MANUAL.md](docs/MANUAL.md)
-and through the modeless **Help** window in OMERO.Analysis.
-Hardware-specific offline model guidance is available in
-[docs/local-llm-recommendations.md](docs/local-llm-recommendations.md).
+## Notebooks and execution
 
-OMERO.Analysis is a browser-local research workspace for OMERO.web. Its one
-Analysis shell has five standard routable tabs and one optional tab:
+Use portable Python nbformat-4 notebooks with the
+`omero-analysis-notebook` SDK. Declare logical inputs, required formats,
+tables/columns, packages, and optional read-only readiness checks.
+Analysis displays **Ready**, **Missing requirements**, **Not checked**, or
+**Choose input**, with reasons, before execution.
 
-- **Home** — run saved artifacts or create an input-ready Method, Pipeline, or Notebook, with optional assistant help.
-- **Methods** — run reusable Methods and inspect their durable run history and outputs.
-- **Pipelines** — create or run ordered Method Pipelines and inspect their durable results.
-- **Notebooks** — run-only Python nbformat-4 notebooks attached to OMERO.
-- **Assistant** — AI-assisted development and testing of reusable Method scripts.
-- **Editor** — optional structured editing for Methods, Pipelines, and Notebooks.
+**Run cell** preserves the current notebook kernel. **Run all** starts clean.
+Switching tabs preserves state; changing the notebook or input bindings resets
+it. Invalid source remains a local draft and cannot replace the last valid
+notebook. Valid changes and results synchronize automatically to OMERO.
 
-Analysis opens only the current Workspace selected in the OMERO center panel.
-The Explorer is rooted at that Workspace and does not expose an OMERO parent
-browser or alternate local Workspaces. A startup progress indicator reports
-Workspace restoration separately from the lazy browser-Python startup.
+Python runs in a sandbox. Remote databases remain behind the authenticated
+DataQueryWorker broker; inspecting a large database does not download it to
+the browser. Inspector queries use a separate runtime from notebook execution.
+Raw notebook JavaScript and arbitrary package downloads are not supported.
+Plot-data CSV companions remain enabled.
 
-The Explorer and Artifact Inspector can be hidden independently from the
-header. Their browser-local visibility preference is remembered per user and
-group.
+## Integration and storage
 
-The Workspace explorer is organized as:
+Image, Dataset, Plate, and Screen sources are supported. Managed workspaces
+live below `+AnalysisWorkspaces`, identified by namespaces and ownership rather
+than names alone. Existing ownership, group access, and publishing permissions
+still apply. Library imports create workspace copies.
 
-```text
-Workspace
-├── Input
-├── Methods
-│   ├── Assistant
-│   │   ├── <conversation>/Attachments
-│   │   └── browser-local validation results
-│   └── Methods results
-├── Pipelines
-│   └── Pipelines results
-└── Notebooks
-    └── Notebooks results
-```
+With `INTEGRATE_DATA_ANALYSIS=TRUE` and a compatible OMERO.biomero host,
+Analysis runs in a same-origin iframe and follows the host theme. Standalone
+Analysis retains its theme control. Expired sessions preserve local drafts
+before returning to OMERO login.
 
-Methods are reusable `.py` analyses. Pipelines are ordered, isolated Method
-steps. Notebooks remain read-only in the Notebooks tab: **Run** resets the kernel, attaches current
-inputs, and executes every cell in order. Users can stop execution, clear
-outputs, reattach inputs, and inspect safe outputs. Editing is available only
-when **Enable artifact editor** is turned on in Analysis Settings.
+The beta removes Methods, Pipelines, the in-app assistant, custom skill upload,
+AI credentials/settings, and `~AnalysisSettings` synchronization. Migration
+must inventory and back up managed content before cleanup; notebooks, inputs,
+results, templates, and unrelated OMERO content must be retained.
 
-## Privacy and execution
+## Documentation
 
-Data and notebook code execute in an opaque, no-network Pyodide sandbox.
-Notebook execution never calls the AI provider or loads Agent Skill packages.
-Raw notebook HTML and JavaScript are never rendered. Magics, shell commands,
-widget JavaScript, non-Python kernels, and arbitrary package downloads are
-rejected. Portable protocol parameters render as native Analysis controls;
-optional ipywidgets are offline-only.
+- [User manual](docs/MANUAL.md)
+- [Portable notebook contract and SDK](docs/portable-notebooks.md)
+- [Notebook-authoring skill](skills/create-omero-analysis-notebook/SKILL.md)
+- [Workflow skills and examples](docs/workflow-skills.md)
+- [Shared libraries and permissions](docs/shared-library.md)
+- [DataQueryWorker deployment](docs/data-query-production-foundations.md)
+- [Importer storage contract](docs/importer-analysis-storage-compatibility.md)
+- [NL-BIOMERO deployment](docs/deployment-nl-biomero.md)
+- [Release checks](docs/release-readiness.md)
 
-Each Assistant conversation can keep up to ten browser-local TXT, searchable PDF, DOCX, PNG,
-JPEG, or WebP attachments (25 MiB each). PDF and DOCX text is extracted in the
-offline Python sandbox; images are decoded, stripped of metadata, and resized
-in the browser when needed. The configured provider receives only extracted
-text or derived image pixels, never original PDF or DOCX bytes. OCR, webpages,
-authenticated file URLs, and silent context truncation are not supported.
-
-The Method-authoring Assistant may load matching measurement-analysis skills from the optional
-`biomero-workflow-skills` distribution. Explicit ZarrViewer requests use the
-skill published by BIOMERO.ZarrViewer itself. Analysis starts with the generic Assistant
-when either provider is absent.
-
-## OMERO.web integration
-
-The deployment registers:
-
-- one top link: **Analysis** (opens Home);
-- one center panel: **Analysis**.
-
-Image, Dataset, Plate, and Screen contexts are supported, including one
-selection-specific Workspace for multiple Images or multiple Plates. Managed
-Analysis Workspace, result, settings, and skills objects receive dedicated
-resume or information panes instead of generic data-attachment controls.
-Notebook upload automatically creates and links a FileAnnotation in namespace
-`nl.bioimaging.analysis.notebook.v1`.
-
-The standalone `omero-jupyterlite` package is deprecated and is explicitly
-removed by the Analysis deployment image and update script. Existing OMERO
-FileAnnotations are preserved.
-
-### BIOMERO-integrated mode
-
-Set `INTEGRATE_DATA_ANALYSIS=TRUE` in a deployment that installs compatible
-OMERO.Analysis and OMERO.biomero releases. OMERO.Analysis then keeps its center
-panel but removes its redundant OMERO top link; BIOMERO shows **Data Analysis**
-beside Import and Analyze and hosts Analysis in a same-origin iframe. `false`
-or an absent setting retains the standalone Analysis top link and new-tab
-launch behavior. The flag alone never hides Analysis: the installed BIOMERO
-must also provide its `data_analysis_status` view contract, the matching
-`WEBCLIENT.UI.DATA_ANALYSIS_AVAILABLE` host template, a compiled frontend
-supporting embedded workspaces, and an enabled host route.
-Older BIOMERO releases retain the standalone link and launch directly into
-Analysis. This check is shared with container startup and survives rebuilds.
-
-Embedded launches use `embedded=biomero` and the same Dataset, Screen, Plate,
-Image, multi-selection, attachment, and saved-Workspace parameters as the
-standalone route. A managed Dataset selected below `+AnalysisWorkspaces` is
-resolved by `/omero_analysis/api/workspace-dataset/<dataset_id>/`; only the
-current user's current-group library, readable original source, and validated
-synchronized snapshot can be resumed. The host never supplies an arbitrary
-iframe target.
-
-## AnalysisWorkspaces library
-
-Automatic synchronization creates a private, managed `+AnalysisWorkspaces` Project for
-the current user and group, then mirrors the browser Workspace into a Dataset.
-Projects, Datasets, imported Images, and source links are discovered through
-`nl.bioimaging.analysis.sync.v1` MapAnnotations; an unmarked same-name Project
-is never adopted.
-
-Synchronization is automatic and incremental. Local reusable changes are
-mirrored to OMERO, while deletion of a managed Workspace Dataset in OMERO
-cascades back to the browser on launch, focus, or the periodic remote check.
-Only a successfully confirmed deletion removes local data; unsynchronized
-Workspaces and temporary connection failures are preserved. Synchronization
-does not build or upload a complete Workspace ZIP. PNG outputs from direct
-Method, Pipeline, and Notebook runs become real grayscale or RGB OMERO Images;
-their other outputs, complete Method history, Pipelines, and validated Python
-notebooks are stored as typed FileAnnotations. Same-stem CSV and SVG plot
-companions are linked directly to the corresponding PNG Image instead of the
-managed Dataset. Synchronization repairs redundant Dataset links even when
-the result bytes have not changed. Superseded result attachments leave the
-Dataset listing but remain owner-recoverable through Workspace Trash; the
-underlying files are not deleted. Source inputs are excluded,
-except that ready inputs containing `template` anywhere in their filename are
-synchronized under Templates for reuse. Assistant conversations, attachments,
-and Assistant validation results always remain browser-local and are never
-included in the managed mirror.
-Unchanged objects are reused by stable key and SHA-256; managed remote
-deletions follow local deletions. Unmanaged Dataset content is never changed.
-
-The **Workspace & OMERO** menu can browse/reuse Methods, Pipelines,
-and Notebooks. Imports are independent local
-copies carrying library provenance. Pipeline imports also copy their exact
-Method-version dependencies. Imported notebooks select ready local inputs and
-open without running.
-
-Default synchronization limits can be overridden with OMERO.web settings:
-
-- `omero.web.analysis.max_sync_items`: 10,000
-- `omero.web.analysis.max_upload_bytes`: 256 MiB per item
-- `omero.web.analysis.max_sync_changed_bytes`: 512 MiB per synchronization
-- `omero.web.analysis.max_png_pixels`: 100 megapixels
-- `omero.web.analysis.remote_query_threshold_bytes`: 104,857,600 (100 MiB;
-  set to `0` to force every supported OMERO attachment remote)
-- `omero.web.analysis.data_query_result_ttl_seconds`: 600
-- `omero.web.analysis.data_query_request_timeout_seconds`: 40 seconds
-- `omero.web.analysis.data_query_source_upload_timeout_seconds`: 120 seconds
-
-Remote DuckDB, SQLite, and CSV queries additionally require the secret-only
-`OMERO_ANALYSIS_DATA_QUERY_WORKER_URL` and
-`OMERO_ANALYSIS_DATA_QUERY_WORKER_TOKEN` environment/Django settings. These
-values are never returned to the browser or stored in OMERO configuration.
-
-The default attachment download transport limit is 2 GiB. Analysis also checks
-the browser Workspace ceiling and available storage before downloading; the
-server limit does not guarantee that a browser can safely hold the file.
-
-## Clean-break formats
-
-Development-stage Project/Script/Workflow formats are intentionally not
-migrated.
-
-- Browser database: `omero-analysis-workspaces`, schema version 2.
-- Workspace snapshot:
-  - namespace/format `nl.bioimaging.analysis.workspace.v1`;
-  - filename `*.oa-workspace.zip`;
-  - root manifest `workspace.json`.
-- Pipeline template:
-  - namespace/format `nl.bioimaging.analysis.pipeline.v1`;
-  - filename `*.oa-pipeline.json`.
-
-Old `.oa.zip`, `.oac.zip`, `.oa-workflow.json`, legacy manifests, and old
-browser databases are not read or deleted automatically.
-
-## Portable offline-first notebooks
-
-Developers can create ordinary Jupyter projects with local `input/` and
-`results/` folders, then upload the same notebook and rebind it to compatible
-Local or Remote DuckDB, SQLite, SQLite3, or CSV attachments. See the
-[portable notebook developer guide](docs/portable-notebooks.md). The separate
-`omero-analysis-notebook` SDK lives under `notebook-sdk/`, and the root Agent
-Plugin contains the `create-omero-analysis-notebook` skill.
-
-## Development
-
-```bash
-python scripts/bootstrap_dev.py
-python -m pytest
-
-cd frontend
-npm ci
-npm test
-npm run build
-npm run smoke:browser
-```
-
-Use `--skip-frontend` for a backend-only environment.
-
-Build the wheel:
-
-```bash
-python scripts/build_frontend.py --skip-install
-python -m build --wheel --no-isolation
-python scripts/verify_wheel.py dist/omero_analysis-*.whl
-```
-
-Run the authenticated deployment smoke against an installed OMERO.web:
-
-```bash
-python scripts/smoke_omero_deployment.py https://omero.example \
-  --cookie "sessionid=..."
-```
-
-The same smoke can be run manually in CI with the `OMERO_SMOKE_URL` repository
-variable and `OMERO_SMOKE_COOKIE` secret. It verifies the real container rather
-than a mocked Django process.
-
-Build the local OMERO.web image while preserving other baked-in plugins:
-
-```powershell
-.\scripts\build-docker-image.ps1
-```
-
-BIOMERO.WorkflowSkills is not bundled by default. Include the optional local
-provider only when it is wanted and its sibling repository is available:
-
-```powershell
-.\scripts\build-docker-image.ps1 -WithWorkflowSkills
-```
-
-## API
-
-```text
-POST /omero_analysis/api/context-token/
-GET  /omero_analysis/api/context/<object_type>/<object_id>/
-GET  /omero_analysis/api/attachments/<object_type>/<object_id>/
-GET  /omero_analysis/api/attachment/<annotation_id>/download/
-POST /omero_analysis/api/attachments/<object_type>/<object_id>/upload/
-POST /omero_analysis/api/attachments/<object_type>/<object_id>/staged/assign/
-
-GET|POST /omero_analysis/api/workspaces/<object_type>/<object_id>/snapshots/
-GET      /omero_analysis/api/workspace-snapshot/<annotation_id>/download/
-GET|POST /omero_analysis/api/pipelines/<object_type>/<object_id>/templates/
-GET      /omero_analysis/api/pipeline-template/<annotation_id>/download/
-
-GET  /omero_analysis/api/notebook/<annotation_id>/download/
-POST /omero_analysis/api/notebooks/<object_type>/<object_id>/upload/
-
-GET  /omero_analysis/api/workspace-dataset/<dataset_id>/
-
-GET    /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/
-POST   /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/plan/
-POST   /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/apply/
-DELETE /omero_analysis/api/workspace-sync/<object_type>/<object_id>/<workspace_id>/remove/
-GET    /omero_analysis/api/workspace-library/<object_type>/<object_id>/
-GET    /omero_analysis/api/workspace-library/item/<annotation_id>/download/
-```
-
-All object-bound endpoints require an OMERO login, active group context, and
-short-lived context capability. File download endpoints additionally enforce
-source or managed-Workspace FileAnnotation membership.
-Middle-pane upload behavior follows the configured operating mode. With
-`IMPORTER_ENABLED=false`, the upload is a conventional copied OMERO
-FileAnnotation linked to the selected Dataset, Image, Screen, or Plate under
-the Analysis result namespace. It remains reusable from that source. With
-`IMPORTER_ENABLED=true`, the endpoint first writes a content-addressed staging
-blob to mapped `.analysis` storage and opening or creating a Workspace adopts
-it into the managed Workspace Dataset. `USE_INPLACE_ATTACHMENTS` independently
-selects a symlink-backed or copied FileAnnotation for that adoption. A requested
-but unavailable importer configuration blocks writes instead of silently
-changing storage mode.
-
-Importer-ready deployments also support a mapping-scoped **Shared library** of
-notebooks and plate templates. Full administrators can publish through Analysis;
-filesystem writers can copy files into the shared folders. Imports are independent,
-revisioned workspace copies. Open **Libraries** in the Analysis Explorer, or expand
-**Shared notebooks and plate templates** in the middle pane. The shared-folder
-and synced `+AnalysisWorkspaces` libraries have separate collapsible panels.
-See [Shared library setup and usage](docs/shared-library.md)
-for layout, permissions, compatibility checks and multi-host requirements.
-
-## Movies and generic CSV measurements
-
-Movies are browser-local ZarrViewer exports with a default playback speed of
-5 FPS. Analysis displays MP4 results in the existing Inspector, run results,
-and Notebook outputs. See [Movie recipes](docs/movies.md).
-
-CSV exports, including CellProfiler outputs, remain generic inputs. Use explicit
-identifier dtypes or `ctx.read_csv("source", identifiers=["actual_column"], nrows=100)`
-for a bounded supporting-file preview. Relationships and units must be verified
-from the actual inputs. CellProfiler execution/workflow maintenance is separate.
+Historical testing reports describe the versions tested at the time; they do
+not document the beta interface.

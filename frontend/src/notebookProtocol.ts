@@ -1,3 +1,4 @@
+import { configurationLiteral } from "./configurationLiteral";
 import type { NotebookCell, NotebookDocument, WorkspaceFile } from "./types";
 
 export const NOTEBOOK_PROTOCOL_SCHEMA = "nl.bioimaging.omero-analysis-notebook.v1" as const;
@@ -11,6 +12,7 @@ export type NotebookQueryFormat = "duckdb" | "sqlite" | "sqlite3" | "csv";
 export type NotebookParameterType = "boolean" | "integer" | "number" | "string" | "choice";
 
 export interface NotebookQueryInput {
+  readiness?: Array<{ sql: string; message: string }>;
   filename_globs?: string[];
   id: string;
   kind: "query";
@@ -75,6 +77,9 @@ export interface NotebookProtocolBinding {
 }
 
 export interface NotebookRunProvenance {
+  id?: string;
+  mode?: "all" | "cell";
+  cellIndex?: number;
   startedAt: string;
   completedAt?: string;
   parameters: Record<string, boolean | number | string | null>;
@@ -118,15 +123,7 @@ function selectOnly(sql: unknown): string {
   return sql;
 }
 
-function literalConfiguration(source: string): unknown {
-  const call = source.match(/\b(?:oan\.)?configure\s*\(\s*(?:[rubfRUBF]*)('''|""")([\s\S]*?)\1\s*\)/);
-  if (!call) throw new Error("Configuration cell must call oan.configure() with a triple-quoted literal JSON string");
-  try {
-    return JSON.parse(call[2]);
-  } catch (error) {
-    throw new Error(`Configuration is not literal JSON: ${String(error)}`);
-  }
-}
+function literalConfiguration(source: string): unknown { return configurationLiteral(source).value; }
 
 export function validateNotebookContract(value: unknown, allowUnsupportedPackages = false): NotebookProtocolContract {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Notebook configuration must be an object");
@@ -153,12 +150,23 @@ export function validateNotebookContract(value: unknown, allowUnsupportedPackage
       if (!Array.isArray(candidate.formats) || !candidate.formats.length || candidate.formats.some((format: unknown) => !allowed.has(format as NotebookQueryFormat))) {
         throw new Error(`Input ${candidate.id} formats are invalid`);
       }
+      if (candidate.readiness !== undefined) {
+        if (!Array.isArray(candidate.readiness) || candidate.readiness.length > 4)
+          throw new Error("readiness must contain at most 4 checks");
+        for (const check of candidate.readiness) {
+          if (!check || typeof check !== "object" || typeof check.sql !== "string" || !check.sql.trim() ||
+              check.sql.length > 16384 || typeof check.message !== "string" || !check.message.trim() || check.message.length > 500)
+            throw new Error("Each readiness check needs bounded SQL and an explanation");
+          selectOnly(check.sql);
+        }
+      }
       return { ...candidate, path, required, formats: Array.from(new Set(candidate.formats)) };
     }
     if (candidate.kind === "file") {
       if (!Array.isArray(candidate.extensions) || !candidate.extensions.length || candidate.extensions.some((extension: unknown) => typeof extension !== "string" || !/^\.[A-Za-z0-9][A-Za-z0-9._-]*$/.test(extension))) {
         throw new Error(`Input ${candidate.id} extensions are invalid`);
       }
+      if (candidate.readiness !== undefined) throw new Error("Readiness checks require a query input");
       return { ...candidate, path, required, extensions: candidate.extensions.map((extension: string) => extension.toLowerCase()) };
     }
     throw new Error(`Input ${candidate.id} kind must be query or file`);
@@ -230,7 +238,7 @@ export function parseNotebookProtocol(document: NotebookDocument, allowUnsupport
   return {
     ...contract,
     inputs: contract.inputs.map((input) => input.kind === "query" && requirements[input.id]?.tables
-      ? { ...input, schema: { tables: requirements[input.id].tables } }
+      ? { ...input, schema: { ...input.schema, tables: requirements[input.id].tables } }
       : input)
   };
 }

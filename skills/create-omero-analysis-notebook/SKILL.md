@@ -16,10 +16,12 @@ and widgets with the protocol SDK.
 
 ## Read or edit an open notebook
 
-Use **Edit Notebook → Whole notebook** to read all cells and current unsaved
-draft changes in one JSON field; do not collect cells individually when this
-interface is available. Follow [references/AUTHORING.md](references/AUTHORING.md)
-for the revision-checked source transport and template-file discovery rules.
+Use **Notebooks → Source** for the complete Python/Markdown document with
+cell separators, or **Cells** to edit and run individual cells inline.
+There is no Whole Notebook popup or separate Editor tab. Preserve the first
+tagged configuration cell, cell IDs, notebook metadata, and logical input
+contract. Invalid source is a recoverable draft, not a valid saved notebook.
+Follow [references/AUTHORING.md](references/AUTHORING.md).
 
 ## Create a notebook
 
@@ -108,3 +110,12 @@ Temporal MP4 output uses the existing structured render recipe with
 Default playback is 5 FPS, separate from acquisition timing. ZarrViewer handles
 authenticated pixels and browser encoding; Python never invokes an encoder or
 network request. See the movie authoring skill and docs/movies.md in the repository.
+
+## Readiness checks
+
+Optional query-input `readiness` checks are bounded read-only queries with an
+actionable `message`. A check passes if its SQL returns at least one row.
+Use `SELECT ... WHERE <condition> LIMIT 1`; `SELECT FALSE` still returns a row
+and must not be used to signal failure. Declare formats, tables, columns,
+packages, and actual workflow data requirements. Missing measurements are not
+measured zeros. Do not assume cells/nuclei or tracking exist.

@@ -171,7 +171,21 @@ def validate_contract(value: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(formats, list) or not formats or not set(formats) <= QUERY_FORMATS:
                 raise ProtocolError(f"Input {identifier} formats are invalid")
             item["formats"] = list(dict.fromkeys(formats))
+            checks = raw.get("readiness")
+            if "readiness" in raw:
+                if not isinstance(checks, list) or len(checks) > 4:
+                    raise ProtocolError("readiness must contain at most 4 checks")
+                for check in checks:
+                    if (not isinstance(check, dict) or not isinstance(check.get("sql"), str)
+                            or not check["sql"].strip() or len(check["sql"]) > 16384
+                            or not isinstance(check.get("message"), str) or not check["message"].strip()
+                            or len(check["message"]) > 500):
+                        raise ProtocolError("Each readiness check needs bounded SQL and an explanation")
+                    _validate_select(check["sql"])
+
         else:
+            if "readiness" in raw:
+                raise ProtocolError("Readiness checks require a query input")
             extensions = raw.get("extensions")
             if not isinstance(extensions, list) or not extensions or any(
                 not isinstance(ext, str) or not re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9._-]*", ext)

@@ -6,10 +6,25 @@ import json
 import os
 import sqlite3
 import time
+import threading
 from pathlib import Path
 from typing import Any, Mapping
 
 from .protocol import ProtocolError, _validate_select, load_contract, validate_parameter_values
+
+
+QUERY_TIMEOUT_SECONDS = 30
+
+
+def _bounded_duckdb_query(connection, sql, values):
+    timer = threading.Timer(QUERY_TIMEOUT_SECONDS, connection.interrupt)
+    timer.daemon = True
+    timer.start()
+    try:
+        return connection.execute(sql, values).fetchdf()
+    finally:
+        timer.cancel()
+        timer.join()
 
 
 class NotebookContext:
@@ -77,7 +92,7 @@ class NotebookContext:
                 connection.execute("SET enable_external_access=false")
                 connection.execute("SET autoinstall_known_extensions=false")
                 connection.execute("SET autoload_known_extensions=false")
-                return connection.execute(sql, values).fetchdf()
+                return _bounded_duckdb_query(connection, sql, values)
             finally:
                 connection.close()
         if suffix in {".sqlite", ".sqlite3"}:
@@ -101,7 +116,7 @@ class NotebookContext:
                     lambda action, _one, _two, _database, _trigger:
                     sqlite3.SQLITE_DENY if action in denied else sqlite3.SQLITE_OK
                 )
-                deadline = time.monotonic() + 30
+                deadline = time.monotonic() + QUERY_TIMEOUT_SECONDS
                 connection.set_progress_handler(
                     lambda: 1 if time.monotonic() > deadline else 0,
                     10_000,
@@ -122,10 +137,24 @@ class NotebookContext:
                 connection.execute("SET enable_external_access=false")
                 connection.execute("SET autoinstall_known_extensions=false")
                 connection.execute("SET autoload_known_extensions=false")
-                return connection.execute(sql, values).fetchdf()
+                return _bounded_duckdb_query(connection, sql, values)
             finally:
                 connection.close()
         raise ProtocolError(f"Unsupported query source extension: {suffix}")
+
+    async def check_readiness(self) -> dict[str, list[str]]:
+        """Bounded, read-only prerequisites; empty failures means ready."""
+        failures = {}
+        for identifier, item in self._inputs.items():
+            reasons = []
+            for check in item.get("readiness", []):
+                sql = check["sql"].strip().rstrip(";")
+                frame = self._query_sync(identifier, f"SELECT * FROM ({sql}) AS readiness LIMIT 1")
+                if frame.empty:
+                    reasons.append(check["message"])
+            if reasons:
+                failures[identifier] = reasons
+        return failures
 
     async def query(
         self,

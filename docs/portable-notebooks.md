@@ -67,8 +67,8 @@ copy.
 
 When opened in Analysis:
 
-1. Choose or confirm each query source and supporting file. Multiple compatible
-   candidates always require a choice.
+1. Analysis binds a single compatible query source or supporting file automatically.
+   Choose an input only when multiple compatible candidates remain ambiguous.
 2. Set parameters in the native form above the notebook. Database-backed
    choices are loaded with a bounded query.
 3. Run the notebook. Top-level `await` is supported.
@@ -78,7 +78,8 @@ When opened in Analysis:
 
 Each run captures parameter values, source/schema digests, output names/sizes,
 timestamps, and status. Query CSV transport remains transient and never appears
-in Workspace Input. Attaching an executed notebook remains an explicit action.
+in Workspace Input. Valid edits and completed notebook results synchronize automatically to OMERO.
+The saving indicator reports local save progress and synchronization failures.
 
 Successful reruns with equal effective parameters and input identities replace
 their previous active output set. Different parameters or input identities keep
@@ -89,9 +90,25 @@ same parameter set, rather than duplicated on the Workspace Dataset.
 
 ## Editing and supporting-file discovery
 
-Use **Edit Notebook → Whole notebook** to read or edit all cells in one
-revision-checked JSON document. Applying it changes only the draft; save and run
-remain separate actions. See the [whole-notebook authoring reference](../skills/create-omero-analysis-notebook/references/AUTHORING.md).
+Open a notebook in **Notebooks** to edit Python and Markdown cells inline. Add,
+remove, move and change cell types while keeping the configuration cell first.
+The Source button and Whole Notebook popup are removed. Existing invalid source
+drafts remain recoverable without replacing the last valid notebook. Valid changes
+autosave locally and synchronize to OMERO.
+
+**Run cell** or **Shift+Enter** runs only that cell in the current kernel. **Run all**
+starts with a clean kernel; **Stop** interrupts execution and **Restart kernel**
+clears its state. Switching tabs preserves state; switching notebooks or changing
+input bindings resets it. Editing a cell marks its prior output stale. Python
+errors appear below their cells with expandable tracebacks. See the
+[notebook authoring reference](../skills/create-omero-analysis-notebook/references/AUTHORING.md).
+
+Compatibility is shown beside notebook entries and checked again when inputs
+change. **Ready**, **Missing requirements**, **Not checked**, and **Choose input**
+distinguish a validated binding from missing data, unchecked readiness, or an
+ambiguous choice. Import and editing remain available for incompatible notebooks;
+execution requires resolved formats, schema, packages, files, and declared bounded
+read-only readiness checks.
 
 Supporting file declarations can use `filename_globs`, for example
 `["*template*.xlsx", "*template*.csv"]`, together with matching `extensions`.

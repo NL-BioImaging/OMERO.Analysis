@@ -1,12 +1,14 @@
-import { APPROVED_NOTEBOOK_PACKAGES, extensionOf, type NotebookProtocolContract, type NotebookProtocolInput } from "./notebookProtocol";
+import { APPROVED_NOTEBOOK_PACKAGES, extensionOf, inputFileNameMatches, type NotebookProtocolContract, type NotebookProtocolInput } from "./notebookProtocol";
 
 export interface CompatibilitySource {
   id: string;
   name: string;
+  readiness?: Record<string, boolean>;
+  error?: string;
   schema?: { tables?: Array<{ name: string; columns?: Array<{ name: string; type?: string }> }> };
 }
 export interface Compatibility {
-  status: "compatible" | "incompatible" | "unchecked";
+  status: "compatible" | "incompatible" | "unchecked" | "choose";
   reasons: string[];
 }
 
@@ -22,6 +24,8 @@ function normalizedType(value: string): string {
 export function inputCompatibility(input: NotebookProtocolInput, source: CompatibilitySource): Compatibility {
   const extensions = input.kind === "query" ? input.formats.map(f => `.${f}`) : input.extensions;
   if (!extensions.includes(extensionOf(source.name))) return { status: "incompatible", reasons: ["File format does not match"] };
+  if (!inputFileNameMatches(input, source.name)) return { status: "incompatible", reasons: [`${input.id}: filename does not match the declared requirements`] };
+  if (source.error) return { status: "unchecked", reasons: [source.error] };
   if (input.kind === "query" && input.schema?.tables?.length) {
     if (!source.schema?.tables) return { status: "unchecked", reasons: [`${input.id}: schema not checked`] };
     for (const required of input.schema.tables) {
@@ -40,10 +44,16 @@ export function inputCompatibility(input: NotebookProtocolInput, source: Compati
       }
     }
   }
+  if (input.kind === "query" && input.readiness?.length) {
+    for (const check of input.readiness) {
+      if (source.readiness?.[check.sql] === false) return { status: "incompatible", reasons: [check.message] };
+      if (source.readiness?.[check.sql] !== true) return { status: "unchecked", reasons: [source.error || `Not checked: ${check.message}`] };
+    }
+  }
   return { status: "compatible", reasons: [] };
 }
 
-export function notebookCompatibility(contract: NotebookProtocolContract | null | undefined, sources: CompatibilitySource[]): Compatibility {
+export function notebookCompatibility(contract: NotebookProtocolContract | null | undefined, sources: CompatibilitySource[], selectedId?: string): Compatibility {
   if (!contract) return { status: "unchecked", reasons: ["Legacy notebook: no portable input contract"] };
   const unsupported = (contract.requirements || []).map(r => r.split(/[<>=!~]/)[0].toLowerCase().replace(/[_.]/g, "-"))
     .filter(p => !APPROVED_NOTEBOOK_PACKAGES.has(p));
@@ -54,7 +64,7 @@ export function notebookCompatibility(contract: NotebookProtocolContract | null 
     const statuses = sources.map(s => inputCompatibility(input, s));
     const matches = statuses.filter(s => s.status === "compatible");
     if (matches.length) {
-      if (matches.length > 1) notes.push(`${input.id}: choose between ${matches.length} matching inputs`);
+      if (matches.length > 1 && !sources.some(s => s.id === selectedId && inputCompatibility(input, s).status === "compatible")) notes.push(`${input.id}: choose between ${matches.length} matching inputs`);
     } else if (statuses.some(s => s.status === "unchecked")) unknown.push(`${input.id}: schema not checked`);
     else {
       const reasons = statuses.flatMap(s => s.reasons).filter(r => r !== "File format does not match");
@@ -63,7 +73,8 @@ export function notebookCompatibility(contract: NotebookProtocolContract | null 
   }
   return missing.length ? { status: "incompatible", reasons: missing }
     : unknown.length ? { status: "unchecked", reasons: unknown }
-    : { status: "compatible", reasons: notes.length ? notes : ["Declared input requirements match"] };
+    : notes.length ? { status: "choose", reasons: notes }
+    : { status: "compatible", reasons: ["Declared input requirements match"] };
 }
 
-export const compatibilityLabel = { compatible: "Compatible", incompatible: "Incompatible", unchecked: "Not checked" };
+export const compatibilityLabel = { compatible: "Ready", incompatible: "Missing requirements", unchecked: "Not checked", choose: "Choose input" };

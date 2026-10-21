@@ -59,8 +59,6 @@ export interface Bootstrap {
   snapshotsTemplate: string;
   snapshotUploadTemplate: string;
   snapshotDownloadTemplate: string;
-  pipelineTemplatesTemplate: string;
-  pipelineDownloadTemplate: string;
   notebookDownloadTemplate: string;
   notebookUploadTemplate: string;
   workspaceSyncStatusTemplate: string;
@@ -70,7 +68,6 @@ export interface Bootstrap {
   workspaceLibraryTemplate: string;
   workspaceLibraryDownloadTemplate: string;
   sharedLibraryTemplate?: string;
-  analysisSettingsTemplate: string;
   workflowSkillsUrl: string;
   dataQueryCapabilitiesUrl?: string;
   dataSourceSchemaTemplate?: string;
@@ -139,6 +136,7 @@ export interface WorkflowSkillSource {
 }
 
 export interface WorkflowSkillEntry {
+  notebooks?: import("./WorkflowExamples").WorkflowNotebookAsset[];
   source: WorkflowSkillSource;
   status: "ready" | "no-skills" | "stale" | "error";
   checked_at: string;
@@ -211,6 +209,8 @@ export interface OmeroHierarchy {
 }
 
 export interface WorkspaceRecord {
+  resultStorageVersion?: number;
+  storageVersion?: number;
   browserLifecycleRevision?: number;
   lifecycleRevision?: number;
   purgedAt?: string;
@@ -262,6 +262,9 @@ export interface ChatRecord {
 }
 
 export interface WorkspaceFile {
+  deletedInOmeroAt?: string;
+  supersededAt?: string;
+  notebookRunId?: string;
   mediaBlob?: Blob;
   resultGroupId?: string;
   movie?: { fps: number; frameCount: number; recipe?: ZarrRenderRecipe };
@@ -420,7 +423,7 @@ export interface EvidenceRecord {
 }
 
 export interface MethodVersion {
-  executionContract?: import('./methodExecution').MethodExecutionContract;
+  executionContract?: Record<string, unknown>;
   version: number;
   code: string;
   codeHash: string;
@@ -718,70 +721,10 @@ export interface DataProfile {
   error?: string;
 }
 
-export interface ProviderSettings {
-  protocol: "openai" | "anthropic";
-  endpoint: string;
-  authMode: "none" | "bearer" | "api-key";
-  apiKey: string;
-  model: string;
-  contextWindow: number;
-  rememberKey: boolean;
-}
-
-export interface AiProfile {
-  id: string;
-  name: string;
-  settings: ProviderSettings;
-}
-
-export interface AiProfileStore {
-  activeProfileId: string;
-  profiles: AiProfile[];
-}
-
-export interface CustomSkill {
-  id: string;
-  name: string;
-  description: string;
-  filename: string;
-  sourceType: "upload" | "url";
-  sourceUrl?: string;
-  content: string;
-  sha256: string;
-  extensions: string[];
-  enabled: boolean;
-  createdAt: string;
-}
-
-export interface AnalysisSettingsBundle {
-  schema: "nl.bioimaging.analysis.settings.bundle.v1";
-    analysis: {
-      plotCsv: boolean;
-      theme?: "dark" | "light";
-      editorEnabled?: boolean;
-    };
-  ai: AiProfileStore;
-  skills: CustomSkill[];
-}
-
-export interface AnalysisSettingsStatus {
-  schema: "nl.bioimaging.analysis.settings.bundle.v1";
-  synced: boolean;
-  projectId?: number;
-  datasetId?: number;
-  annotationId?: number;
-  payload?: AnalysisSettingsBundle | null;
-  aiDatasetId?: number;
-  skillsDatasetId?: number;
-  profileCount?: number;
-  skillCount?: number;
-}
-
 export interface RuntimeOutput {
   stdout: string;
   stderr: string;
   preview: unknown;
-  modelPayload: ModelPayload;
   files: Array<{ name: string; type: string; data: ArrayBuffer; resultGroupId?: string; movie?: WorkspaceFile["movie"] }>;
 }
 
@@ -999,6 +942,7 @@ export interface SyncPayload {
 }
 
 export interface SyncStatus {
+  externalResultDeletions?: Array<{key: string; fileIds: string[]; deletedAt: string}>;
   attachmentRepairNeeded?: boolean;
   lifecycle?: "active" | "trashed" | "purging" | "purged" | "unavailable";
   lifecycleRevision?: number;

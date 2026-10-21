@@ -69,6 +69,23 @@ def prepare_notebook(document):
                 item["extensions"] = [e.lower() for e in extensions]
             else:
                 raise ValueError("Unsupported input kind")
+            if "readiness" in item:
+                checks = item["readiness"]
+                if item["kind"] != "query":
+                    raise ValueError("Readiness checks require a query input")
+                if not isinstance(checks, list) or len(checks) > 4:
+                    raise ValueError("readiness must contain at most 4 checks")
+                for check in checks:
+                    if (not isinstance(check, dict) or not isinstance(check.get("sql"), str)
+                            or not check["sql"].strip() or len(check["sql"]) > 16384
+                            or not isinstance(check.get("message"), str) or not check["message"].strip()
+                            or len(check["message"]) > 500):
+                        raise ValueError("Each readiness check needs bounded SQL and an explanation")
+                    sql = re.sub(r"--[^\n]*|/\*.*?\*/", " ", check["sql"], flags=re.S).strip()
+                    if (not re.match(r"^(select|with)\b", sql, re.I) or ";" in sql.rstrip(";")
+                            or re.search(r"\b(attach|copy|pragma|install|load|create|alter|drop|insert|update|delete|merge|call|set|reset)\b", sql, re.I)
+                            or re.search(r"\b(read_csv|read_csv_auto|read_parquet|read_json|sqlite_scan|postgres_scan|httpfs|delta_scan|iceberg_scan|shell|system)\s*\(", sql, re.I)):
+                        raise ValueError("Unsafe readiness query")
             requirements = clean.get("metadata", {}).get("omero_analysis", {}).get("schema_requirements", {})
             if item["kind"] == "query" and requirements.get(identifier, {}).get("tables"):
                 item["schema"] = {"tables": requirements[identifier]["tables"]}

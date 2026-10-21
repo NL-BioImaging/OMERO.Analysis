@@ -59,7 +59,8 @@ describe("WorkspaceLibraryTree", () => {
     );
     expect(screen.getByText("+AnalysisWorkspaces")).toBeInTheDocument();
     expect(screen.getByText("Screen-151 — Cells")).toBeInTheDocument();
-    expect(screen.getByText("Methods")).toBeInTheDocument();
+    expect(screen.queryByText("Methods")).not.toBeInTheDocument();
+    expect(screen.queryByText("count-cells.oa-method.json")).not.toBeInTheDocument();
     expect(screen.getByText("Notebooks")).toBeInTheDocument();
     expect(document.querySelector('img[src="/static/webclient/image/folder16.png"]'))
       .toBeInTheDocument();
@@ -81,8 +82,8 @@ describe("WorkspaceLibraryTree", () => {
         onToggleItem={toggle}
       />
     );
-    fireEvent.click(screen.getByRole("checkbox", { name: /count-cells\.oa-method/ }));
-    expect(toggle).toHaveBeenCalledWith("2:method:cells");
+    fireEvent.click(screen.getByRole("checkbox", { name: /count-cells\.ipynb/ }));
+    expect(toggle).toHaveBeenCalledWith("2:notebook:cells");
 
     rerender(
       <WorkspaceLibraryTree
@@ -120,10 +121,23 @@ describe("WorkspaceLibraryTree", () => {
     expect(root).not.toHaveAttribute("open");
 
     fireEvent.click(rootSummary!);
-    const methodsSummary = screen.getByText("Methods").closest("summary");
+    const methodsSummary = screen.getByText("Notebooks").closest("summary");
     const methods = methodsSummary?.closest("details");
     expect(methods).toHaveAttribute("open");
     fireEvent.click(methodsSummary!);
     expect(methods).not.toHaveAttribute("open");
   });
+});
+
+
+it("checks the full notebook contract instead of treating a matching format as Ready", async () => {
+  const check = vi.fn(async () => ({ status: "incompatible" as const, reasons: ["Missing table: tracks"] }));
+  render(<WorkspaceLibraryTree datasets={datasets} query="" selected={new Set()}
+    openDatasets={new Set([2])} availableFormats={new Set(["duckdb"])}
+    zarrViewerAvailable checkNotebook={check} inputKey="source-a"
+    onToggleDataset={vi.fn()} onToggleItem={vi.fn()} />);
+  const status = await screen.findByText("Missing requirements");
+  expect(status).toHaveAttribute("title", "Missing table: tracks");
+  expect(check).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("checkbox", { name: /count-cells.ipynb/ })).toBeEnabled();
 });

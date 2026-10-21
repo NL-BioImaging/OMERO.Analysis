@@ -218,8 +218,6 @@
       {% else %}
         <p class="oa-help">Resume the reusable Methods, Pipelines, Notebooks, and run history synchronized from the source object.</p>
         <dl class="oa-workspace-stats">
-          <div><dt>Methods</dt><dd>{{ context.workspace_summary.counts.method }}</dd></div>
-          <div><dt>Pipelines</dt><dd>{{ context.workspace_summary.counts.pipeline }}</dd></div>
           <div><dt>Notebooks</dt><dd>{{ context.workspace_summary.counts.notebook }}</dd></div>
           <div><dt>Source</dt><dd>{{ context.workspace_summary.source_type }} {{ context.workspace_summary.source_id }}</dd></div>
         </dl>

@@ -197,5 +197,163 @@
       "parameters": [],
       "packages": []
     }
+  },
+  {
+    "name": "bounded-readiness",
+    "valid": true,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ],
+          "readiness": [
+            {
+              "sql": "SELECT 1 FROM label_sets WHERE object_type = 'cells' LIMIT 1",
+              "message": "Cell segmentation is missing"
+            }
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "readiness-mutation",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ],
+          "readiness": [
+            {
+              "sql": "DELETE FROM label_sets",
+              "message": "Invalid"
+            }
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "readiness-too-many",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ],
+          "readiness": [
+            {
+              "sql": "SELECT 1",
+              "message": "Check"
+            },
+            {
+              "sql": "SELECT 1",
+              "message": "Check"
+            },
+            {
+              "sql": "SELECT 1",
+              "message": "Check"
+            },
+            {
+              "sql": "SELECT 1",
+              "message": "Check"
+            },
+            {
+              "sql": "SELECT 1",
+              "message": "Check"
+            }
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "readiness-no-explanation",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "query",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ],
+          "readiness": [
+            {
+              "sql": "SELECT 1"
+            }
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
+  },
+  {
+    "name": "readiness-file-input",
+    "valid": false,
+    "contract": {
+      "schema": "nl.bioimaging.omero-analysis-notebook.v1",
+      "inputs": [
+        {
+          "id": "data",
+          "kind": "file",
+          "path": "input/data.csv",
+          "formats": [
+            "csv"
+          ],
+          "readiness": [
+            {
+              "sql": "SELECT 1",
+              "message": "Check"
+            }
+          ],
+          "extensions": [
+            ".csv"
+          ]
+        }
+      ],
+      "results": {
+        "path": "results"
+      },
+      "parameters": [],
+      "packages": []
+    }
   }
 ]

@@ -20,6 +20,9 @@ def result_payload(conn, obj, workspace_id, key):
             identity.get("source_object_type") != getattr(obj, "OMERO_CLASS", None)):
         raise PermissionDenied("This result belongs to a different source")
     _, manifest = ws._read_manifest(dataset)
+    from .result_reconciliation import result_deletions
+    if any(record["key"] == key for record in result_deletions(conn, dataset, manifest)):
+        raise AttachmentNotFound("This result was removed in OMERO")
     item = ws._remote_items(manifest).get(key)
     if not item or item.get("kind") not in {"result", "png-image", "template-input"}:
         raise AttachmentNotFound("Result is not in this workspace manifest")

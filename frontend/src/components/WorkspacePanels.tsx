@@ -1,35 +1,18 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
-  ArtifactRecord,
   DataProfile,
   NotebookRecord,
-  PipelineRecord,
-  ProviderSettings,
   RuntimeProgress,
-  TokenUsage,
   WorkspaceFile
 } from "../types";
 import { Artifact } from "./ResultPreview";
 import { ActionIcon } from "./ActionIcon";
-import { Button, TextArea } from "./BlueprintControls";
+import { Button } from "./BlueprintControls";
 
 function bytesLabel(value: number): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KiB`;
   return `${(value / 1024 ** 2).toFixed(1)} MiB`;
-}
-
-export function usageSummary(usage: TokenUsage | null, contextWindow: number): string {
-  if (!usage) return "Context usage appears after the first AI response.";
-  const source = usage.estimated ? "estimated" : "API reported";
-  const configuredWindow = usage.contextWindow || contextWindow;
-  const context = configuredWindow > 0
-    ? `Context: ${usage.promptTokens.toLocaleString()} / ${configuredWindow.toLocaleString()} tokens (${Math.min(100, usage.promptTokens / configuredWindow * 100).toFixed(1)}%)`
-    : `Context: ${usage.promptTokens.toLocaleString()} tokens · model limit not configured`;
-  const compaction = usage.compacted
-    ? `Compacted ${usage.compactedMessages.toLocaleString()} earlier message${usage.compactedMessages === 1 ? "" : "s"} into a summary; pinned messages and the latest six exchanges are retained.`
-    : `Not compacted · local compaction trigger: ${usage.compactionThreshold.toLocaleString()} estimated conversation tokens.`;
-  return `${context} (${source}) · response: ${usage.completionTokens.toLocaleString()} tokens · session: ${usage.sessionTokens.toLocaleString()} tokens · ${compaction}`;
 }
 
 export function parseDelimited(text: string, delimiter: string, completeOnly = false): string[][] {
@@ -261,11 +244,9 @@ function markdownInline(value: string): ReactNode[] {
 }
 
 export function MarkdownPreview({
-  markdown,
-  collapsePython = false
+  markdown
 }: {
   markdown: string;
-  collapsePython?: boolean;
 }) {
   const lines = markdown.slice(0, 128 * 1024).replace(/\r\n?/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
@@ -289,14 +270,7 @@ export function MarkdownPreview({
           <code data-language={fence[1] || undefined}>{code.join("\n")}</code>
         </pre>
       );
-      blocks.push(collapsePython && /^(?:python|py)$/i.test(fence[1])
-        ? (
-          <details className="assistant-method-code" key={blocks.length}>
-            <summary>Show reusable Method code</summary>
-            {codeBlock}
-          </details>
-        )
-        : <Fragment key={blocks.length}>{codeBlock}</Fragment>);
+      blocks.push(<Fragment key={blocks.length}>{codeBlock}</Fragment>);
       continue;
     }
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
@@ -460,249 +434,6 @@ function NotebookInspectorPreview({ notebook }: { notebook: NotebookRecord }) {
   );
 }
 
-function PipelineInspectorPreview({ pipeline }: { pipeline: PipelineRecord }) {
-  return (
-    <ol className="pipeline-inspector-preview">
-      {pipeline.steps.map((step, index) => {
-        const bindings = Object.entries(step.inputBindings || {});
-        const parameters = Object.entries(step.parameters || {});
-        return (
-          <li key={step.id}>
-            <span className="pipeline-inspector-step-number">{index + 1}</span>
-            <div>
-              <strong>{step.name}</strong>
-              <small>Saved Method version {step.methodVersion}</small>
-              {bindings.length > 0 ? (
-                <dl className="pipeline-binding-list">
-                  {bindings.map(([expected, resolved]) => (
-                    <Fragment key={expected}>
-                      <dt>{expected}</dt><dd><span aria-hidden="true">→</span>{resolved}</dd>
-                    </Fragment>
-                  ))}
-                </dl>
-              ) : <em>Automatic input matching</em>}
-              {parameters.length > 0 && (
-                <details><summary>{parameters.length} parameter{parameters.length === 1 ? "" : "s"}</summary>
-                  <dl className="pipeline-parameter-list">{parameters.flatMap(([name, value]) => [
-                    <dt key={`${name}-term`}>{name}</dt>,
-                    <dd key={`${name}-value`}>{String(value)}</dd>
-                  ])}</dl>
-                </details>
-              )}
-            </div>
-          </li>
-        );
-      })}
-      {!pipeline.steps.length && <li className="pipeline-inspector-empty">No Method steps yet.</li>}
-    </ol>
-  );
-}
-
-export function ViewerPreviewCard({
-  artifact,
-  file,
-  onInspect,
-  onSaveBundle,
-  saveDisabled = false
-}: {
-  artifact: ArtifactRecord;
-  file?: WorkspaceFile;
-  onInspect: (file: WorkspaceFile) => void;
-  onSaveBundle: (artifact: ArtifactRecord, file: WorkspaceFile) => void;
-  saveDisabled?: boolean;
-}) {
-  const viewer = artifact.viewer || file?.viewer;
-  if (!viewer) return null;
-  return (
-    <article className="viewer-preview-card">
-      <div className="viewer-preview-heading">
-        <div>
-          <span>OME-Zarr view</span>
-          <strong>{artifact.title}</strong>
-        </div>
-        {viewer.viewerUrl ? (
-          <a
-            className="button-link"
-            href={viewer.viewerUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open in ZarrViewer
-          </a>
-        ) : (
-          <span className="viewer-link-pending">
-            Revalidate this preview in the current OMERO object to reopen it
-          </span>
-        )}
-      </div>
-      {file && (
-        <>
-          <button className="viewer-preview-image" onClick={() => onInspect(file)}>
-            <Artifact file={file} />
-          </button>
-          {viewer.renderRecipe && (
-            <button
-              className="button-link"
-              disabled={saveDisabled}
-              title={saveDisabled ? "Wait until the assistant has finished its summary" : undefined}
-              onClick={() => onSaveBundle(artifact, file)}
-            >
-              Save analysis + render
-            </button>
-          )}
-        </>
-      )}
-      <small>
-        Field {viewer.field} · ROI {viewer.roi.join(", ")}
-        {viewer.croppedField ? " · centered preview; full field opens in ZarrViewer" : ""}
-      </small>
-    </article>
-  );
-}
-
-export function ComposerPanel({
-  runtimeReady,
-  runtimeProgress,
-  status,
-  usage,
-  settings,
-  blocked,
-  canChat,
-  composerPlaceholder,
-  prompt,
-  busy,
-  onPromptChange,
-  onSend,
-  onStop,
-  onReset,
-  attachments = [],
-  onAddAttachments,
-  onAddAttachmentUrl,
-  onDownloadAttachment,
-  onRemoveAttachment,
-  onReselectAttachment
-}: {
-  runtimeReady: boolean;
-  runtimeProgress: RuntimeProgress;
-  status: string;
-  usage: TokenUsage | null;
-  settings: ProviderSettings;
-  blocked: boolean;
-  canChat: boolean;
-  composerPlaceholder: string;
-  prompt: string;
-  busy: boolean;
-  onPromptChange: (value: string) => void;
-  onSend: () => void;
-  onStop: () => void;
-  onReset: () => void;
-  attachments?: WorkspaceFile[];
-  onAddAttachments?: (files: File[]) => void;
-  onAddAttachmentUrl?: () => void;
-  onDownloadAttachment?: (file: WorkspaceFile) => void;
-  onRemoveAttachment?: (file: WorkspaceFile) => void;
-  onReselectAttachment?: (file: WorkspaceFile, source: File) => void;
-}) {
-  const needsApiKey =
-    settings.protocol === "anthropic" || settings.authMode !== "none";
-  const providerMissing = Boolean(
-    !settings.endpoint || !settings.model || (needsApiKey && !settings.apiKey)
-  );
-  return (
-    <>
-      {!runtimeReady && (
-        <RuntimeProgressPanel progress={runtimeProgress} />
-      )}
-      <div className="status" role="status">{status}</div>
-      <div className="usage-status">
-        <span>Conversations stay in this browser. The configured AI provider receives your messages, bounded analysis summaries, and selected attachment text or image pixels. Original PDF and DOCX bytes are not sent. Reusable analyses save separately to OMERO.</span>
-        <details><summary>Assistant diagnostics</summary><span>{usageSummary(usage, settings.contextWindow || 0)}</span></details>
-      </div>
-      {blocked && <div className="blocker">Analysis is blocked until every input is available. Retry, reselect, or remove missing files.</div>}
-      {providerMissing ? (
-        <div className="blocker">
-          {`Enter an AI endpoint and model${needsApiKey ? ", and API key" : ""} in Settings.`}
-        </div>
-      ) : null}
-      <div className="chat-attachments" aria-label="Assistant attachments">
-        <div className="attachment-actions">
-          <label className={`button-like ${busy ? "disabled" : ""}`}>
-            <ActionIcon name="attach" />Attach files
-            <input
-              hidden
-              type="file"
-              multiple
-              disabled={busy}
-              accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"
-              onChange={(event) => {
-                onAddAttachments?.(Array.from(event.target.files || []));
-                event.target.value = "";
-              }}
-            />
-          </label>
-          <Button disabled={busy} onClick={onAddAttachmentUrl}>
-            <ActionIcon name="attach" />File URL
-          </Button>
-          <small>{attachments.length}/10 active · 25 MiB each · no OCR</small>
-        </div>
-        {attachments.length ? (
-          <ul className="attachment-chips">
-            {attachments.map((file) => (
-              <li key={file.id} className={`attachment-chip ${file.state}`}>
-                <span>
-                  <strong title={file.name}>{file.name}</strong>
-                  <small>{bytesLabel(file.size)} · {file.state}</small>
-                  {file.attachment?.warnings?.map((warning) => (
-                    <em key={warning}>{warning}</em>
-                  ))}
-                  {file.error && <em>{file.error}</em>}
-                </span>
-                <Button disabled={!file.data} aria-label={`Download ${file.name}`}
-                  onClick={() => onDownloadAttachment?.(file)}><ActionIcon name="download" /></Button>
-                {(file.state === "missing" || file.state === "failed") && (
-                  <label className="attachment-reselect" title={`Reselect ${file.name}`}>
-                    <ActionIcon name="upload" />
-                    <input hidden type="file" accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp"
-                      onChange={(event) => {
-                        const source = event.target.files?.[0];
-                        if (source) onReselectAttachment?.(file, source);
-                        event.target.value = "";
-                      }} />
-                  </label>
-                )}
-                <Button disabled={busy} aria-label={`Remove ${file.name}`}
-                  onClick={() => onRemoveAttachment?.(file)}><ActionIcon name="delete" /></Button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-      <div className="composer">
-        <div className={`composer-state ${canChat ? "ready" : "waiting"}`}>
-          <span aria-hidden="true">{canChat ? "●" : "◷"}</span>
-          {canChat ? "Ready — you can ask a question" : composerPlaceholder}
-        </div>
-        <TextArea
-          value={prompt}
-          onChange={(event) => onPromptChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              onSend();
-            }
-          }}
-          disabled={!canChat}
-          placeholder={composerPlaceholder}
-        />
-        {busy
-          ? <Button className="stop" onClick={onStop}><ActionIcon name="stop" />Stop</Button>
-          : <Button disabled={!canChat || !prompt.trim()} onClick={onSend}><ActionIcon name="run" />Send</Button>}
-        <Button disabled={busy || !runtimeReady} onClick={onReset}><ActionIcon name="reset" />Reset Python</Button>
-      </div>
-    </>
-  );
-}
-
 export function RuntimeProgressPanel({
   progress,
   detail = "Your request is queued. Analysis continues automatically when the required Python packages are ready.",
@@ -780,7 +511,7 @@ export function ArtifactInspector({
           <span>Artifact inspector</span>
           <strong>{item?.title || "Workspace overview"}</strong>
         </div>
-        {item && onEdit && ["method", "pipeline", "notebook"].includes(item.kind) && (
+        {item && onEdit && item.kind === "notebook" && (
           <Button aria-label={`Edit selected ${item.kind}`} onClick={() => onEdit(item)}>
             <ActionIcon name="edit" />Edit {item.kind[0].toUpperCase() + item.kind.slice(1)}
           </Button>
@@ -798,14 +529,9 @@ export function ArtifactInspector({
                   ])}
                 </dl>
               )}
-              {item.methodNarrative && (
-                <section className="method-inspector-narrative" aria-label="Method summary and review">
-                  <MarkdownPreview markdown={item.methodNarrative} />
-                </section>
-              )}
               {item.content && (
                 item.language === "python"
-                  ? <details className="method-source-preview">
+                  ? <details className="notebook-source-preview">
                       <summary>View Python source</summary>
                       <PythonPreview code={item.content} />
                     </details>
@@ -813,7 +539,6 @@ export function ArtifactInspector({
                     ? <MarkdownPreview markdown={item.content} />
                   : <pre className="artifact-text-preview">{item.content}</pre>
               )}
-              {item.pipeline && <PipelineInspectorPreview pipeline={item.pipeline} />}
               {item.notebook && <NotebookInspectorPreview notebook={item.notebook} />}
             </>
           ) : file ? (
@@ -849,7 +574,7 @@ export function ArtifactInspector({
           ) : (
             <>
               <p className="artifact-help">
-                Local schema profiles are generated without sending source files to the AI provider.
+                Select an input to inspect its contents and schema.
               </p>
               {profiles.map((profile) => (
                 <details key={profile.path} open>
@@ -867,14 +592,12 @@ export function ArtifactInspector({
 }
 
 export interface InspectorItem {
-  kind: "workspace" | "folder" | "chat" | "file" | "method" | "pipeline" | "notebook" | "zarr";
+  kind: "workspace" | "folder" | "file" | "notebook" | "zarr";
   title: string;
   description?: string;
   metadata?: Record<string, string | number>;
   content?: string;
-  methodNarrative?: string;
   language?: "python" | "json" | "markdown";
   notebook?: NotebookRecord;
-  pipeline?: PipelineRecord;
   file?: WorkspaceFile;
 }

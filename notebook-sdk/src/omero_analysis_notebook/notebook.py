@@ -35,15 +35,18 @@ def extract_contract(document: dict[str, Any]) -> dict[str, Any] | None:
         raise ProtocolError("The configuration cell must be the first cell and uniquely tagged")
     source = "".join(marked[0].get("source", [])) if isinstance(marked[0].get("source"), list) else str(marked[0].get("source", ""))
     tree = ast.parse(source)
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    for call in calls:
-        if isinstance(call.func, ast.Attribute) and call.func.attr == "configure" and call.args:
-            try:
-                literal = ast.literal_eval(call.args[0])
-            except (ValueError, SyntaxError) as exc:
-                raise ProtocolError("configure() must receive literal JSON") from exc
-            return load_contract(literal)
-    raise ProtocolError("Marked configuration cell must call oan.configure(literal_json)")
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+             and ((isinstance(node.func, ast.Attribute) and node.func.attr == "configure"
+                   and isinstance(node.func.value, ast.Name) and node.func.value.id == "oan")
+                  or (isinstance(node.func, ast.Name) and node.func.id == "configure"))]
+    if len(calls) != 1 or len(calls[0].args) != 1 or calls[0].keywords:
+        raise ProtocolError("Marked configuration cell must contain one oan.configure(literal_json) call")
+    try:
+        literal = ast.literal_eval(calls[0].args[0])
+    except (ValueError, SyntaxError) as exc:
+        raise ProtocolError("configure() must receive literal JSON") from exc
+    return load_contract(literal)
+
 
 
 def sanitize(document: dict[str, Any]) -> dict[str, Any]:

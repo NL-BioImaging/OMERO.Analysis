@@ -1,0 +1,70 @@
+import {fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {SkillsView} from "./SkillsView";
+import type {OmeroBridge} from "./api";
+import type {WorkflowSkillCatalog,WorkspaceFile} from "./types";
+const catalog={workflows:[{skills:[{workflow_key:"workflow",name:"measurement-analysis",description:"Explain measured objects"}]}]} as WorkflowSkillCatalog;
+it("selects schema sharing by default and lets users turn it off",()=>{
+  const inputs=[{id:"db",name:"data.duckdb",source:"omero",dataQueryMode:"remote",data:new TextEncoder().encode("private-measurements-123").buffer}] as WorkspaceFile[];
+  render(<SkillsView bridge={{} as OmeroBridge} catalog={catalog} viewerCatalog={null} inputs={inputs} schemas={{db:{tables:[{name:"objects",columns:[{name:"object_id",type:"BIGINT"}]}]}}} />);
+  expect(screen.getByRole("heading",{name:"Let your browser assistant make a notebook"})).toBeInTheDocument();
+  const include=screen.getByRole("checkbox",{name:/Share input names/});
+  expect(include).toBeChecked();
+  fireEvent.change(screen.getByLabelText("Your analysis question"),{target:{value:"Count spots per image"}});
+  const prompt=screen.getByLabelText("External chat prompt") as HTMLTextAreaElement;
+  expect(prompt.value).toContain("Count spots per image");
+  expect(screen.getByText(/"object_id"/)).toBeInTheDocument();
+  fireEvent.click(include);
+  expect(prompt.value).toContain("not enabled sharing");
+  expect(screen.queryByText(/"object_id"/)).not.toBeInTheDocument();
+  fireEvent.click(include);
+  expect(screen.queryByText(/private-measurements-123/)).not.toBeInTheDocument();
+  expect(prompt.value).toContain("I allow you to enable");
+});
+it("retrieves complete guidance including references on demand without running a notebook",async()=>{
+  const load=vi.fn().mockResolvedValue({source:{revision:"immutable"},skill:{sha256:"checksum"},files:[{path:"SKILL.md",content:"Workflow guidance"},{path:"references/schema.md",content:"Table reference"}]});
+  const onImport=vi.fn();
+  render(<SkillsView bridge={{loadWorkflowSkill:load} as unknown as OmeroBridge} catalog={catalog} viewerCatalog={null} inputs={[]} schemas={{}} onImport={onImport} />);
+  expect(load).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Browser assistant area"));
+  fireEvent.click(screen.getByRole("button",{name:"Read guidance"}));
+  await waitFor(()=>expect(screen.getByLabelText("Notebook and workflow guidance")).toHaveTextContent("Table reference"));
+  expect(screen.getByLabelText("Notebook and workflow guidance")).toHaveTextContent("notebook authoring");
+  expect(onImport).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Notebook JSON"),{target:{value:"invalid"}});
+  fireEvent.click(screen.getByRole("button",{name:"Import created notebook"}));
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("valid UTF-8 JSON"));
+  expect(onImport).not.toHaveBeenCalled();
+});
+
+it("honours schema opt-out and excludes rows when sharing is enabled",async()=>{
+  const remoteSchema=vi.fn().mockResolvedValue({tables:[{name:"objects",columns:[{name:"object_id",type:"BIGINT"}],rows:[["private-row"]]}],token:"secret-token"});
+  const inputs=[{id:"db",name:"measurements.duckdb",source:"omero",annotationId:752,dataQueryMode:"remote",state:"ready"}] as WorkspaceFile[];
+  render(<SkillsView bridge={{remoteSchema} as unknown as OmeroBridge} catalog={null} viewerCatalog={null} inputs={inputs} schemas={{}} />);
+  expect(remoteSchema).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("checkbox",{name:/Share input names/}));
+  fireEvent.click(screen.getByText("Browser assistant area"));
+  fireEvent.click(screen.getByRole("button",{name:"Read guidance"}));
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("Guidance is ready"));
+  expect(remoteSchema).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("checkbox",{name:/Share input names/}));
+  fireEvent.click(screen.getByRole("button",{name:"Read guidance"}));
+  await waitFor(()=>expect(screen.getByText(/"object_id"/)).toBeInTheDocument());
+  expect(remoteSchema).toHaveBeenCalledWith(752);
+  const preview=screen.getByText(/"object_id"/).textContent;
+  expect(preview).not.toMatch(/private-row|secret-token|rows|token/);
+});
+
+it("lists supporting templates with portable paths and downloads them only on request",async()=>{
+ const onDownloadInput=vi.fn().mockResolvedValue(undefined);
+ const inputs=[{id:"template",name:"plate_template.xlsx",size:100,data:new ArrayBuffer(1),source:"local",role:"template-input"},{id:"database",name:"measurements.duckdb",size:1000000000,source:"omero",annotationId:752,dataQueryMode:"remote"}] as WorkspaceFile[];
+ render(<SkillsView bridge={{} as OmeroBridge} catalog={null} viewerCatalog={null} inputs={inputs} schemas={{}} onDownloadInput={onDownloadInput}/>);
+ fireEvent.click(screen.getByText("Workspace inputs (2)"));
+ expect(screen.getByText("input/plate_template.xlsx")).toBeVisible();
+ expect(onDownloadInput).not.toHaveBeenCalled();
+ expect(screen.queryByRole("button",{name:"Download input measurements.duckdb"})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"Download input plate_template.xlsx"}));
+ await waitFor(()=>expect(onDownloadInput).toHaveBeenCalledWith(inputs[0]));
+ await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("Downloaded plate_template.xlsx"));
+ fireEvent.click(screen.getByRole("checkbox",{name:/Share input names/}));
+ expect(screen.getByRole("button",{name:"Download input plate_template.xlsx"})).toBeDisabled();
+});

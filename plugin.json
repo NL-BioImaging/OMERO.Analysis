@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "omero-analysis",
-  "version": "1.0.1",
-  "description": "Portable authoring skills for Analysis Methods, Pipelines, Notebooks, movies, and generic measurements.",
+  "version": "1.1.0b1",
+  "description": "Portable notebook-authoring and data-inspection guidance for OMERO.Analysis.",
   "author": {
     "name": "NL-BioImaging",
     "url": "https://github.com/NL-BioImaging"

@@ -502,16 +502,16 @@ class AnalysisStorage:
         old = self.read_json(index_path) or {}
         published = []
         used = set()
-        folders = {'method': 'Methods', 'method-python': 'Methods', 'pipeline': 'Pipelines',
-                   'notebook': 'Notebooks', 'workspace-snapshot': 'Workspace',
+        folders = {'notebook': 'Notebooks', 'workspace-snapshot': 'Workspace',
                    'template-input': 'Input', 'png-image': 'Results', 'result': 'Results'}
-        items = list(manifest.get('items', []))
+        from .retirement_plan import RETIRED_KINDS
+        items = [item for item in manifest.get('items', []) if item.get('kind') not in RETIRED_KINDS]
         committed = {item.get('key') for item in items}
         for history in (self.user_root / 'history').glob('*.json'):
             record = self.read_json(history.relative_to(self.user_root))
             if record and record.get('workspaceId') == workspace_id and record.get('state') == 'imported':
                 items.extend({**item, 'kind': 'recovered-import'} for item in record.get('items', [])
-                             if item.get('key') not in committed)
+                             if item.get('key') not in committed and item.get('kind') not in RETIRED_KINDS)
         folders['recovered-import'] = 'Recovered imports'
         for item in items:
             blob = item.get('blob') or {}

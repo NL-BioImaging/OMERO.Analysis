@@ -72,7 +72,6 @@ function requestNotebookQuery(source, sql, parameters) {
     });
   });
 }
-const inputSecrets = new Set();
 const resultMimeTypes = ${JSON.stringify(RESULT_MIME_TYPES)};
 const mime = (name) => resultMimeTypes[name.split(".").pop().toLowerCase()] || "application/octet-stream";
 async function boot() {
@@ -396,7 +395,7 @@ function outputState() {
   walk("/output");
   return values;
 }
-function outputFiles(before) {
+function outputFiles(before, written = new Set()) {
   const values = [];
   const fingerprint = (bytes) => {
     let hash = 2166136261;
@@ -414,7 +413,7 @@ function outputFiles(before) {
       if (pyodide.FS.isDir(stat.mode)) walk(path);
       else {
         const bytes = pyodide.FS.readFile(path);
-        if (before.get(path) === fingerprint(bytes)) continue;
+        if (!written.has(path) && before.get(path) === fingerprint(bytes)) continue;
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
         values.push({name: path.slice(8), type: mime(name), data: buffer});
       }
@@ -422,45 +421,6 @@ function outputFiles(before) {
   }
   walk("/output");
   return values;
-}
-function modelPayload(preview, stderr, files) {
-  const clean = (value, depth = 0) => {
-    if (depth > 5 || value == null || typeof value === "boolean" || typeof value === "number") return value;
-    if (typeof value === "string") return value.length > 256 ? value.slice(0, 256) + "…" : value;
-    if (Array.isArray(value)) return value.slice(0, 100).map((item) => clean(item, depth + 1));
-    if (typeof value === "object") {
-      const result = {};
-      for (const [key, child] of Object.entries(value).slice(0, 100)) {
-        result[String(key).slice(0, 128)] = clean(child, depth + 1);
-      }
-      return result;
-    }
-    return String(value).slice(0, 256);
-  };
-  let safePreview = clean(preview);
-  let serialized = JSON.stringify(safePreview);
-  for (const secret of inputSecrets) {
-    if (secret.length >= 16 && serialized.includes(secret)) {
-      safePreview = {kind: "withheld", reason: "Result matched complete source-file content"};
-      serialized = JSON.stringify(safePreview);
-      break;
-    }
-  }
-  let truncated = false;
-  if (serialized.length > 48 * 1024) {
-    safePreview = {kind: "truncated", preview: serialized.slice(0, 48 * 1024)};
-    truncated = true;
-  }
-  return {
-    stderr: String(stderr || "").slice(0, 8192),
-    preview: safePreview,
-    generatedFiles: files.map((file) => ({
-      name: file.name,
-      size: file.data.byteLength,
-      type: file.type
-    })),
-    truncated
-  };
 }
 const previewCode = \`
 import json as _oa_json, math as _oa_math
@@ -547,7 +507,6 @@ for _oa_name in list(globals()):
     } else if (message.type === "clear_inputs") {
       removeTree("/input");
       removeTree("/selected_measurements");
-      inputSecrets.clear();
       send(message.id, "clear_inputs", true);
     } else if (message.type === "clear_remote_queries") {
       removeTree("/remote-query");
@@ -563,6 +522,7 @@ for _oa_name in list(globals()):
     } else if (message.type === "notebook_config") {
       await ensureNotebookRequirements(message.value?.contract?.requirements);
       pyodide.globals.set("_oa_notebook_config_json", JSON.stringify(message.value || {}));
+      await pyodide.runPythonAsync("ctx = _OANotebookContext(_oa_json.loads(_oa_notebook_config_json))");
       send(message.id, "notebook_config", true);
     } else if (message.type === "file") {
       const safe = String(message.value.name).replace(/[^A-Za-z0-9._ -]/g, "_");
@@ -571,17 +531,6 @@ for _oa_name in list(globals()):
       pyodide.FS.mkdirTree("/input/selected_measurements");
       pyodide.FS.writeFile("/input/selected_measurements/" + safe, bytes);
       pyodide.FS.writeFile("/selected_measurements/" + safe, bytes);
-      if (bytes.length <= 1024 * 1024) {
-        try {
-          const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes).trim();
-          if (text.length >= 16) inputSecrets.add(text);
-        } catch {}
-        if (bytes.length <= 64 * 1024) {
-          let binary = "";
-          for (const byte of bytes) binary += String.fromCharCode(byte);
-          inputSecrets.add(btoa(binary));
-        }
-      }
       send(message.id, "file", safe);
     } else if (message.type === "context") {
       const encoded = new TextEncoder().encode(JSON.stringify(message.value || {}));
@@ -589,97 +538,6 @@ for _oa_name in list(globals()):
       pyodide.FS.writeFile("/.omero/context.json", encoded);
       pyodide.FS.writeFile("/input/.omero/context.json", encoded);
       send(message.id, "context", true);
-    } else if (message.type === "extract_attachment") {
-      if (message.value.kind === "pdf") await ensureExtras(["pypdf"]);
-      const bytes = new Uint8Array(message.value.data);
-      if (bytes.length > 25 * 1024 * 1024) throw new Error("Attachment exceeds 25 MiB");
-      const safe = String(message.value.name || "attachment").replace(/[^A-Za-z0-9._ -]/g, "_");
-      const path = "/tmp/oa-attachment-" + message.id.replace(/[^A-Za-z0-9-]/g, "") + "-" + safe;
-      pyodide.FS.writeFile(path, bytes);
-      pyodide.globals.set("_oa_attachment_path", path);
-      pyodide.globals.set("_oa_attachment_kind", String(message.value.kind || ""));
-      try {
-        const raw = await pyodide.runPythonAsync(\`
-import json as _oa_json, pathlib as _oa_pathlib, zipfile as _oa_zipfile
-_oa_path = _oa_pathlib.Path(_oa_attachment_path)
-_oa_kind = _oa_attachment_kind
-_oa_warnings = []
-_oa_text = ""
-if _oa_kind == "docx":
-    try:
-        with _oa_zipfile.ZipFile(_oa_path) as _oa_docx:
-            _oa_infos = _oa_docx.infolist()
-            if len(_oa_infos) > 2048:
-                raise ValueError("DOCX contains too many archive entries")
-            _oa_total = sum(_oa_info.file_size for _oa_info in _oa_infos)
-            if _oa_total > 100 * 1024 * 1024:
-                raise ValueError("DOCX expands beyond the 100 MiB safety limit")
-            if any(_oa_info.file_size > max(1024 * 1024, _oa_info.compress_size * 200) for _oa_info in _oa_infos):
-                raise ValueError("DOCX contains an unsafe compressed entry")
-            _oa_names = set(_oa_docx.namelist())
-            if "[Content_Types].xml" not in _oa_names or "word/document.xml" not in _oa_names:
-                raise ValueError("DOCX is missing required Office document parts")
-            if any(_oa_name.startswith("word/media/") for _oa_name in _oa_names):
-                _oa_warnings.append("Embedded images were ignored; OCR is not supported.")
-            import xml.etree.ElementTree as _oa_et
-            _oa_parts = ["word/document.xml"] + sorted(
-                _oa_name for _oa_name in _oa_names
-                if _oa_name.startswith(("word/header", "word/footer")) and _oa_name.endswith(".xml")
-            ) + [
-                _oa_name for _oa_name in ("word/footnotes.xml", "word/endnotes.xml")
-                if _oa_name in _oa_names
-            ]
-            _oa_sections = []
-            for _oa_part in _oa_parts:
-                _oa_root = _oa_et.fromstring(_oa_docx.read(_oa_part))
-                _oa_paragraphs = []
-                for _oa_p in _oa_root.iter():
-                    if _oa_p.tag.endswith("}p"):
-                        _oa_line = "".join(
-                            (_oa_node.text or "")
-                            for _oa_node in _oa_p.iter()
-                            if _oa_node.tag.endswith(("}t", "}tab", "}br"))
-                        ).strip()
-                        if _oa_line:
-                            _oa_paragraphs.append(_oa_line)
-                if _oa_paragraphs:
-                    _oa_sections.append("\\n".join(_oa_paragraphs))
-            _oa_text = "\\n\\n".join(_oa_sections).strip()
-    except _oa_zipfile.BadZipFile as _oa_error:
-        raise ValueError("DOCX is not a valid ZIP archive") from _oa_error
-elif _oa_kind == "pdf":
-    from pypdf import PdfReader as _oa_PdfReader
-    try:
-        _oa_reader = _oa_PdfReader(str(_oa_path), strict=True)
-        if _oa_reader.is_encrypted:
-            raise ValueError("Encrypted PDFs are not supported")
-        _oa_pages = []
-        _oa_empty = []
-        for _oa_number, _oa_page in enumerate(_oa_reader.pages, 1):
-            _oa_page_text = (_oa_page.extract_text() or "").strip()
-            if _oa_page_text:
-                _oa_pages.append("[Page " + str(_oa_number) + "]\\n" + _oa_page_text)
-            else:
-                _oa_empty.append(_oa_number)
-        _oa_text = "\\n\\n".join(_oa_pages).strip()
-        if _oa_empty and _oa_text:
-            _oa_warnings.append("No extractable text on PDF page(s): " + ", ".join(map(str, _oa_empty)) + ". OCR is not supported.")
-    except ValueError:
-        raise
-    except Exception as _oa_error:
-        raise ValueError("PDF is malformed or unsupported: " + str(_oa_error)[:300]) from _oa_error
-else:
-    raise ValueError("Unsupported document extractor")
-if not _oa_text:
-    raise ValueError("No extractable text was found. OCR is not supported.")
-_oa_json.dumps({"text": _oa_text, "warnings": _oa_warnings}, ensure_ascii=False)
-\`);
-        send(message.id, "extract_attachment", JSON.parse(raw));
-      } finally {
-        pyodide.globals.delete("_oa_attachment_path");
-        pyodide.globals.delete("_oa_attachment_kind");
-        try { pyodide.FS.unlink(path); } catch {}
-      }
     } else if (message.type === "profile") {
       const profileNames = pyodide.FS.readdir("/input").join(" ");
       await ensurePackages(
@@ -687,11 +545,15 @@ _oa_json.dumps({"text": _oa_text, "warnings": _oa_warnings}, ensure_ascii=False)
         (/\\.parquet\\b/i.test(profileNames) ? " read_parquet" : "") +
         (/\\.xlsx?\\b/i.test(profileNames) ? " read_excel calamine" : "")
       );
+      pyodide.globals.set("_oa_profile_sheets_json", JSON.stringify(message.value?.sheets || {}));
       const raw = await pyodide.runPythonAsync(\`
 import json as _json
 from pathlib import Path as _Path
+_selected_sheets = _json.loads(_oa_profile_sheets_json)
 _profiles = []
 for _path in sorted(_Path("/input").iterdir()):
+    if not _path.is_file():
+        continue
     _entry = {"path": str(_path), "format": _path.suffix.lower().lstrip("."), "size": _path.stat().st_size, "summary": {}}
     try:
         _suffix = _path.suffix.lower()
@@ -716,15 +578,21 @@ for _path in sorted(_Path("/input").iterdir()):
             elif _suffix in {".xls", ".xlsx"}:
                 _book = _pd.ExcelFile(_path, engine="calamine")
                 _sheet_names = [str(_name) for _name in _book.sheet_names[:100]]
-                _active_sheet = _sheet_names[0] if _sheet_names else None
-                _frame = _book.parse(sheet_name=_active_sheet)
+                _active_sheet = _selected_sheets.get(_path.name, _sheet_names[0] if _sheet_names else None)
+                if _active_sheet not in _sheet_names:
+                    raise ValueError("The selected spreadsheet sheet is unavailable")
+                try:
+                    _frame = _book.parse(sheet_name=_active_sheet, nrows=101)
+                finally:
+                    _book.close()
             elif _suffix == ".json": _frame = _pd.read_json(_path)
             else: _frame = _pd.read_csv(_path, sep="\\t" if _suffix == ".tsv" else ",", nrows=101, dtype=str, keep_default_na=False)
+            _bounded_preview = _suffix in {".csv", ".tsv", ".xls", ".xlsx"}
             _preview = _json.loads(_frame.iloc[:100, :50].to_json(orient="split", date_format="iso"))
             _entry["summary"] = {
-                "rows": None if _suffix in {".csv", ".tsv"} and len(_frame) > 100 else int(len(_frame)),
-                "preview_only": _suffix in {".csv", ".tsv"},
-                "statistics_scope": "preview" if _suffix in {".csv", ".tsv"} else "source",
+                "rows": None if _bounded_preview and len(_frame) > 100 else int(len(_frame)),
+                "preview_only": _bounded_preview,
+                "statistics_scope": "preview" if _bounded_preview else "source",
                 "preview_rows": min(100, len(_frame)),
                 "columns": [{"name": str(c), "type": str(_frame[c].dtype), "nulls": int(_frame[c].isna().sum()), "distinct": int(_frame[c].nunique(dropna=True))} for c in list(_frame.columns)[:100]],
                 "preview": {
@@ -771,9 +639,17 @@ def _oa_savefig_with_svg(self, fname, *args, **kwargs):
 _oa_svg_figure.Figure.savefig = _oa_savefig_with_svg
 \`);
       }
+      const written = new Set();
+      const originalWrite = pyodide.FS.write;
+      pyodide.FS.write = function(stream, ...args) {
+        const result = originalWrite.call(this, stream, ...args);
+        if (stream.path && stream.path.startsWith("/output/")) written.add(stream.path);
+        return result;
+      };
       try {
         await pyodide.runPythonAsync(message.value.code);
       } finally {
+        pyodide.FS.write = originalWrite;
         if (message.value.createSvgCompanions) {
           await pyodide.runPythonAsync(\`
 _oa_svg_figure.Figure.savefig = _oa_original_savefig
@@ -782,10 +658,9 @@ del _oa_original_savefig
         }
       }
       const raw = await pyodide.runPythonAsync(previewCode);
-      const files = outputFiles(before);
-      const safePayload = modelPayload(JSON.parse(raw), stderr, files);
+      const files = outputFiles(before, written);
       const transfers = files.map((file) => file.data);
-      send(message.id, "result", {stdout, stderr, preview: JSON.parse(raw), modelPayload: safePayload, files}, transfers);
+      send(message.id, "result", {stdout, stderr, preview: JSON.parse(raw), files}, transfers);
     }
   } catch (error) {
     send(message.id, "error", String(error && error.stack || error));
@@ -809,6 +684,10 @@ export class PythonRuntime {
   private inputs: WorkspaceFile[] = [];
   private counter = 0;
   private readyPromise: Promise<void> | null = null;
+  private cancelFrameLoad: (() => void) | null = null;
+
+  get started(): boolean { return this.readyPromise !== null; }
+
   private onProgress: ((progress: RuntimeProgress) => void) | null = null;
   private notebookQueryHandler: ((request: NotebookQueryRequest) => Promise<NotebookQueryResponse>) | null = null;
 
@@ -832,9 +711,21 @@ export class PythonRuntime {
     frame.hidden = true;
     frame.setAttribute("sandbox", "allow-scripts");
     frame.setAttribute("aria-hidden", "true");
-    const loaded = new Promise<void>((resolve) =>
-      frame.addEventListener("load", () => resolve(), { once: true })
-    );
+    const loaded = new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        window.clearTimeout(timer);
+        frame.removeEventListener("load", onLoad);
+        frame.removeEventListener("error", onError);
+        this.cancelFrameLoad = null;
+        if (error) reject(error); else resolve();
+      };
+      const onLoad = () => finish();
+      const onError = () => finish(new Error("The Python sandbox could not load. Retry the cell or reload Analysis."));
+      const timer = window.setTimeout(() => finish(new Error("The Python sandbox did not load within 60 seconds. Check the connection, then restart the kernel.")), 60_000);
+      this.cancelFrameLoad = () => finish(new Error("Python execution stopped"));
+      frame.addEventListener("load", onLoad, { once: true });
+      frame.addEventListener("error", onError, { once: true });
+    });
     const absoluteRuntimeBase = new URL(this.runtimeBase, window.location.href).toString();
     frame.src = sandboxUrl(absoluteRuntimeBase);
     document.body.append(frame);
@@ -928,7 +819,7 @@ try:
         )
 except Exception:
     pass
-`, this.notebookCellTimeoutMs);
+`, this.notebookCellTimeoutMs, true);
   }
 
   setNotebookQueryHandler(
@@ -982,21 +873,10 @@ except Exception:
     }
   }
 
-  async profileInputs(): Promise<import("./types").DataProfile[]> {
+  async profileInputs(sheets: Record<string, string> = {}): Promise<import("./types").DataProfile[]> {
     if (!this.readyPromise) await this.start(this.inputs);
     await this.readyPromise;
-    return this.request("profile", true, 120_000);
-  }
-
-  async extractAttachment(
-    name: string,
-    kind: "docx" | "pdf",
-    source: ArrayBuffer
-  ): Promise<{ text: string; warnings: string[] }> {
-    if (!this.readyPromise) await this.start(this.inputs);
-    await this.readyPromise;
-    const data = source.slice(0);
-    return this.request("extract_attachment", { name, kind, data }, 120_000, [data]);
+    return this.request("profile", { sheets }, 30_000);
   }
 
   async beginTurn(): Promise<void> {
@@ -1005,8 +885,8 @@ except Exception:
     await this.request("begin", true, 30_000);
   }
 
-  async reset(): Promise<void> {
-    return this.start(this.inputs, this.onProgress || undefined);
+  async reset(onProgress?: (progress: RuntimeProgress) => void): Promise<void> {
+    return this.start(this.inputs, onProgress || this.onProgress || undefined);
   }
 
   stop(): void {
@@ -1025,6 +905,7 @@ except Exception:
   }
 
   private destroyFrame(): void {
+    this.cancelFrameLoad?.();
     this.frame?.remove();
     this.frame = null;
     this.readyPromise = null;

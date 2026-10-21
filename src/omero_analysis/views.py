@@ -17,7 +17,7 @@ from django.http import (
     JsonResponse,
 )
 from django.shortcuts import render
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 try:
@@ -32,6 +32,7 @@ except ImportError:
 
         return decorator
 
+from .session_status import session_status_required, status_response
 from .errors import AnalysisError
 from .data_query import (
     DataQueryBroker,
@@ -51,7 +52,6 @@ from .services import (
     checked_download,
     checked_notebook_download,
     checked_workspace_snapshot_download,
-    checked_pipeline_download,
     get_analysis_attachment,
     get_context_object,
     get_direct_attachment,
@@ -63,7 +63,6 @@ from .services import (
     upload_notebook_annotation,
     upload_workspace_snapshot_annotation,
     upload_result_annotation,
-    upload_pipeline_annotation,
 )
 from .tokens import make_context_token, validate_context_token
 from .staged_attachments import (
@@ -73,7 +72,7 @@ from .staged_attachments import (
     list_staged_attachments,
     stage_attachment,
 )
-from .settings_store import SETTINGS_NAMESPACE, load_settings, save_settings
+from .retired_content import SETTINGS_NAMESPACE
 from .settings import integrated_data_analysis_available, notebook_cell_timeout_seconds
 from .storage_policy import require_storage_write, storage_policy
 from .workspace_sync import (
@@ -301,11 +300,14 @@ def runtime_sandbox(request, **kwargs):
 
 
 @require_GET
-@login_required(ignore_login_fail=True)
+@session_status_required
 def session_keepalive(request, conn=None, **kwargs):
-    """Refresh the browser session and ping the connected OMERO server."""
-    request.session.modified = True
-    return HttpResponse("OK", content_type="text/plain")
+    """Report login state without conflating expiry with a permission failure."""
+    authenticated = conn is not None
+    if authenticated:
+        request.session.modified = True
+    return status_response(authenticated)
+
 
 
 @login_required(setGroupContext=True)
@@ -425,8 +427,6 @@ def analysis(request, conn=None, **kwargs):
 
 def _panel_library_datasets(conn, obj, allowed_kinds=None):
     kinds = (
-        ("method", "Methods"),
-        ("pipeline", "Pipelines"),
         ("notebook", "Notebooks"),
     )
     datasets = []
@@ -481,7 +481,7 @@ def _workspace_panel_summary(conn, obj, values):
     snapshot = (selected or {}).get("snapshot") or {}
     counts = {
         kind: len([item for item in items if item.get("kind") == kind])
-        for kind in ("method", "pipeline", "notebook")
+        for kind in ("notebook",)
     }
     return {
         "workspace_id": workspace_id,
@@ -530,26 +530,11 @@ def _configure_panel_context(conn, obj, context):
     if settings_role in {"project", "ai-settings", "skills"}:
         context["panel_kind"] = "settings"
         context["managed_role"] = settings_role
-        if settings_role == "ai-settings":
-            context["managed_title"] = "AI Settings"
-            context["managed_message"] = (
-                "This managed Dataset stores encrypted Analysis provider settings. "
-                "Open Analysis Settings to view or change profiles."
-            )
-            context["managed_count"] = settings_values.get("profile_count")
-        elif settings_role == "skills":
-            context["managed_title"] = "Skills"
-            context["managed_message"] = (
-                "This managed Dataset stores user-added Analysis skills. "
-                "Skills are restored automatically and edited from Analysis Settings."
-            )
-            context["managed_count"] = settings_values.get("skill_count")
-        else:
-            context["managed_title"] = "Analysis Settings"
-            context["managed_message"] = (
-                "This managed Project contains private AI settings and user skills. "
-                "Its contents are maintained automatically by OMERO.Analysis."
-            )
+        context["managed_title"] = "Retired Analysis configuration"
+        context["managed_message"] = (
+            "Analysis no longer uses provider settings or custom skills. "
+            "Installed notebook guidance is available in the Skills tab."
+        )
         return context
 
     if sync_role == "project":
@@ -798,6 +783,24 @@ def workflow_skill_package(
         return _workflow_skill_error(exc)
 
 
+@require_GET
+@login_required(setGroupContext=True)
+def workflow_notebook(request, workflow_key, notebook_name, conn=None, **kwargs):
+    try:
+        catalog = _workflow_skill_catalog()
+        if catalog is None or not hasattr(catalog, "get_notebook"):
+            raise RuntimeError("Workflow notebook assets require the updated WorkflowSkills provider")
+        asset = catalog.get_notebook(workflow_key, notebook_name, WORKFLOW_SKILLS_CONSUMER)
+        if request.GET.get("sha256") != asset["sha256"] or request.GET.get("commit") != asset["resolved_commit"]:
+            return JsonResponse({"error": {"message": "Workflow example changed. Refresh Libraries before importing."}}, status=409)
+        response = HttpResponse(asset["content"].encode("utf-8"), content_type="application/x-ipynb+json")
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+    except Exception as exc:
+        return _workflow_skill_error(exc)
+
+
 @require_POST
 @login_required(setGroupContext=True)
 def refresh_workflow_skills(request, conn=None, **kwargs):
@@ -848,18 +851,16 @@ def context_token(request, conn=None, **kwargs):
         "list",
         "download",
         "workspace_download",
-        "pipeline_download",
         "notebook_download",
         "hierarchy",
         "library_list",
         "library_download",
-        "settings_read",
         "data_query",
     ]
     from .workspace_access import can_manage_workspace
     policy = storage_policy(object_group_id(obj), int(conn.getUserId()))
     if can_annotate(obj):
-        operations.extend(["workspace_upload", "pipeline_upload", "notebook_upload"])
+        operations.extend(["workspace_upload", "notebook_upload"])
     if (
         policy.operation_mode == "inplace" and can_manage_workspace(conn, obj)
     ) or (
@@ -867,7 +868,7 @@ def context_token(request, conn=None, **kwargs):
     ):
         operations.append("upload")
     if can_manage_workspace(conn, obj):
-        operations.extend(["sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact"])
+        operations.extend(["sync_plan", "sync_apply", "sync_remove", "workspace_artifact"])
     from .shared_library import full_admin
     if policy.operation_mode == "inplace" and full_admin(conn):
         operations.append("shared_library_publish")
@@ -1168,48 +1169,8 @@ def download_workspace_snapshot(request, annotation_id, conn=None, **kwargs):
     return response
 
 
-@require_http_methods(["GET", "POST"])
-@login_required(setGroupContext=True)
-@api_errors
-def pipeline_templates(request, object_type, object_id, conn=None, **kwargs):
-    object_type, object_id, obj = get_context_object(conn, object_type, object_id)
-    if request.method == "GET":
-        validate_context_token(request, conn, "list", object_type, object_id, obj)
-        values = [
-            value for value in list_attachment_dicts(obj) if value["kind"] == "pipeline"
-        ]
-        return JsonResponse({"pipelines": values})
-    validate_context_token(request, conn, "pipeline_upload", object_type, object_id, obj)
-    result = upload_pipeline_annotation(conn, obj, request.FILES.get("file"))
-    return JsonResponse({"pipeline": result}, status=201)
 
 
-@require_GET
-@login_required(setGroupContext=True, doConnectionCleanup=False)
-@api_errors
-def download_pipeline_template(request, annotation_id, conn=None, **kwargs):
-    claims = validate_context_token(request, conn, "pipeline_download")
-    _, _, obj = get_context_object(conn, claims["object_type"], claims["object_id"])
-    validate_context_token(
-        request,
-        conn,
-        "pipeline_download",
-        claims["object_type"],
-        claims["object_id"],
-        obj,
-    )
-    annotation, info = checked_pipeline_download(obj, annotation_id)
-    response = ConnCleaningHttpResponse(
-        annotation.getFileInChunks(), content_type=info.mimetype
-    )
-    response.conn = conn
-    response["Content-Length"] = str(info.size)
-    response["Content-Disposition"] = (
-        "attachment; filename*=UTF-8''" + quote(info.name, safe="")
-    )
-    response["Cache-Control"] = "private, no-store"
-    response["X-Content-Type-Options"] = "nosniff"
-    return response
 
 
 @require_POST
@@ -1255,7 +1216,7 @@ def download_notebook(request, annotation_id, conn=None, **kwargs):
 def _sync_context(request, conn, operation, object_type, object_id):
     object_type, object_id, obj = get_context_object(conn, object_type, object_id)
     validate_context_token(request, conn, operation, object_type, object_id, obj)
-    if operation in {"sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact"}:
+    if operation in {"sync_plan", "sync_apply", "sync_remove", "workspace_artifact"}:
         from .workspace_access import require_workspace_access
         require_workspace_access(conn, obj)
     return object_type, object_id, obj
@@ -1390,6 +1351,31 @@ def workspace_result(request, object_type, object_id, workspace_id, conn=None, *
 @require_GET
 @login_required(setGroupContext=True)
 @api_errors
+def recent_workspaces(request, conn=None, **kwargs):
+    """Only the current user's managed workspaces in the active OMERO group."""
+    datasets = library_datasets(conn)
+    workspaces = []
+    for item in sorted(datasets, key=lambda entry: entry.get("updatedAt", ""), reverse=True):
+        if item.get("lifecycle", "active") != "active" or not item.get("snapshot"):
+            continue
+        kind, identifier = item.get("sourceObjectType"), item.get("sourceObjectId")
+        if kind not in {"Image", "Dataset", "Plate", "Screen"} or not identifier:
+            continue
+        if conn.getObject(kind, identifier) is None:
+            continue
+        workspaces.append({key: item[key] for key in (
+            "workspaceId", "workspaceName", "sourceObjectType", "sourceObjectId", "updatedAt"
+        )})
+        if len(workspaces) == 20:
+            break
+    response = JsonResponse({"workspaces": workspaces})
+    response["Cache-Control"] = "private, no-store"
+    return response
+
+
+@require_GET
+@login_required(setGroupContext=True)
+@api_errors
 def workspace_library(request, object_type, object_id, conn=None, **kwargs):
     _, _, obj = _sync_context(
         request, conn, "library_list", object_type, object_id
@@ -1495,26 +1481,6 @@ def workspace_library_download(request, annotation_id, conn=None, **kwargs):
     return response
 
 
-@require_http_methods(["GET", "POST"])
-@login_required(setGroupContext=True)
-@api_errors
-def analysis_settings(request, object_type, object_id, conn=None, **kwargs):
-    operation = "settings_read" if request.method == "GET" else "settings_sync"
-    _, _, obj = _sync_context(
-        request, conn, operation, object_type, object_id
-    )
-    from .services import object_group_id
-
-    group_id = object_group_id(obj)
-    if request.method == "GET":
-        return JsonResponse(load_settings(conn, group_id))
-    try:
-        payload = json.loads(request.body or b"{}")
-    except json.JSONDecodeError as exc:
-        from .errors import InvalidObject
-
-        raise InvalidObject("Settings request body must be valid JSON") from exc
-    return JsonResponse(save_settings(conn, group_id, payload), status=201)
 
 
 @require_POST
@@ -1526,7 +1492,7 @@ def workspace_artifact(request, object_type, object_id, workspace_id, conn=None,
     from .errors import InvalidObject
     _, _, source = _sync_context(request, conn, "workspace_artifact", object_type, object_id)
     uploaders = {"result": upload_result_annotation, "notebook": upload_notebook_annotation,
-                 "pipeline": upload_pipeline_annotation, "snapshot": upload_workspace_snapshot_annotation}
+                 "snapshot": upload_workspace_snapshot_annotation}
     kind = request.POST.get("kind")
     if kind not in uploaders:
         raise InvalidObject("Unknown workspace artifact kind")

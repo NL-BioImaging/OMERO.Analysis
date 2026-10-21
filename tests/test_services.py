@@ -47,7 +47,6 @@ from omero_analysis.services import (
     WORKSPACE_NAMESPACE,
     NOTEBOOK_NAMESPACE,
     RESULT_NAMESPACE,
-    PIPELINE_NAMESPACE,
     canonical_object_type,
     checked_download,
     direct_file_annotations,
@@ -59,11 +58,9 @@ from omero_analysis.services import (
     safe_filename,
     upload_workspace_snapshot_annotation,
     upload_result_annotation,
-    upload_pipeline_annotation,
     upload_notebook_annotation,
     validate_workspace_snapshot,
     validate_result,
-    validate_pipeline_template,
     validate_notebook,
 )
 
@@ -75,7 +72,9 @@ def workspace_archive(format_name=WORKSPACE_NAMESPACE):
     with zipfile.ZipFile(stream, "w") as archive:
         archive.writestr(
             "workspace.json",
-            json.dumps({"format": format_name, "version": 1}),
+            json.dumps({"format": format_name, "version": 3,
+                "workspace": {"id": "workspace-1", "storageVersion": 3, "activeChatId": ""},
+                "files": [], "notebooks": []}),
         )
     return stream.getvalue()
 
@@ -234,38 +233,6 @@ def test_object_context_lists_workspace_snapshots_separately():
     assert context["supported_attachments"] == []
 
 
-def test_pipeline_templates_are_validated_and_listed_separately():
-    data = b'{"format":"nl.bioimaging.analysis.pipeline.v1","pipeline":{},"scripts":[]}'
-    uploaded = SimpleUploadedFile(
-        "counts.oa-pipeline.json", data, content_type="application/json"
-    )
-    assert validate_pipeline_template(uploaded) == (
-        "counts.oa-pipeline.json",
-        "application/json",
-    )
-    obj = FakeObject()
-    conn = FakeConnection(obj)
-    result = upload_pipeline_annotation(conn, obj, uploaded)
-    assert result["namespace"] == PIPELINE_NAMESPACE
-    assert result["kind"] == "pipeline"
-    context = object_context("Dataset", 1, FakeObject(annotations=[conn.created]))
-    assert context["pipeline_templates"][0]["kind"] == "pipeline"
-    assert context["supported_attachments"] == []
-    with pytest.raises(UnsupportedMedia):
-        validate_pipeline_template(
-            SimpleUploadedFile(
-                "bad.oa-pipeline.json",
-                b'{"format":"other"}',
-                content_type="application/json",
-            )
-        )
-    legacy = SimpleUploadedFile(
-        "legacy.oac-pipeline.json",
-        b'{"format":"nl.bioimaging.analysis-chat.pipeline.v1","pipeline":{},"scripts":[]}',
-        content_type="application/json",
-    )
-    with pytest.raises(UnsupportedMedia):
-        validate_pipeline_template(legacy)
 
 
 def test_legacy_analysis_namespaces_are_not_classified_as_workspace_or_pipeline():
@@ -291,7 +258,7 @@ def test_legacy_analysis_namespaces_are_not_classified_as_workspace_or_pipeline(
     ]
     context = object_context("Dataset", 1, FakeObject(annotations=annotations))
     assert context["workspace_snapshots"] == []
-    assert context["pipeline_templates"] == []
+    assert "pipeline_templates" not in context
     result = next(item for item in context["attachments"] if item["annotation_id"] == 33)
     assert result["kind"] == "result"
 

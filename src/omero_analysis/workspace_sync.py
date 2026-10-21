@@ -15,6 +15,7 @@ from pathlib import Path
 from django.core import signing
 
 from .sync_lock import serialized_sync
+from .retired_content import validate_notebook_archive
 
 from .errors import (
     AttachmentNotFound,
@@ -77,12 +78,9 @@ ITEM_KINDS = {
     "result",
     "template-input",
     "workspace-snapshot",
-    "method",
-    "method-python",
-    "pipeline",
     "notebook",
 }
-LIBRARY_KINDS = {"method", "pipeline", "notebook"}
+LIBRARY_KINDS = {"notebook"}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -434,7 +432,7 @@ def sync_status(conn, obj, workspace_id):
     dataset = _managed_dataset(project, workspace_id)
     annotation, manifest = _read_manifest(dataset)
     from .workspace_lifecycle import state_for
-    _, lifecycle = state_for(conn, obj, workspace_id)
+    lifecycle_storage, lifecycle = state_for(conn, obj, workspace_id)
     policy = storage_policy(object_group_id(obj), _user_id(conn))
     capability = policy.capability
     storage_status = policy.public()
@@ -442,7 +440,16 @@ def sync_status(conn, obj, workspace_id):
         from .inplace_annotations import attachment_capability
 
         storage_status["attachments"] = attachment_capability().public()
+    from .result_reconciliation import result_deletions
+    deletions = result_deletions(conn, dataset, manifest)
+    from .version_compaction import obsolete_versions
+    obsolete = obsolete_versions(conn, dataset, manifest)
+    metadata_repair = any(_remote_object(conn, item.get("remote") or {}) is None
+                          for item in (manifest or {}).get("items", [])
+                          if item.get("kind") in {"notebook", "template-input", "workspace-snapshot"})
     status = {
+        "externalResultDeletions": deletions,
+        "obsoleteVersionCount": len(obsolete),
         "schema": STATUS_SCHEMA,
         "lifecycle": lifecycle["state"] if dataset is not None or lifecycle["state"] != "active" else "unavailable",
         "lifecycleRevision": lifecycle["revision"],
@@ -469,18 +476,18 @@ def sync_status(conn, obj, workspace_id):
         "lastSyncedAt": (manifest or {}).get("updated_at"),
         "storage": storage_status,
         "syncState": "complete",
-        "attachmentRepairNeeded": bool(dataset is not None and _dataset_attachment_repair_needed(
+        "attachmentRepairNeeded": bool(obsolete) or metadata_repair or bool(dataset is not None and _dataset_attachment_repair_needed(
             dataset, (manifest or {}).get("items") or [])),
         "browseState": (
             "unavailable" if policy.operation_mode == "omero"
             else lifecycle.get("browseState", "ready")
         ),
     }
+    journal_storage = policy.storage or lifecycle_storage
+    cleanup = journal_storage.read_json(Path("workspaces") / workspace_id / "pending-cleanup.json") if journal_storage else None
+    status["cleanupPending"] = len((cleanup or {}).get("pending", []))
+    status["cleanupErrors"] = (cleanup or {}).get("errors", [])
     if policy.operation_mode == "inplace":
-        journal_storage = policy.storage
-        cleanup = journal_storage.read_json(Path("workspaces") / workspace_id / "pending-cleanup.json") if journal_storage else None
-        status["cleanupPending"] = len((cleanup or {}).get("pending", []))
-        status["cleanupErrors"] = (cleanup or {}).get("errors", [])
         storage = policy.storage
         if storage is not None:
             journal_status = _reconcile_workspace_journals(
@@ -692,6 +699,8 @@ def plan_sync(request, conn, obj, inventory):
                 storage.delete_json(path.relative_to(storage.user_root))
         # Global empty-directory housekeeping belongs to maintenance, not a
         # latency-sensitive save under the per-user synchronization lock.
+    from .result_reconciliation import result_deletions, reject_deleted_results
+    reject_deleted_results(inventory, result_deletions(conn, dataset, manifest))
     remote = _remote_items(manifest)
     upload_keys = []
     create = update = unchanged = 0
@@ -700,7 +709,9 @@ def plan_sync(request, conn, obj, inventory):
         if prior is None:
             create += 1
             upload_keys.append(item["key"])
-        elif prior.get("sha256") == item["sha256"] and prior.get("kind") == item["kind"]:
+        elif (prior.get("sha256") == item["sha256"] and prior.get("kind") == item["kind"]
+              and not (item["kind"] in {"notebook", "template-input", "workspace-snapshot"}
+                       and _remote_object(conn, prior.get("remote") or {}) is None)):
             unchanged += 1
         else:
             update += 1
@@ -802,23 +813,7 @@ def _validate_payload(item, uploaded):
     if item["kind"] == "workspace-snapshot":
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                names = archive.namelist()
-                if "workspace.json" not in names or len(names) > 10000:
-                    raise UnsupportedMedia(
-                        "Synchronized Workspace snapshot has an unsupported archive layout"
-                    )
-                if sum(entry.file_size for entry in archive.infolist()) > 512 * 1024 * 1024:
-                    raise FileTooLarge(
-                        "Synchronized Workspace snapshot expands beyond 512 MiB"
-                    )
-                manifest = json.loads(archive.read("workspace.json"))
-                if (
-                    not isinstance(manifest, dict)
-                    or manifest.get("format") != WORKSPACE_SNAPSHOT_NAMESPACE
-                ):
-                    raise UnsupportedMedia(
-                        "Synchronized Workspace snapshot has an unsupported format"
-                    )
+                validate_notebook_archive(archive)
         except (zipfile.BadZipFile, KeyError, ValueError, UnicodeDecodeError) as exc:
             raise UnsupportedMedia(
                 "Synchronized Workspace snapshot is not a valid Analysis archive"
@@ -842,56 +837,12 @@ def _validate_payload(item, uploaded):
                 return self._stream.seek(*args)
 
         validate_notebook(Upload())
-    elif item["kind"] in {"method", "pipeline"}:
-        try:
-            value = json.loads(data)
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise UnsupportedMedia(f"{item['name']} must contain valid JSON") from exc
-        if item["kind"] == "method":
-            method = value.get("method") if isinstance(value, dict) else None
-            if (
-                not isinstance(value, dict)
-                or value.get("schema") != "nl.bioimaging.analysis.method.v1"
-                or not isinstance(method, dict)
-                or not isinstance(method.get("versions"), list)
-                or not method["versions"]
-                or any(
-                    not isinstance(version, dict)
-                    or not isinstance(version.get("code"), str)
-                    or not isinstance(version.get("version"), int)
-                    for version in method["versions"]
-                )
-            ):
-                raise UnsupportedMedia("Method bundle has an unsupported schema")
-        elif item["kind"] == "pipeline":
-            pipeline = value.get("pipeline") if isinstance(value, dict) else None
-            if (
-                not isinstance(value, dict)
-                or value.get("schema") != "nl.bioimaging.analysis.pipeline.v1"
-                or not isinstance(pipeline, dict)
-                or not isinstance(pipeline.get("steps"), list)
-                or any(
-                    not isinstance(step, dict)
-                    or not isinstance(step.get("methodId"), str)
-                    or not isinstance(step.get("methodVersion"), int)
-                    for step in pipeline["steps"]
-                )
-            ):
-                raise UnsupportedMedia("Pipeline bundle has an unsupported schema")
-    elif item["kind"] == "method-python":
-        try:
-            data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise UnsupportedMedia(f"{item['name']} must be UTF-8 text") from exc
     return data
 
 
 def _item_namespace(kind):
     return {
         "workspace-snapshot": WORKSPACE_SNAPSHOT_NAMESPACE,
-        "method": "nl.bioimaging.analysis.method.v1",
-        "method-python": "nl.bioimaging.analysis.method.v1",
-        "pipeline": "nl.bioimaging.analysis.pipeline.v1",
         "notebook": "nl.bioimaging.analysis.notebook.v1",
         "template-input": "nl.bioimaging.analysis.template.v1",
     }.get(kind, "nl.bioimaging.analysis.result.v1")
@@ -1016,6 +967,16 @@ def _unlink_annotation(conn, parent, annotation):
         unload = getattr(parent, "unloadAnnotationLinks", None)
         if callable(unload):
             unload()
+
+
+def _unlink_image(conn, dataset, image):
+    from omero.sys import ParametersI
+    links = conn.getQueryService().findAllByQuery(
+        "SELECT link FROM DatasetImageLink link WHERE link.parent.id=:dataset AND link.child.id=:image",
+        ParametersI().addLong("dataset", int(dataset.getId())).addLong("image", int(image.getId())),
+    )
+    if links:
+        conn.deleteObjects("DatasetImageLink", [int(_plain(link.getId())) for link in links], wait=True)
 
 
 def _result_is_retired(item):
@@ -1212,6 +1173,7 @@ def _sync_content_markers(conn, dataset, workspace_id, items):
 def _manifest_for(inventory, revision, remote_items):
     return {
         "schema": MANIFEST_SCHEMA,
+        "storageVersion": 3,
         "revision": revision,
         "workspace": inventory["workspace"],
         "inventory_digest": inventory["digest"],
@@ -1295,6 +1257,9 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         }, "dataset")
     old_manifest_annotation, old_manifest = _read_manifest(dataset)
     old_items = _remote_items(old_manifest)
+    from .result_reconciliation import result_deletions, reject_deleted_results
+    external_deletions = result_deletions(conn, dataset, old_manifest)
+    reject_deleted_results(inventory, external_deletions)
 
     # A changed remote mirror between plan and apply requires a fresh upload plan.
     if int((old_manifest or {}).get("revision") or 0) != int(claims["remote_revision"]):
@@ -1319,10 +1284,14 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         if lifecycle_storage.read_json(lifecycle_path) is None:
             lifecycle_storage.write_json(lifecycle_path, lifecycle_state)
 
-    if _inventory_matches_manifest(inventory, old_manifest):
+    if _inventory_matches_manifest(inventory, old_manifest) and not payload:
         _reconcile_result_attachments(conn, dataset, inventory["items"], {
             key: _remote_object(conn, item.get("remote") or {}) for key, item in old_items.items()
         }, old_items)
+        from .version_compaction import obsolete_versions
+        from .workspace_lifecycle import cleanup_replaced
+        cleanup_replaced(conn, obj, inventory["workspace"]["id"], dataset,
+                         obsolete_versions(conn, dataset, old_manifest), int(old_manifest["revision"]))
         return sync_status(conn, obj, inventory["workspace"]["id"])
 
     # When all runtime capabilities are present, every changed byte first gets
@@ -1470,6 +1439,10 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     raise InvalidObject(
                         "A managed synchronized item is missing; create a fresh plan"
                     )
+                if item["kind"] in {"result", "png-image"} and _owner_id(remote_obj) == _user_id(conn) and item["name"] != prior.get("name"):
+                    target = remote_obj if item["kind"] == "png-image" else remote_obj.getFile()
+                    target.setName(item["name"])
+                    target.save()
                 remote_objects[item["key"]] = remote_obj
                 new_items_by_key[item["key"]] = {
                     **item, "remote": prior["remote"],
@@ -1553,6 +1526,14 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         new_items = [new_items_by_key[item["key"]] for item in inventory["items"]]
         revision = int((old_manifest or {}).get("revision") or 0) + 1
         manifest = _manifest_for(inventory, revision, new_items)
+        new_keys_for_receipts = {item["key"] for item in new_items}
+        recorded = {record["key"] for record in external_deletions}
+        for key, prior in old_items.items():
+            if key not in new_keys_for_receipts and key not in recorded and prior.get("kind") in {"result", "png-image"}:
+                file_ids = sorted({source["fileId"] for source in prior.get("metadata", {}).get("sources", []) if source.get("fileId")})
+                if file_ids:
+                    external_deletions.append({"key": key, "fileIds": file_ids, "deletedAt": manifest["updated_at"], "reason": "superseded"})
+        manifest["external_deletions"] = external_deletions
         details = obj.getDetails()
         event = getattr(details, "getUpdateEvent", lambda: None)()
         manifest["source"] = {"object_type": inventory["workspace"]["sourceObjectType"],
@@ -1570,6 +1551,7 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
         if storage is not None:
             storage_manifest = {
                 "schema": "nl.bioimaging.analysis.storage.workspace.v1",
+                "storageVersion": 3,
                 "userId": _user_id(conn), "groupId": group_id,
                 "workspaceId": inventory["workspace"]["id"],
                 "workspace": inventory["workspace"],
@@ -1624,6 +1606,8 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
     new_by_key = {item["key"]: item for item in new_items}
     replaced = []
     for key, prior in old_items.items():
+        if any(record["key"] == key and record.get("reason") != "superseded" for record in external_deletions):
+            continue  # Externally unlinked bytes are not ours to destroy.
         replacement = new_by_key.get(key)
         if key not in new_keys or replacement["remote"] != prior.get("remote"):
             remote = prior.get("remote") or {}
@@ -1635,6 +1619,8 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
             replaced.append(
                 (prior_payload["object_type"], prior_payload["object_id"])
             )
+    from .version_compaction import obsolete_versions
+    replaced.extend(obsolete_versions(conn, dataset, manifest))
     if old_manifest_annotation is not None:
         replaced.append(("Annotation", old_manifest_annotation.getId()))
     from .workspace_lifecycle import cleanup_replaced
@@ -1654,8 +1640,9 @@ def remove_sync(conn, obj, workspace_id):
     return result["cleanup"]
 
 
-def library_datasets(conn, obj):
-    project = _managed_project(conn, object_group_id(obj))
+def library_datasets(conn, obj=None):
+    group_id = object_group_id(obj) if obj is not None else int(conn.getEventContext().groupId)
+    project = _managed_project(conn, group_id)
     if project is None:
         return []
     datasets = []

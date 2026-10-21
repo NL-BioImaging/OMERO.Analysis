@@ -58,7 +58,11 @@ export class OmeroContextTransport {
         "X-OMERO-Analysis-Context": this.contextToken
       }
     });
-    if (retry && (response.status === 401 || response.status === 403)) {
+    const error = response.status === 403
+      ? await response.clone().json().catch(() => null) : null;
+    // Context grants expire independently of the OMERO login. Ordinary 403
+    // permission denials must retain their original response.
+    if (retry && (response.status === 401 || error?.error?.code === "invalid_context_token")) {
       await this.connect();
       return this.fetch(input, init, false);
     }

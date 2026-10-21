@@ -12,14 +12,6 @@ from django.core.management.base import BaseCommand, CommandError
 from ...inplace_storage import AnalysisStorage, storage_capability
 from ...storage_policy import importer_requested
 from ...managed_omero import user_id
-from ...settings_store import (
-    SETTINGS_FILE_NAMESPACE,
-    SKILL_FILE_NAMESPACE,
-    _annotation_bytes as settings_bytes,
-    _dataset as settings_dataset,
-    _managed_annotations as settings_annotations,
-    _project as settings_project,
-)
 from ...workspace_sync import (
     _file_bytes,
     _managed_project,
@@ -117,9 +109,8 @@ class Command(BaseCommand):
         completed = set(options["resume"].get("completedWorkspaces") or [])
         report = {
             "groupId": options["group_id"], "userId": current_user,
-            "workspaces": [], "settings": [],
+            "workspaces": [],
             "completedWorkspaces": sorted(completed),
-            "settingsCompleted": bool(options["resume"].get("settingsCompleted")),
         }
         project = _managed_project(conn, options["group_id"])
         for dataset in list(project.listChildren()) if project is not None else []:
@@ -162,39 +153,6 @@ class Command(BaseCommand):
                 report["completedWorkspaces"] = sorted(completed)
                 self._checkpoint(options, report)
 
-        project = settings_project(conn, options["group_id"])
-        local_settings = []
-        if report["settingsCompleted"]:
-            report["settings"] = [{"resumed": True}]
-            return report
-        for role, namespace, limit in (
-            ("ai-settings", SETTINGS_FILE_NAMESPACE, None),
-            ("skills", SKILL_FILE_NAMESPACE, None),
-        ):
-            dataset = settings_dataset(project, role)
-            for annotation in settings_annotations(dataset, namespace) if dataset is not None else []:
-                data = settings_bytes(annotation)
-                original = annotation.getFile()
-                name = str(getattr(original.getName(), "val", original.getName()))
-                blob = None if storage is None else storage.store_blob(data, name)
-                local_settings.append({
-                    "key": f"{role}:{annotation.getId()}", "kind": role,
-                    "mimeType": str(getattr(original.getMimetype(), "val", original.getMimetype())),
-                    "size": len(data), "sha256": __import__("hashlib").sha256(data).hexdigest(),
-                    "storageMode": "hybrid", "blob": blob,
-                    "omero": {"annotationId": int(annotation.getId()), "fileId": int(original.getId())},
-                })
-        report["settings"] = [{"itemCount": len(local_settings)}]
-        if storage is not None:
-            storage.write_json(Path("settings") / "manifest.json", {
-                "schema": "nl.bioimaging.analysis.storage.settings.v1",
-                "userId": current_user, "groupId": options["group_id"], "items": local_settings,
-            })
-            # Canonical blobs may still be referenced by OMERO OriginalFiles
-            # outside the current manifests. Backfill cannot prove they are
-            # unused, so it must not garbage-collect them.
-            report["settingsCompleted"] = True
-            self._checkpoint(options, report)
         return report
 
     @staticmethod

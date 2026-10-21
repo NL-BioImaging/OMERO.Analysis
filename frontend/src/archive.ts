@@ -1,3 +1,4 @@
+import { notebookWorkspace } from "./notebookMigration";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type {
   AnalysisWorkspace,
@@ -15,16 +16,15 @@ import type {
   WorkspaceRecord
 } from "./types";
 import { sha256 } from "./storage";
-import { chatTranscriptMarkdown } from "./chatTranscript";
 
 export const WORKSPACE_FORMAT = "nl.bioimaging.analysis.workspace.v1";
-export const WORKSPACE_FORMAT_VERSION = 2;
+export const WORKSPACE_FORMAT_VERSION = 3;
 export const MAX_ARCHIVE_ENTRIES = 10_000;
 export const MAX_ARCHIVE_UNCOMPRESSED = 512 * 1024 * 1024;
 
 export interface WorkspaceManifest {
   format: typeof WORKSPACE_FORMAT;
-  version: 1 | typeof WORKSPACE_FORMAT_VERSION;
+  version: 1 | 2 | typeof WORKSPACE_FORMAT_VERSION;
   exportedAt: string;
   workspace: WorkspaceRecord;
   chats: ChatRecord[];
@@ -56,6 +56,7 @@ function utf8(value: string): Uint8Array {
 }
 
 function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): ArchiveResult {
+  workspace = notebookWorkspace(workspace);
   const entries: Record<string, Uint8Array> = {};
   const omittedLocalInputs: string[] = [];
   const files = workspace.files.map((file) => {
@@ -106,21 +107,6 @@ function buildArchive(workspace: AnalysisWorkspace, omitLocal: boolean): Archive
     omittedLocalInputs
   };
   entries["workspace.json"] = utf8(JSON.stringify(manifest, null, 2));
-  for (const chat of workspace.chats) {
-    const path = `Chat/${safeSegment(chat.id)}`;
-    entries[`${path}/chat.json`] = utf8(JSON.stringify(chat, null, 2));
-    entries[`${path}/chat.md`] = utf8(chatTranscriptMarkdown(chat));
-  }
-  for (const method of workspace.methods) {
-    const path = `Methods/${safeSegment(method.id)}`;
-    entries[`${path}/method.json`] = utf8(JSON.stringify(method, null, 2));
-    for (const version of method.versions) {
-      entries[`${path}/v${String(version.version).padStart(3, "0")}.py`] = utf8(version.code);
-    }
-  }
-  for (const pipeline of workspace.pipelines) {
-    entries[`Pipelines/${safeSegment(pipeline.id)}.json`] = utf8(JSON.stringify(pipeline, null, 2));
-  }
   for (const notebook of workspace.notebooks) {
     entries[`Notebooks/${safeSegment(notebook.id)}--${safeSegment(notebook.name)}`] =
       utf8(JSON.stringify(notebook.document, null, 2));
@@ -137,7 +123,7 @@ export function exportWorkspace(workspace: AnalysisWorkspace, maxBytes: number):
   const withoutLocal = buildArchive(workspace, true);
   if (withoutLocal.data.byteLength > maxBytes) {
     throw new Error(
-      `Chats, Methods, Notebooks, and generated results require ${
+      `Notebooks, inputs, and generated results require ${
         (withoutLocal.data.byteLength / 1024 / 1024).toFixed(1)
       } MiB, exceeding the ${(maxBytes / 1024 / 1024).toFixed(0)} MiB snapshot limit.`
     );
@@ -193,7 +179,7 @@ function validateArchiveDirectory(data: Uint8Array): void {
 function requireManifest(value: unknown): WorkspaceManifest {
   if (!value || typeof value !== "object") throw new Error("Workspace manifest must be an object");
   const raw = value as Partial<WorkspaceManifest>;
-  if (raw.format !== WORKSPACE_FORMAT || (raw.version !== 1 && raw.version !== WORKSPACE_FORMAT_VERSION)) {
+  if (raw.format !== WORKSPACE_FORMAT || (raw.version !== 1 && raw.version !== 2 && raw.version !== WORKSPACE_FORMAT_VERSION)) {
     throw new Error("Unsupported OMERO Analysis Workspace format");
   }
   if (
@@ -366,8 +352,7 @@ export async function importWorkspace(
       .filter(Boolean) as string[],
     updatedAt: restoreWorkspaceId ? notebook.updatedAt : now
   }));
-  const activeChatId = chatIds.get(manifest.workspace.activeChatId) || chats[0]?.id;
-  if (!activeChatId) throw new Error("Workspace archive contains no chats");
+  const activeChatId = "";
   const workspaceRecord: WorkspaceRecord = {
     ...manifest.workspace,
     id: workspaceId,
@@ -408,7 +393,7 @@ export async function importWorkspace(
     runId: item.runId ? runIds.get(item.runId) : undefined,
     executionId: item.executionId ? executionIds.get(item.executionId) : undefined
   }));
-  return {
+  return notebookWorkspace({
     workspace: workspaceRecord,
     chats,
     files,
@@ -420,5 +405,5 @@ export async function importWorkspace(
     artifacts,
     audits: [],
     evidence
-  };
+  });
 }

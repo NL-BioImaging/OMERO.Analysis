@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -215,27 +216,40 @@ class DataQueryBroker:
         cached = self._request("POST", "/v1/sources/resolve", json=resolve)
         if cached.get("cached") and isinstance(cached.get("source"), dict):
             return cached["source"]
-        reader = ChunkReader(annotation.getFileInChunks(), info.size, self.progress)
-        encoder = MultipartEncoder(
-            fields={
-                "scope_id": scope,
-                "source_ref": source_ref,
-                "format": format_name,
-                "size": str(info.size),
-                "file": (info.name, reader, info.mimetype),
-                **({"expected_sha256": digest} if digest else {}),
-            }
-        )
-        try:
-            return self._request(
-                "POST",
-                "/v1/sources",
-                data=encoder,
-                headers={"Content-Type": encoder.content_type},
-                timeout=data_query_source_upload_timeout_seconds(),
-            )
-        finally:
-            reader.close()
+        from .source_preparation import preparing_source
+        deadline = time.monotonic() + data_query_source_upload_timeout_seconds()
+        with preparing_source(self.url, scope, source_ref, deadline):
+            while True:
+                # Another Inspector/compatibility request may have prepared it
+                # while we waited. Worker resolve still verifies the exact scope.
+                cached = self._request("POST", "/v1/sources/resolve", json=resolve)
+                if cached.get("cached") and isinstance(cached.get("source"), dict):
+                    return cached["source"]
+                reader = ChunkReader(annotation.getFileInChunks(), info.size, self.progress)
+                encoder = MultipartEncoder(fields={
+                    "scope_id": scope, "source_ref": source_ref,
+                    "format": format_name, "size": str(info.size),
+                    "file": (info.name, reader, info.mimetype),
+                    **({"expected_sha256": digest} if digest else {}),
+                })
+                try:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RemoteQueryUnavailable("Database preparation is busy. Retry inspection shortly.")
+                    return self._request("POST", "/v1/sources", data=encoder,
+                        headers={"Content-Type": encoder.content_type}, timeout=remaining)
+                except RemoteQueryFailed as error:
+                    # Capacity for a different source/replica can be occupied.
+                    # Retry only the worker's explicit temporary admission error;
+                    # permissions, malformed sources and query failures stay errors.
+                    if (getattr(error, "worker_status", None) != 429 or
+                            getattr(error, "worker_code", "") != "query_capacity_exceeded"):
+                        raise
+                    if time.monotonic() >= deadline:
+                        raise RemoteQueryUnavailable("Database preparation is busy. Retry inspection shortly.") from error
+                finally:
+                    reader.close()
+                time.sleep(min(0.5, max(0, deadline-time.monotonic())))
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._stream(method, path, **kwargs)

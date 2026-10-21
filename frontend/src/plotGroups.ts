@@ -6,7 +6,7 @@ const extension = (file: WorkspaceFile) => file.name.split(".").at(-1)?.toLowerC
 /** Never associate outputs from different executions just because a Method matches. */
 export function samePlot(left: WorkspaceFile, right: WorkspaceFile): boolean {
   if (left.workspaceId !== right.workspaceId) return false;
-  if (left.notebookId !== right.notebookId || left.notebookParameterKey !== right.notebookParameterKey) return false;
+  if (left.notebookId !== right.notebookId || left.notebookParameterKey !== right.notebookParameterKey || left.notebookRunId !== right.notebookRunId) return false;
   if (left.executionId || right.executionId) {
     if (!left.executionId || left.executionId !== right.executionId) return false;
   }

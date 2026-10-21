@@ -2,14 +2,12 @@ import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import {
   ArtifactInspector,
-  ComposerPanel,
   delimitedShape,
   MarkdownPreview,
   parseDelimited,
   RuntimeProgressPanel,
-  usageSummary
 } from "./WorkspacePanels";
-import type { NotebookRecord, PipelineRecord, WorkspaceFile } from "../types";
+import type { NotebookRecord, WorkspaceFile } from "../types";
 
 describe("artifact delimited previews", () => {
   it("renders bounded CSV rows and preserves quoted delimiters", () => {
@@ -31,7 +29,7 @@ describe("artifact delimited previews", () => {
     });
   });
 
-  it("renders Chat Markdown without activating embedded HTML or unsafe links", () => {
+  it("renders Markdown without activating embedded HTML or unsafe links", () => {
     const { container } = render(MarkdownPreview({
       markdown: "# Chat\n\n**Result**\n\n<script>alert(1)</script>\n\n[unsafe](javascript:alert(1))"
     }));
@@ -42,15 +40,7 @@ describe("artifact delimited previews", () => {
     expect(screen.getByText(/<script>alert/)).toBeInTheDocument();
   });
 
-  it("can collapse a reusable Python Method while leaving its source available", () => {
-    render(MarkdownPreview({
-      markdown: "## Summary\n\nCreated the plot.\n\n```python\nresult = 1\n```",
-      collapsePython: true
-    }));
-    expect(screen.getByText("Created the plot.")).toBeVisible();
-    expect(screen.getByText("Show reusable Method code")).toBeVisible();
-    expect(screen.getByText("result = 1")).toBeInTheDocument();
-  });
+
 
   it("shows local CSV dimensions from the bounded data profile", () => {
     const file: WorkspaceFile = {
@@ -172,134 +162,25 @@ describe("artifact delimited previews", () => {
     expect(screen.queryByText(/aGVsbG8=/)).toBeNull();
   });
 
-  it("presents Pipeline steps and bindings without raw JSON or internal IDs", () => {
-    const pipeline = {
-      id: "pipeline-secret-id", workspaceId: "workspace", name: "Cell workflow",
-      description: "Two reusable steps", version: 3,
-      steps: [{
-        id: "step-secret-id", methodId: "method-secret-id", methodVersion: 2,
-        name: "Count cells", parameters: { threshold: 4 },
-        inputBindings: { "measurements.duckdb": "screen.duckdb" }
-      }],
-      createdAt: "2026-08-05T00:00:00Z", updatedAt: "2026-08-05T00:00:00Z"
-    } as PipelineRecord;
-    const { container } = render(createElement(ArtifactInspector, {
-      item: { kind: "pipeline", title: pipeline.name, pipeline },
-      profiles: [], canUpload: false,
-      onDownload: () => undefined, onAttach: () => undefined
-    }));
-    expect(screen.getByText("Count cells")).toBeInTheDocument();
-    expect(screen.getByText("Saved Method version 2")).toBeInTheDocument();
-    expect(screen.getByText("measurements.duckdb")).toBeInTheDocument();
-    expect(screen.getByText("screen.duckdb")).toBeInTheDocument();
-    expect(container).not.toHaveTextContent("step-secret-id");
-    expect(container).not.toHaveTextContent("method-secret-id");
-  });
 
-  it("describes implicit Pipeline bindings as automatic matching", () => {
-    const pipeline = {
-      id: "pipeline", workspaceId: "workspace", name: "Automatic workflow",
-      description: "One step", version: 1,
-      steps: [{
-        id: "step", methodId: "method", methodVersion: 1,
-        name: "Count cells", parameters: {}, inputBindings: {}
-      }],
-      createdAt: "2026-08-05T00:00:00Z", updatedAt: "2026-08-05T00:00:00Z"
-    } as PipelineRecord;
-    render(createElement(ArtifactInspector, {
-      item: { kind: "pipeline", title: pipeline.name, pipeline },
-      profiles: [], canUpload: false,
-      onDownload: () => undefined, onAttach: () => undefined
-    }));
-    expect(screen.getByText("Automatic input matching")).toBeInTheDocument();
-  });
 
-  it("shows Method narrative separately and keeps source collapsed", () => {
-    render(createElement(ArtifactInspector, {
-      item: {
-        kind: "method", title: "cells.py",
-        methodNarrative: "## Summary\nCreated the plot.\n\n## Review\nValidated locally.",
-        content: "result = 1", language: "python"
-      },
-      profiles: [], canUpload: false,
-      onDownload: () => undefined, onAttach: () => undefined
-    }));
-    expect(screen.getByText("Created the plot.")).toBeVisible();
-    const source = screen.getByText("View Python source").closest("details");
-    expect(source).not.toHaveAttribute("open");
-    expect(source).toHaveTextContent("result = 1");
-  });
+
+
+
 });
 
-describe("ComposerPanel provider readiness", () => {
-  it("shows bounded browser-Python loading progress outside the Assistant", () => {
+describe("runtime startup feedback", () => {
+  it("shows bounded browser-Python loading progress", () => {
     render(createElement(RuntimeProgressPanel, {
       progress: { percent: 48.4, message: "Loading data-analysis packages…" },
-      detail: "The Method starts automatically when Python is ready."
+      detail: "The notebook starts when Python is ready."
     }));
     expect(screen.getByText("Loading data-analysis packages…")).toBeVisible();
     expect(screen.getByText("48%")).toBeVisible();
     expect(screen.getByRole("progressbar", { name: "Loading browser Python" }))
       .toHaveAttribute("value", "48");
-    expect(screen.getByText(/Method starts automatically/)).toBeVisible();
+    expect(screen.getByText(/notebook starts when/)).toBeVisible();
   });
 
-  it("does not require an API key for a keyless local profile", () => {
-    render(createElement(ComposerPanel, {
-      runtimeReady: true,
-      runtimeProgress: { percent: 100, message: "Ready" },
-      status: "Ready",
-      usage: null,
-      settings: {
-        protocol: "openai",
-        endpoint: "http://localhost:1234/v1",
-        authMode: "none",
-        apiKey: "",
-        model: "local-model",
-        contextWindow: 0,
-        rememberKey: false
-      },
-      blocked: false,
-      canChat: true,
-      composerPlaceholder: "Ask",
-      prompt: "",
-      busy: false,
-      onPromptChange: () => undefined,
-      onSend: () => undefined,
-      onStop: () => undefined,
-      onReset: () => undefined
-    }));
 
-    expect(screen.queryByText(/Enter an AI endpoint/)).not.toBeInTheDocument();
-    expect(screen.getByText("Ready — you can ask a question")).toBeInTheDocument();
-  });
-});
-
-describe("AI context usage", () => {
-  it("shows real token counts, percentage, and compaction state", () => {
-    expect(usageSummary({
-      promptTokens: 32_000,
-      completionTokens: 800,
-      totalTokens: 32_800,
-      sessionTokens: 91_000,
-      estimated: false,
-      contextWindow: 128_000,
-      compactionThreshold: 76_800,
-      compactedMessages: 14,
-      compacted: true
-    }, 0)).toContain(
-      `${(32_000).toLocaleString()} / ${(128_000).toLocaleString()} tokens (25.0%)`
-    );
-    expect(usageSummary({
-      promptTokens: 32_000,
-      completionTokens: 800,
-      totalTokens: 32_800,
-      sessionTokens: 91_000,
-      estimated: false,
-      contextWindow: 128_000,
-      compactionThreshold: 76_800,
-      compactedMessages: 14,
-      compacted: true
-    }, 0)).toContain("Compacted 14 earlier messages");
-  });
 });

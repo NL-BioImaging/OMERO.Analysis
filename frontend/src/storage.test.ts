@@ -2,17 +2,13 @@ import {
   loadOrCreateWorkspace,
   listContextWorkspaces,
   loadWorkspace,
-  newChat,
-  deleteChatCascade,
   deleteWorkspaceCascade,
-  saveChat,
-  saveEvidenceLedger,
   replaceWorkspace,
   saveWorkspaceRecord,
   saveFile,
   setValue
 } from "./storage";
-import type { OmeroContext } from "./types";
+import type { ChatRecord, OmeroContext } from "./types";
 
 const context: OmeroContext = {
   object_type: "Dataset",
@@ -60,17 +56,7 @@ describe("normalized workspace storage", () => {
     expect(selection.workspace.rootPath).toContain("Image-selection-11-12");
   });
 
-  it("creates an exact-object workspace and stores chats separately", async () => {
-    const workspace = await loadOrCreateWorkspace(context);
-    expect(workspace.workspace.rootPath).toBe("OMERO/Dataset-42--cells");
-    expect(workspace.workspace.plotCsv).toBe(true);
-    const chat = newChat(workspace.workspace.id, "Second chat");
-    await saveChat(chat);
-    await saveWorkspaceRecord({ ...workspace.workspace, activeChatId: chat.id });
-    const loaded = await loadWorkspace(workspace.workspace.id);
-    expect(loaded?.chats.map((item) => item.title)).toContain("Second chat");
-    expect(loaded?.workspace.activeChatId).toBe(chat.id);
-  });
+
 
   it("ignores an old monolithic browser value", async () => {
     const legacyContext = { ...context, object_id: 43 };
@@ -79,8 +65,8 @@ describe("normalized workspace storage", () => {
       files: []
     });
     const created = await loadOrCreateWorkspace(legacyContext);
-    expect(created.chats[0].title).toBe("New Assistant Chat");
-    expect(created.chats[0].messages).toEqual([]);
+    expect(created.chats).toEqual([]);
+    expect(created.workspace.activeChatId).toBe("");
   });
 
   it("serializes rapid writes and deletes an entire workspace transactionally", async () => {
@@ -94,101 +80,7 @@ describe("normalized workspace storage", () => {
     expect(await loadWorkspace(workspace.workspace.id)).toBeUndefined();
   });
 
-  it("deletes a chat and every chat-owned record while preserving sibling data", async () => {
-    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 65 });
-    const removed = workspace.chats[0];
-    const kept = newChat(workspace.workspace.id, "Keep me");
-    const record = (id: string, chatId: string) => ({
-      id,
-      workspaceId: workspace.workspace.id,
-      chatId,
-      createdAt: "2026-08-03T00:00:00Z"
-    });
-    await replaceWorkspace({
-      ...workspace,
-      chats: [removed, kept],
-      files: [...[removed, kept].map((chat) => ({
-        ...record(`file-${chat.id}`, chat.id),
-        name: `${chat.id}.csv`,
-        logicalPath: `/output/${chat.id}.csv`,
-        type: "text/csv",
-        size: 1,
-        sha256: chat.id,
-        source: "result" as const,
-        state: "ready" as const
-      })), {
-        id: "run-file", workspaceId: workspace.workspace.id, runId: "run",
-        name: "run.csv", logicalPath: "/Runs/run.csv", type: "text/csv",
-        size: 1, sha256: "run", source: "result" as const, state: "ready" as const,
-        createdAt: "2026-08-03T00:00:00Z"
-      }],
-      executions: [...[removed, kept].map((chat) => ({
-        ...record(`execution-${chat.id}`, chat.id),
-        promptId: `prompt-${chat.id}`,
-        code: "result = 1",
-        codeHash: chat.id,
-        cacheKey: chat.id,
-        status: "success" as const,
-        stdout: "",
-        stderr: "",
-        outputFileIds: [`file-${chat.id}`],
-        missingPlotCsv: [],
-        inputHashes: [],
-        runtimeVersion: "test",
-        model: "test"
-      })), {
-        id: "run-execution", workspaceId: workspace.workspace.id, runId: "run",
-        code: "result = 2", codeHash: "run", cacheKey: "run", status: "success" as const,
-        stdout: "", stderr: "", outputFileIds: ["run-file"], missingPlotCsv: [],
-        inputHashes: [], runtimeVersion: "test", model: "test",
-        createdAt: "2026-08-03T00:00:00Z"
-      }],
-      runs: [{
-        id: "run", workspaceId: workspace.workspace.id, kind: "method" as const,
-        artifactId: "method", artifactName: "method.py", artifactVersion: 1,
-        status: "success" as const, executionIds: ["run-execution"],
-        resolvedBindings: {}, steps: [], createdAt: "2026-08-03T00:00:00Z",
-        completedAt: "2026-08-03T00:01:00Z"
-      }],
-      artifacts: [removed, kept].map((chat) => ({
-        ...record(`artifact-${chat.id}`, chat.id),
-        kind: "file" as const,
-        title: chat.title,
-        pinned: false
-      })),
-      audits: [removed, kept].map((chat) => ({
-        ...record(`audit-${chat.id}`, chat.id),
-        categories: [],
-        byteLength: 2,
-        payload: "{}"
-      })),
-      evidence: [removed, kept].map((chat) => ({
-        ...record(`evidence-${chat.id}`, chat.id),
-        promptId: `prompt-${chat.id}`,
-        kind: "tool-result" as const,
-        status: "success" as const,
-        sourceHashes: [],
-        skillHashes: [],
-        sourceSkillKey: chat.id,
-        summary: chat.title,
-        payload: "{}"
-      }))
-    });
 
-    await deleteChatCascade(removed.id);
-    const loaded = await loadWorkspace(workspace.workspace.id);
-    expect(loaded?.chats.map((chat) => chat.id)).toEqual([kept.id]);
-    for (const values of [
-      loaded?.files,
-      loaded?.executions,
-      loaded?.artifacts,
-      loaded?.audits,
-      loaded?.evidence
-    ]) expect(values?.filter((value) => value.chatId).map((value) => value.chatId)).toEqual([kept.id]);
-    expect(loaded?.runs.map((run) => run.id)).toEqual(["run"]);
-    expect(loaded?.files.some((file) => file.runId === "run")).toBe(true);
-    expect(loaded?.executions.some((execution) => execution.runId === "run")).toBe(true);
-  });
 
   it("returns authoritative monotonic Workspace revisions", async () => {
     const workspace = await loadOrCreateWorkspace({ ...context, object_id: 62 });
@@ -225,38 +117,9 @@ describe("normalized workspace storage", () => {
     put.mockRestore();
   });
 
-  it("uses full replacement only for restore semantics", async () => {
-    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 63 });
-    const extra = newChat(workspace.workspace.id, "Remove on restore");
-    await saveChat(extra);
-    const replaced = await replaceWorkspace({ ...workspace, chats: workspace.chats });
-    expect(replaced.workspace.revision).toBeGreaterThan(workspace.workspace.revision || 0);
-    expect((await loadWorkspace(workspace.workspace.id))?.chats.map((chat) => chat.title))
-      .not.toContain("Remove on restore");
-  });
 
-  it("persists a bounded replacement evidence ledger per chat", async () => {
-    const workspace = await loadOrCreateWorkspace({ ...context, object_id: 61 });
-    const chatId = workspace.workspace.activeChatId;
-    const evidence = (id: string) => ({
-      id,
-      workspaceId: workspace.workspace.id,
-      chatId,
-      promptId: "prompt",
-      kind: "tool-result" as const,
-      status: "success" as const,
-      sourceHashes: ["source"],
-      skillHashes: ["skill"],
-      sourceSkillKey: "key",
-      summary: id,
-      payload: "{}",
-      createdAt: "2026-07-27T00:00:00Z"
-    });
-    await saveEvidenceLedger(chatId, [evidence("old"), evidence("keep")]);
-    await saveEvidenceLedger(chatId, [evidence("keep")]);
-    expect((await loadWorkspace(workspace.workspace.id))?.evidence.map((item) => item.id))
-      .toEqual(["keep"]);
-  });
+
+
 });
 
 it("keeps multiple named workspaces independent for the same source", async () => {
@@ -265,9 +128,19 @@ it("keeps multiple named workspaces independent for the same source", async () =
   const second = await loadOrCreateWorkspace(scope, "instance-two", "Analysis 2");
   const reopened = await loadOrCreateWorkspace(scope, "instance-one", "ignored");
   expect(first.workspace.id).not.toBe(second.workspace.id);
-  expect(first.chats[0].id).not.toBe(second.chats[0].id);
+  expect(first.chats).toEqual([]);
+  expect(second.chats).toEqual([]);
   expect(reopened.workspace.name).toBe(`${scope.name} — Analysis 1`);
   expect(reopened.workspace.id).toBe(first.workspace.id);
   expect((await listContextWorkspaces(scope)).map(item => item.id).sort())
     .toEqual([first.workspace.id, second.workspace.id].sort());
+});
+
+
+it("rejects retired record writes and restores only notebook-era content", async () => {
+  const workspace = await loadOrCreateWorkspace({...context, object_id: 7654});
+  await expect(setValue("provider:profiles:v1", {apiKey: "test"})).rejects.toThrow(/retired/);
+  const restored = await replaceWorkspace({...workspace, chats: [{id: "legacy", workspaceId: workspace.workspace.id} as ChatRecord]});
+  expect(restored.chats).toEqual([]);
+  expect((await loadWorkspace(workspace.workspace.id))?.chats).toEqual([]);
 });

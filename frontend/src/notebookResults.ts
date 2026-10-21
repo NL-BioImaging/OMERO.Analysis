@@ -13,46 +13,68 @@ export async function notebookParameterKey(notebookId: string, run: NotebookRunP
   return sha256(new TextEncoder().encode(JSON.stringify(value)).buffer);
 }
 
-export function notebookResultPath(root: string, name: string, key: string, fileName: string): string {
-  return `${root}/Notebooks/Results/${name}/Settings-${key.slice(0, 12)}/${fileName}`;
+export function runLabel(file: WorkspaceFile): string {
+  return file.notebookRunId ? `Run ${file.notebookRunStartedAt?.replace("T", " ").replace("Z", " UTC") || "unknown time"} · ${file.notebookRunId.slice(0, 8)}` : "Earlier results";
 }
 
-/** Recover legacy run ownership only when timestamps and output inventory agree. */
+export function remoteResultName(file: WorkspaceFile, notebooks: NotebookRecord[]): string {
+  const notebook = notebooks.find(n => n.id === file.notebookId);
+  const title = (notebook?.name.replace(/\.ipynb$/i, "") || "Analysis").replace(/[^\p{L}\p{N}_. -]/gu, "_").slice(0, 65);
+  const run = file.notebookRunStartedAt || file.createdAt;
+  const stamp = run?.replace(/[^0-9TZ]/g, "") || "legacy";
+  const identity = (file.notebookRunId || file.sha256 || file.id).slice(0, 8);
+  const prefix = `${title}__${stamp}-${identity}__`;
+  const extension = file.name.match(/\.[^.]{1,16}$/)?.[0] || "";
+  const basename = extension ? file.name.slice(0, -extension.length) : file.name;
+  return `${prefix}${basename.slice(0, 180 - prefix.length - extension.length)}${extension}`;
+}
+
+export function notebookResultPath(root: string, name: string, key: string, fileName: string, runId?: string): string {
+  return `${root}/Notebooks/Results/${name}/${runId ? `Run-${runId}` : `Settings-${key.slice(0, 12)}`}/${fileName}`;
+}
+
+/** One current result per notebook, inputs and parameter setting; preserve other settings. */
 export async function completeNotebookResults(files: WorkspaceFile[], notebook: NotebookRecord, root: string): Promise<WorkspaceFile[]> {
-  const runs = notebook.protocolRuns || [];
-  const latest = runs.at(-1);
-  if (!latest || latest.status !== "success") return files;
-  const keys = new Map(await Promise.all(runs.map(async run =>
-    [run.startedAt, await notebookParameterKey(notebook.id, run)] as const)));
-  const successful = new Map<string, string>();
-  for (const run of runs.filter(run => run.status === "success").sort((a, b) => a.startedAt.localeCompare(b.startedAt))) {
-    successful.set(keys.get(run.startedAt)!, run.startedAt);
-  }
-  const scopedFiles = files.map(file => {
-    if (file.notebookId !== notebook.id || file.source !== "result") return file;
-    let scoped = file;
-    if (!file.notebookParameterKey) {
-      const matches = runs.filter(run => run.completedAt && file.createdAt >= run.startedAt &&
-        file.createdAt <= run.completedAt && run.outputs.some(output => output.name === file.name && output.size === file.size));
-      if (matches.length !== 1) return file; // Ambiguous old output remains untouched.
-      const run = matches[0], key = keys.get(run.startedAt)!;
-      scoped = { ...file, notebookParameterKey: key, notebookRunStartedAt: run.startedAt,
-        logicalPath: notebookResultPath(root, notebook.name, key, file.name) };
-    }
-    return scoped;
-  });
+  const latest = notebook.protocolRuns?.at(-1);
+  if (!latest || latest.status === "running") return files;
+  if (latest.status === "failed") return files.map(file => latest.id && file.notebookRunId === latest.id && !file.supersededAt
+    ? supersedeResult(file, latest.completedAt || notebook.updatedAt) : file);
+  const timestamp = latest.completedAt || notebook.updatedAt;
+  const parameterKey = await notebookParameterKey(notebook.id, latest);
+  const produced = new Set(latest.outputs.map(output => output.name));
+  const scoped = await Promise.all(files.map(async file => {
+    if (file.notebookId !== notebook.id || file.source !== "result" || file.notebookParameterKey) return file;
+    const matches = (notebook.protocolRuns || []).filter(run => run.completedAt && file.createdAt >= run.startedAt &&
+      file.createdAt <= run.completedAt && run.outputs.some(output => output.name === file.name && output.size === file.size));
+    return matches.length === 1 ? {...file, notebookRunStartedAt: matches[0].startedAt,
+      notebookParameterKey: await notebookParameterKey(notebook.id, matches[0])} : file;
+  }));
   const winners = new Map<string, string>();
-  const fileKey = (file: WorkspaceFile) => JSON.stringify([file.notebookParameterKey, file.notebookRunStartedAt, file.name]);
-  for (const file of [...scopedFiles].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
-    if (file.notebookId === notebook.id && !file.deletedAt && file.notebookParameterKey &&
-        successful.get(file.notebookParameterKey) === file.notebookRunStartedAt) winners.set(fileKey(file), file.id);
+  for (const file of [...scoped].sort((a,b) => a.createdAt.localeCompare(b.createdAt))) {
+    if (file.notebookId === notebook.id && file.notebookParameterKey === parameterKey && !file.deletedAt && !file.supersededAt &&
+        (latest.id ? file.notebookRunId === latest.id : file.notebookRunStartedAt === latest.startedAt)) winners.set(file.name, file.id);
   }
-  return scopedFiles.map(file => {
-    const winner = file.notebookParameterKey && successful.get(file.notebookParameterKey);
-    if (file.notebookId === notebook.id && !file.deletedAt && winner && file.notebookRunStartedAt &&
-        (file.notebookRunStartedAt < winner || (file.notebookRunStartedAt === winner && winners.get(fileKey(file)) !== file.id))) {
-      return { ...file, deletedAt: latest.completedAt || notebook.updatedAt };
-    }
-    return file;
+  return scoped.map(file => {
+    if (file.notebookId !== notebook.id || file.source !== "result" || file.notebookParameterKey !== parameterKey || file.supersededAt || file.deletedInOmeroAt) return file;
+    const fromThisRun = latest.id ? file.notebookRunId === latest.id : file.notebookRunStartedAt === latest.startedAt;
+    const replaced = latest.mode === "all" ? !fromThisRun || winners.get(file.name) !== file.id :
+      produced.has(file.name) && winners.get(file.name) !== file.id;
+    return replaced ? supersedeResult(file, timestamp) : file;
   });
+}
+
+export function supersedeResult(file: WorkspaceFile, timestamp: string): WorkspaceFile {
+  return {...file, deletedAt: file.deletedAt || timestamp, supersededAt: timestamp,
+    data: undefined, mediaBlob: undefined, remoteResult: undefined, state: "missing", error: "Replaced by the current result"};
+}
+
+/** Once per workspace, compact legacy duplicate versions after a remote status check. */
+export function compactResultVersions(files: WorkspaceFile[], timestamp: string): WorkspaceFile[] {
+  const latest = new Map<string, string>();
+  const key = (file: WorkspaceFile) => JSON.stringify([file.notebookId || file.methodId || file.pipelineId || "legacy", file.notebookParameterKey || "legacy", file.name]);
+  for (const file of [...files].sort((a,b) => a.createdAt.localeCompare(b.createdAt))) {
+    if (file.source === "result" && !file.deletedAt && !file.deletedInOmeroAt) latest.set(key(file), file.id);
+  }
+  return files.map(file => file.source === "result" && !file.deletedInOmeroAt && !file.supersededAt &&
+    (file.deletedAt || latest.get(key(file)) !== file.id) ? supersedeResult(file, timestamp) : file);
 }

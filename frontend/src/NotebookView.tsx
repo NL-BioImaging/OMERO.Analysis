@@ -1,17 +1,25 @@
-import { Artifact } from "./components/ResultPreview";
-import React, { useEffect, useRef, useState, type ReactNode } from "react";
-import { PythonRuntime } from "./runtime";
-import { MarkdownPreview, PythonPreview } from "./components/WorkspacePanels";
+import { NotebookSetup } from "./NotebookSetup";
+import { RunParameters, type ParameterOptions } from "./RunParameters";
+import { markNotebookStale, setupFingerprint } from "./notebookConfiguration";
+import type { CompatibilitySource } from "./notebookCompatibility";
+import { notebookError, notebookErrorSummary } from "./notebookErrors";
+import { useEffect,useRef,useState,type ReactNode } from "react";
+import { CodeEditor } from "./CodeEditor";
 import { ActionIcon } from "./components/ActionIcon";
 import { Button } from "./components/BlueprintControls";
-import { parameterDefaults, parseNotebookProtocol } from "./notebookProtocol";
+import { Artifact } from "./components/ResultPreview";
+import { MarkdownPreview } from "./components/WorkspacePanels";
+import { compatibilityLabel,type Compatibility } from "./notebookCompatibility";
+import { notebookToSource,sourceToNotebook } from "./notebookPercentSource";
+import { parameterDefaults,parseNotebookProtocol,type NotebookProtocolContract } from "./notebookProtocol";
+import { PythonRuntime } from "./runtime";
 import type {
-  NotebookCell,
-  NotebookDocument,
-  NotebookOutput,
-  NotebookRecord,
-  RuntimeOutput,
-  WorkspaceFile
+NotebookCell,
+NotebookDocument,
+NotebookOutput,
+NotebookRecord,
+RuntimeOutput,
+WorkspaceFile
 } from "./types";
 
 const MAX_CELLS = 10000;
@@ -201,16 +209,6 @@ function executionOutputs(result: RuntimeOutput, count: number): NotebookOutput[
   return outputs;
 }
 
-function errorOutput(error: unknown): NotebookOutput {
-  const message = String(error instanceof Error ? error.message : error);
-  return {
-    output_type: "error",
-    ename: error instanceof Error ? error.name : "Error",
-    evalue: message,
-    traceback: message.split(/\r?\n/)
-  };
-}
-
 function textValue(value: unknown): string {
   return Array.isArray(value) ? value.join("") : String(value ?? "");
 }
@@ -258,12 +256,31 @@ function NotebookMovie({ file, retrieve }: { file: WorkspaceFile; retrieve?: (fi
   return error ? <p role="alert">{error}</p> : <Artifact file={ready} />;
 }
 
+export function NotebookTable({ value }: { value: unknown }) {
+  if (!value || typeof value !== "object") return null;
+  const preview = value as { kind?: unknown; data?: { columns?: unknown; data?: unknown } };
+  if (preview.kind !== "table" || !preview.data || !Array.isArray(preview.data.columns) ||
+      !Array.isArray(preview.data.data) || !preview.data.data.every(Array.isArray)) return null;
+  const columns = preview.data.columns.slice(0, 200);
+  const rows = preview.data.data.slice(0, 100);
+  const display = (item: unknown) => item == null ? "—" : typeof item === "object" ? JSON.stringify(item) : String(item);
+  return <div className="notebook-table-output">
+    <div className="inspector-table-scroll"><table className="bp5-html-table bp5-html-table-striped bp5-html-table-condensed">
+      <thead><tr>{columns.map((column, index) => <th key={index} scope="col">{display(column)}</th>)}</tr></thead>
+      <tbody>{rows.map((row, index) => <tr key={index}>{columns.map((_, col) => <td key={col}>{display(row[col])}</td>)}</tr>)}</tbody>
+    </table></div>
+    {preview.data.data.length > rows.length && <p>Showing the first {rows.length} rows of this output.</p>}
+    {preview.data.columns.length > columns.length && <p>Showing the first {columns.length} columns.</p>}
+  </div>;
+}
+
 function OutputView({ output, files = [], retrieve }: { output: NotebookOutput; files?: WorkspaceFile[]; retrieve?: (file: WorkspaceFile) => Promise<WorkspaceFile> }) {
   if (output.output_type === "stream") {
     return <pre className={`notebook-stream ${output.name || ""}`}>{textValue(output.text)}</pre>;
   }
   if (output.output_type === "error") {
-    return <pre className="notebook-error">{(output.traceback || [output.evalue || "Error"]).join("\n")}</pre>;
+    return <div className="notebook-error" role="alert"><p>{output.ename || "Error"}: {output.evalue || "Execution failed"}</p>
+      {output.traceback?.length ? <details><summary>Traceback</summary><pre>{output.traceback.join("\n")}</pre></details> : null}</div>;
   }
   const data = output.data || {};
   const reference = data["application/vnd.omero-analysis.result+json"] as { name?: string; resultGroupId?: string } | undefined;
@@ -278,7 +295,13 @@ function OutputView({ output, files = [], retrieve }: { output: NotebookOutput; 
       src={`data:image/png;base64,${png.replace(/\s/g, "")}`} />;
   }
   if ("application/json" in data) {
-    return <pre className="notebook-json">{JSON.stringify(data["application/json"], null, 2)}</pre>;
+    const value = data["application/json"];
+    const preview = value as { kind?: unknown; data?: { columns?: unknown; data?: unknown } } | null;
+    if (preview?.kind === "table" && Array.isArray(preview.data?.columns) &&
+        Array.isArray(preview.data?.data) && preview.data.data.every(Array.isArray)) {
+      return <NotebookTable value={value} />;
+    }
+    return <pre className="notebook-json">{JSON.stringify(value, null, 2)}</pre>;
   }
   if ("text/plain" in data) {
     return <pre>{textValue(data["text/plain"])}</pre>;
@@ -336,12 +359,15 @@ interface Props {
   inputs: WorkspaceFile[];
   runtime: PythonRuntime;
   runRequest: { id: string; nonce: number } | null;
+  openCellRequest?: { notebookId: string; cellIds: string[]; nonce: number } | null;
   onRunRequestConsumed?: () => void;
   onRunStateChange?: (running: boolean) => void;
   workspaceActions: ReactNode;
   onBeforeRun: (record: NotebookRecord) => Promise<
     WorkspaceFile[] | { inputs: WorkspaceFile[]; notebook: NotebookRecord } | void
   >;
+  onInspectSetupInput?: (file: WorkspaceFile) => Promise<CompatibilitySource["schema"]>;
+  onLoadParameterChoices?: (record: NotebookRecord) => Promise<ParameterOptions>;
   onPrepareProtocol?: (record: NotebookRecord) => Promise<NotebookRecord>;
   onChange: (record: NotebookRecord) => Promise<void>;
   onFiles: (record: NotebookRecord, files: RuntimeOutput["files"]) => Promise<void>;
@@ -351,18 +377,179 @@ interface Props {
   onRenderRequest?: (record: NotebookRecord, preview: unknown) => Promise<RuntimeOutput["files"]>;
   onSelect?: (id: string) => void;
   onEdit?: (record: NotebookRecord) => void;
+  theme?: "dark" | "light";
+  compatibility?: Compatibility;
+  cspNonce?: string;
 }
 
 export default function NotebookView(props: Props) {
   const {
     notebook, notebooks = notebook ? [notebook] : [], inputs, runtime, runRequest, workspaceActions,
     onRunRequestConsumed, onRunStateChange,
-    onBeforeRun, onPrepareProtocol, onChange, onFiles, onRenderRequest, onSelect, onEdit
+    onBeforeRun, onPrepareProtocol, onChange, onFiles, onRenderRequest, onSelect
   } = props;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Notebook code never runs automatically.");
+  const configurationCell=useRef<HTMLElement>(null);
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
+  const consumedOpenRequest = useRef<number | null>(null);
+  useEffect(() => { setExpandedCells(new Set()); }, [notebook?.id]);
+  useEffect(() => {
+    const request = props.openCellRequest;
+    if (request && request.notebookId === notebook?.id && consumedOpenRequest.current !== request.nonce) {
+      consumedOpenRequest.current = request.nonce;
+      setExpandedCells(current => new Set([...current, ...request.cellIds]));
+    }
+  }, [props.openCellRequest, notebook?.id]);
   const lastRunRequest = useRef(0);
   const stopRequested = useRef(false);
+
+  const [editView, setEditView] = useState<"cells" | "source">("cells");
+  const [sourceDraft, setSourceDraft] = useState("");
+  const [draftError, setDraftError] = useState("");
+  const kernelBinding = useRef("");
+  const initializedSetup = useRef("");
+  const [parameterError, setParameterError] = useState("");
+  const [setupDraftDirty, setSetupDraftDirty] = useState(false);
+  const executionCount = useRef(0);
+  const latest = useRef(notebook);
+  latest.current = notebook;
+  const prerequisitesBlocked = props.compatibility?.status === "incompatible";
+  const executionKey = (value: NotebookRecord | null) => JSON.stringify([value?.id, value?.parameterValues,
+    value?.protocolBindings?.map(b => [b.inputId, b.fileId, b.sourceDigest]),
+    value ? setupFingerprint(value.document) : "",
+    inputs.filter(f => f.source !== "result" && !f.deletedAt).map(f => [f.id, f.sha256])]);
+  const bindingKey = executionKey(notebook);
+  const draftKey = notebook ? `omero-analysis:notebook-draft:${notebook.workspaceId}:${notebook.id}` : "";
+
+  useEffect(() => {
+    if (!notebook) return;
+    const saved = localStorage.getItem(draftKey);
+    setSourceDraft(saved ?? notebookToSource(notebook.document));
+    setDraftError(saved ? "Recovered a local source draft. Apply it to resume editing cells." : "");
+    if (saved) setEditView("source");
+  }, [notebook?.id]);
+
+  // A changed binding invalidates execution state; changing tabs does not.
+  useEffect(() => {
+    if (!running && kernelBinding.current && kernelBinding.current !== bindingKey) {
+      setStatus("Setup, inputs or run values changed. Initialize setup or Run all before running analysis cells. The next execution starts clean.");
+    }
+  }, [bindingKey, runtime, running]);
+
+  function keepDraft(value: string) {
+    setSourceDraft(value);
+    try { localStorage.setItem(draftKey, value); }
+    catch { setDraftError("Local draft storage is full. Copy the source before leaving this page."); }
+  }
+
+  async function applySource(value = sourceDraft) {
+    if (!notebook) return;
+    try {
+      const document = sourceToNotebook(value, notebook.document);
+      parseNotebookProtocol(document);
+      await onChange({ ...notebook, document, updatedAt: new Date().toISOString() });
+      localStorage.removeItem(draftKey);
+      setDraftError("");
+      return true;
+    } catch (error) {
+      setDraftError(`Draft retained; last valid notebook unchanged. ${String(error)}`);
+      return false;
+    }
+  }
+
+  // Keep every keystroke locally; synchronize valid source after a short pause.
+  useEffect(() => {
+    if (editView !== "source" || !notebook || localStorage.getItem(draftKey) == null) return;
+    const timer = window.setTimeout(() => { void applySource(); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [sourceDraft, editView]);
+
+  async function editCells(cells: NotebookCell[]) {
+    if (!notebook || running) return;
+    const document = { ...notebook.document, cells };
+    const value = notebookToSource(document);
+    keepDraft(value);
+    try {
+      parseNotebookProtocol(document);
+      await onChange({ ...notebook, document, updatedAt: new Date().toISOString() });
+      localStorage.removeItem(draftKey);
+      setDraftError("");
+    } catch (error) {
+      setEditView("source");
+      setDraftError(`Draft retained; correct the source to save. ${String(error)}`);
+    }
+  }
+
+  function changeCell(index: number, changes: Partial<NotebookCell>) {
+    if (!notebook) return;
+    if (changes.cell_type === "code") setExpandedCells(current => new Set(current).add(notebook.document.cells[index].id || String(index)));
+    void editCells(notebook.document.cells.map((cell, i) => i === index
+      ? { ...cell, ...changes, metadata: { ...cell.metadata, "omero-analysis-stale": true } } : cell));
+  }
+
+  function addCell() {
+    if (!notebook) return;
+    const cellId = crypto.randomUUID();
+    setExpandedCells(current => new Set(current).add(cellId));
+    void editCells([...notebook.document.cells, {
+      id: cellId, cell_type: "code", source: "", metadata: {}, outputs: [], execution_count: null
+    }]);
+  }
+
+  function moveCell(index: number, direction: number) {
+    if (!notebook) return;
+    const cells = [...notebook.document.cells];
+    const target = index + direction;
+    if (target < 0 || target >= cells.length) return;
+    [cells[index], cells[target]] = [cells[target], cells[index]];
+    void editCells(cells);
+  }
+
+  async function runCell(index: number) {
+    if (!notebook || running || draftError || prerequisitesBlocked || parameterError || setupDraftDirty) return;
+    if (protocol && index > 0 && initializedSetup.current !== bindingKey) {
+      setStatus("Initialize setup first, or use Run all. Earlier analysis cells will not run automatically."); return;
+    }
+    stopRequested.current = false;
+    setRunning(true);
+    onRunStateChange?.(true);
+    try {
+      let working = notebook;
+      if (kernelBinding.current !== bindingKey) {
+        await runtime.reset(progress => setStatus(progress.message));
+        checkStopped();
+        const preparation = await onBeforeRun(working);
+        checkStopped();
+        if (preparation && !Array.isArray(preparation)) working = preparation.notebook;
+        await runtime.syncInputs(Array.isArray(preparation) ? preparation : preparation?.inputs || inputs);
+        if (onPrepareProtocol) working = await onPrepareProtocol(working);
+        checkStopped();
+        kernelBinding.current = executionKey(working);
+        initializedSetup.current = "";
+        executionCount.current = 0;
+      }
+      working = beginRun(working, "cell", index);
+      await onChange(working);
+      setStatus(`Running cell ${index + 1}…`);
+      let completed = await executeCell(index, ++executionCount.current, working);
+      if (completed) {
+        completed = {...completed, protocolRuns: completed.protocolRuns?.map((run, i, runs) => i === runs.length - 1 && run.status === "running"
+          ? {...run, status: "success" as const, completedAt: new Date().toISOString()} : run)};
+        await onChange(completed);
+      }
+      if (completed) {
+        kernelBinding.current = executionKey(completed);
+        if (index === 0 && parseNotebookProtocol(completed.document)) initializedSetup.current = kernelBinding.current;
+        setStatus(index === 0 && protocol ? "Setup initialized. Run an analysis cell or Run all." : `Cell ${index + 1} completed. Kernel variables retained.`);
+      }
+    } catch (error) {
+      setStatus(stopRequested.current ? "Notebook stopped." : notebookErrorSummary(error));
+    } finally {
+      setRunning(false);
+      onRunStateChange?.(false);
+    }
+  }
 
   function checkStopped() {
     if (stopRequested.current) throw new Error("Notebook stopped");
@@ -391,6 +578,7 @@ export default function NotebookView(props: Props) {
             cellIndex === index
               ? {
                   ...candidate,
+                  metadata: { ...candidate.metadata, "omero-analysis-stale": false },
                   execution_count: count,
                   outputs: executionOutputs(combined, count)
                 }
@@ -421,7 +609,7 @@ export default function NotebookView(props: Props) {
           ...base.document,
           cells: base.document.cells.map((candidate, cellIndex) =>
             cellIndex === index
-              ? { ...candidate, execution_count: count, outputs: [errorOutput(error)] }
+              ? { ...candidate, execution_count: count, metadata: { ...candidate.metadata, "omero-analysis-stale": false }, outputs: [notebookError(error)] }
               : candidate
           )
         },
@@ -433,7 +621,7 @@ export default function NotebookView(props: Props) {
         updatedAt: new Date().toISOString()
       };
       await onChange(failed);
-      setStatus(stopRequested.current ? "Notebook stopped." : `Stopped at cell ${index + 1}: ${message}`);
+      setStatus(stopRequested.current ? "Notebook stopped." : `Stopped at cell ${index + 1}: ${notebookErrorSummary(error)}. See the error below.`);
       return null;
     }
   }
@@ -473,8 +661,20 @@ export default function NotebookView(props: Props) {
     return changed;
   }
 
+  function beginRun(record: NotebookRecord, mode: "all" | "cell", cellIndex?: number): NotebookRecord {
+    const contract = parseNotebookProtocol(record.document);
+    return {...record, protocolRuns: [...(record.protocolRuns || []), {
+      id: crypto.randomUUID(), mode, cellIndex,
+      startedAt: new Date().toISOString(),
+      parameters: {...(contract ? parameterDefaults(contract) : {}), ...(record.parameterValues || {})},
+      sources: (record.protocolBindings || []).map(binding => ({inputId: binding.inputId, name: binding.name,
+        schemaDigest: binding.schemaDigest, sourceDigest: binding.sourceDigest})),
+      outputs: [], status: "running"
+    }]};
+  }
+
   async function runAll() {
-    if (!notebook || running) return;
+    if (!notebook || running || draftError || prerequisitesBlocked || parameterError || setupDraftDirty) return;
     stopRequested.current = false;
     setRunning(true);
     onRunStateChange?.(true);
@@ -489,7 +689,7 @@ export default function NotebookView(props: Props) {
       // Reset first: onBeforeRun may materialize remote-query CSV bindings in
       // /remote-query. Resetting afterward would delete those files before the
       // first notebook cell can consume them.
-      await runtime.reset();
+      await runtime.reset(progress => setStatus(progress.message));
       checkStopped();
       setStatus("Loading source data and checking query access...");
       const preparation = await onBeforeRun(working);
@@ -502,33 +702,20 @@ export default function NotebookView(props: Props) {
       setStatus("Binding notebook inputs and preparing queries...");
       if (onPrepareProtocol) working = await onPrepareProtocol(working);
       checkStopped();
-      if (parseNotebookProtocol(working.document)) {
-        const run = {
-          startedAt: new Date().toISOString(),
-          parameters: {
-            ...parameterDefaults(parseNotebookProtocol(working.document)!),
-            ...(working.parameterValues || {})
-          },
-          sources: (working.protocolBindings || []).map((binding) => ({
-            inputId: binding.inputId,
-            name: binding.name,
-            schemaDigest: binding.schemaDigest,
-            sourceDigest: binding.sourceDigest
-          })),
-          outputs: [],
-          status: "running" as const
-        };
-        working = { ...working, protocolRuns: [...(working.protocolRuns || []), run] };
-        await onChange(working);
-      }
+      working = beginRun(working, "all");
+      await onChange(working);
+      kernelBinding.current = executionKey(working);
+      initializedSetup.current = "";
       let count = 1;
       for (let index = 0; working && index < working.document.cells.length; index += 1) {
         checkStopped();
         if (working.document.cells[index].cell_type !== "code") continue;
         setStatus(`Running cell ${index + 1}…`);
         working = await executeCell(index, count++, working);
+        if (working && index === 0 && parseNotebookProtocol(working.document)) initializedSetup.current = executionKey(working);
         if (!working) break;
       }
+      executionCount.current = count - 1;
       if (working && working.protocolRuns?.at(-1)?.status === "running") {
         working = {
           ...working,
@@ -543,33 +730,44 @@ export default function NotebookView(props: Props) {
       }
       setStatus((value) => stopRequested.current ? "Notebook stopped." : value.startsWith("Stopped") ? value : "Notebook run completed.");
     } catch (error) {
-      setStatus(stopRequested.current ? "Notebook stopped." : `Notebook could not start: ${String(error)}`);
+      setStatus(stopRequested.current ? "Notebook stopped." : `Notebook could not start: ${notebookErrorSummary(error)}`);
     } finally {
       setRunning(false);
       onRunStateChange?.(false);
     }
   }
 
-  async function updateParameter(name: string, value: boolean | number | string | null) {
-    if (!notebook) return;
-    await onChange({
-      ...notebook,
-      parameterValues: { ...(notebook.parameterValues || {}), [name]: value },
-      updatedAt: new Date().toISOString()
-    });
+  async function applySetup(value: NotebookRecord, expected?: string) {
+    if (running || !latest.current || value.id !== latest.current.id) throw new Error("Notebook changed; reopen setup.");
+    if (expected && setupFingerprint(latest.current.document) !== expected) throw new Error("Python setup changed. Reload setup before applying this draft.");
+    await onChange(value);
+    initializedSetup.current = "";
+    setStatus("Setup saved. Initialize setup or Run all before running analysis cells.");
   }
-
-  let protocol = null;
+  async function bindSetupInput(inputId: string, fileId: string) {
+    if (!notebook || running) return;
+    const input = parseNotebookProtocol(notebook.document)?.inputs.find(i => i.id === inputId);
+    const file = inputs.find(f => f.id === fileId);
+    const bindings = (notebook.protocolBindings || []).filter(b => b.inputId !== inputId);
+    if (input && file) bindings.push({inputId,fileId:file.id,name:file.name,kind:input.kind,
+      mode:input.kind === "query" && (file.dataQueryMode === "remote" || !file.data) ? "remote" : "local",
+      path:`/input/${file.name}`,annotationId:file.annotationId,originalFileId:file.fileId,sourceDigest:file.sha256});
+    await onChange(markNotebookStale({...notebook,protocolBindings:bindings,parameterChoices:{},parameterChoiceLabels:{}}));
+    setStatus("Input binding saved. Initialize setup or Run all before running analysis cells.");
+  }
+  let protocol: NotebookProtocolContract | null = null;
+  let protocolError = "";
   try {
     protocol = notebook ? parseNotebookProtocol(notebook.document) : null;
-  } catch {
-    protocol = null;
+  } catch (error) {
+    protocol = null; protocolError = String(error);
   }
 
   async function stopReset() {
     stopRequested.current = true;
     props.onCancelRender?.();
     runtime.stop();
+    kernelBinding.current = "";
     setStatus("Stopping Notebook…");
   }
 
@@ -607,97 +805,87 @@ export default function NotebookView(props: Props) {
           {notebooks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
         <div className="notebook-toolbar-actions">
-          <Button disabled={!notebook || running} onClick={() => void runAll()}><ActionIcon name="run" />Run</Button>
+          <Button disabled={!notebook || running || Boolean(draftError) || prerequisitesBlocked || Boolean(parameterError) || Boolean(protocolError) || setupDraftDirty} onClick={() => void runAll()}><ActionIcon name="run" />Run all</Button>
           <Button disabled={!notebook || !running} onClick={() => void stopReset()}><ActionIcon name="stop" />Stop</Button>
           <Button disabled={!notebook || running} onClick={() => void clearOutputs()}><ActionIcon name="clear" />Clear output</Button>
           <Button disabled={!notebook || running}
             onClick={() => notebook && void attachInputs(notebook)}><ActionIcon name="attach" />Reattach input data</Button>
-          {onEdit && <Button aria-label="Edit selected Notebook" disabled={!notebook || running}
-            onClick={() => notebook && onEdit(notebook)}><ActionIcon name="edit" />Edit Notebook</Button>}
+          <Button disabled={!notebook || running} onClick={() => {
+            runtime.stop(); kernelBinding.current = ""; executionCount.current = 0;
+            setStatus("Kernel restarted. Run a cell or Run all to begin.");
+          }}>Restart kernel</Button>
+          {editView === "source" && <Button disabled={running} onClick={async () => {
+            if (editView === "source" && !await applySource()) return;
+            setEditView("cells");
+          }}>Return to cells</Button>}
           {workspaceActions}
         </div>
       </div>
       <p className="notebook-status" role="status">{status}</p>
+      {props.compatibility && <p role="status"><strong>{compatibilityLabel[props.compatibility.status]}</strong> — {props.compatibility.reasons.join("; ")}</p>}
+      {draftError && <p role="alert">{draftError}</p>}
       <div className="notebook-content">
+        {notebook && <details><summary>Current input bindings</summary><pre>{JSON.stringify(
+          notebook.protocolBindings?.map(b => ({ input: b.inputId, name: b.name, example: `await ctx.query(${JSON.stringify(b.inputId)}, "SELECT 1 AS example")` }))
+          || inputs.filter(f => f.source !== "result").map(f => ({ name: f.name, path: `/input/${f.name}` })), null, 2
+        )}</pre></details>}
         {notebook?.portabilityWarning && (
           <p className="notebook-portability-warning" role="status">{notebook.portabilityWarning}</p>
         )}
-        {notebook && protocol && protocol.parameters.length > 0 && (
-          <section className="notebook-parameters" aria-label="Notebook parameters">
-          <div>
-            <strong>Notebook parameters</strong>
-            <small>Values are stored with this Notebook and captured in every run.</small>
-          </div>
-          <div className="notebook-parameter-grid">
-            {protocol.parameters.map((parameter) => {
-              const value = notebook.parameterValues?.[parameter.name] ?? parameter.default ?? null;
-              const choices = parameter.choices || notebook.parameterChoices?.[parameter.name] || [];
-              const choiceLabels = notebook.parameterChoiceLabels?.[parameter.name] || [];
-              const label = parameter.label || parameter.name;
-              if (parameter.type === "boolean") return (
-                <label key={parameter.name} className="notebook-parameter boolean">
-                  <input type="checkbox" checked={Boolean(value)} disabled={running}
-                    onChange={(event) => void updateParameter(parameter.name, event.target.checked)} />
-                  <span><strong>{label}</strong>{parameter.help && <small>{parameter.help}</small>}</span>
-                </label>
-              );
-              if (parameter.type === "choice") return (
-                <label key={parameter.name} className="notebook-parameter">
-                  <span>{label}</span>
-                  <select value={String(choices.findIndex((choice) => Object.is(choice, value)))} disabled={running || choices.length === 0}
-                    onChange={(event) => void updateParameter(parameter.name, choices[Number(event.target.value)] ?? null)}>
-                    {choices.length === 0 && <option value="">Choices load from the bound database at run time</option>}
-                    {choices.map((choice, index) => <option key={`${typeof choice}:${String(choice)}`} value={String(index)}>{choiceLabels[index] || String(choice)}</option>)}
-                  </select>
-                  {parameter.help && <small>{parameter.help}</small>}
-                </label>
-              );
-              return (
-                <label key={parameter.name} className="notebook-parameter">
-                  <span>{label}</span>
-                  <input
-                    type={parameter.type === "integer" || parameter.type === "number" ? "number" : "text"}
-                    value={value == null ? "" : String(value)}
-                    min={parameter.minimum} max={parameter.maximum} step={parameter.step}
-                    disabled={running}
-                    onChange={(event) => void updateParameter(
-                      parameter.name,
-                      event.target.value === "" ? null :
-                        parameter.type === "integer" ? Number.parseInt(event.target.value, 10) :
-                          parameter.type === "number" ? Number.parseFloat(event.target.value) : event.target.value
-                    )}
-                  />
-                  {parameter.help && <small>{parameter.help}</small>}
-                </label>
-              );
-            })}
-          </div>
-          </section>
-        )}
+        {notebook && <NotebookSetup key={notebook.id} record={notebook} inputs={inputs}
+          disabled={running || Boolean(draftError)} onApply={applySetup} onDraftState={setSetupDraftDirty} onBind={bindSetupInput}
+          onInspect={props.onInspectSetupInput} onPython={() => {
+            setExpandedCells(current => new Set(current).add(notebook.document.cells[0]?.id || "0"));
+            window.requestAnimationFrame(()=>{configurationCell.current?.scrollIntoView?.({block:"start",behavior:"smooth"});configurationCell.current?.querySelector<HTMLElement>("[contenteditable=true],textarea")?.focus();});
+          }} />}
+        {notebook && protocol && <RunParameters key={`${notebook.id}:parameters`} record={notebook} contract={protocol}
+          disabled={running || Boolean(draftError)} onChange={onChange} onValidity={setParameterError} onLoadChoices={props.onLoadParameterChoices} />}
+        {protocol && <Button disabled={running || Boolean(draftError) || prerequisitesBlocked || Boolean(parameterError) || setupDraftDirty}
+          onClick={() => void runCell(0)}>Initialize setup</Button>}
+        {protocolError && <p role="alert">{protocolError}</p>}
         {!notebook ? (
           <div className="notebook-empty">Choose a Notebook from the Workspace explorer.</div>
+        ) : editView === "source" ? (
+          <section className="notebook-source-editor" aria-label="Notebook source">
+            <p>Edit Python and commented Markdown below. Keep the metadata header and cell separators.</p>
+            <CodeEditor label="Complete notebook source" value={sourceDraft} language="python" theme={props.theme || "light"}
+              cspNonce={props.cspNonce || ""} readOnly={running} onChange={keepDraft} onSave={() => { void applySource(); }} />
+          </section>
         ) : (
           <div className="notebook-cells">
+          <Button disabled={running} onClick={addCell}>Add cell</Button>
           {notebook.document.cells.map((cell, index) => (
-            <article className={`notebook-cell ${cell.cell_type}`} key={cell.id || index}>
+            <article ref={index === 0 ? configurationCell : undefined} className={`notebook-cell ${cell.cell_type}`} key={cell.id || index}>
               <div className="notebook-cell-gutter">
                 {cell.cell_type === "code" ? `[${cell.execution_count ?? " "}]` : ""}
               </div>
               <div className="notebook-cell-body">
-                {cell.cell_type === "markdown" ? (
-                  <div className="notebook-markdown">
-                    <MarkdownPreview markdown={sourceText(cell)} />
-                  </div>
-                ) : cell.cell_type === "code" ? (
-                  <details className="notebook-code">
-                    <summary>Code</summary>
-                    <div className="notebook-source">
-                    <PythonPreview code={sourceText(cell)} />
-                    </div>
-                  </details>
-                ) : (
-                  <pre className="notebook-source">{sourceText(cell)}</pre>
-                )}
+                <div className="notebook-cell-actions">
+                  {cell.cell_type === "code" && <Button className="cell-collapse-button" aria-label={`${expandedCells.has(cell.id || String(index)) ? "Collapse" : "Expand"} Python cell ${index + 1}`}
+                    aria-expanded={expandedCells.has(cell.id || String(index))} icon={expandedCells.has(cell.id || String(index)) ? "chevron-down" : "chevron-right"}
+                    onClick={() => setExpandedCells(current => { const next = new Set(current); const key = cell.id || String(index); if (next.has(key)) next.delete(key); else next.add(key); return next; })}>
+                    Python cell {index + 1}
+                  </Button>}
+
+                  <select aria-label={`Cell ${index + 1} type`} value={cell.cell_type === "raw" ? "markdown" : cell.cell_type} disabled={running}
+                    onChange={e => changeCell(index, { cell_type: e.target.value as NotebookCell["cell_type"] })}>
+                    <option value="code">Python</option><option value="markdown">Markdown</option>
+                  </select>
+                  {cell.cell_type === "code" && <Button disabled={running || Boolean(draftError) || prerequisitesBlocked || Boolean(parameterError) || Boolean(protocolError) || setupDraftDirty}
+                    onClick={() => void runCell(index)}>Run cell {index + 1}</Button>}
+                  <Button disabled={running || index === 0} onClick={() => moveCell(index, -1)}>Move up</Button>
+                  <Button disabled={running || index === notebook.document.cells.length - 1} onClick={() => moveCell(index, 1)}>Move down</Button>
+                  <Button disabled={running} onClick={() => void editCells(notebook.document.cells.filter((_, i) => i !== index))}>Delete cell</Button>
+                </div>
+                <div className="notebook-cell-source" hidden={cell.cell_type === "code" && !expandedCells.has(cell.id || String(index))}>
+                <CodeEditor label={`Cell ${index + 1} source`} value={sourceText(cell)} language={cell.cell_type === "code" ? "python" : cell.cell_type === "markdown" ? "markdown" : "text"}
+                  theme={props.theme || "light"} cspNonce={props.cspNonce || ""} readOnly={running}
+                  onChange={source => changeCell(index, { source })}
+                  onSave={() => {}} onRun={() => { if (cell.cell_type === "code") void runCell(index); }} />
+                </div>
+                {cell.cell_type === "markdown" && <MarkdownPreview markdown={sourceText(cell)} />}
+                {cell.metadata["omero-analysis-stale"] && cell.outputs?.length
+                  ? <p role="status">Output is stale: this cell has changed since it ran.</p> : null}
                 {cell.cell_type === "code" && (
                   <div className="notebook-outputs">
                     <NotebookOutputs outputs={cell.outputs || []} files={props.resultFiles || []} retrieve={props.onRetrieveResult} />

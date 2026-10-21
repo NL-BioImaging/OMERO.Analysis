@@ -3,6 +3,7 @@ from django.urls import re_path
 from . import views
 
 urlpatterns = [
+    re_path(r"^api/workspaces/recent/$", views.recent_workspaces, name="omero_analysis_recent_workspaces"),
     re_path(r"^api/shared-library/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
             views.shared_library, name="omero_analysis_shared_library"),
     re_path(r"^api/shared-library/(?P<object_type>\w+)/(?P<object_id>\d+)/(?P<item_id>[a-f0-9]{64})/history/$",
@@ -103,16 +104,6 @@ urlpatterns = [
         name="omero_analysis_workspace_snapshot_download",
     ),
     re_path(
-        r"^api/pipelines/(?P<object_type>\w+)/(?P<object_id>\d+)/templates/$",
-        views.pipeline_templates,
-        name="omero_analysis_pipeline_templates",
-    ),
-    re_path(
-        r"^api/pipeline-template/(?P<annotation_id>\d+)/download/$",
-        views.download_pipeline_template,
-        name="omero_analysis_pipeline_download",
-    ),
-    re_path(
         r"^api/notebook/(?P<annotation_id>\d+)/download/$",
         views.download_notebook,
         name="omero_analysis_notebook_download",
@@ -185,11 +176,6 @@ urlpatterns = [
         name="omero_analysis_workspace_library_download",
     ),
     re_path(
-        r"^api/settings/(?P<object_type>\w+)/(?P<object_id>\d+)/$",
-        views.analysis_settings,
-        name="omero_analysis_settings",
-    ),
-    re_path(
         r"^api/workflow-skills/$",
         views.workflow_skills,
         name="omero_analysis_workflow_skills",
@@ -198,6 +184,12 @@ urlpatterns = [
         r"^api/integrations/zarr-viewer/$",
         views.zarr_viewer_integration,
         name="omero_analysis_zarr_viewer_integration",
+    ),
+    re_path(
+        r"^api/workflow-skills/(?P<workflow_key>[a-zA-Z0-9_-]+)/notebooks/"
+        r"(?P<notebook_name>[a-z0-9-]+)/$",
+        views.workflow_notebook,
+        name="omero_analysis_workflow_notebook",
     ),
     re_path(
         r"^api/workflow-skills/(?P<workflow_key>[a-zA-Z0-9_-]+)/"

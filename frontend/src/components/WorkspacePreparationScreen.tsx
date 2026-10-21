@@ -24,7 +24,7 @@ export function WorkspacePreparationScreen({
             {error ? "Workspace could not be prepared" : "Preparing Workspace"}
           </h2>
           <RuntimeProgressPanel progress={progress} label="Preparing Analysis Workspace"
-            detail={error || "OMERO data, reusable analyses, settings, and current input bindings are being restored."} />
+            detail={error || "Restoring your notebooks, results and attached inputs."} />
           {error && <p className="workspace-preparation-error">Reload Analysis from the OMERO middle pane to retry.</p>}
         </section>
       </main>

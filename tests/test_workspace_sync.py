@@ -82,13 +82,13 @@ def test_inventory_validation_and_empty_plan_are_deterministic():
     obj = FakeObject(object_id=151, name="2DWellTestZarr")
     conn = FakeConnection(obj)
     payload = inventory(obj, conn, [{
-        "key": "method:one",
-        "kind": "method",
-        "name": "one.oa-method.json",
+        "key": "notebook:one",
+        "kind": "notebook",
+        "name": "one.ipynb",
         "mimetype": "application/json",
         "size": 12,
         "sha256": "a" * 64,
-        "logicalPath": "Methods/one.py",
+        "logicalPath": "Notebooks/one.ipynb",
         "metadata": {},
     }])
     validated = validate_inventory(
@@ -98,7 +98,7 @@ def test_inventory_validation_and_empty_plan_are_deterministic():
     assert plan["create"] == 1
     assert plan["update"] == 0
     assert plan["delete"] == 0
-    assert plan["uploadKeys"] == ["method:one"]
+    assert plan["uploadKeys"] == ["notebook:one"]
     assert plan["uploadBytes"] == 12
     assert plan["datasetName"] == "Screen-151 — Cells"
     assert plan["planToken"]
@@ -269,7 +269,9 @@ def test_workspace_snapshot_is_validated_as_the_managed_restore_item():
     with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("workspace.json", json.dumps({
             "format": "nl.bioimaging.analysis.workspace.v1",
-            "version": 1,
+            "version": 3,
+            "workspace": {"id": "workspace-1", "storageVersion": 3, "activeChatId": ""},
+            "files": [], "notebooks": [],
         }))
     data = stream.getvalue()
 
@@ -727,3 +729,31 @@ def test_first_plot_import_is_serialized_across_workspaces(monkeypatch):
     monkeypatch.setattr(ws, "_project_datasets", lambda project: [SimpleNamespace(listChildren=lambda: [object()])])
     assert ws._import_capacity(None, None, "mine") == (1, 4)
     assert calls == [None, "mine"]
+
+
+@pytest.mark.parametrize("kind", ["method", "method-python", "pipeline"])
+def test_obsolete_clients_cannot_recreate_retired_items(kind):
+    obj = FakeObject(object_id=151, name="source")
+    conn = FakeConnection(obj)
+    item = {"key": f"{kind}:old", "kind": kind, "name": "old.json",
+            "mimetype": "application/json", "size": 0, "sha256": "a" * 64,
+            "logicalPath": "Legacy/old.json", "metadata": {}}
+    with pytest.raises(UnsupportedMedia, match="Unsupported synchronization item kind"):
+        validate_inventory(inventory(obj, conn, [item]), "workspace-1", "Screen", 151, obj, conn)
+
+
+def test_plan_repairs_missing_recovery_metadata(monkeypatch):
+    from omero_analysis import workspace_sync as ws
+    obj = FakeObject(object_id=151)
+    conn = FakeConnection(obj)
+    dataset = FakeObject(object_id=454)
+    item = {"key":"notebook:one", "kind":"notebook", "name":"one.ipynb", "mimetype":"application/json",
+            "size":2,"sha256":"a"*64,"logicalPath":"Notebooks/one.ipynb","metadata":{},
+            "remote":{"object_type":"Annotation","object_id":987}}
+    monkeypatch.setattr(ws, "sync_status", lambda *args: {})
+    monkeypatch.setattr(ws, "_managed_dataset", lambda *args: dataset)
+    monkeypatch.setattr(ws, "_marker", lambda *args: (None,{"source_object_type":"Screen","source_object_id":151}))
+    monkeypatch.setattr(ws, "_read_manifest", lambda *args: (None,{"items":[item],"revision":2}))
+    plan = plan_sync(request(), conn, obj, inventory(obj, conn, [item]))
+    assert plan["uploadKeys"] == ["notebook:one"]
+    assert plan["update"] == 1

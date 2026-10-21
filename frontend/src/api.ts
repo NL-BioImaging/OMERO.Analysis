@@ -1,9 +1,6 @@
-import { MAX_TOOL_TEXT, TEMPERATURE, TOOLS } from "./constants";
 import type {
   Attachment,
   Bootstrap,
-  ProviderSettings,
-  RuntimeOutput,
   OmeroHierarchy,
   WorkspaceFile,
   WorkflowSkillCatalog,
@@ -15,8 +12,6 @@ import type {
   SyncInventory,
   SyncPlan,
   SyncStatus,
-  AnalysisSettingsBundle,
-  AnalysisSettingsStatus,
   DataQueryCapabilities,
   ZarrViewerIntegrationStatus
 } from "./types";
@@ -55,6 +50,10 @@ export interface QuerySaveReceipt {
 
 export class OmeroBridge {
   private queryResultListeners = new Set<(result: QuerySaveReceipt) => void>();
+  private schemaRequests = new Map<number, {
+    promise: Promise<Record<string, any>>;
+    listeners: Set<(value: Record<string, any>) => void>;
+  }>();
 
   subscribeQueryResults(listener: (result: QuerySaveReceipt) => void): () => void {
     this.queryResultListeners.add(listener);
@@ -82,10 +81,6 @@ export class OmeroBridge {
 
   get canSync(): boolean {
     return this.transport.has("sync_plan") && this.transport.has("sync_apply");
-  }
-
-  get canSettingsSync(): boolean {
-    return this.transport.has("settings_sync");
   }
 
   async connect(): Promise<void> {
@@ -168,31 +163,6 @@ export class OmeroBridge {
     const url = this.bootstrap.snapshotDownloadTemplate.replace(
       "/1/download/",
       `/${snapshot.annotation_id}/download/`
-    );
-    const response = await this.authorizedFetch(url);
-    if (!response.ok) throw new Error(await errorText(response));
-    return response.arrayBuffer();
-  }
-
-  async listPipelineTemplates(): Promise<Attachment[]> {
-    const context = this.bootstrap.context;
-    if (!context) return [];
-    const response = await this.authorizedFetch(
-      route(this.bootstrap.pipelineTemplatesTemplate, context.object_type, context.object_id)
-    );
-    const body = await readJson(response);
-    return attachmentList(body.pipelines);
-  }
-
-  async uploadPipelineTemplate(name: string, data: Uint8Array, workspaceId: string): Promise<Attachment> {
-    return this.uploadWorkspaceArtifact(workspaceId, "pipeline", name,
-      new Blob([data as BlobPart], { type: "application/json" }));
-  }
-
-  async downloadPipelineTemplate(template: Attachment): Promise<ArrayBuffer> {
-    const url = this.bootstrap.pipelineDownloadTemplate.replace(
-      "/1/download/",
-      `/${template.annotation_id}/download/`
     );
     const response = await this.authorizedFetch(url);
     if (!response.ok) throw new Error(await errorText(response));
@@ -427,43 +397,6 @@ export class OmeroBridge {
     }));
   }
 
-  async analysisSettings(): Promise<AnalysisSettingsStatus> {
-    const context = this.bootstrap.context;
-    if (!context) {
-      return {
-        schema: "nl.bioimaging.analysis.settings.bundle.v1",
-        synced: false,
-        payload: null
-      };
-    }
-    const response = await this.authorizedFetch(route(
-      this.bootstrap.analysisSettingsTemplate,
-      context.object_type,
-      context.object_id
-    ));
-    return await readJson(response) as AnalysisSettingsStatus;
-  }
-
-  async syncAnalysisSettings(
-    bundle: AnalysisSettingsBundle
-  ): Promise<AnalysisSettingsStatus> {
-    const context = this.bootstrap.context;
-    if (!context) throw new Error("No OMERO context for settings synchronization");
-    const response = await this.authorizedFetch(route(
-      this.bootstrap.analysisSettingsTemplate,
-      context.object_type,
-      context.object_id
-    ), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": csrfToken()
-      },
-      body: JSON.stringify(bundle)
-    });
-    return await readJson(response) as AnalysisSettingsStatus;
-  }
-
   async listWorkflowSkills(): Promise<WorkflowSkillCatalog> {
     const response = await fetch(this.bootstrap.workflowSkillsUrl, {
       credentials: "same-origin"
@@ -496,6 +429,23 @@ export class OmeroBridge {
   }
 
   async remoteSchema(annotationId: number, onProgress?: (value: Record<string, any>) => void): Promise<Record<string, any>> {
+    // Inspector and compatibility checks share in-flight source preparation.
+    // Keeping only pending requests ensures later checks revalidate authorization.
+    let request = this.schemaRequests.get(annotationId);
+    if (!request) {
+      const listeners = new Set<(value: Record<string, any>) => void>();
+      if (onProgress) listeners.add(onProgress);
+      const promise = this.loadRemoteSchema(annotationId, value => {
+        for (const listener of listeners) listener(value);
+      }).finally(() => { this.schemaRequests.delete(annotationId); });
+      request = { promise, listeners };
+      this.schemaRequests.set(annotationId, request);
+    } else if (onProgress) request.listeners.add(onProgress);
+    try { return await request.promise; }
+    finally { if (onProgress) request.listeners.delete(onProgress); }
+  }
+
+  private async loadRemoteSchema(annotationId: number, onProgress?: (value: Record<string, any>) => void): Promise<Record<string, any>> {
     const url = (this.bootstrap.dataSourceSchemaTemplate || "").replace(
       "/1/schema/", `/${annotationId}/schema/`
     );
@@ -665,6 +615,17 @@ export class OmeroBridge {
       }
     }
     return catalog as AnalysisSkillProviderCatalog;
+  }
+
+  async loadWorkflowNotebook(asset: import("./WorkflowExamples").WorkflowNotebookAsset): Promise<File> {
+    const base = this.bootstrap.workflowSkillsUrl.replace(/\/?$/, "/");
+    const url = `${base}${encodeURIComponent(asset.workflow_key)}/notebooks/${encodeURIComponent(asset.name)}/?sha256=${encodeURIComponent(asset.sha256)}&commit=${encodeURIComponent(asset.resolved_commit)}`;
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(await errorText(response));
+    const data = await response.arrayBuffer();
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data)), b => b.toString(16).padStart(2, "0")).join("");
+    if (digest !== asset.sha256) throw new Error("The example changed since the catalog was loaded. Refresh Libraries before importing.");
+    return new File([data], `${asset.name}.ipynb`, { type: "application/x-ipynb+json" });
   }
 
   async loadWorkflowSkill(
@@ -873,549 +834,4 @@ function workflowSkillPackageFrom(value: unknown): WorkflowSkillPackage {
     }
   }
   return body as WorkflowSkillPackage;
-}
-
-export interface AiMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | AiContentPart[] | null;
-  tool_call_id?: string;
-  tool_calls?: ToolCall[];
-}
-
-export type AiContentPart =
-  | { type: "text"; text: string }
-  | { type: "image"; mediaType: "image/png" | "image/jpeg" | "image/webp"; base64: string };
-
-function messageText(content: AiMessage["content"]): string {
-  if (typeof content === "string") return content;
-  if (!content) return "";
-  return content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
-}
-
-export function openAiMessages(messages: AiMessage[]): unknown[] {
-  return messages.map((message) => ({
-    ...message,
-    content: Array.isArray(message.content)
-      ? message.content.map((part) => part.type === "text"
-        ? part
-        : {
-            type: "image_url",
-            image_url: { url: `data:${part.mediaType};base64,${part.base64}` }
-          })
-      : message.content
-  }));
-}
-
-export interface ToolCall {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-}
-
-export interface AiResponse {
-  choices: Array<{
-    message: {
-      role: "assistant";
-      content: string | null;
-      tool_calls?: ToolCall[];
-    };
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
-}
-
-export async function completeChat(
-  settings: ProviderSettings,
-  messages: AiMessage[],
-  signal: AbortSignal,
-  onDelta?: (content: string) => void,
-  tools: readonly unknown[] = TOOLS,
-  forceToolCall = false
-): Promise<AiResponse> {
-  return settings.protocol === "anthropic"
-    ? completeAnthropic(settings, messages, signal, onDelta, tools, forceToolCall)
-    : completeOpenAi(settings, messages, signal, onDelta, tools, forceToolCall);
-}
-
-const visionProbeCache = new Map<string, Promise<boolean>>();
-const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-
-export function probeVisionSupport(
-  settings: ProviderSettings,
-  signal: AbortSignal
-): Promise<boolean> {
-  const key = [settings.protocol, settings.endpoint.trim(), settings.model.trim()].join("|");
-  const existing = visionProbeCache.get(key);
-  if (existing) return existing;
-  const pending = completeChat(settings, [{
-    role: "user",
-    content: [
-      { type: "text", text: "Capability check only: reply with OK if you can inspect this harmless one-pixel image." },
-      { type: "image", mediaType: "image/png", base64: ONE_PIXEL_PNG }
-    ]
-  }], signal, undefined, []).then(() => true, () => false);
-  visionProbeCache.set(key, pending);
-  return pending;
-}
-
-export async function validateProviderConnection(
-  settings: ProviderSettings,
-  signal: AbortSignal
-): Promise<string> {
-  if (!settings.endpoint.trim()) throw new Error("The API endpoint is empty");
-  if (!settings.model.trim()) throw new Error("The model or deployment is empty");
-  if (
-    (settings.protocol === "anthropic" || settings.authMode !== "none") &&
-    !settings.apiKey.trim()
-  ) {
-    throw new Error("The API key is empty");
-  }
-  const endpoint = providerEndpoint(settings);
-  const isAnthropic = settings.protocol === "anthropic";
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-  };
-  if (isAnthropic) {
-    headers["x-api-key"] = settings.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-  } else if (settings.authMode === "api-key") {
-    headers["api-key"] = settings.apiKey;
-  } else if (settings.authMode === "bearer") {
-    headers.Authorization = `Bearer ${settings.apiKey}`;
-  }
-  const openAiBody = (tokenParameter: "max_tokens" | "max_completion_tokens") => ({
-    model: settings.model,
-    [tokenParameter]: tokenParameter === "max_completion_tokens" ? 128 : 1,
-    messages: [{ role: "user", content: "Reply OK" }]
-  });
-  const prefersCompletionTokens = /^(?:gpt-5|o[1-9])(?:[-.]|$)/i.test(
-    settings.model.trim()
-  );
-  const request = (tokenParameter: "max_tokens" | "max_completion_tokens") =>
-    fetch(endpoint, {
-      method: "POST",
-      signal,
-      headers,
-      body: JSON.stringify(isAnthropic ? {
-        model: settings.model,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "Reply OK" }]
-      } : openAiBody(tokenParameter))
-    });
-  let response: Response;
-  try {
-    const preferred = prefersCompletionTokens
-      ? "max_completion_tokens"
-      : "max_tokens";
-    response = await request(preferred);
-    if (!isAnthropic && response.status === 400) {
-      const detail = await response.clone().text().catch(() => "");
-      const unsupported = detail.toLowerCase().includes("unsupported parameter");
-      const namesAlternative =
-        detail.includes("max_completion_tokens") || detail.includes("max_tokens");
-      if (unsupported && namesAlternative) {
-        response = await request(
-          preferred === "max_tokens" ? "max_completion_tokens" : "max_tokens"
-        );
-      }
-    }
-  } catch (error) {
-    if (signal.aborted) throw new Error("Connection validation timed out");
-    throw new Error(
-      `The browser could not reach the endpoint. Check the URL, TLS certificate, network, and CORS policy. ${String(error)}`
-    );
-  }
-  if (!response.ok) {
-    const detail = await errorText(response);
-    const hint = response.status === 401 || response.status === 403
-      ? " Check the API key and authentication-header type."
-      : response.status === 404
-        ? " Check whether the endpoint is a base URL or a complete API route."
-        : response.status === 400
-          ? " Check the model/deployment name and provider protocol."
-          : "";
-    throw new Error(`${response.status} ${detail}.${hint}`.replace(/\.\./g, "."));
-  }
-  const body = await response.json().catch(() => null);
-  if (!body || typeof body !== "object") {
-    throw new Error("The provider responded, but its response was not valid JSON");
-  }
-  if (isAnthropic) {
-    if (!Array.isArray((body as any).content)) {
-      throw new Error("The endpoint responded but not with an Anthropic Messages response");
-    }
-  } else if (!Array.isArray((body as any).choices)) {
-    throw new Error("The endpoint responded but not with an OpenAI-compatible response");
-  }
-  return `Connection validated for ${settings.model} at ${endpoint}`;
-}
-
-export function providerLabel(settings: ProviderSettings): string {
-  return settings.protocol === "anthropic" ? "Anthropic" : "AI provider";
-}
-
-export function providerEndpoint(settings: ProviderSettings): string {
-  const value = settings.endpoint.trim().replace(/\/+$/, "");
-  if (!value) throw new Error("Configure an AI API endpoint in Settings");
-  if (settings.protocol === "anthropic") {
-    return /\/messages$/i.test(value) ? value : `${value}/v1/messages`;
-  }
-  return /\/chat\/completions$/i.test(value)
-    ? value
-    : `${value}/chat/completions`;
-}
-
-function isLoopbackEndpoint(endpoint: string): boolean {
-  try {
-    const hostname = new URL(endpoint).hostname.toLowerCase();
-    return hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname === "127.0.0.1" ||
-      hostname === "[::1]";
-  } catch {
-    return false;
-  }
-}
-
-async function completeOpenAi(
-  settings: ProviderSettings,
-  messages: AiMessage[],
-  signal: AbortSignal,
-  onDelta?: (content: string) => void,
-  tools: readonly unknown[] = TOOLS,
-  forceToolCall = false
-): Promise<AiResponse> {
-  const toolConfiguration = tools.length
-    ? { tools, tool_choice: forceToolCall ? "required" : "auto" }
-    : {};
-  const authorization: Record<string, string> = settings.authMode === "api-key"
-    ? { "api-key": settings.apiKey }
-    : settings.authMode === "bearer"
-      ? { Authorization: `Bearer ${settings.apiKey}` }
-      : {};
-  const endpoint = providerEndpoint(settings);
-  const request = (stream: boolean) => fetch(endpoint, {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      ...authorization
-    },
-    body: JSON.stringify({
-      model: settings.model,
-      temperature: TEMPERATURE,
-      messages: openAiMessages(messages),
-      ...toolConfiguration,
-      stream,
-      stream_options: stream ? { include_usage: true } : undefined
-    })
-  });
-  const streaming = Boolean(onDelta);
-  let response = await request(streaming);
-  // Some local OpenAI-compatible runtimes can fail while incrementally
-  // reconstructing a streamed tool call even though the same completion is
-  // valid as a single response. Retry once without streaming so a transient
-  // parser failure does not abort the complete analysis turn.
-  if (
-    streaming &&
-    isLoopbackEndpoint(endpoint) &&
-    response.status >= 500 &&
-    response.status < 600 &&
-    !signal.aborted
-  ) {
-    onDelta?.("");
-    response = await request(false);
-  }
-  if (!response.ok) throw new Error(await errorText(response));
-  if (!onDelta || !response.headers.get("content-type")?.includes("text/event-stream")) {
-    return aiResponseFrom(await response.json(), providerLabel(settings));
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error(`${providerLabel(settings)} returned an empty response stream`);
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let content = "";
-  let usage: AiResponse["usage"];
-  const calls = new Map<number, ToolCall>();
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const raw = line.slice(5).trim();
-      if (!raw || raw === "[DONE]") continue;
-      const event = JSON.parse(raw);
-      if (event.usage) usage = event.usage;
-      const delta = event.choices?.[0]?.delta;
-      if (delta?.content) {
-        content += delta.content;
-        onDelta(content);
-      }
-      for (const fragment of delta?.tool_calls || []) {
-        const index = Number(fragment.index || 0);
-        const current = calls.get(index) || {
-          id: "",
-          type: "function",
-          function: { name: "", arguments: "" }
-        };
-        current.id += fragment.id || "";
-        current.function.name += fragment.function?.name || "";
-        current.function.arguments += fragment.function?.arguments || "";
-        calls.set(index, current);
-      }
-    }
-    if (done) break;
-  }
-  return aiResponseFrom({
-    choices: [{
-      message: {
-        role: "assistant",
-        content: content || null,
-        tool_calls: calls.size ? Array.from(calls.values()) : undefined
-      }
-    }],
-    usage
-  }, providerLabel(settings));
-}
-
-type AnthropicBlock =
-  | { type: "text"; text: string }
-  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
-  | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; tool_use_id: string; content: string };
-
-export function anthropicMessages(messages: AiMessage[]) {
-  const system = messages
-    .filter((message) => message.role === "system")
-    .map((message) => messageText(message.content))
-    .filter(Boolean)
-    .join("\n\n");
-  const converted: Array<{ role: "user" | "assistant"; content: string | AnthropicBlock[] }> = [];
-  for (const message of messages.filter((item) => item.role !== "system")) {
-    let role: "user" | "assistant";
-    let content: string | AnthropicBlock[];
-    if (message.role === "assistant") {
-      role = "assistant";
-      const blocks: AnthropicBlock[] = [];
-      const text = messageText(message.content);
-      if (text) blocks.push({ type: "text", text });
-      for (const call of message.tool_calls || []) {
-        let input: unknown = {};
-        try {
-          input = JSON.parse(call.function.arguments || "{}");
-        } catch {
-          input = {};
-        }
-        blocks.push({
-          type: "tool_use",
-          id: call.id,
-          name: call.function.name,
-          input
-        });
-      }
-      content = blocks.length ? blocks : "";
-    } else if (message.role === "tool") {
-      role = "user";
-      content = [{
-        type: "tool_result",
-        tool_use_id: message.tool_call_id || "",
-        content: messageText(message.content)
-      }];
-    } else {
-      role = "user";
-      content = Array.isArray(message.content)
-        ? message.content.map((part): AnthropicBlock => part.type === "text"
-          ? { type: "text", text: part.text }
-          : {
-              type: "image",
-              source: { type: "base64", media_type: part.mediaType, data: part.base64 }
-            })
-        : message.content || "";
-    }
-    const previous = converted.at(-1);
-    if (previous?.role === role) {
-      const priorBlocks: AnthropicBlock[] = typeof previous.content === "string"
-        ? [{ type: "text", text: previous.content }]
-        : previous.content;
-      const nextBlocks: AnthropicBlock[] = typeof content === "string"
-        ? [{ type: "text", text: content }]
-        : content;
-      previous.content = [...priorBlocks, ...nextBlocks];
-    } else {
-      converted.push({ role, content });
-    }
-  }
-  return { system, messages: converted };
-}
-
-function anthropicTools(tools: readonly unknown[]) {
-  return tools.flatMap((raw) => {
-    const outer = raw && typeof raw === "object"
-      ? raw as Record<string, unknown>
-      : {};
-    const fn = outer.function && typeof outer.function === "object"
-      ? outer.function as Record<string, unknown>
-      : {};
-    return typeof fn.name === "string"
-      ? [{
-          name: fn.name,
-          description: typeof fn.description === "string" ? fn.description : "",
-          input_schema: fn.parameters || {
-            type: "object",
-            properties: {},
-            additionalProperties: false
-          }
-        }]
-      : [];
-  });
-}
-
-async function completeAnthropic(
-  settings: ProviderSettings,
-  messages: AiMessage[],
-  signal: AbortSignal,
-  onDelta?: (content: string) => void,
-  tools: readonly unknown[] = TOOLS,
-  forceToolCall = false
-): Promise<AiResponse> {
-  const converted = anthropicMessages(messages);
-  const response = await fetch(providerEndpoint(settings), {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": settings.apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: settings.model,
-      max_tokens: 4096,
-      temperature: TEMPERATURE,
-      system: converted.system || undefined,
-      messages: converted.messages,
-      tools: tools.length ? anthropicTools(tools) : undefined,
-      tool_choice: tools.length && forceToolCall ? { type: "any" } : undefined
-    })
-  });
-  if (!response.ok) throw new Error(await errorText(response));
-  const body = record(await response.json(), "Anthropic response");
-  if (!Array.isArray(body.content)) {
-    throw new Error("Anthropic returned an invalid response");
-  }
-  const text = body.content
-    .filter((block: unknown) =>
-      Boolean(block && typeof block === "object" &&
-        (block as Record<string, unknown>).type === "text")
-    )
-    .map((block: unknown) => String((block as Record<string, unknown>).text || ""))
-    .join("");
-  const toolCalls: ToolCall[] = body.content.flatMap((block: unknown) => {
-    const value = block && typeof block === "object"
-      ? block as Record<string, unknown>
-      : {};
-    if (
-      value.type !== "tool_use" ||
-      typeof value.id !== "string" ||
-      typeof value.name !== "string"
-    ) return [];
-    return [{
-      id: value.id,
-      type: "function" as const,
-      function: {
-        name: value.name,
-        arguments: JSON.stringify(value.input || {})
-      }
-    }];
-  });
-  const rawUsage = body.usage && typeof body.usage === "object"
-    ? body.usage as Record<string, unknown>
-    : {};
-  const promptTokens = Number(rawUsage.input_tokens || 0);
-  const completionTokens = Number(rawUsage.output_tokens || 0);
-  if (text && onDelta) onDelta(text);
-  return {
-    choices: [{
-      message: {
-        role: "assistant",
-        content: text || null,
-        tool_calls: toolCalls.length ? toolCalls : undefined
-      }
-    }],
-    usage: {
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      total_tokens: promptTokens + completionTokens
-    }
-  };
-}
-
-function aiResponseFrom(value: unknown, provider = "AI provider"): AiResponse {
-  const body = record(value, "AI response");
-  if (!Array.isArray(body.choices) || !body.choices.length) {
-    throw new Error(`${provider} returned no response choices`);
-  }
-  for (const choice of body.choices) {
-    const message = record(record(choice, "AI choice").message, "AI message");
-    if (message.role !== "assistant" || !(message.content == null || typeof message.content === "string")) {
-      throw new Error(`${provider} returned an invalid assistant message`);
-    }
-    if (message.tool_calls != null) {
-      if (!Array.isArray(message.tool_calls)) throw new Error(`${provider} returned invalid tool calls`);
-      for (const raw of message.tool_calls) {
-        const call = record(raw, "AI tool call");
-        const fn = record(call.function, "AI tool function");
-        if (
-          typeof call.id !== "string" ||
-          call.type !== "function" ||
-          typeof fn.name !== "string" ||
-          typeof fn.arguments !== "string"
-        ) throw new Error(`${provider} returned an invalid tool call`);
-      }
-    }
-  }
-  return body as AiResponse;
-}
-
-export function toolResultText(output: RuntimeOutput): string {
-  const value = JSON.stringify(output.modelPayload);
-  return value.length > 64 * 1024
-    ? `${value.slice(0, 64 * 1024)}\n[tool output truncated]`
-    : value;
-}
-
-export function toolErrorText(error: unknown): string {
-  const rawDetail = String(error instanceof Error ? error.message : error);
-  const pythonBoundary = rawDetail.search(/\n(?:PythonError:|Traceback \(most recent call last\):)/);
-  const relevantDetail = pythonBoundary >= 0 ? rawDetail.slice(pythonBoundary + 1) : rawDetail;
-  const detail = relevantDetail
-    .split("\n")
-    .filter((line) => !/pyodide(?:-asm)?\.js|wasm-function\[|_pythonexc2js/i.test(line))
-    .join("\n")
-    .slice(0, 12 * 1024);
-  const value = JSON.stringify({
-    ok: false,
-    error: detail,
-    instruction:
-      "Inspect this error, correct the code or choose an available package, and call run_python again. Do not stop after a recoverable tool error.",
-    available_packages: [
-      "Python standard library",
-      "numpy",
-      "pandas",
-      "matplotlib",
-      "seaborn",
-      "scipy",
-      "duckdb",
-      "pyarrow",
-      "python-calamine",
-      "xlrd"
-    ]
-  });
-  return value.length > MAX_TOOL_TEXT
-    ? `${value.slice(0, MAX_TOOL_TEXT)}\n[tool error truncated]`
-    : value;
 }

@@ -1,11 +1,4 @@
-import {
-  completeChat,
-  anthropicMessages,
-  openAiMessages,
-  OmeroBridge,
-  providerEndpoint,
-  validateProviderConnection
-} from "./api";
+import { OmeroBridge } from "./api";
 import type { Bootstrap, SyncInventory, SyncPlan } from "./types";
 
 const bootstrap: Bootstrap = {
@@ -27,8 +20,6 @@ const bootstrap: Bootstrap = {
   snapshotsTemplate: "/snapshots/TYPE/1/",
   snapshotUploadTemplate: "/snapshots/TYPE/1/",
   snapshotDownloadTemplate: "/snapshot/1/download/",
-  pipelineTemplatesTemplate: "/pipelines/TYPE/1/",
-  pipelineDownloadTemplate: "/pipeline/1/download/",
   notebookDownloadTemplate: "/notebook/1/download/",
   notebookUploadTemplate: "/notebooks/TYPE/1/upload/",
   workspaceSyncStatusTemplate: "/workspace-sync/TYPE/1/WORKSPACE/",
@@ -37,7 +28,6 @@ const bootstrap: Bootstrap = {
   workspaceSyncRemoveTemplate: "/workspace-sync/TYPE/1/WORKSPACE/remove/",
   workspaceLibraryTemplate: "/workspace-library/TYPE/1/",
   workspaceLibraryDownloadTemplate: "/workspace-library/item/1/download/",
-  analysisSettingsTemplate: "/settings/TYPE/1/",
   workflowSkillsUrl: "/workflow-skills/",
   dataQueryCapabilitiesUrl: "/data-query/capabilities/",
   zarrViewerStatusUrl: "/integrations/zarr-viewer/",
@@ -113,7 +103,7 @@ describe("OMERO capability renewal", () => {
       }
       downloads += 1;
       if (downloads === 1) {
-        return new Response(JSON.stringify({ error: { message: "expired" } }), {
+        return new Response(JSON.stringify({ error: { code: "invalid_context_token", message: "expired" } }), {
           status: 403,
           headers: { "Content-Type": "application/json" }
         });
@@ -145,39 +135,6 @@ describe("OMERO capability renewal", () => {
     const bridge = new OmeroBridge(bootstrap);
     await expect(bridge.connect()).rejects.toThrow("invalid context capability");
     vi.unstubAllGlobals();
-  });
-});
-
-describe("multimodal provider serialization", () => {
-  const messages = [{
-    role: "user" as const,
-    content: [
-      { type: "text" as const, text: "user-supplied image" },
-      { type: "image" as const, mediaType: "image/png" as const, base64: "aW1hZ2U=" }
-    ]
-  }];
-
-  it("maps normalized images to OpenAI image_url parts", () => {
-    expect(openAiMessages(messages)).toEqual([{
-      role: "user",
-      content: [
-        { type: "text", text: "user-supplied image" },
-        { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
-      ]
-    }]);
-  });
-
-  it("maps normalized images to Anthropic base64 source blocks", () => {
-    expect(anthropicMessages(messages).messages[0]).toEqual({
-      role: "user",
-      content: [
-        { type: "text", text: "user-supplied image" },
-        {
-          type: "image",
-          source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
-        }
-      ]
-    });
   });
 });
 
@@ -371,268 +328,6 @@ describe("remote data-query policy", () => {
   });
 });
 
-describe("AI completion requests", () => {
-  it("uses only the user-configured endpoint", () => {
-    expect(providerEndpoint({
-      protocol: "openai",
-      endpoint: "https://provider.example/v1",
-      authMode: "bearer",
-      model: "model",
-      apiKey: "key",
-      rememberKey: false,
-      contextWindow: 0
-    })).toBe("https://provider.example/v1/chat/completions");
-    expect(providerEndpoint({
-      protocol: "anthropic",
-      endpoint: "https://claude.example",
-      authMode: "bearer",
-      model: "model",
-      apiKey: "key",
-      rememberKey: false,
-      contextWindow: 0
-    })).toBe("https://claude.example/v1/messages");
-  });
-
-  it("omits tool configuration during forced final synthesis", async () => {
-    let requestBody: Record<string, unknown> = {};
-    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      requestBody = JSON.parse(String(init?.body || "{}"));
-      return new Response(JSON.stringify({
-        choices: [{ message: { role: "assistant", content: "Final answer" } }]
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }));
-
-    await completeChat(
-      {
-        protocol: "openai",
-        endpoint: "https://provider.example/v1",
-        authMode: "bearer",
-        model: "gpt-test",
-        apiKey: "key",
-        rememberKey: false,
-        contextWindow: 0
-      },
-      [{ role: "user", content: "answer now" }],
-      new AbortController().signal,
-      undefined,
-      []
-    );
-
-    expect(requestBody).not.toHaveProperty("tools");
-    expect(requestBody).not.toHaveProperty("tool_choice");
-    vi.unstubAllGlobals();
-  });
-
-  it("can require a tool call when output evidence is missing", async () => {
-    let requestBody: Record<string, unknown> = {};
-    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      requestBody = JSON.parse(String(init?.body || "{}"));
-      return new Response(JSON.stringify({
-        choices: [{ message: { role: "assistant", content: null, tool_calls: [] } }]
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }));
-
-    await completeChat(
-      {
-        protocol: "openai",
-        endpoint: "http://localhost:1234/v1",
-        authMode: "none",
-        model: "local-model",
-        apiKey: "",
-        rememberKey: false,
-        contextWindow: 0
-      },
-      [{ role: "user", content: "create a plot" }],
-      new AbortController().signal,
-      undefined,
-      [{ type: "function", function: { name: "run_python" } }],
-      true
-    );
-
-    expect(requestBody).toHaveProperty("tool_choice", "required");
-    vi.unstubAllGlobals();
-  });
-
-  it("validates a generic OpenAI-compatible endpoint", async () => {
-    let requestBody: Record<string, unknown> = {};
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { role: "assistant", content: "OK" } }]
-    }), { status: 200, headers: { "Content-Type": "application/json" } })));
-    const message = await validateProviderConnection({
-      protocol: "openai",
-      endpoint: "https://provider.example/v1",
-      authMode: "bearer",
-      model: "model",
-      apiKey: "key",
-      rememberKey: false,
-      contextWindow: 0
-    }, new AbortController().signal);
-    expect(message).toContain("Connection validated");
-    expect(fetch).toHaveBeenCalledWith(
-      "https://provider.example/v1/chat/completions",
-      expect.objectContaining({ method: "POST" })
-    );
-    requestBody = JSON.parse(String(
-      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body
-    ));
-    expect(requestBody).toHaveProperty("max_tokens", 1);
-    expect(requestBody).not.toHaveProperty("max_completion_tokens");
-    vi.unstubAllGlobals();
-  });
-
-  it("supports a keyless local OpenAI-compatible endpoint", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { role: "assistant", content: "OK" } }]
-    }), { status: 200, headers: { "Content-Type": "application/json" } })));
-    await validateProviderConnection({
-      protocol: "openai",
-      endpoint: "http://localhost:1234/v1",
-      authMode: "none",
-      model: "local-model",
-      apiKey: "",
-      rememberKey: false,
-      contextWindow: 0
-    }, new AbortController().signal);
-    const headers = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers;
-    expect(headers).not.toHaveProperty("Authorization");
-    expect(headers).not.toHaveProperty("api-key");
-    vi.unstubAllGlobals();
-  });
-
-  it("retries a local streamed 5xx once without streaming", async () => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce(new Response("Internal Server Error", {
-        status: 500,
-        statusText: "Internal Server Error"
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        choices: [{ message: { role: "assistant", content: "Recovered" } }]
-      }), { status: 200, headers: { "Content-Type": "application/json" } })));
-
-    await expect(completeChat(
-      {
-        protocol: "openai",
-        endpoint: "http://localhost:1234/v1",
-        authMode: "none",
-        model: "local-model",
-        apiKey: "",
-        rememberKey: false,
-        contextWindow: 0
-      },
-      [{ role: "user", content: "use a tool" }],
-      new AbortController().signal,
-      () => undefined
-    )).resolves.toMatchObject({
-      choices: [{ message: { content: "Recovered" } }]
-    });
-
-    expect(fetch).toHaveBeenCalledTimes(2);
-    const firstBody = JSON.parse(String(
-      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body
-    ));
-    const retryBody = JSON.parse(String(
-      (vi.mocked(fetch).mock.calls[1][1] as RequestInit).body
-    ));
-    expect(firstBody).toHaveProperty("stream", true);
-    expect(firstBody).toHaveProperty("stream_options.include_usage", true);
-    expect(retryBody).toHaveProperty("stream", false);
-    expect(retryBody).not.toHaveProperty("stream_options");
-    vi.unstubAllGlobals();
-  });
-
-  it("does not automatically retry a remote provider 5xx", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("Internal Server Error", {
-      status: 500,
-      statusText: "Internal Server Error"
-    })));
-
-    await expect(completeChat(
-      {
-        protocol: "openai",
-        endpoint: "https://provider.example/v1",
-        authMode: "bearer",
-        model: "model",
-        apiKey: "key",
-        rememberKey: false,
-        contextWindow: 0
-      },
-      [{ role: "user", content: "answer" }],
-      new AbortController().signal,
-      () => undefined
-    )).rejects.toThrow("500 Internal Server Error");
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
-  });
-
-  it("uses the GPT-5 completion-token parameter", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { role: "assistant", content: "OK" } }]
-    }), { status: 200, headers: { "Content-Type": "application/json" } })));
-    await validateProviderConnection({
-      protocol: "openai",
-      endpoint: "https://provider.example/v1",
-      authMode: "api-key",
-      model: "gpt-5",
-      apiKey: "key",
-      rememberKey: false,
-      contextWindow: 0
-    }, new AbortController().signal);
-    const body = JSON.parse(String(
-      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body
-    ));
-    expect(body).toHaveProperty("max_completion_tokens", 128);
-    expect(body).not.toHaveProperty("max_tokens");
-    vi.unstubAllGlobals();
-  });
-
-  it("retries the alternate token parameter when a compatible provider requests it", async () => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        error: {
-          message: "Unsupported parameter: max_tokens. Use max_completion_tokens."
-        }
-      }), { status: 400, headers: { "Content-Type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        choices: [{ message: { role: "assistant", content: "OK" } }]
-      }), { status: 200, headers: { "Content-Type": "application/json" } })));
-    await expect(validateProviderConnection({
-      protocol: "openai",
-      endpoint: "https://provider.example/v1",
-      authMode: "bearer",
-      model: "custom-model",
-      apiKey: "key",
-      rememberKey: false,
-      contextWindow: 0
-    }, new AbortController().signal)).resolves.toContain("Connection validated");
-    expect(fetch).toHaveBeenCalledTimes(2);
-    const retry = JSON.parse(String(
-      (vi.mocked(fetch).mock.calls[1][1] as RequestInit).body
-    ));
-    expect(retry).toHaveProperty("max_completion_tokens", 128);
-    vi.unstubAllGlobals();
-  });
-
-  it("reports authentication failures with a useful hint", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      error: { message: "invalid key" }
-    }), { status: 401, headers: { "Content-Type": "application/json" } })));
-    await expect(validateProviderConnection({
-      protocol: "openai",
-      endpoint: "https://provider.example/v1",
-      authMode: "api-key",
-      model: "model",
-      apiKey: "bad",
-      rememberKey: false,
-      contextWindow: 0
-    }, new AbortController().signal)).rejects.toThrow(
-      "API key and authentication-header type"
-    );
-    vi.unstubAllGlobals();
-  });
-});
-
-
 it("saves notebook artifacts only through an explicitly scoped workspace route", async () => {
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -647,4 +342,30 @@ it("saves notebook artifacts only through an explicitly scoped workspace route",
   await bridge.uploadNotebook("own.ipynb", new Uint8Array([123, 125]), "my-workspace");
   expect(calls).toContain("/workspace-sync/Dataset/42/my-workspace/artifact/");
   expect(calls).not.toContain("/notebooks/Dataset/42/upload/");
+});
+
+
+it("coalesces source preparation across Inspector and compatibility, then revalidates later", async () => {
+  let release: ((value: Response) => void) | undefined;
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === "/token/") return Promise.resolve(new Response(JSON.stringify({
+      context_token: "test", operations: ["data_query_schema"]
+    })));
+    return new Promise<Response>(resolve => { release = resolve; });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const bridge = new OmeroBridge({ ...bootstrap, dataSourceSchemaTemplate: "/sources/1/schema/" });
+  await bridge.connect();
+  const first = bridge.remoteSchema(752);
+  const second = bridge.remoteSchema(752);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/schema/"))).toHaveLength(1);
+  release!(new Response(JSON.stringify({ tables: [{ name: "data" }] })));
+  expect(await first).toEqual(await second);
+  release = undefined;
+  const later = bridge.remoteSchema(752);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  release!(new Response(JSON.stringify({ tables: [] })));
+  expect(await later).toEqual({ tables: [] });
+  expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/schema/"))).toHaveLength(2);
 });

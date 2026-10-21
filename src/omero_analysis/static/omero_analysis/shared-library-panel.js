@@ -1,4 +1,4 @@
-import { n as A, c as I } from "./notebookCompatibility-BPEctqs4.js";
+import { aE as A, c as I } from "./notebookCompatibility-B372RqDU.js";
 async function $(p, O, q) {
   const h = p.querySelector(".oa-shared-library");
   if (!h) return;

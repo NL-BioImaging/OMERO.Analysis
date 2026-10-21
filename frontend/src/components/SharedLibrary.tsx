@@ -4,7 +4,7 @@ import type { AnalysisWorkspace, SharedLibraryCatalogue, SharedLibraryItem } fro
 import { serializeNotebook } from "../NotebookView";
 import { sanitizeProtocolNotebook } from "../notebookProtocol";
 import { compatibilityLabel, notebookCompatibility, type CompatibilitySource } from "../notebookCompatibility";
-import { Input } from "./BlueprintControls";
+import { Input, Button } from "./BlueprintControls";
 
 export function SharedLibrary({ bridge, workspace, onImport, inspectLocal, initialSelection = [] }: {
   bridge: OmeroBridge; workspace: AnalysisWorkspace;
@@ -81,12 +81,12 @@ export function SharedLibrary({ bridge, workspace, onImport, inspectLocal, initi
     <div className="shared-library-controls">
       <label className="library-search"><span className="sr-only">Filter shared items</span>
         <Input type="search" placeholder="Filter notebooks and plate templates…" value={query} onChange={e => setQuery(e.target.value)} /></label>
-      <button disabled={busy} onClick={() => void load(true)}>Refresh shared library</button>
+      <Button disabled={busy} onClick={() => void load(true)}>Refresh shared library</Button>
     </div>
     {catalogue?.available && <>
       <div className="shared-library-controls">
       <label><input type="checkbox" checked={compatibleOnly} onChange={e => setCompatibleOnly(e.target.checked)} />Compatible notebooks only</label>
-      <button disabled={busy} onClick={() => void check()}>Check compatibility</button>
+      <Button disabled={busy} onClick={() => void check()}>Check compatibility</Button>
       </div>
       <p>Compatibility checks declared inputs, not scientific suitability. Import notebooks to supply missing inputs later.</p>
       <div className="analysis-library-tree">{(["template", "notebook"] as const).map(group => {
@@ -107,22 +107,22 @@ export function SharedLibrary({ bridge, workspace, onImport, inspectLocal, initi
                 <small className="shared-item-compatibility">{!item.available ? item.error : group === "notebook"
                   ? `${compatibilityLabel[match.status]} — ${match.reasons.join("; ")}` : "Plate template · independent Workspace input"}</small>
               </span></label>
-            {item.revisionCount > 0 && <button disabled={busy} onClick={async () => {
+            {item.revisionCount > 0 && <Button disabled={busy} onClick={async () => {
               try { const value = await bridge.sharedItemHistory(item.id); setHistory(prev => ({ ...prev, [item.id]: value.revisions.map(r => `${r.revision.slice(0, 12)} · ${new Date(r.observedAt * 1000).toLocaleString()} · ${r.origin}`) })); }
               catch (e) { setError(String(e)); }
-            }}>Revision history</button>}
+            }}>Revision history</Button>}
             {history[item.id] && <ul>{history[item.id].map(r => <li key={r}>{r}</li>)}</ul>}
           </li>;
         })}</ul>
         {!visible.length && <p className="library-tree-empty">No matching items.</p>}
       </details>})}</div>
       {!catalogue.items.length && <p>No shared items yet.</p>}
-      <button disabled={busy || !catalogue.items.some(i => i.available && selected.has(i.id))} onClick={async () => {
+      <Button disabled={busy || !catalogue.items.some(i => i.available && selected.has(i.id))} onClick={async () => {
         setBusy(true); setError("");
         try { await onImport(catalogue.libraryId, catalogue.items.filter(i => i.available && selected.has(i.id))); setSelected(new Set()); }
         catch (e) { setError(String(e)); }
         finally { setBusy(false); }
-      }}>Import selected shared items</button>
+      }}>Import selected shared items</Button>
       {catalogue.canPublish && <details className="shared-publish">
         <summary>Publish to shared library</summary>
         <p>Destination: {catalogue.destination}</p>
@@ -146,7 +146,7 @@ export function SharedLibrary({ bridge, workspace, onImport, inspectLocal, initi
           <label>Shared filename <input value={name} onChange={e => { setName(e.target.value); setReviewed(false); }} /></label>
           <p>{catalogue.items.some(i => i.kind === kind && i.name === name) ? "Publishes a new revision of the existing item." : "Publishes a new shared item."}</p>
           <label><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} />I reviewed this file and its destination groups.</label>
-          <button disabled={busy || !reviewed || !name} onClick={() => void publish()}>Publish to shared library</button>
+          <Button disabled={busy || !reviewed || !name} onClick={() => void publish()}>Publish to shared library</Button>
         </>}
       </details>}
     </>}

@@ -177,20 +177,23 @@ def cleanup_replaced(conn, obj, workspace_id, dataset, refs, revision):
             if tuple(ref) not in active:
                 remote = conn.getObject(kind, identifier)
                 # Companions of any surviving Image remain protected.
-                if remote is not None and not _shared(
-                    conn,
-                    remote,
-                    kind,
-                    identifier,
-                    dataset.getId(),
-                    managed_images,
-                    managed_annotations,
-                ):
-                    ws._delete(conn, kind, identifier)
+                if remote is not None:
+                    shared = _shared(conn, remote, kind, identifier, dataset.getId(), managed_images, managed_annotations)
+                    if not shared:
+                        ws._delete(conn, kind, identifier)
+                    elif kind == "Annotation":
+                        # An older shared version must leave this workspace while
+                        # retaining its links and bytes for other consumers.
+                        ws._unlink_annotation(conn, dataset, remote)
+                    elif kind == "Image":
+                        ws._unlink_image(conn, dataset, remote)
             journal["pending"].remove(ref)
         except Exception as exc:
             journal["errors"].append({"type": kind, "id": identifier, "reason": type(exc).__name__})
-        storage.write_json(path, journal)
+    # The complete target set was persisted before deletion. Replaying already
+    # deleted IDs after a crash is safe; one final checkpoint avoids an OMERO
+    # annotation rewrite for every single output in a large cleanup.
+    storage.write_json(path, journal)
 
 
 @serialized_sync

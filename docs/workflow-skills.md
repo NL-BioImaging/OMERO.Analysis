@@ -1,12 +1,23 @@
-# Optional BIOMERO measurement skills
+# Workflow guidance and notebook examples
 
-OMERO.Analysis can use `biomero-workflow-skills>=0.4,<0.5` as an optional,
-framework-neutral catalog. It reads the existing BIOMERO pipeline
-configuration, resolves each configured GitHub tag, branch, or commit, and
-accepts only validated UTF-8 attachment-analysis skill instructions and text
-references. Analysis starts with generic Assistant guidance when the provider is absent.
+The **Skills** tab offers notebook-authoring guidance, workflow measurement
+skills, and skills from installed viewer providers. It supports previews,
+individual downloads, a portable bundle, and a copyable external-chat prompt.
+Analysis makes no AI-provider requests and stores no AI credentials. Custom skill
+uploads, linked skills, and the former `~AnalysisSettings` synchronization are retired.
 
-Authenticated routes expose a consumer-filtered catalog and package:
+To use an external chat, preview the guidance and optional workspace schema context,
+download the bundle, copy the prompt, and attach the downloaded files to the chat.
+Request a portable `.ipynb`, then import it in **Notebooks**. The optional context
+contains input names/formats, table and column names/types, and relevant
+capabilities. It excludes measurements, notebook outputs, credentials, and tokens.
+
+`biomero-workflow-skills>=0.4,<0.5` is an optional framework-neutral catalog. It reads
+the configured BIOMERO workflow repositories at their configured revisions and
+exposes validated UTF-8 attachment-analysis guidance and text references. Without
+it, the built-in notebook guidance remains available.
+
+Authenticated routes expose the consumer-filtered catalog and skill packages:
 
 ```text
 GET  /omero_analysis/api/workflow-skills/
@@ -14,39 +25,29 @@ GET  /omero_analysis/api/workflow-skills/<workflow>/<skill>/
 POST /omero_analysis/api/workflow-skills/refresh/
 ```
 
-Refresh is OMERO-admin-only. Set `BIOMERO_GITHUB_TOKEN` on OMERO.web for
-private repositories; it is never returned to the browser.
+Refresh is OMERO-admin-only. Private-repository access may use the server's
+`BIOMERO_GITHUB_TOKEN`; it is never included in downloaded guidance or browser responses.
+Source URL, configured ref, resolved immutable commit, version, and SHA256 identify
+each package. Tags/commits are immutable in cache; branches are revalidated hourly.
+Only transient failures for the same source can use cached data, with a visible warning.
 
-Before every question, Analysis matches skills using file extensions,
-filename globs, and locally derived schema profiles. It automatically loads the
-strongest match's `SKILL.md`, every `biomero-required-resources` reference, and
-the declared `biomero-required-capabilities` contract. Optional references
-remain progressively loadable. Exact input paths and the current evidence
-ledger are injected before the first response, so routine file and schema
-discovery is not repeated. The user does not need to request a skill.
+Workflow repositories may declare optional notebook assets in
+`extensions.nl.bioimaging.biomero.notebooks` in `plugin.json`. Each declaration
+provides a title, repository-relative `.ipynb` path, SHA256, and compatibility
+metadata matching its portable notebook input contract. Assets are validated without
+execution; imports retain immutable commit/checksum provenance and copy the notebook
+into the workspace. **Libraries → Workflow examples** shows available examples and
+their compatibility with selected inputs.
 
-Skill source URL, configured ref, resolved commit, version, and hash are stored
-with chat turns and executions and participate in execution-cache keys.
-Specialized measurement knowledge is absent from the global system prompt;
-privacy, browser paths, execution limits, and tools remain plugin-owned. If the
-catalog is unavailable, generic schema-first analysis continues with a visible
-warning.
+CI-specific examples belong to the cisegmentation repository alongside its
+measurement-analysis skill. Unreleased examples can be imported explicitly from a
+local `.ipynb`; exposing examples must not change the segmentation execution pin.
+Analysis retains generic CSV/database starters and contains no CI-specific inference.
 
-`[APPLICATIONS]` is not a discovery source. Applications publish their own
-authenticated provider endpoints. BIOMERO.ZarrViewer therefore serves
-`use-omero-zarr-viewer` itself, and Analysis loads that package only for an
-explicit ZarrViewer operation.
+Applications publish their own authenticated guidance providers. Installed
+BIOMERO.ZarrViewer supplies `use-omero-zarr-viewer`; arbitrary file paths cannot
+create viewer links. Notebook execution never injects downloaded skill instructions.
 
-Skill authors should follow the contract documented by
-[BIOMERO.WorkflowSkills](https://github.com/NL-BioImaging/BIOMERO.WorkflowSkills).
-Publish portable measurement skills in a tagged release before changing the
-BIOMERO repository pin. Tags and commits are immutable in cache, branches are
-revalidated hourly, and only transient failures of the same source may use
-stale data.
-
-The normal Docker installer and local update script install Analysis without
-the catalog. Use `scripts/build-docker-image.ps1 -WithWorkflowSkills` to add
-the optional sibling BIOMERO.WorkflowSkills package to an image. Installing,
-updating, or removing Analysis never installs or removes the provider as a
-side effect. Notebook execution never requests this catalog or injects skill
-instructions.
+The standard Analysis installation keeps the catalog optional. The local image
+builder accepts `-WithWorkflowSkills` to include the sibling catalog package.
+Installing or removing Analysis does not implicitly install or remove that provider.

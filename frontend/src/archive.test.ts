@@ -91,7 +91,8 @@ describe("workspace archive", () => {
     const entries = unzipSync(archive.data);
     const paths = Object.keys(entries);
     expect(paths.some((path) => path.startsWith("Input/"))).toBe(true);
-    expect(paths.some((path) => path.startsWith("Chat/"))).toBe(true);
+    expect(paths.some((path) => path.startsWith("Chat/"))).toBe(false);
+    expect(paths.some((path) => path.startsWith("Results/"))).toBe(true);
     expect(paths.some((path) => path.includes("measurements.duckdb"))).toBe(false);
     const manifest = JSON.parse(strFromU8(entries["workspace.json"]));
     expect(manifest.format).toBe(WORKSPACE_FORMAT);
@@ -102,10 +103,10 @@ describe("workspace archive", () => {
     expect(restored.workspace.id).not.toBe(source.workspace.id);
     expect(restored.files.find((file) => file.source === "omero")?.data).toBeUndefined();
     expect(restored.files.find((file) => file.source === "local")?.data).toBeInstanceOf(ArrayBuffer);
-    expect(restored.evidence).toHaveLength(1);
-    expect(restored.executions[0].evidenceId).toBe(restored.evidence[0].id);
-    expect(restored.runs).toHaveLength(1);
-    expect(restored.runs[0].executionIds).toEqual([restored.executions[0].id]);
+    expect(restored.evidence).toEqual([]);
+    expect(restored.executions).toEqual([]);
+    expect(restored.runs).toEqual([]);
+    expect(new TextDecoder().decode(restored.files.find(file => file.source === "result")!.data)).toBe("result");
 
     const rebound = await importWorkspace(archive.data.buffer as ArrayBuffer, {
       object_type: "Screen",
@@ -134,7 +135,7 @@ describe("workspace archive", () => {
     expect(manifest.files.find((file: any) => file.id === "local-file").state).toBe("missing");
   });
 
-  it("stores Chat attachments under the Chat attachment path", async () => {
+  it("preserves former Chat attachments as ordinary inputs", async () => {
     const source = await workspace();
     const data = new TextEncoder().encode("attachment").buffer;
     source.files.push({
@@ -146,18 +147,22 @@ describe("workspace archive", () => {
     });
     const archive = exportWorkspace(source, 1024 * 1024);
     const paths = Object.keys(unzipSync(archive.data));
-    expect(paths).toContain("Chat/chat/Attachments/attachment--notes.txt");
+    expect(paths).toContain("Input/attachment--notes.txt");
     const restored = await importWorkspace(archive.data.buffer as ArrayBuffer);
-    const attachment = restored.files.find((file) => file.role === "chat-attachment");
+    const attachment = restored.files.find((file) => file.name === "notes.txt");
     expect(attachment?.data).toBeInstanceOf(ArrayBuffer);
-    expect(attachment?.chatId).toBe(restored.chats[0].id);
+    expect(attachment?.chatId).toBeUndefined();
+    expect(attachment?.role).toBeUndefined();
   });
 
-  it("imports v1 archives as legacy Chat-owned history", async () => {
+  it("imports v1 files without resurrecting retired records", async () => {
     const source = await workspace();
     const entries = unzipSync(exportWorkspace(source, 1024 * 1024).data);
     const manifest = JSON.parse(strFromU8(entries["workspace.json"]));
     manifest.version = 1;
+    manifest.chats = source.chats;
+    manifest.executions = source.executions;
+    manifest.methods = [{id: "old", versions: []}];
     delete manifest.runs;
     const encoded = strToU8(JSON.stringify(manifest));
     const ArchiveUint8Array = entries["workspace.json"].constructor as Uint8ArrayConstructor;
@@ -166,8 +171,10 @@ describe("workspace archive", () => {
     entries["workspace.json"] = replacement;
     const restored = await importWorkspace(asArrayBuffer(zipSync(entries)));
     expect(restored.runs).toEqual([]);
-    expect(restored.executions[0].chatId).toBe(restored.chats[0].id);
-    expect(restored.executions[0].runId).toBeUndefined();
+    expect(restored.chats).toEqual([]);
+    expect(restored.methods).toEqual([]);
+    expect(restored.executions).toEqual([]);
+    expect(restored.files).toHaveLength(source.files.length);
   });
 
   it("rejects legacy Analysis Chat workspace snapshots", async () => {
@@ -233,7 +240,7 @@ it("resumes a synchronized workspace without changing its identity or logical pa
   expect(restored.workspace.name).toBe(original.workspace.name);
   expect(restored.files.map(item => item.id)).toEqual(original.files.map(item => item.id));
   expect(restored.files.map(item => item.logicalPath)).toEqual(original.files.map(item => item.logicalPath));
-  expect(restored.chats[0].id).toBe(original.chats[0].id);
+  expect(restored.chats).toEqual([]);
   expect(restored.workspace.createdAt).toBe(original.workspace.createdAt);
   expect(restored.pipelines.map(item => item.steps)).toEqual(original.pipelines.map(item => item.steps));
   await expect(importWorkspace(asArrayBuffer(exportWorkspace(original, 1024 * 1024).data), {

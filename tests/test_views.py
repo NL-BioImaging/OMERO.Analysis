@@ -81,14 +81,12 @@ def test_context_token_reports_permissions():
         "list",
         "download",
         "workspace_download",
-        "pipeline_download",
         "notebook_download",
         "hierarchy",
         "library_list",
         "library_download",
-        "settings_read",
         "data_query",
-        "sync_plan", "sync_apply", "sync_remove", "settings_sync", "workspace_artifact",
+        "sync_plan", "sync_apply", "sync_remove", "workspace_artifact",
     ]
 
 
@@ -461,7 +459,8 @@ def test_panel_context_distinguishes_settings_workspace_and_result(monkeypatch):
     ))
     settings_context = views._configure_panel_context(SimpleNamespace(getObject=lambda *args: obj), obj, dict(base))
     assert settings_context["panel_kind"] == "settings"
-    assert settings_context["managed_count"] == "3"
+    assert settings_context["managed_title"] == "Retired Analysis configuration"
+    assert "no longer uses provider settings" in settings_context["managed_message"]
 
     monkeypatch.setattr(views, "managed_marker", lambda _obj, namespace, **_kwargs: (
         None,
@@ -628,3 +627,15 @@ def test_notebook_upload_download_and_bootstrap_selection():
     response = views.upload_notebook(request, "Image", 1, conn=conn)
     assert response.status_code == 201
     assert json.loads(response.content)["notebook"]["kind"] == "notebook"
+
+
+def test_session_status_is_json_and_does_not_confuse_expiry_with_unavailability():
+    from omero_analysis.session_status import status_response
+    expired = status_response(False)
+    assert expired.status_code == 401
+    assert json.loads(expired.content)["authenticated"] is False
+    assert expired["Cache-Control"] == "no-store"
+    unavailable = status_response(False, unavailable=True)
+    assert unavailable.status_code == 503
+    assert json.loads(unavailable.content)["authenticated"] is None
+    assert json.loads(unavailable.content)["error"] == "session_unavailable"
