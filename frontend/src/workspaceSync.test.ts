@@ -186,7 +186,7 @@ describe("Workspace synchronization inventory", () => {
     const payload = await buildWorkspaceSyncPayload(value, context);
     const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
     const csv = payload.inventory.items.find((item) =>
-      item.kind === "result" && item.name.endsWith("__plot.csv")
+      item.kind === "result" && item.name.startsWith("Analysis__plot__") && item.name.endsWith(".csv")
     )!;
     expect(csv.metadata.plotImageKeys).toEqual([image.key]);
   });
@@ -206,7 +206,7 @@ describe("Workspace synchronization inventory", () => {
     const payload = await buildWorkspaceSyncPayload(value, context);
     const image = payload.inventory.items.find((item) => item.kind === "png-image")!;
     const svg = payload.inventory.items.find((item) =>
-      item.kind === "result" && item.name.endsWith("__plot.svg")
+      item.kind === "result" && item.name.startsWith("Analysis__plot__") && item.name.endsWith(".svg")
     )!;
     expect(svg.metadata.plotImageKeys).toEqual([image.key]);
   });
@@ -337,8 +337,11 @@ it("keeps identical bytes from different new runs separate with readable OMERO n
   const payload = await buildWorkspaceSyncPayload(original, context);
   const results = payload.inventory.items.filter(item => ["result", "png-image"].includes(item.kind));
   expect(results).toHaveLength(2);
-  expect(results[0].name).not.toBe(results[1].name);
-  expect(results.every(item => item.name.includes("20261021T12"))).toBe(true);
+  // Display names need not be unique: immutable run identity lives in metadata and keys.
+  expect(results[0].key).not.toBe(results[1].key);
+  expect(results[0].name).toBe(results[1].name);
+  expect(results.every(item => !item.name.includes("20261021T12"))).toBe(true);
+  expect(results.map(item => (item.metadata.analysisProvenance as any).run.id).sort()).toEqual(["run-a", "run-b"]);
 });
 
 it("omits superseded file versions from both the OMERO inventory and the single recovery snapshot", async () => {

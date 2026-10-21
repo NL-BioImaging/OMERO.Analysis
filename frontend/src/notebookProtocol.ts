@@ -77,6 +77,10 @@ export interface NotebookProtocolBinding {
 }
 
 export interface NotebookRunProvenance {
+  notebookName?: string;
+  parameterOrder?: string[];
+  /** Hash of ordered Python/Markdown sources at execution, excluding outputs. */
+  scriptSha256?: string;
   id?: string;
   mode?: "all" | "cell";
   cellIndex?: number;
@@ -86,6 +90,8 @@ export interface NotebookRunProvenance {
   sources: Array<{
     inputId: string;
     name: string;
+    annotationId?: number;
+    originalFileId?: number;
     schemaDigest?: string;
     sourceDigest?: string;
   }>;

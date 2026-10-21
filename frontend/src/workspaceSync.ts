@@ -1,4 +1,4 @@
-import { remoteResultName } from "./notebookResults";
+import { remoteResultName, resultProvenance } from "./notebookResults";
 import { notebookWorkspace } from "./notebookMigration";
 import { resultBytes } from "./resultMedia";
 import { samePlot } from "./plotGroups";
@@ -229,6 +229,7 @@ export async function buildWorkspaceSyncPayload(
         )).map(resultKey).sort()
       : [];
     const metadata = {
+      analysisProvenance: resultProvenance(canonicalFile, workspace.notebooks),
       contentAddressed: true, sourceCount: sources.length, sources,
       ...(plotImageKeys.length ? { plotImageKeys } : {})
     };

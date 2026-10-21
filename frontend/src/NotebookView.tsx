@@ -1,3 +1,4 @@
+import { sha256 } from "./storage";
 import { NotebookSetup } from "./NotebookSetup";
 import { RunParameters, type ParameterOptions } from "./RunParameters";
 import { markNotebookStale, setupFingerprint } from "./notebookConfiguration";
@@ -529,7 +530,7 @@ export default function NotebookView(props: Props) {
         initializedSetup.current = "";
         executionCount.current = 0;
       }
-      working = beginRun(working, "cell", index);
+      working = await beginRun(working, "cell", index);
       await onChange(working);
       setStatus(`Running cell ${index + 1}…`);
       let completed = await executeCell(index, ++executionCount.current, working);
@@ -661,13 +662,16 @@ export default function NotebookView(props: Props) {
     return changed;
   }
 
-  function beginRun(record: NotebookRecord, mode: "all" | "cell", cellIndex?: number): NotebookRecord {
+  async function beginRun(record: NotebookRecord, mode: "all" | "cell", cellIndex?: number): Promise<NotebookRecord> {
     const contract = parseNotebookProtocol(record.document);
+    const parameters = {...(contract ? parameterDefaults(contract) : {}), ...(record.parameterValues || {})};
+    const parameterOrder = [...new Set([...(contract?.parameters.map(parameter => parameter.name) || []), ...Object.keys(parameters)])];
     return {...record, protocolRuns: [...(record.protocolRuns || []), {
-      id: crypto.randomUUID(), mode, cellIndex,
+      id: crypto.randomUUID(), mode, cellIndex, parameterOrder, notebookName: record.name,
+      scriptSha256: await sha256(JSON.stringify(record.document.cells.map(cell => ({cell_type: cell.cell_type, source: sourceText(cell)})))),
       startedAt: new Date().toISOString(),
-      parameters: {...(contract ? parameterDefaults(contract) : {}), ...(record.parameterValues || {})},
-      sources: (record.protocolBindings || []).map(binding => ({inputId: binding.inputId, name: binding.name,
+      parameters,
+      sources: (record.protocolBindings || []).map(binding => ({inputId: binding.inputId, name: binding.name, annotationId: binding.annotationId, originalFileId: binding.originalFileId,
         schemaDigest: binding.schemaDigest, sourceDigest: binding.sourceDigest})),
       outputs: [], status: "running"
     }]};
@@ -702,7 +706,7 @@ export default function NotebookView(props: Props) {
       setStatus("Binding notebook inputs and preparing queries...");
       if (onPrepareProtocol) working = await onPrepareProtocol(working);
       checkStopped();
-      working = beginRun(working, "all");
+      working = await beginRun(working, "all");
       await onChange(working);
       kernelBinding.current = executionKey(working);
       initializedSetup.current = "";

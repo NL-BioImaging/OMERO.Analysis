@@ -1,4 +1,4 @@
-import {completeNotebookResults, notebookParameterKey, compactResultVersions, remoteResultName, runParametersLabel} from './notebookResults';
+import {completeNotebookResults, notebookParameterKey, compactResultVersions, remoteResultName, runParametersLabel, resultProvenance} from './notebookResults';
 import type {NotebookRecord, WorkspaceFile} from './types';
 import type {NotebookRunProvenance} from './notebookProtocol';
 const run = (id:string, mode:"all"|"cell"="all", status:"running"|"success"|"failed"="success") => ({id,mode,status,
@@ -63,4 +63,26 @@ it('distinguishes runs with no parameters from missing or ambiguous legacy prove
   expect(runParametersLabel({...file('legacy'),notebookRunId:undefined},notebook([run('one')]))).toBe('Parameters: minimum=2');
   expect(runParametersLabel({...file('legacy'),notebookRunId:undefined},notebook([run('one'),run('two')]))).toBe('Parameters not recorded');
   expect(runParametersLabel(file('unknown'))).toBe('Parameters not recorded');
+});
+
+it('puts recorded parameters last in readable OMERO names, preserving unique identity only in metadata',()=>{
+  const recorded={...run('one'),notebookName:'Cell counts.ipynb',scriptSha256:'a'.repeat(64),parameters:{minimum:0,normalize:false}};
+  const nb={...notebook([recorded]),name:'Renamed.ipynb',parameterValues:{minimum:999}};
+  const output=file('result','counts.png','one');
+  expect(remoteResultName(output,[nb])).toBe('Cell counts__counts__0_false.png');
+  expect(resultProvenance(output,[nb])).toMatchObject({notebook:{name:'Cell counts.ipynb',nameRecorded:true,scriptSha256:'a'.repeat(64)},run:{id:'one',parameters:{minimum:0,normalize:false}}});
+  expect(remoteResultName(file('unknown','counts.svg','unknown'),[nb])).toBe('Renamed__counts__parameters-not-recorded.svg');
+});
+it('bounds display filenames while retaining complete long parameter values in provenance',()=>{
+  const nb=notebook([{...run('old'),parameters:{label:'a/b:'.repeat(100)}}]);
+  const output=file('long','x'.repeat(200)+'.svg');
+  const name=remoteResultName(output,[nb]);
+  expect(name.length).toBeLessThanOrEqual(180);expect(name.endsWith('….svg')).toBe(true);
+  expect(name).not.toMatch(/[\\/:]/);expect(resultProvenance(output,[nb]).run.parameters?.label).toHaveLength(400);
+});
+
+it('uses only values in declared order, including readable channel values',()=>{
+  const recorded={...run('old'),parameterOrder:['outlier','threshold','mad','measure','marker_channel'],
+    parameters:{mad:4,marker_channel:3,measure:'cells',outlier:'AutoThreshold',threshold:'Otsu'}};
+  expect(remoteResultName(file('r','counts.png'),[notebook([recorded])])).toBe('counts__counts__auto-threshold_otsu_4_cells_channel3.png');
 });

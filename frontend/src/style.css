@@ -1949,7 +1949,7 @@ figure video { display: block; width: 100%; max-width: 100%; max-height: 70vh; b
 
 .analysis-tabs .bp5-button-text { display:flex; align-items:center; gap:6px; }
 
-.skills-handoff { max-width:900px; margin:0 auto; }
+.skills-handoff { width:100%; max-width:none; margin:0; text-align:left; }
 .skills-handoff > h2 { margin-bottom:8px; }
 .skills-handoff .skills-question { min-height:76px; }
 .skills-handoff > label { display:block; margin:14px 0; }

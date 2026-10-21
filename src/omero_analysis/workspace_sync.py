@@ -15,6 +15,7 @@ from pathlib import Path
 from django.core import signing
 
 from .sync_lock import serialized_sync
+from .result_presentation import validate_provenance, source_context, refresh_result
 from .retired_content import validate_notebook_archive
 
 from .errors import (
@@ -369,6 +370,7 @@ def validate_inventory(payload, workspace_id, source_type, source_id, obj, conn)
             raise InvalidObject("Synchronization item SHA-256 is invalid")
         if not isinstance(item.get("metadata"), dict):
             raise InvalidObject("Synchronization item metadata is invalid")
+        validate_provenance(item["metadata"].get("analysisProvenance"))
     items_by_key = {item["key"]: item for item in items}
     for item in items:
         if item["kind"] == "workspace-snapshot":
@@ -1076,7 +1078,8 @@ def _import_png(conn, dataset, item, data, workspace_id=""):
         description = str(
             _plain(getattr(image, "getDescription", lambda: None)()) or ""
         )
-        if operation_marker in description:
+        _, identity = _marker(image, "item")
+        if operation_marker in description or identity.get("operation_id") == operation_id:
             return image
     description = (
         f"OMERO Analysis synchronized item {item['key']}. "
@@ -1115,8 +1118,24 @@ def _item_marker_values(workspace_id, item, remote=None):
         "item_key": item["key"],
         "item_kind": item["kind"],
         "sha256": item["sha256"],
+        "operation_id": _operation_identity(workspace_id, item, "image" if item["kind"] == "png-image" else "content"),
     }
     metadata = item.get("metadata") or {}
+    provenance = metadata.get("analysisProvenance")
+    if isinstance(provenance, dict):
+        notebook, run = provenance["notebook"], provenance["run"]
+        values.update({
+            "analysis_provenance": json.dumps(provenance, ensure_ascii=False, separators=(",", ":")),
+            "notebook_id": notebook.get("id") or "",
+            "notebook_name": notebook.get("name") or "",
+            "notebook_script_sha256": notebook.get("scriptSha256") or "not recorded",
+            "notebook_run_id": run.get("id") or "not recorded",
+            "notebook_run_started_at": run.get("startedAt") or "not recorded",
+            "notebook_parameter_key": provenance.get("parameterKey") or "",
+            "notebook_parameters": json.dumps(run.get("parameters"), ensure_ascii=False),
+        })
+        if isinstance(run.get("parameters"), dict):
+            values.update({f"parameter.{key}": json.dumps(entry, ensure_ascii=False) for key, entry in run["parameters"].items()})
     sources = metadata.get("sources") if isinstance(metadata, dict) else None
     if isinstance(sources, list):
         values.update({
@@ -1423,6 +1442,18 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                 "BIOMERO.importer reported a terminal import failure; the durable order remains retryable.",
             )
 
+    presentation_context = source_context(obj, inventory["workspace"]) if any(
+        item.get("metadata", {}).get("analysisProvenance") for item in inventory["items"]
+    ) else ""
+
+    def present(remote_obj, item):
+        values = _item_marker_values(inventory["workspace"]["id"], item)
+        values.update({"source_object_type": inventory["workspace"]["sourceObjectType"],
+                       "source_object_id": inventory["workspace"]["sourceObjectId"],
+                       "source_object_name": inventory["workspace"]["sourceObjectName"],
+                       "source_context": presentation_context})
+        refresh_result(conn, remote_obj, item, inventory["workspace"], presentation_context, values, _set_marker)
+
     staged = []
     new_items_by_key = {}
     remote_objects = {}
@@ -1439,10 +1470,15 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     raise InvalidObject(
                         "A managed synchronized item is missing; create a fresh plan"
                     )
-                if item["kind"] in {"result", "png-image"} and _owner_id(remote_obj) == _user_id(conn) and item["name"] != prior.get("name"):
-                    target = remote_obj if item["kind"] == "png-image" else remote_obj.getFile()
-                    target.setName(item["name"])
-                    target.save()
+                if item["kind"] in {"result", "png-image"}:
+                    present(remote_obj, item)
+                    if item["kind"] == "png-image" and prior.get("payload"):
+                        png_payload = _remote_object(conn, prior["payload"])
+                        if png_payload is not None and _owner_id(png_payload) == _user_id(conn):
+                            original = png_payload.getFile()
+                            if str(_plain(original.getName())) != item["name"]:
+                                original.setName(item["name"])
+                                original.save()
                 remote_objects[item["key"]] = remote_obj
                 new_items_by_key[item["key"]] = {
                     **item, "remote": prior["remote"],
@@ -1498,6 +1534,8 @@ def apply_sync(request, conn, obj, inventory, plan_token, payload_keys, uploads)
                     _item_marker_values(inventory["workspace"]["id"], item),
                     "item",
                 )
+            if item["kind"] in {"result", "png-image"}:
+                present(remote_obj, item)
             remote = _remote_ref(remote_obj, item)
             remote_objects[item["key"]] = remote_obj
             stored = stored_payload.get(item["key"])
