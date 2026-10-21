@@ -89,3 +89,14 @@ Installed image: `local/biomero-omeroweb:analysis-beta1`, `sha256:ea5a1fefa1b13c
 
 
 Chrome acceptance passed in root's original SolHunt workspace: schema preview had no open attribute and its contents were hidden on launch; the copy-instruction button was inside the initial viewport (472–502px of 986px). Expanding and collapsing the preview remained functional. Explorer displayed 33 outputs beneath Results without a run row or visible parameters; Results and number_of_cells.png tooltips retained the recorded run identity and all five original settings. No notebook execution or OMERO result renaming occurred. Proof: local outputs/compact-results-collapsed-schema.png.
+
+
+## Collapsed Results folders and predictable file order — 21 October 2026
+
+Explorer starts with each notebook's Results folder and Other results collapsed; Inputs and Notebooks remain expanded. Opening a result folder manually survives unrelated selection updates. Search reveals matching result paths, and the existing Collapse/Expand folders control still affects the entire tree. Result groups and their files use a fixed, case-insensitive natural alphabetical order (well2 before well10; CSV, PNG, SVG companions), without changing the workspace's stored file order or input selection order. Recorded run/parameter tooltips and deletion permissions remain intact.
+
+Validation: all 271 frontend tests passed across 58 files, including initial folder defaults, manual expansion during selection, global expand/collapse, searched folder selection/deletion, and immutable natural result sorting. Production type checking, Vite compilation, wheel/Docker packaging, installed dependency checks and all 42 deployed JS/CSS checksums passed. Backend/SDK source and package versions are unchanged; the prior 361 passed/22 skipped backend/SDK validation remains the baseline.
+
+Chrome acceptance used root's original SolHunt (Screen 152, Dataset 454): Results started closed with its 33-file count visible, while Inputs and both notebooks remained accessible. Opening Results displayed all 11 alphabetically sorted plot groups, each containing CSV, PNG, SVG in that order. Searching number_of_cells automatically revealed its three sorted files; clearing search, Collapse folders, Expand folders and manual closing worked. No analytical code or result writes were performed. Proof is retained outside Git in outputs/results-folders-default-collapsed.png and outputs/results-files-sorted.png.
+
+Installed image: local/biomero-omeroweb:analysis-beta1, sha256:0bfa489d9a3dd1b287f1605c3af69a6c2f9d9b6223459c5126d18cbbf36e1a9f. Rollback: local/biomero-omeroweb:before-result-folders-20261021, retaining previous image sha256:ea5a1fefa1b13c5966441ed451c9218128e5c05603582a90a887c7b815fc857a. Recreate only omeroweb through the existing compose overlay using the explicit rollback image, with no build/pull/dependency restart. No data migration or cleanup is required.

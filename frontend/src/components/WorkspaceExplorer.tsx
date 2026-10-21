@@ -31,7 +31,8 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
   onDelete?: (items: {kind: "file" | "notebook"; id: string}[]) => void;
   onUndo?: () => void; canUndo?: boolean; busy?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  // null keeps the initial defaults: inputs/notebooks open, results closed.
+  const [collapsed, setCollapsed] = useState<boolean | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const matches = (value: string) => value.toLowerCase().includes(query.toLowerCase().trim());
   const canRemove = (file: WorkspaceFile) => file.source === "result" || !(/\.(duckdb|sqlite3?|db3?|csv|tsv)$/i.test(file.name) || /csv|sqlite|duckdb/i.test(file.type || ""));
@@ -98,9 +99,9 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
         </button></li>;
     })}</ul>;
   }
-  function folder(title: string, count: number, children: ReactNode, key = title, selection?: { label: string; files: WorkspaceFile[] }, description?: string) {
+  function folder(title: string, count: number, children: ReactNode, key = title, selection?: { label: string; files: WorkspaceFile[] }, description?: string, defaultCollapsed = false) {
     const keys = selection?.files.map(file => `file:${file.id}`) || [];
-    return <details key={`${key}:${collapsed}`} className="browser-folder" open={!collapsed || !!query}>
+    return <details key={`${key}:${collapsed}`} className="browser-folder" open={!!query.trim() || (collapsed === null ? !defaultCollapsed : !collapsed)}>
       <summary title={description ? `${title}\n${description}` : title} className={selection ? "selectable-folder" : undefined} {...(selection ? nodeActions(selection.label, keys) : {})}>
         <ChevronRight size={12} className="folder-chevron" aria-hidden="true" />
         {selection && <SelectionCheckbox label={selection.label} keys={keys} selected={selected} busy={busy} onChange={toggle} />}
@@ -124,7 +125,7 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
         {label: `result set ${index + 1} in ${label}`, files: values}, info(values)));
     return folder(title, files.length, children, key,
       {label: title === "Other results" ? "other results" : `results for ${label}`, files},
-      runs.size === 1 ? info(files) : `${runs.size} result sets. Hover a set to see its run and parameters.`);
+      runs.size === 1 ? info(files) : `${runs.size} result sets. Hover a set to see its run and parameters.`, true);
   }
 
   const unassigned = results.filter(file => !resultOwner(file, notebooks));

@@ -8,6 +8,7 @@ it("selects several items without opening them, removes only those items, and ex
   const results=[{id:"png",name:"counts.png",size:10,source:"result",state:"ready",notebookId:"nb",logicalPath:"results/counts.png"},{id:"csv",name:"counts.csv",size:10,source:"result",state:"ready",notebookId:"nb",logicalPath:"results/counts.csv"}] as WorkspaceFile[];
   render(<WorkspaceExplorer name="Fixture" inputs={inputs} notebooks={notebooks} results={results} query="" onQuery={()=>{}}
     compatibility={{}} selectedFileId={null} selectedNotebookId={null} onFile={open} onNotebook={open} onAttach={()=>{}} onRefresh={()=>{}} onDropFiles={()=>{}} onDelete={remove} onUndo={undo} canUndo />);
+  fireEvent.click(screen.getByText("Results",{exact:true}).closest("summary")!);
   expect(screen.getByRole("button",{name:"counts.png"}).closest(".explorer-notebook")).toHaveTextContent("counts.ipynb");
   fireEvent.click(screen.getByRole("checkbox",{name:"Select template.xlsx"}));
   fireEvent.click(screen.getByRole("checkbox",{name:"Select counts.ipynb"}));
@@ -41,6 +42,7 @@ it("keeps recorded runs and parameters in tooltips without crowding result names
   const results=["one","two"].map(id=>({id,name:"counts.csv",size:10,source:"result",state:"ready",notebookId:"nb",notebookRunId:id,logicalPath:"results/counts.csv"})) as WorkspaceFile[];
   const {rerender}=render(<WorkspaceExplorer name="Fixture" inputs={[]} notebooks={notebooks} results={results} query="" onQuery={()=>{}}
     compatibility={{}} selectedFileId={null} selectedNotebookId={null} onFile={()=>{}} onNotebook={()=>{}} onAttach={()=>{}} onRefresh={()=>{}} onDropFiles={()=>{}} onDelete={()=>{}} />);
+  fireEvent.click(screen.getByText("Results",{exact:true}).closest("summary")!);
   const first=screen.getByText("Result set 1").closest("summary")!;
   const second=screen.getByText("Result set 2").closest("summary")!;
   expect(first).toHaveAttribute("title",expect.stringContaining("minimum=2"));

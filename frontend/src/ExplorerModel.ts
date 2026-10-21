@@ -12,5 +12,7 @@ export function resultGroups(files: WorkspaceFile[]) {
     const stem = file.name.replace(/\.(csv|png|svg)$/i, "");
     groups.set(stem, [...(groups.get(stem) || []), file]);
   }
-  return [...groups].map(([name, files]) => ({ name, files }));
+  const compareNames = (left: string, right: string) => left.localeCompare(right, "en", { numeric: true, sensitivity: "base" }) || left.localeCompare(right, "en");
+  return [...groups].sort(([left], [right]) => compareNames(left, right))
+    .map(([name, files]) => ({ name, files: [...files].sort((left, right) => compareNames(left.name, right.name)) }));
 }

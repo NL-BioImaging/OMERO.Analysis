@@ -2,7 +2,7 @@ import {fireEvent,render,screen,within} from "@testing-library/react";
 import {WorkspaceExplorer} from "./WorkspaceExplorer";
 import type {NotebookRecord,WorkspaceFile} from "../types";
 
-function fixture(options: {query?:string; busy?:boolean} = {}) {
+function fixture(options: {query?:string; busy?:boolean; openResults?:boolean} = {}) {
   const remove=vi.fn(), open=vi.fn();
   const inputs=[{id:"input",name:"template.xlsx",size:1,source:"local",state:"ready"}] as WorkspaceFile[];
   const notebooks=[{id:"nb",name:"counts.ipynb"},{id:"other",name:"other.ipynb"}] as NotebookRecord[];
@@ -16,6 +16,12 @@ function fixture(options: {query?:string; busy?:boolean} = {}) {
     query={options.query||""} busy={options.busy} onQuery={()=>{}} compatibility={{}}
     selectedFileId={null} selectedNotebookId={null} onFile={open} onNotebook={open}
     onAttach={()=>{}} onRefresh={()=>{}} onDropFiles={()=>{}} onDelete={remove}/>);
+  // Open the result roots for tests that interact with their children.
+  if (options.openResults !== false && !options.query) {
+    for (const label of ["Select results for counts.ipynb", "Select results for other.ipynb", "Select other results"]) {
+      fireEvent.click(screen.getByRole("checkbox", {name:label}).closest("summary")!);
+    }
+  }
   return {remove,open};
 }
 
@@ -54,7 +60,7 @@ it("deletes only the right-clicked result group and retains unrelated checked it
   fireEvent.contextMenu(group.closest("summary")!,{clientX:120,clientY:140});
   const menu=screen.getByRole("menu",{name:"Actions for result group counts in counts.ipynb"});
   fireEvent.click(within(menu).getByRole("menuitem",{name:"Delete"}));
-  expect(remove).toHaveBeenCalledWith(["png","csv","svg"].map(id=>({kind:"file",id})));
+  expect(remove).toHaveBeenCalledWith(["csv","png","svg"].map(id=>({kind:"file",id})));
   expect(unrelated).toBeChecked();
   expect(open).not.toHaveBeenCalled();
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -97,4 +103,29 @@ it("disables selection and context deletion while workspace operations are busy"
   expect(screen.getByRole("checkbox",{name:"Select results for counts.ipynb"})).toBeDisabled();
   fireEvent.contextMenu(screen.getByRole("button",{name:"counts.png"}));
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+});
+
+it("starts result folders closed while leaving inputs and notebooks accessible, and supports expanding and collapsing all",()=>{
+  fixture({openResults:false});
+  const results=screen.getByRole("checkbox",{name:"Select results for counts.ipynb"}).closest("details")!;
+  const other=screen.getByRole("checkbox",{name:"Select other results"}).closest("details")!;
+  expect(results).not.toHaveAttribute("open");
+  expect(other).not.toHaveAttribute("open");
+  expect(screen.getByRole("button",{name:"template.xlsx"})).toBeVisible();
+  expect(screen.getByRole("button",{name:/^counts\.ipynb/})).toBeVisible();
+  expect(screen.getByText("counts.png",{exact:true})).not.toBeVisible();
+  fireEvent.click(screen.getByRole("button",{name:"Collapse folders"}));
+  expect(screen.getByText("counts.ipynb",{exact:true})).not.toBeVisible();
+  fireEvent.click(screen.getByRole("button",{name:"Expand folders"}));
+  expect(screen.getByRole("button",{name:"counts.png"})).toBeVisible();
+  expect(screen.getByRole("button",{name:"orphan.csv"})).toBeVisible();
+});
+
+it("keeps a manually opened result folder open when selection rerenders the explorer",()=>{
+  fixture({openResults:false});
+  const results=screen.getByRole("checkbox",{name:"Select results for counts.ipynb"}).closest("details")!;
+  fireEvent.click(results.querySelector("summary")!);
+  fireEvent.click(screen.getByRole("checkbox",{name:"Select template.xlsx"}));
+  expect(results).toHaveAttribute("open");
+  expect(screen.getByRole("button",{name:"counts.png"})).toBeVisible();
 });
