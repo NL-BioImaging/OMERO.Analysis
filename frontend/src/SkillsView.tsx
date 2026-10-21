@@ -154,7 +154,7 @@ export function SkillsView({ bridge, catalog, viewerCatalog, inputs, schemas, wo
     <label>Use <select aria-label="External chat application" value={client} onChange={e => setClient(e.target.value)}><option value="chatgpt">ChatGPT with Chrome</option><option value="claude">Claude in Chrome</option></select></label>
     <label><input type="checkbox" checked={includeContext} onChange={e => setIncludeContext(e.target.checked)} /> Share input names and table structure</label>
     <p className="muted">Optional schema context only: no measurement rows, images, notebook outputs, passwords or tokens.</p>
-    {includeContext && <details className="skills-context" open><summary>Preview the schema to share</summary><pre>{context}</pre><p>Read guidance also retrieves approved remote input schemas automatically. Local schemas that remain missing must first be inspected in Analysis.</p></details>}
+    {includeContext && <details className="skills-context"><summary>Preview the schema to share</summary><pre>{context}</pre><p>Read guidance also retrieves approved remote input schemas automatically. Local schemas that remain missing must first be inspected in Analysis.</p></details>}
     <Button disabled={busy} onClick={() => void action(async () => {
       await navigator.clipboard.writeText(prompt);
       setStatus("Instruction copied. Paste it into your browser-enabled chat to start.");

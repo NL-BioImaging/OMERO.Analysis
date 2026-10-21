@@ -75,3 +75,17 @@ Final image: `local/biomero-omeroweb:analysis-beta1`, `sha256:113586e86d9bdb97de
 
 
 Final installed-image confirmation: root SolHunt Dataset 454 revision 326 and acceptance Dataset 851 revision 86 each had exactly one snapshot and one manifest. Their Images each had one Analysis item marker. Chrome confirmed Description links resolve to `/webclient/?show=screen-152` and `/webclient/?show=plate-253`; the source filenames do not become accidental Plate links. The final root Skills screenshot uses the full 1538px pane width. Installed web image matched the final digest above.
+
+
+## Compact result tree and collapsed Skills schema — 21 October 2026
+
+The Skills schema preview starts collapsed while input/schema sharing remains enabled by default. Users can expand the same preview without changing the sharing choice. Instructions and the copy-instruction button appear immediately.
+
+Explorer result folders and files show recorded run identity and parameters only in native tooltips. A single result set is grouped directly beneath Results without an additional run row; multiple sets retain separate neutral “Result set 1”, “Result set 2” folders. Result selection, partial folder selection, context-menu deletion and ownership rules are unchanged. This is an Explorer presentation change: the separately requested readable OMERO filenames and full Description/key-value provenance are preserved.
+
+Validation: 268 frontend tests passed across 58 files, including tooltips with both multiple sets and one flattened set, preserved recorded values after editing, bulk folder deletion and the collapsed schema default with sharing still enabled. Production type checking, frontend compilation, wheel/Docker packaging, installed dependency checks and 42 deployed JS/CSS checksum checks passed. Backend/SDK source is unchanged; its preceding 361 passed/22 skipped result remains the baseline.
+
+Installed image: `local/biomero-omeroweb:analysis-beta1`, `sha256:ea5a1fefa1b13c5966441ed451c9218128e5c05603582a90a887c7b815fc857a`. Package versions are unchanged. Rollback: `local/biomero-omeroweb:before-compact-results-20261021` (previous digest `113586e86d9bdb97def23fdf4081ce6aeff210913db455bace8ef02a86b279a3`). Recreate only omeroweb through the existing compose overlay with the explicit rollback image, no pull/build/dependency restart. No data migration or analytical execution is required.
+
+
+Chrome acceptance passed in root's original SolHunt workspace: schema preview had no open attribute and its contents were hidden on launch; the copy-instruction button was inside the initial viewport (472–502px of 986px). Expanding and collapsing the preview remained functional. Explorer displayed 33 outputs beneath Results without a run row or visible parameters; Results and number_of_cells.png tooltips retained the recorded run identity and all five original settings. No notebook execution or OMERO result renaming occurred. Proof: local outputs/compact-results-collapsed-schema.png.

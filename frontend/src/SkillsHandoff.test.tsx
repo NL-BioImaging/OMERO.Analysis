@@ -9,6 +9,8 @@ it("selects schema sharing by default and lets users turn it off",()=>{
   expect(screen.getByRole("heading",{name:"Let your browser assistant make a notebook"})).toBeInTheDocument();
   const include=screen.getByRole("checkbox",{name:/Share input names/});
   expect(include).toBeChecked();
+  expect(screen.getByText("Preview the schema to share").closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByRole("button",{name:"Copy browser instruction"})).toBeVisible();
   fireEvent.change(screen.getByLabelText("Your analysis question"),{target:{value:"Count spots per image"}});
   const prompt=screen.getByLabelText("External chat prompt") as HTMLTextAreaElement;
   expect(prompt.value).toContain("Count spots per image");

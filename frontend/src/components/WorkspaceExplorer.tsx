@@ -89,7 +89,8 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
     return <ul className="browser-list">{files.filter(f => matches(f.name)).map(file => {
       const TypeIcon = /\.(duckdb|sqlite3?)$/i.test(file.name) ? Database : /\.(png|jpe?g|svg|mp4)$/i.test(file.name) ? Media : Document;
       const size = file.size >= 1048576 ? `${(file.size / 1048576).toFixed(1)} MiB` : file.size >= 1024 ? `${(file.size / 1024).toFixed(1)} KiB` : `${file.size} B`;
-      const title = `${file.name}\n${file.dataQueryMode === "remote" ? "Remote" : file.source === "omero" ? "OMERO" : "Local"} · ${size}${file.state !== "ready" ? ` · ${file.error || file.state}` : ""}`;
+      const provenance = file.source === "result" ? `\n${runLabel(file)}\n${runParametersLabel(file, notebooks.find(notebook => notebook.id === resultOwner(file, notebooks)))}` : "";
+      const title = `${file.name}${provenance}\n${file.dataQueryMode === "remote" ? "Remote" : file.source === "omero" ? "OMERO" : "Local"} · ${size}${file.state !== "ready" ? ` · ${file.error || file.state}` : ""}`;
       return <li key={file.id} className={`explorer-selectable ${canRemove(file) ? "" : "protected-input"}`} {...(canRemove(file) ? nodeActions(file.name, [`file:${file.id}`]) : {})}>{canRemove(file) && checkbox("file", file.id, file.name)}
         <button className={`compact-file-row ${selectedFileId === file.id ? "selected" : ""}`} title={title}
           aria-pressed={selectedFileId === file.id} onClick={() => onFile(file.id)}>
@@ -100,10 +101,10 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
   function folder(title: string, count: number, children: ReactNode, key = title, selection?: { label: string; files: WorkspaceFile[] }, description?: string) {
     const keys = selection?.files.map(file => `file:${file.id}`) || [];
     return <details key={`${key}:${collapsed}`} className="browser-folder" open={!collapsed || !!query}>
-      <summary className={selection ? "selectable-folder" : undefined} {...(selection ? nodeActions(selection.label, keys) : {})}>
+      <summary title={description ? `${title}\n${description}` : title} className={selection ? "selectable-folder" : undefined} {...(selection ? nodeActions(selection.label, keys) : {})}>
         <ChevronRight size={12} className="folder-chevron" aria-hidden="true" />
         {selection && <SelectionCheckbox label={selection.label} keys={keys} selected={selected} busy={busy} onChange={toggle} />}
-        <FolderClose size={16} className="icon-folder" aria-hidden="true" /><span className="explorer-folder-label" title={description ? `${title}\n${description}` : title}><strong>{title}</strong>{description && <span className="explorer-run-parameters">{description}</span>}</span><small>{count}</small></summary>
+        <FolderClose size={16} className="icon-folder" aria-hidden="true" /><span className="explorer-folder-label"><strong>{title}</strong></span><small>{count}</small></summary>
       <div className="explorer-children">{children}</div></details>;
   }
   function outputTree(files: WorkspaceFile[], key: string, label: string, title = "Results") {
@@ -112,17 +113,20 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
       const run = file.notebookRunId || file.notebookRunStartedAt || "legacy";
       runs.set(run, [...(runs.get(run) || []), file]);
     }
+    const info = (values: WorkspaceFile[]) => `${runLabel(values[0])}\n${runParametersLabel(values[0], notebooks.find(notebook => notebook.id === key))}`;
     const groups = (values: WorkspaceFile[], prefix: string) => resultGroups(values)
       .filter(group => matches(group.name) || group.files.some(f => matches(f.name)))
       .map(group => folder(group.name, group.files.length, filesView(group.files), `${prefix}:${group.name}`,
-        {label: `result group ${group.name} in ${label}`, files: group.files}));
-    const children = [...runs].reverse().map(([run, values]) => run === "legacy" ? <div key={`${key}:legacy`}><p className="explorer-run-parameters legacy-run-parameters">Parameters not recorded</p>{groups(values, key)}</div> :
-      folder(runLabel(values[0]), values.length, groups(values, `${key}:${run}`), `${key}:${run}`,
-        {label: `${runLabel(values[0])} in ${label}`, files: values},
-        runParametersLabel(values[0], notebooks.find(notebook => notebook.id === key))));
+        {label: `result group ${group.name} in ${label}`, files: group.files}, info(values)));
+    // A single result set needs no additional run row or indentation.
+    const children = runs.size === 1 ? groups(files, key) : [...runs].reverse().map(([run, values], index) =>
+      folder(`Result set ${index + 1}`, values.length, groups(values, `${key}:${run}`), `${key}:${run}`,
+        {label: `result set ${index + 1} in ${label}`, files: values}, info(values)));
     return folder(title, files.length, children, key,
-      {label: title === "Other results" ? "other results" : `results for ${label}`, files});
+      {label: title === "Other results" ? "other results" : `results for ${label}`, files},
+      runs.size === 1 ? info(files) : `${runs.size} result sets. Hover a set to see its run and parameters.`);
   }
+
   const unassigned = results.filter(file => !resultOwner(file, notebooks));
   return <div className="compact-explorer" onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
     onDrop={event => { event.preventDefault(); onDropFiles(event.dataTransfer.files); }}>
