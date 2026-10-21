@@ -1,4 +1,4 @@
-import { runLabel } from "../notebookResults";
+import { runLabel, runParametersLabel } from "../notebookResults";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { ChevronRight, FolderClose, Document, Database, Manual, Media, Paperclip, Refresh, Search, CollapseAll, ExpandAll, Trash, Undo } from "@blueprintjs/icons";
@@ -97,28 +97,29 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
         </button></li>;
     })}</ul>;
   }
-  function folder(title: string, count: number, children: ReactNode, key = title, selection?: { label: string; files: WorkspaceFile[] }) {
+  function folder(title: string, count: number, children: ReactNode, key = title, selection?: { label: string; files: WorkspaceFile[] }, description?: string) {
     const keys = selection?.files.map(file => `file:${file.id}`) || [];
     return <details key={`${key}:${collapsed}`} className="browser-folder" open={!collapsed || !!query}>
       <summary className={selection ? "selectable-folder" : undefined} {...(selection ? nodeActions(selection.label, keys) : {})}>
         <ChevronRight size={12} className="folder-chevron" aria-hidden="true" />
         {selection && <SelectionCheckbox label={selection.label} keys={keys} selected={selected} busy={busy} onChange={toggle} />}
-        <FolderClose size={16} className="icon-folder" aria-hidden="true" /><strong>{title}</strong><small>{count}</small></summary>
+        <FolderClose size={16} className="icon-folder" aria-hidden="true" /><span className="explorer-folder-label" title={description ? `${title}\n${description}` : title}><strong>{title}</strong>{description && <span className="explorer-run-parameters">{description}</span>}</span><small>{count}</small></summary>
       <div className="explorer-children">{children}</div></details>;
   }
   function outputTree(files: WorkspaceFile[], key: string, label: string, title = "Results") {
     const runs = new Map<string, WorkspaceFile[]>();
     for (const file of files) {
-      const run = file.notebookRunId || "legacy";
+      const run = file.notebookRunId || file.notebookRunStartedAt || "legacy";
       runs.set(run, [...(runs.get(run) || []), file]);
     }
     const groups = (values: WorkspaceFile[], prefix: string) => resultGroups(values)
       .filter(group => matches(group.name) || group.files.some(f => matches(f.name)))
       .map(group => folder(group.name, group.files.length, filesView(group.files), `${prefix}:${group.name}`,
         {label: `result group ${group.name} in ${label}`, files: group.files}));
-    const children = [...runs].reverse().map(([run, values]) => run === "legacy" ? groups(values, key) :
+    const children = [...runs].reverse().map(([run, values]) => run === "legacy" ? <div key={`${key}:legacy`}><p className="explorer-run-parameters legacy-run-parameters">Parameters not recorded</p>{groups(values, key)}</div> :
       folder(runLabel(values[0]), values.length, groups(values, `${key}:${run}`), `${key}:${run}`,
-        {label: `${runLabel(values[0])} in ${label}`, files: values}));
+        {label: `${runLabel(values[0])} in ${label}`, files: values},
+        runParametersLabel(values[0], notebooks.find(notebook => notebook.id === key))));
     return folder(title, files.length, children, key,
       {label: title === "Other results" ? "other results" : `results for ${label}`, files});
   }

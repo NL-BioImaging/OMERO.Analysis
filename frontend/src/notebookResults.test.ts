@@ -1,4 +1,4 @@
-import {completeNotebookResults, notebookParameterKey, compactResultVersions, remoteResultName} from './notebookResults';
+import {completeNotebookResults, notebookParameterKey, compactResultVersions, remoteResultName, runParametersLabel} from './notebookResults';
 import type {NotebookRecord, WorkspaceFile} from './types';
 import type {NotebookRunProvenance} from './notebookProtocol';
 const run = (id:string, mode:"all"|"cell"="all", status:"running"|"success"|"failed"="success") => ({id,mode,status,
@@ -50,4 +50,17 @@ it('preserves results for different parameters or a different input identity',as
   const differentInput={...changed,sources:[{inputId:'db',name:'different.duckdb',sourceDigest:'other'}]};
   expect(await notebookParameterKey('nb',differentInput)).not.toBe(newKey);
   expect(compactResultVersions(result,'later').filter(f=>!f.deletedAt)).toHaveLength(2);
+});
+
+it('shows the recorded run parameters, including false, zero and empty values, instead of edited settings',()=>{
+  const recorded={...run('one'),parameters:{threshold:0,normalize:false,channel:"",optional:null,method:"Otsu"}};
+  const nb={...notebook([recorded]),parameterValues:{threshold:99,normalize:true}};
+  expect(runParametersLabel(file('result','plot.csv','one'),nb)).toBe('Parameters: threshold=0 · normalize=false · channel="" · optional=null · method="Otsu"');
+  expect(runParametersLabel(file('result','plot.csv','two'),nb)).toBe('Parameters not recorded');
+});
+it('distinguishes runs with no parameters from missing or ambiguous legacy provenance',()=>{
+  expect(runParametersLabel(file('result'),notebook([{...run('old'),parameters:{}}]))).toBe('No run parameters');
+  expect(runParametersLabel({...file('legacy'),notebookRunId:undefined},notebook([run('one')]))).toBe('Parameters: minimum=2');
+  expect(runParametersLabel({...file('legacy'),notebookRunId:undefined},notebook([run('one'),run('two')]))).toBe('Parameters not recorded');
+  expect(runParametersLabel(file('unknown'))).toBe('Parameters not recorded');
 });

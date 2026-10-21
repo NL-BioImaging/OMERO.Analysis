@@ -2027,6 +2027,55 @@ main.app-shell.notebook-workspace .analysis-main .inspector-tab { padding:0; }
 .analysis-help-content .markdown-code { overflow:auto; }
 @media(max-width:760px) { .analysis-help-layout {grid-template-columns:1fr;} .analysis-help-layout > nav {max-height:130px; border-right:0; border-bottom:1px solid var(--border);} .analysis-help-content {padding:0 8px 20px;} }
 
+
+/* Distinct control surfaces from the Blueprint 5 gray palette. Keep tree rows
+   and connected navigation tabs flat; semantic action colors remain intact. */
+.app-shell[data-theme="dark"] {
+  --theme-input: #252a31;
+  --control-surface: #404854;
+  --control-hover: #5f6b7c;
+  --control-border: #738091;
+  --control-placeholder: #abb3bf;
+  --control-disabled: #383e47;
+  --control-disabled-text: #abb3bf;
+  --control-focus: #8abbff;
+  --control-shadow: inset 0 1px 2px #11141833;
+}
+.compact-explorer .explorer-folder-label { min-width:0; }
+.compact-explorer .explorer-folder-label > strong { display:block; }
+.compact-explorer .explorer-run-parameters {
+  display:block; font-size:11px; font-weight:400; line-height:1.5;
+  color:var(--theme-muted); white-space:normal; overflow-wrap:anywhere;
+  margin-top:3px;
+}
+.compact-explorer .legacy-run-parameters { margin:4px 10px; }
+
+.app-shell[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea) {
+  background:var(--theme-input); color:var(--theme-text);
+  border:1px solid var(--control-border); border-radius:3px;
+  box-shadow:var(--control-shadow);
+}
+.app-shell[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):hover:not(:disabled):not([readonly]) { border-color:var(--theme-accent); }
+.app-shell[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):focus-visible {
+  border-color:var(--control-focus); outline:2px solid var(--control-focus); outline-offset:1px;
+}
+.app-shell[data-theme="dark"] input::placeholder,
+.app-shell[data-theme="dark"] textarea::placeholder { color:var(--control-placeholder); opacity:1; }
+.app-shell[data-theme="dark"] button:not([class*="bp5-intent-"]):where(:not(.compact-file-row, .explorer-item, .active, .selected, .primary, .danger, [role="tab"], .bp5-intent-primary, .bp5-intent-success, .bp5-intent-warning, .bp5-intent-danger)) {
+  background:var(--control-surface); color:var(--theme-text);
+  border-color:var(--control-border); box-shadow:inset 0 1px 0 #ffffff0a;
+}
+.app-shell[data-theme="dark"] button:not([class*="bp5-intent-"]):where(:not(.compact-file-row, .explorer-item, .active, .selected, .primary, .danger, [role="tab"], .bp5-intent-primary, .bp5-intent-success, .bp5-intent-warning, .bp5-intent-danger)):hover:not(:disabled) { background:var(--control-hover); border-color:var(--theme-accent); }
+.app-shell[data-theme="dark"] button:focus-visible { outline:2px solid var(--control-focus); outline-offset:2px; }
+.app-shell[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):disabled,
+.app-shell[data-theme="dark"] button:not([class*="bp5-intent-"]):where(:not(.compact-file-row, .explorer-item, .active, .selected, .primary, .danger, [role="tab"], .bp5-intent-primary, .bp5-intent-success, .bp5-intent-warning, .bp5-intent-danger)):disabled {
+  background:var(--control-disabled); color:var(--control-disabled-text);
+  border-color:var(--theme-border); box-shadow:none; opacity:1; cursor:not-allowed;
+}
+.app-shell[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea)[readonly] { color:var(--theme-muted); }
+.app-shell[data-theme="dark"] :is(input[type="checkbox"], input[type="radio"]) { accent-color:var(--theme-accent); }
+.app-shell[data-theme="dark"] select option { background:var(--theme-input); color:var(--theme-text); }
+
 /* BIOMERO / Blueprint-inspired light theme.
    Keep this section visual-only: do not change grid, sizing, spacing, overflow,
    or positioning here. Those remain identical to the dark Analysis layout. */
@@ -2641,3 +2690,51 @@ main.app-shell.notebook-workspace .analysis-main .inspector-tab { padding:0; }
 .app-shell[data-theme="light"] .file-browser-toolbar button:hover,
 .app-shell[data-theme="light"] .browser-more:hover { background: #edf0f2 !important; }
 .app-shell[data-theme="light"] .library-tree-group > summary:hover { background: #e8f1fb; }
+
+/* Blueprint Light Gray 3 controls against white cards, with Gray 2 edges. */
+.app-shell[data-theme="light"] {
+  --theme-input: #edeff2;
+  --control-surface: #e5e8eb;
+  --control-hover: #d3d8de;
+  --control-border: #738091;
+  --control-placeholder: #5f6b7c;
+  --control-disabled: #edeff2;
+  --control-disabled-text: #5f6b7c;
+  --control-focus: #215db0;
+  --control-shadow: inset 0 1px 2px #1114180d;
+}
+
+.app-shell[data-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea) {
+  background:var(--theme-input); color:var(--theme-text);
+  border:1px solid var(--control-border); border-radius:3px;
+  box-shadow:var(--control-shadow);
+}
+.app-shell[data-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):hover:not(:disabled):not([readonly]) { border-color:var(--theme-accent); }
+.app-shell[data-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):focus-visible {
+  border-color:var(--control-focus); outline:2px solid var(--control-focus); outline-offset:1px;
+}
+.app-shell[data-theme="light"] input::placeholder,
+.app-shell[data-theme="light"] textarea::placeholder { color:var(--control-placeholder); opacity:1; }
+.app-shell[data-theme="light"] button:not([class*="bp5-intent-"]):where(:not(.compact-file-row, .explorer-item, .active, .selected, .primary, .danger, [role="tab"], .bp5-intent-primary, .bp5-intent-success, .bp5-intent-warning, .bp5-intent-danger)) {
+  background:var(--control-surface); color:var(--theme-text);
+  border-color:var(--control-border); box-shadow:inset 0 1px 0 #ffffff0a;
+}
+.app-shell[data-theme="light"] button:not([class*="bp5-intent-"]):where(:not(.compact-file-row, .explorer-item, .active, .selected, .primary, .danger, [role="tab"], .bp5-intent-primary, .bp5-intent-success, .bp5-intent-warning, .bp5-intent-danger)):hover:not(:disabled) { background:var(--control-hover); border-color:var(--theme-accent); }
+.app-shell[data-theme="light"] button:focus-visible { outline:2px solid var(--control-focus); outline-offset:2px; }
+.app-shell[data-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):disabled,
+.app-shell[data-theme="light"] button:not([class*="bp5-intent-"]):where(:not(.compact-file-row, .explorer-item, .active, .selected, .primary, .danger, [role="tab"], .bp5-intent-primary, .bp5-intent-success, .bp5-intent-warning, .bp5-intent-danger)):disabled {
+  background:var(--control-disabled); color:var(--control-disabled-text);
+  border-color:var(--theme-border); box-shadow:none; opacity:1; cursor:not-allowed;
+}
+.app-shell[data-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea)[readonly] { color:var(--theme-muted); }
+.app-shell[data-theme="light"] :is(input[type="checkbox"], input[type="radio"]) { accent-color:var(--theme-accent); }
+.app-shell[data-theme="light"] select option { background:var(--theme-input); color:var(--theme-text); }
+
+/* Explorer entries are selection rows, rather than toolbar actions. */
+.app-shell[data-theme="light"] .compact-explorer .compact-file-row {
+  background:transparent; border-color:transparent; box-shadow:none;
+}
+.app-shell[data-theme="light"] .compact-explorer .compact-file-row:hover { background:#e5e8eb; }
+.app-shell[data-theme="light"] .compact-explorer .compact-file-row.selected {
+  background:#2d72d226; border-color:#215db0;
+}

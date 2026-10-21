@@ -19,7 +19,7 @@ describe("BIOMERO-inspired light theme", () => {
     const rules = Array.from(withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g));
     expect(rules.length).toBeGreaterThan(10);
     for (const [, selector, declarations] of rules) {
-      expect(selector.split(",").every((entry) =>
+      expect(selector.split(/,(?![^(]*\))/).every((entry) =>
         entry.trim().startsWith('.app-shell[data-theme="light"]')
       )).toBe(true);
       expect(declarations).not.toMatch(

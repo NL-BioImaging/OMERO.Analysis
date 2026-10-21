@@ -33,3 +33,15 @@ describe("theme contrast", () => {
     expect(contrast("#5f6b7c", "#f0f1f5")).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+it.each(["dark","light"])("keeps %s control boundaries and text distinguishable", theme=>{
+  const blocks=[...stylesheet.matchAll(new RegExp(`\\.app-shell\\[data-theme="${theme}"\\]\\s*\\{([^}]+)\\}`,"g"))].map(match=>match[1]).join("\n");
+  const color=(name:string)=>blocks.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`))![1];
+  const text=theme==="dark"?"#f6f7f9":"#1c2127";
+  const panel=theme==="dark"?"#2f343c":"#ffffff";
+  expect(contrast(color("--control-border"),panel)).toBeGreaterThanOrEqual(3);
+  expect(contrast(color("--control-border"),color("--theme-input"))).toBeGreaterThanOrEqual(3);
+  for(const name of ["--theme-input","--control-surface","--control-hover"])
+    expect(contrast(text,color(name))).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(color("--control-disabled-text"),color("--control-disabled"))).toBeGreaterThanOrEqual(4.5);
+});

@@ -14,7 +14,17 @@ export async function notebookParameterKey(notebookId: string, run: NotebookRunP
 }
 
 export function runLabel(file: WorkspaceFile): string {
-  return file.notebookRunId ? `Run ${file.notebookRunStartedAt?.replace("T", " ").replace("Z", " UTC") || "unknown time"} · ${file.notebookRunId.slice(0, 8)}` : "Earlier results";
+  return file.notebookRunId || file.notebookRunStartedAt ? `Run ${file.notebookRunStartedAt?.replace("T", " ").replace("Z", " UTC") || "unknown time"} · ${file.notebookRunId?.slice(0, 8) || "legacy"}` : "Earlier results";
+}
+
+/** Use execution provenance, never the notebook's currently edited values/defaults. */
+export function runParametersLabel(file: WorkspaceFile, notebook?: NotebookRecord): string {
+  const matches = (notebook?.protocolRuns || []).filter(run => file.notebookRunId
+    ? run.id === file.notebookRunId
+    : !!file.notebookRunStartedAt && run.startedAt === file.notebookRunStartedAt);
+  if (matches.length !== 1) return "Parameters not recorded";
+  const entries = Object.entries(matches[0].parameters);
+  return entries.length ? `Parameters: ${entries.map(([name, value]) => `${name}=${JSON.stringify(value)}`).join(" · ")}` : "No run parameters";
 }
 
 export function remoteResultName(file: WorkspaceFile, notebooks: NotebookRecord[]): string {

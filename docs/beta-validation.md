@@ -41,3 +41,17 @@ Final web image: `local/biomero-omeroweb:analysis-beta1`, `sha256:640c632a866ce8
 Rollback image: `local/biomero-omeroweb:before-sync-help-20261021` (pre-change digest starts `a0a8e392`). Select this explicit image with `ANALYSIS_LOCAL_WEB_IMAGE` and recreate only `omeroweb` through the existing base/local Analysis compose configuration, without rebuilding, pulling or restarting dependencies. Code rollback does not reverse OMERO cleanup. Recover content only from the separately retained, checksummed backups after reviewing current deletion receipts; never automatically restore old snapshots over newer notebooks.
 
 Only the Analysis beta branch is published. Companion branches and workflow execution pins are unchanged; no CI Segmentation rebuild, PyPI publication or GitHub release tag is included.
+
+
+## Run parameter labels and control surfaces — 21 October 2026
+
+Explorer result runs now show their recorded parameter names and values below the run date/ID, including when a run folder is collapsed. These values come from the matching execution record, never current edits or notebook defaults. Runs without parameter definitions say “No run parameters”; unavailable or ambiguous historical provenance says “Parameters not recorded”. Legacy runs with one matching recorded timestamp can also display their settings. Folder tooltips retain the complete run title and settings; settings wrap in the tree.
+
+Dark and light controls use separate Blueprint gray surfaces, borders, hover, disabled and keyboard-focus states. Inputs, selects, textareas and neutral buttons stand out from cards, while Explorer selection rows and connected navigation tabs keep their existing behavior. Semantic action colors are preserved. Contrast checks require at least 3:1 for field boundaries and 4.5:1 for normal/disabled control text.
+
+Validation: 265 frontend tests passed across 58 files. Production type checking, Vite compilation, wheel packaging and Docker build passed. All 42 deployed JS/CSS checksums matched; installed dependencies passed pip check. No backend/SDK source changed; their previously recorded 351-test result remains the baseline.
+
+Local image: `local/biomero-omeroweb:analysis-beta1`, `sha256:69c8b7bb1558df10e4cf20446a477f6a3f05d6d7dc43226032bca579e7bea7c5`. Package versions remain as listed above. Rollback: `local/biomero-omeroweb:before-run-parameters-theme-20261021`, retaining previous image `sha256:640c632a866ce80e4f424e5fa270cfe33fdf1ba1328244839cd5f935358d977e`. Select that explicit image with `ANALYSIS_LOCAL_WEB_IMAGE` and recreate only omeroweb through the existing base/local Analysis compose files with no build/pull/dependency restart. This update requires no data migration or result cleanup.
+
+
+Chrome acceptance passed as root in the separate SolHunt acceptance workspace (Dataset 851): recorded multiplier=1 and multiplier=2 labels stayed visible with both run folders collapsed; the legacy graphical-setup run displayed minimum=2 and timepoint=0 from its unique historical record. Both themes displayed the parameter form correctly. Computed neutral button surfaces were Blueprint Dark Gray 5 (#404854) and Light Gray 3 (#e5e8eb); field surfaces were Dark Gray 2 (#252a31) and Light Gray 4 (#edeff2). Keyboard navigation produced a 2px blue focus outline in each theme. No analytical code was run or original notebook edited. Screenshots are retained locally outside the repository: outputs/run-parameters-theme-dark.png and outputs/run-parameters-theme-light.png.

@@ -33,3 +33,17 @@ it("keeps database and CSV inputs inspectable without deletion controls or bulk 
   fireEvent.click(screen.getByRole("button",{name:"Remove selected items"}));
   expect(remove).toHaveBeenCalledWith([{kind:"file",id:"6"}]);
 });
+
+it("keeps each run's recorded settings visible even with its folder collapsed",()=>{
+  const notebooks:NotebookRecord[]=[{id:"nb",name:"counts.ipynb",workspaceId:"w",document:{nbformat:4,nbformat_minor:5,metadata:{},cells:[]},attachmentIds:[],selectedDataFileIds:[],createdAt:"2026-10-21",updatedAt:"2026-10-21",parameterValues:{minimum:99},protocolRuns:[
+    {id:"one",startedAt:"2026-10-21T12:00:00Z",parameters:{minimum:1},status:"success",sources:[],outputs:[]},
+    {id:"two",startedAt:"2026-10-21T13:00:00Z",parameters:{minimum:2},status:"success",sources:[],outputs:[]}]}] as NotebookRecord[];
+  const results=["one","two"].map(id=>({id,name:"counts.csv",size:10,source:"result",state:"ready",notebookId:"nb",notebookRunId:id,logicalPath:"results/counts.csv"})) as WorkspaceFile[];
+  render(<WorkspaceExplorer name="Fixture" inputs={[]} notebooks={notebooks} results={results} query="" onQuery={()=>{}}
+    compatibility={{}} selectedFileId={null} selectedNotebookId={null} onFile={()=>{}} onNotebook={()=>{}} onAttach={()=>{}} onRefresh={()=>{}} onDropFiles={()=>{}} onDelete={()=>{}} />);
+  const label=screen.getByText("Parameters: minimum=1");
+  fireEvent.click(label.closest("summary")!);
+  expect(label).toBeVisible();
+  expect(screen.getByText("Parameters: minimum=2")).toBeVisible();
+  expect(screen.queryByText("Parameters: minimum=99")).toBeNull();
+});
