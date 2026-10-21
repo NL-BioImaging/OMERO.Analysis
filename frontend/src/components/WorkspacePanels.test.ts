@@ -69,8 +69,8 @@ describe("artifact delimited previews", () => {
 
   it("renders a bounded XLSX template preview from its local data profile", () => {
     const file: WorkspaceFile = {
-      id: "xlsx", workspaceId: "workspace", name: "screen-template.xlsx",
-      logicalPath: "Workspace/Input/screen-template.xlsx",
+      id: "xlsx", workspaceId: "workspace", name: "screen+template.xlsx",
+      logicalPath: "Workspace/Input/screen+template.xlsx",
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       size: 200, sha256: "hash", source: "local", state: "ready",
       data: new ArrayBuffer(200),
@@ -79,7 +79,7 @@ describe("artifact delimited previews", () => {
     render(createElement(ArtifactInspector, {
       item: { kind: "file", title: file.name, file },
       profiles: [{
-        path: "/input/screen-template.xlsx", format: "xlsx", size: 200,
+        path: "/input/screen_template.xlsx", format: "xlsx", size: 200,
         summary: {
           rows: 2,
           sheet: "Plate layout",

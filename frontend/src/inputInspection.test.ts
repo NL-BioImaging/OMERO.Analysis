@@ -38,3 +38,18 @@ it("loads remote choices through the bounded broker without starting notebook Py
  await expect(queryInputChoices(remote,"DELETE FROM objects",bridge as unknown as OmeroBridge,runtime as unknown as PythonRuntime)).rejects.toThrow(/read-only/);
  expect(bridge.remoteQuery).toHaveBeenCalledTimes(1);
 });
+
+it("uses the same safe runtime name for schema, readiness and parameter choices",async()=>{
+  const selected={...file,name:"marker+_cells.csv"};
+  const declared={id:"measurements",kind:"query",formats:["csv"],required:true,
+    schema:{tables:[{name:"data",columns:[{name:"count"}]}]},readiness:[{sql:"SELECT 1 AS present"}]} as NotebookProtocolInput;
+  const runtime={syncInputs:vi.fn(),profileInputs:vi.fn(async()=>[{path:"/input/marker__cells.csv",summary:{preview:{columns:["count"]}}}]),
+    configureNotebook:vi.fn(),runNotebookCell:vi.fn(async()=>({preview:true}))};
+  const source=await inspectInput(selected,declared,{} as OmeroBridge,runtime as unknown as PythonRuntime);
+  expect(source.error).toBeUndefined();
+  expect(source.readiness?.["SELECT 1 AS present"]).toBe(true);
+  expect(runtime.configureNotebook).toHaveBeenCalledWith(expect.objectContaining({bindings:[expect.objectContaining({path:"/input/marker__cells.csv"})]}));
+  runtime.runNotebookCell.mockResolvedValueOnce({preview:{columns:["count"],data:[[12]]}} as any);
+  expect(await queryInputChoices(selected,"SELECT count FROM data LIMIT 1",{} as OmeroBridge,runtime as unknown as PythonRuntime)).toEqual({columns:["count"],rows:[[12]]});
+  expect(runtime.configureNotebook).toHaveBeenLastCalledWith(expect.objectContaining({bindings:[expect.objectContaining({path:"/input/marker__cells.csv"})]}));
+});

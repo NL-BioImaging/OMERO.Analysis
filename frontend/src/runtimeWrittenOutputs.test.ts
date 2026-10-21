@@ -24,3 +24,16 @@ it("exports identically rewritten outputs, excludes untouched files and restores
   run('failed','fail');await vi.waitFor(()=>expect(messages.some(m=>m.id==='failed'&&m.type==='error')).toBe(true));
   expect(FS.write).toBe(originalWrite);
 });
+
+it("writes input bytes under the same safe basename used by Inspector bindings",async()=>{
+  const messages:any[]=[],written:string[]=[];let receive:(event:{data:unknown})=>void=()=>{};
+  const pyodide={loadPackage:async()=>{},runPythonAsync:async()=>"null",globals:{set(){}},setStdout(){},setStderr(){},
+    FS:{mkdirTree(){},readdir:()=>[".",".."],writeFile:(path:string)=>written.push(path)}};
+  const context:any={mockModule:{loadPyodide:async()=>pyodide},fetch:async()=>({ok:true}),postMessage:(message:any)=>messages.push(message),addEventListener:(_name:string,listener:typeof receive)=>{receive=listener;}};
+  runInNewContext(runtimeWorker("https://omero.example/runtime").replace('const module = await import(runtimeBase + "/pyodide.mjs");','const module = globalThis.mockModule;'),context);
+  await vi.waitFor(()=>expect(context.XMLHttpRequest).toBeDefined());
+  receive({data:{source:"oa-parent",id:"file",type:"file",value:{name:"marker+_cells.csv",data:new ArrayBuffer(1)}}});
+  await vi.waitFor(()=>expect(messages.some(message=>message.id==="file"&&message.type==="file")).toBe(true));
+  expect(messages.find(message=>message.id==="file").value).toBe("marker__cells.csv");
+  expect(written).toEqual(["/input/marker__cells.csv","/input/selected_measurements/marker__cells.csv","/selected_measurements/marker__cells.csv"]);
+});

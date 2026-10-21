@@ -1,4 +1,5 @@
 import runtimePackages from "../runtime-packages.json";
+import { runtimeInputName } from "./runtimePaths";
 import { RESULT_MIME_TYPES } from "./resultMedia";
 import type { OmeroContext, RuntimeOutput, RuntimeProgress, WorkspaceFile } from "./types";
 import type {
@@ -44,6 +45,7 @@ export function runtimeWorker(runtimeBase: string): string {
   const packages = JSON.stringify(PACKAGES);
   return `
 const runtimeBase = ${base};
+const runtimeInputName = ${runtimeInputName.toString()};
 const send = (id, type, value, transfer = []) => postMessage({source:"oa-runtime", id, type, value}, transfer);
 const runtimeFetch = globalThis.fetch.bind(globalThis);
 const denyNetwork = () => Promise.reject(new Error("Network access is disabled in Analysis Python"));
@@ -525,7 +527,7 @@ for _oa_name in list(globals()):
       await pyodide.runPythonAsync("ctx = _OANotebookContext(_oa_json.loads(_oa_notebook_config_json))");
       send(message.id, "notebook_config", true);
     } else if (message.type === "file") {
-      const safe = String(message.value.name).replace(/[^A-Za-z0-9._ -]/g, "_");
+      const safe = runtimeInputName(String(message.value.name));
       const bytes = new Uint8Array(message.value.data);
       pyodide.FS.writeFile("/input/" + safe, bytes);
       pyodide.FS.mkdirTree("/input/selected_measurements");

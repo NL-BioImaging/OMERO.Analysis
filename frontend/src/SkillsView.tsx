@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { runtimeInputName } from "./runtimePaths";
 import { strToU8, zipSync } from "fflate";
 import { assistantNotebook, browserHandoffPrompt, workspaceSkillsUrl } from "./browserHandoff";
 import { Button } from "./components/BlueprintControls";
@@ -59,7 +60,7 @@ export function schemaContext(inputs: WorkspaceFile[], schemas: Record<string, C
   return { schema: "nl.bioimaging.analysis-schema-context.v1", inputs: inputs.filter(file => file.source !== "result" && file.role !== "chat-attachment" && !file.deletedAt).map(file => ({
     name: file.name, format: file.name.split(".").pop()?.toLowerCase() || "",
     role: file.role || "input", input_kind: file.role !== "template-input" && /\.(duckdb|sqlite3?|csv)$/i.test(file.name) ? "query" : "file",
-    input_path: `input/${file.name.replace(/[^A-Za-z0-9._ -]/g, "_")}`,
+    input_path: `input/${runtimeInputName(file.name)}`,
 
     capabilities: file.dataQueryMode === "remote" ? ["read-only-remote-query"] : ["local-preview"],
     tables: schemas[file.id]?.tables?.map(table => ({ name: table.name, columns: table.columns?.map(c => ({ name: c.name, type: c.type })) })) ?? null
@@ -168,7 +169,7 @@ export function SkillsView({ bridge, catalog, viewerCatalog, inputs, schemas, wo
     <details className="skills-inputs"><summary>Workspace inputs ({inputs.filter(file => !file.deletedAt && file.source !== "result" && file.role !== "chat-attachment").length})</summary>
       <p>All attached inputs are listed here, including plate templates. Supporting spreadsheets/templates can be downloaded for your browser assistant to read. Downloads contain the file contents; they only happen when requested. Databases stay remote and use read-only queries.</p>
       <ul>{inputs.filter(file => !file.deletedAt && file.source !== "result" && file.role !== "chat-attachment").map(file => <li key={file.id}>
-        <div><strong>{file.name}</strong><small>{file.role === "template-input" ? "Plate template / supporting input" : "Input"} · {file.name.split(".").pop()?.toUpperCase()}<br /><code>{`input/${file.name.replace(/[^A-Za-z0-9._ -]/g, "_")}`}</code></small></div>
+        <div><strong>{file.name}</strong><small>{file.role === "template-input" ? "Plate template / supporting input" : "Input"} · {file.name.split(".").pop()?.toUpperCase()}<br /><code>{`input/${runtimeInputName(file.name)}`}</code></small></div>
         {onDownloadInput && canDownloadSupportingInput(file) && <Button disabled={busy || !includeContext} title={includeContext ? `Download ${file.name} for the assistant to read` : "Enable input sharing before downloading for your assistant"}
           onClick={() => void action(async () => { await onDownloadInput(file); setStatus(`Downloaded ${file.name}. The assistant can read it and declare its file input in the notebook.`); })}>Download input {file.name}</Button>}
       </li>)}</ul>

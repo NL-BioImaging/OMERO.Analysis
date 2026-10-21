@@ -1,6 +1,7 @@
 import { readOnlyQuery } from "./inspectorQuery";
 import { OmeroBridge } from "./api";
 import { PythonRuntime } from "./runtime";
+import { runtimeInputName } from "./runtimePaths";
 import { inputCompatibility, type CompatibilitySource } from "./notebookCompatibility";
 import { NOTEBOOK_PROTOCOL_SCHEMA, type NotebookProtocolInput, type NotebookProtocolContract } from "./notebookProtocol";
 import type { WorkspaceFile } from "./types";
@@ -15,7 +16,7 @@ export async function inspectInput(file: WorkspaceFile, input: NotebookProtocolI
   else if (file.data) {
     await runtime.syncInputs([file]);
     const profiles = await runtime.profileInputs();
-    const profile = profiles.find(value => value.path === `/input/${file.name}`);
+    const profile = profiles.find(value => value.path === `/input/${runtimeInputName(file.name)}`);
     if (!profile) return { ...source, error: "No schema was returned for the selected input" };
     if (profile.error) return { ...source, error: profile.error };
     const summary = profile.summary;
@@ -33,7 +34,7 @@ export async function inspectInput(file: WorkspaceFile, input: NotebookProtocolI
       results: { path: "results" }, parameters: [], requirements: [] };
     await runtime.configureNotebook({ contract, parameters: {}, bindings: [{
       inputId: input.id, fileId: file.id, name: file.name, kind: "query", mode: "local",
-      path: `/input/${file.name}`, format: file.name.split(".").pop() as any
+      path: `/input/${runtimeInputName(file.name)}`, format: file.name.split(".").pop() as any
     }] });
   }
   for (const check of input.readiness || []) {
@@ -70,7 +71,7 @@ export async function queryInputChoices(file: WorkspaceFile, sql: string, bridge
   const format=file.name.split(".").pop() as any;
   const contract:NotebookProtocolContract={schema:NOTEBOOK_PROTOCOL_SCHEMA,inputs:[{id:"choices",kind:"query",path:`input/${file.name}`,formats:[format],required:true}],results:{path:"results"},parameters:[],requirements:[]};
   await runtime.syncInputs([file]);
-  await runtime.configureNotebook({contract,parameters:{},bindings:[{inputId:"choices",fileId:file.id,name:file.name,kind:"query",mode:"local",path:`/input/${file.name}`,format}]});
+  await runtime.configureNotebook({contract,parameters:{},bindings:[{inputId:"choices",fileId:file.id,name:file.name,kind:"query",mode:"local",path:`/input/${runtimeInputName(file.name)}`,format}]});
   const output=await runtime.runNotebookCell(`import json as _choice_json\n_choice_frame = await ctx.query("choices", ${JSON.stringify(sql)})\n_choice_json.loads(_choice_frame.to_json(orient="split"))`);
   const value:any=(output.preview as any)?.value ?? output.preview;
   if (!Array.isArray(value?.columns) || !Array.isArray(value?.data)) throw new Error("Choices query returned an invalid preview");

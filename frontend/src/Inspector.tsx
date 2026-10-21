@@ -5,6 +5,7 @@ import { Button } from "./components/BlueprintControls";
 import { ArtifactInspector } from "./components/WorkspacePanels";
 import { OmeroBridge } from "./api";
 import { PythonRuntime } from "./runtime";
+import { runtimeInputName } from "./runtimePaths";
 import { browseQuery, pageQuery, quoteIdentifier, resultCsv, PAGE_SIZE } from "./inspectorQuery";
 import type { Bootstrap, DataProfile, NotebookDocument, WorkspaceFile } from "./types";
 import { NOTEBOOK_PROTOCOL_SCHEMA, type NotebookProtocolContract } from "./notebookProtocol";
@@ -43,7 +44,8 @@ export function Inspector({ file, bridge, bootstrap, theme, onAttach, onNotebook
   const [executedSql, setExecutedSql] = useState("SELECT 1 AS example");
   const [result, setResult] = useState<Rows>({ columns: [], rows: [] });
   const [profiles, setProfiles] = useState<DataProfile[]>([]);
-  const selectedProfile = profiles.find(profile => profile.path === `/input/${file?.name}`);
+  const runtimeName = file ? runtimeInputName(file.name) : "";
+  const selectedProfile = profiles.find(profile => profile.path === `/input/${runtimeName}`);
   const [status, setStatus] = useState(""), [error, setError] = useState(""), [ready, setReady] = useState(false);
   const [summary, setSummary] = useState<Rows | null>(null), [busy, setBusy] = useState(false);
   const localQueue = useRef<Promise<unknown>>(Promise.resolve());
@@ -60,7 +62,10 @@ export function Inspector({ file, bridge, bootstrap, theme, onAttach, onNotebook
     setResult({ columns: [], rows: [] }); setProfiles([]); setSummary(null); setError(""); setFilter(""); setSort(""); setFilterColumn("");
     if (!file) { setBusy(false); setStatus(""); return; }
     setStatus("Loading input schema…"); setBusy(true);
-    const operation = localQueue.current.catch(() => undefined).then(async () => {
+    // Remote schema requests never touch Python and must not hold its queue
+    // after the user has selected a different, local file.
+    const remote = !!file.annotationId && file.dataQueryMode === "remote";
+    const operation = (remote ? Promise.resolve() : localQueue.current.catch(() => undefined)).then(async () => {
       if (current !== generation.current) return;
       let found: Table[] = [];
       if (file.annotationId && file.dataQueryMode === "remote") {
@@ -73,7 +78,7 @@ export function Inspector({ file, bridge, bootstrap, theme, onAttach, onNotebook
         await runtime.syncInputs([file]);
         const discovered = await runtime.profileInputs();
         if (current !== generation.current) return;
-        const profile = discovered.find(value => value.path === `/input/${file.name}`);
+        const profile = discovered.find(value => value.path === `/input/${runtimeName}`);
         if (!profile) throw new Error("No preview was returned for the selected input. Retry inspection.");
         if (profile.error) throw new Error(profile.error);
         setProfiles(discovered);
@@ -88,7 +93,7 @@ export function Inspector({ file, bridge, bootstrap, theme, onAttach, onNotebook
             inputs: [{ id: "data", kind: "query", path: `input/${file.name}`, formats: [format], required: true }],
             results: { path: "results" }, requirements: [], parameters: [] };
           await runtime.configureNotebook({ contract, bindings: [{
-            inputId: "data", fileId: file.id, name: file.name, kind: "query", mode: "local", path: `/input/${file.name}`, format
+            inputId: "data", fileId: file.id, name: file.name, kind: "query", mode: "local", path: `/input/${runtimeName}`, format
           }], parameters: {} });
         }
       } else if (file.data) {
@@ -100,8 +105,8 @@ export function Inspector({ file, bridge, bootstrap, theme, onAttach, onNotebook
       schemaCallback.current?.(file, found); setStatus(found.length ? "Schema loaded." : "Preview ready.");
     }).catch(e => { if (current === generation.current) { setError(String(e)); setStatus("Inspection failed. Retry below."); } })
       .finally(() => { if (current === generation.current) setBusy(false); });
-    localQueue.current = operation;
-  }, [file?.id, file?.sha256, file?.state, runtime, bridge, schemaRevision]);
+    if (!remote) localQueue.current = operation;
+  }, [file?.id, file?.sha256, file?.state, file?.data, runtime, bridge, schemaRevision]);
 
   async function query(statement: string, parameters: Record<string, { type: string; value: unknown }> = {}): Promise<Rows> {
     if (!file) throw new Error("Choose an input");
@@ -143,9 +148,9 @@ export function Inspector({ file, bridge, bootstrap, theme, onAttach, onNotebook
     const current = generation.current;
     setBusy(true); setError(""); setStatus(`Loading sheet ${name}…`);
     try {
-      const discovered = await runtime.profileInputs({ [file.name]: name });
+      const discovered = await runtime.profileInputs({ [runtimeName]: name });
       if (current !== generation.current) return;
-      const profile = discovered.find(value => value.path === `/input/${file.name}`);
+      const profile = discovered.find(value => value.path === `/input/${runtimeName}`);
       if (!profile) throw new Error("No preview was returned for the selected sheet.");
       if (profile.error) throw new Error(profile.error);
       setProfiles(discovered); setStatus(`Sheet ${name}: preview limited to 100 rows.`);

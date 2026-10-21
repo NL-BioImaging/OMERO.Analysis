@@ -8,6 +8,7 @@ useRef,
 useState
 } from "react";
 import { Inspector, queryNotebook } from "./Inspector";
+import { runtimeInputName as notebookRuntimeName } from "./runtimePaths";
 import { quoteIdentifier } from "./inspectorQuery";
 import { WorkflowExamples } from "./WorkflowExamples";
 import NotebookView,{ parseNotebook,serializeNotebook } from "./NotebookView";
@@ -194,10 +195,6 @@ function bytesLabel(value: number): string {
   if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MiB`;
   if (value >= 1024) return `${(value / 1024).toFixed(1)} KiB`;
   return `${value} bytes`;
-}
-
-function notebookRuntimeName(name: string): string {
-  return name.replace(/[^A-Za-z0-9._ -]/g, "_");
 }
 
 function notebookQueryFormat(name: string): "duckdb" | "sqlite" | "sqlite3" | "csv" {
@@ -2806,8 +2803,10 @@ export default function App() {
               bridge={bridge} bootstrap={bootstrap} theme={theme} onAttach={() => addFilesInput.current?.click()}
               onNotebook={document => void createNotebook(document)}
               onDownload={file => {
-                if (file.data) downloadBytes(file.name, file.data, file.type);
-                else setStatus("This file has no local preview to download.");
+                void restoreResult(file).then(ready => {
+                  if (ready.data) downloadBytes(ready.name, ready.data, ready.type);
+                  else setStatus("This file has no local preview to download.");
+                }).catch(error => setStatus(`Download failed: ${String(error)}`));
               }}
               onSchema={(file, tables) => setInspectedSchemas(current => ({ ...current, [file.id]: { tables } }))}
               /></div>

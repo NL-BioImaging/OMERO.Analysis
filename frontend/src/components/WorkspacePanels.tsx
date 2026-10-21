@@ -6,6 +6,7 @@ import type {
   WorkspaceFile
 } from "../types";
 import { Artifact } from "./ResultPreview";
+import { runtimeInputName } from "../runtimePaths";
 import { ActionIcon } from "./ActionIcon";
 import { Button } from "./BlueprintControls";
 
@@ -144,7 +145,7 @@ function FilePreview({
   profile?: DataProfile;
 }) {
   if (file.type === "image/png" || file.type === "image/svg+xml" || file.type === "video/mp4") {
-    return <Artifact file={file} />;
+    return <Artifact file={file} companions={[]} />;
   }
   if (!file.data) return <p className="artifact-help">This file is not available locally.</p>;
   if (/\.(xlsx?|xls)$/i.test(file.name)) {
@@ -471,7 +472,7 @@ export function ArtifactInspector({
   const file = item?.file;
   const fileProfile = file
     ? profiles.find((profile) =>
-        profile.path.replace(/\\/g, "/").endsWith(`/${file.name}`))
+        profile.path.replace(/\\/g, "/").endsWith(`/${runtimeInputName(file.name)}`))
     : undefined;
   const localDelimitedShape = useMemo(() => {
     if (
