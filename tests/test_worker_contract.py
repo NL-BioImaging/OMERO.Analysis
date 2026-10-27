@@ -119,7 +119,9 @@ def test_broker_http_contract(settings, worker_url, old_broker, broker_version, 
     if format_name == "csv":
         path.write_bytes('id,area,label\n1,10.5,alpha\n2,20.5,"é,""beta"""\n'.encode())
     else:
-        connection = duckdb.connect(str(path)) if format_name == "duckdb" else sqlite3.connect(path)
+        # Exercise the HTTP protocol across worker generations, using a storage
+        # format the baseline worker can read even when the fixture writer is newer.
+        connection = duckdb.connect(str(path), config={"storage_compatibility_version": "v1.2.0"}) if format_name == "duckdb" else sqlite3.connect(path)
         connection.execute("CREATE TABLE measurements(id INTEGER, area DOUBLE, label VARCHAR)")
         connection.executemany("INSERT INTO measurements VALUES (?, ?, ?)", [(1, 10.5, "alpha"), (2, 20.5, 'é,"beta"')])
         if format_name != "duckdb":

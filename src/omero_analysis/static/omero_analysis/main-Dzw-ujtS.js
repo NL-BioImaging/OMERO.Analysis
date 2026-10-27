@@ -5653,7 +5653,7 @@ const mk = /* @__PURE__ */ nh(hk), Ok = `# OMERO.Analysis user manual — 1.1 be
 \r
 ## Quick start: from data to a result\r
 \r
-1. Open BIOMERO Data Analysis from your OMERO image, plate or screen. Choose the source, select the input attachments and create or open a workspace. Back and Next keep your choices. Recent workspaces are available on this launch screen.\r
+1. Open BIOMERO Data Analysis from your OMERO image, plate or screen. Choose the source, select image inputs and data attachments, then create or open a workspace. Back and Next keep your choices. Recent workspaces are available on this launch screen.\r
 2. In Analysis, Explorer opens on the left and Inspector selects the first database or CSV. Check that this is the intended data. Select a spreadsheet, image or another input to inspect it instead.\r
 3. Open Libraries and import a starter or workflow example. Alternatively, choose New or Upload in Notebooks. Importing a library notebook makes a workspace copy.\r
 4. Check compatibility and Notebook setup. Select the intended input if more than one matches. Set Run parameters if the notebook declares them.\r
@@ -5672,7 +5672,7 @@ Open another workspace from the BIOMERO launch screen. Analysis deliberately doe
 \r
 ## Explorer, attachments and selection\r
 \r
-Inputs contains attached measurement files, supporting spreadsheets/templates and source image or plate entries. Use Attach input to add data. A local file is available in this browser; a remote OMERO attachment retains its source reference. Hover over a filename for its origin, path and size.\r
+Inputs contains attached measurement files, supporting spreadsheets/templates and source image or plate entries. On both the OMERO middle panel and BIOMERO launch screen, Choose image inputs lists the images in a Dataset or plates in a Screen. Check only the entries needed for the new workspace; Select all and Clear selection are available. Dataset and Screen lists start unchecked. Leave them unchecked for a data-only workspace. Continuing an existing workspace retains its saved input selection. Inside Analysis, Choose image inputs changes the image selection for that workspace. Use Attach input to add data. A local file is available in this browser; a remote OMERO attachment retains its source reference. Hover over a filename for its origin, path and size.\r
 \r
 Drag the vertical splitter to resize Explorer. When the splitter is focused, arrow keys also adjust its width. Expand or collapse folders with their arrows. Find a file narrows visible rows without changing the files in the workspace. Refresh workspace updates the available workspace data; it is not a kernel restart.\r
 \r
@@ -6067,14 +6067,14 @@ function jk(e) {
         case 1:
           return n !== "all" ? [3, 3] : [4, import(
             /* webpackChunkName: "blueprint-icons-all-paths-loader" */
-            "./allPathsLoader-C6sBVKHd.js"
+            "./allPathsLoader-nYyU6rf7.js"
           )];
         case 2:
           return [2, a.sent().allPathsLoader];
         case 3:
           return [4, import(
             /* webpackChunkName: "blueprint-icons-split-paths-by-size-loader" */
-            "./splitPathsBySizeLoader-Bm4cFyqg.js"
+            "./splitPathsBySizeLoader-DUZiPGRS.js"
           )];
         case 4:
           return [2, a.sent().splitPathsBySizeLoader];
