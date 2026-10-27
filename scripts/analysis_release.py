@@ -89,7 +89,7 @@ def validate_manifest(manifest, version):
         if not isinstance(entry, dict):
             raise ValueError("Invalid wheel manifest entry")
         name = entry.get("name", "")
-        match = re.fullmatch(r"(omero_analysis(?:_notebook)?)-(\d+\.\d+\.\d+)-py3-none-any\.whl", name) if isinstance(name, str) else None
+        match = re.fullmatch(r"(omero_analysis(?:_notebook)?)-(\d+\.\d+\.\d+(?:b[1-9]\d*)?)-py3-none-any\.whl", name) if isinstance(name, str) else None
         if not match or match[1] in found:
             raise ValueError("Invalid or duplicate release wheel filename")
         found.add(match[1])

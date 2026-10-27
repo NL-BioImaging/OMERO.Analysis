@@ -156,3 +156,12 @@ def test_changed_existing_release_fails_before_any_upload(assets):
             pytest.fail("immutable preflight must precede all uploads")
     with pytest.raises(ValueError, match="different bytes"):
         uploader.upload_assets("v0.15.0", "NL-BioImaging/OMERO.Analysis", source / "manifest.json", [source], command)
+
+@pytest.mark.parametrize("version", ["1.1.0b1", "1.1.0"])
+def test_release_manifest_accepts_validated_beta_and_stable_wheels(tmp_path, version):
+    wheels = [make_wheel(tmp_path, "omero-analysis", version),
+              make_wheel(tmp_path, "omero-analysis-notebook", "0.1.0")]
+    manifest = builder.build_manifest(version, wheels)
+    assert release.validate_manifest(manifest, version) == manifest["wheels"]
+    for path, entry in zip(sorted(wheels), manifest["wheels"]):
+        assert release.verify_asset(path, entry) == release.wheel_identity(path)
