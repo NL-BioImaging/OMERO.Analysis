@@ -1,5 +1,57 @@
 import { PythonRuntime } from "./runtime";
 
+it("waits for a hidden tab and starts when it becomes visible without a false timeout", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const runtime = new PythonRuntime("/omero_analysis/runtime/");
+  const request = vi.spyOn(runtime as any, "request").mockResolvedValue(undefined);
+  const progress = vi.fn();
+  const startup = runtime.start([], progress);
+  expect(document.querySelector("iframe")).toBeNull();
+  window.dispatchEvent(new MessageEvent("message", {source: null,
+    data: {source: "oa-sandbox", type: "ready"}}));
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(runtime.started).toBe(true);
+  expect(runtime.ready).toBe(false);
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({message: expect.stringContaining("Open the Analysis tab")}));
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  const frame = document.querySelector("iframe")!;
+  window.dispatchEvent(new MessageEvent("message", {source: frame.contentWindow,
+    data: {source: "oa-sandbox", type: "ready"}}));
+  await startup;
+  expect(runtime.ready).toBe(true);
+  runtime.dispose();
+  request.mockRestore();
+  visibility.mockRestore();
+  vi.useRealTimers();
+});
+
+it("pauses a pending frame deadline while hidden and cleans up visibility listeners on cancellation", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const append = vi.spyOn(document.body, "append").mockImplementation(() => {});
+  const runtime = new PythonRuntime("/omero_analysis/runtime/");
+  const startup = runtime.start([]);
+  const stopped = expect(startup).rejects.toThrow("Python execution stopped");
+  await vi.advanceTimersByTimeAsync(10_000);
+  visibility.mockReturnValue("hidden");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(runtime.started).toBe(true);
+  runtime.stop();
+  await stopped;
+  const calls = append.mock.calls.length;
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(append.mock.calls).toHaveLength(calls);
+  expect(runtime.started).toBe(false);
+  runtime.dispose();
+  append.mockRestore();
+  visibility.mockRestore();
+  vi.useRealTimers();
+});
+
 it("settles a pending startup when stopped before the sandbox loads", async () => {
   const runtime = new PythonRuntime("/omero_analysis/runtime/");
   const append = vi.spyOn(document.body, "append").mockImplementation(() => {});

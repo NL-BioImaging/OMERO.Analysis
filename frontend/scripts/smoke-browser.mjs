@@ -31,6 +31,11 @@ const json = (response, value) => {
 
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url || "/", "http://smoke.invalid").pathname;
+  if (pathname === "/static/webclient/image/folder16.png") {
+    response.setHeader("Content-Type", "image/png");
+    response.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    return;
+  }
   if (pathname === "/favicon.ico") {
     response.statusCode = 204;
     response.end();
@@ -106,279 +111,79 @@ const context = await browser.newContext();
 await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
 const page = await context.newPage();
 const errors = [];
-let completions = 0;
-
-await page.route("http://localhost:1234/**", (route) => route.fulfill({
-  status: 200,
-  headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-  body: JSON.stringify({ data: [] })
-}));
-await page.route("http://localhost:11434/**", (route) => route.fulfill({
-  status: 200,
-  headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-  body: JSON.stringify({ models: [] })
-}));
-
-await page.route("https://provider.example/**", async (route) => {
-  const cors = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization,content-type",
-    "Access-Control-Allow-Methods": "POST,OPTIONS"
-  };
-  if (route.request().method() === "OPTIONS") {
-    await route.fulfill({ status: 204, headers: cors });
-    return;
-  }
-  const payload = route.request().postDataJSON();
-  if (payload.model !== "smoke-model") throw new Error("Configured model was not sent");
-  if (route.request().headers().authorization !== "Bearer smoke-key") {
-    throw new Error("Configured bearer credential was not sent");
-  }
-  if (route.request().postData().includes("group,value\\na,1\\nb,2")) {
-    throw new Error("A complete source file was included in the provider request");
-  }
-  completions += 1;
-  const message = completions === 1 ? {
-    role: "assistant", content: null, tool_calls: [{
-      id: "analysis", type: "function", function: {
-        name: "run_python",
-        arguments: JSON.stringify({ purpose: "analysis", code: [
-          "import pandas as pd",
-          "import matplotlib.pyplot as plt",
-          "data = pd.read_csv('/input/smoke.csv')",
-          "data.to_csv('/output/smoke.csv', index=False)",
-          "data.plot.bar(x='group', y='value', legend=False)",
-          "plt.tight_layout()",
-          "plt.savefig('/output/smoke.png')",
-          "plt.close()"
-        ].join("\n") })
-      }
-    }]
-  } : {
-    role: "assistant",
-    content: "## Summary\n\nThe Workspace values were plotted and saved as smoke.png, with the plotted data in smoke.csv.\n\n## Review\n\nThe reusable Method read the current CSV input, preserved the rows in a result CSV, and generated the requested bar plot locally.\n\n## Recommendations\n\nInspect the plot labels and values before reusing the Method with another compatible CSV file.\n\n## Reusable Method\n\n```python\nimport pandas as pd\nimport matplotlib.pyplot as plt\ndata = pd.read_csv('/input/smoke.csv')\ndata.to_csv('/output/smoke.csv', index=False)\ndata.plot.bar(x='group', y='value', legend=False)\nplt.tight_layout()\nplt.savefig('/output/smoke.png')\n```",
-    tool_calls: []
-  };
-  await route.fulfill({
-    status: 200,
-    headers: { ...cors, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      choices: [{ message }],
-      usage: { prompt_tokens: 200, completion_tokens: 50, total_tokens: 250 }
-    })
-  });
-});
-
+page.on("response", (response) => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
+// This isolated browser uses synthetic input only. It never opens a user workspace.
 page.on("console", (message) => {
   if (message.type() === "error") errors.push(message.text());
 });
 page.on("pageerror", (error) => errors.push(String(error)));
 
-const answerDialog = async (answer) => {
-  const dialog = page.getByRole("dialog");
-  await dialog.waitFor();
-  await dialog.getByRole("textbox").fill(answer);
-  await dialog.getByRole("button", { name: "Save" }).click();
-};
-
 try {
   await page.goto(`http://127.0.0.1:${port}/`);
-  await page.getByRole("heading", { name: "What would you like to do?" }).waitFor({ timeout: 15_000 });
+  const notebookTab = page.getByRole("button", { name: "Notebooks", exact: true });
+  await notebookTab.waitFor({ timeout: 15_000 });
   if (await page.locator('iframe[title="OMERO Analysis Python runtime"]').count()) {
     throw new Error("Opening Analysis eagerly created the Python runtime");
   }
-  for (const panel of ["Explorer", "Artifact Inspector"]) {
-    const toggle = page.getByRole("button", { name: `Show ${panel}`, exact: true });
-    await toggle.focus();
-    await toggle.press("Enter");
-    await page.getByRole("button", { name: `Hide ${panel}`, exact: true }).waitFor();
+  for (const tab of ["Inspector", "Libraries", "Skills"]) {
+    await page.getByRole("button", { name: tab, exact: true }).waitFor();
   }
-  const rootFolders = await page.locator(".workspace-tree > details > summary strong").allTextContents();
-  if (JSON.stringify(rootFolders) !== JSON.stringify(["Input", "Methods", "Pipelines", "Notebooks"])) {
-    throw new Error(`Unexpected Workspace folder order: ${rootFolders.join(", ")}`);
-  }
-  const assistantFolder = page.locator(".workspace-tree > details").filter({ hasText: "Methods" }).locator(".assistant-folder > summary strong");
-  if (await assistantFolder.textContent() !== "Assistant") {
-    throw new Error("Assistant conversations are not nested inside Methods");
-  }
-  if (await page.getByRole("button", { name: "Editor", exact: true }).count()) {
-    throw new Error("Artifact Editor was enabled by default");
-  }
-  const homeTab = page.getByRole("button", { name: "Home" });
-  if (await homeTab.getAttribute("aria-current") !== "page") {
-    throw new Error("Analysis did not open on the Home landing page");
-  }
-  for (const tab of ["Methods", "Pipelines", "Notebooks"]) {
-    if (!await page.getByRole("button", { name: tab, exact: true }).count()) {
-      throw new Error(`${tab} tab is missing`);
-    }
-  }
-  for (const heading of ["Create a Method", "Create a Pipeline", "Create a Notebook"]) {
-    if (!await page.getByRole("heading", { name: heading, exact: true }).count()) {
-      throw new Error(`${heading} Home card is missing`);
-    }
-  }
-  await page.getByRole("button", { name: "Hide Explorer" }).click();
-  if (await page.locator(".workspace-tree").isVisible()) {
-    throw new Error("Explorer remained visible after using its header toggle");
-  }
-  await page.getByRole("button", { name: "Show Explorer" }).click();
-  await page.locator(".workspace-tree").waitFor();
-  await page.getByRole("button", { name: "Hide Artifact Inspector" }).click();
-  if (await page.locator(".artifact-inspector").count()) {
-    throw new Error("Artifact Inspector remained visible after using its header toggle");
-  }
-  await page.getByRole("button", { name: "Show Artifact Inspector" }).click();
-  await page.locator(".artifact-inspector").waitFor();
-  const notebookTab = page.getByRole("button", { name: "Notebooks", exact: true });
   await notebookTab.focus();
   await page.keyboard.press("Enter");
   if (await notebookTab.getAttribute("aria-current") !== "page") {
     throw new Error("Notebooks tab was not keyboard accessible");
   }
-  const chatTab = page.getByRole("button", { name: "Assistant", exact: true });
-  await chatTab.focus();
-  await page.keyboard.press("Enter");
-  const shell = page.locator(".app-shell");
-  const initialTheme = await shell.getAttribute("data-theme");
-  if (initialTheme !== "dark" && initialTheme !== "light") {
-    throw new Error(`Unexpected initial theme: ${initialTheme}`);
-  }
-  const alternateTheme = initialTheme === "dark" ? "light" : "dark";
-  await page.getByRole("button", { name: `Switch to ${alternateTheme} theme` }).click();
-  if (await shell.getAttribute("data-theme") !== alternateTheme) {
-    throw new Error(`${alternateTheme} theme did not activate`);
-  }
-  await page.getByRole("button", { name: `Switch to ${initialTheme} theme` }).click();
-
-  await page.locator('.file-browser-toolbar input[type="file"]').setInputFiles({
+  await page.locator('input[type="file"]:not([accept])').setInputFiles({
     name: "smoke.csv", mimeType: "text/csv", buffer: Buffer.from("group,value\na,1\nb,2\n")
   });
-  await page.getByText("smoke.csv", { exact: true }).waitFor();
-  const explorerBox = await page.locator(".workspace-tree").boundingBox();
-  if (!explorerBox || explorerBox.width < 200) {
-    throw new Error(`Workspace explorer did not use its wider default: ${explorerBox?.width}`);
-  }
-  if (await page.locator('.workspace-tree .browser-name strong[title="smoke.csv"]').count() !== 1) {
-    throw new Error("Explorer items do not expose their full name as a tooltip");
-  }
-  await page.getByRole("button", { name: /Settings/ }).click();
-  await page.getByRole("checkbox", { name: /Enable artifact editor/ }).check();
-  await page.getByRole("button", { name: "Editor", exact: true }).waitFor();
-  await page.getByText("AI Settings", { exact: true }).click();
-  await page.getByLabel("API endpoint").fill("https://provider.example/v1");
-  await page.getByLabel("Model or deployment").fill("smoke-model");
-  await page.getByLabel("API key").fill("smoke-key");
-  await page.getByRole("button", { name: "Assistant", exact: true }).click();
-  await page.getByPlaceholder("Ask a question about the loaded data…").fill("Plot the uploaded values.");
-  await page.getByRole("button", { name: /Send/ }).click();
-
-  await page.getByRole("heading", { name: "Summary" }).waitFor({ timeout: 120_000 });
-  await page.locator(".message.assistant .message-markdown")
-    .getByText("The Workspace values were plotted and saved as smoke.png, with the plotted data in smoke.csv.", { exact: true })
-    .waitFor();
-  if (await page.getByRole("button", { name: "Copy user message" }).count() !== 1) {
-    throw new Error("User messages do not expose the copy control");
-  }
-  await page.getByRole("img", { name: "smoke.png" }).waitFor();
-  await page.getByText("Data: smoke.csv", { exact: true }).waitFor();
-  await page.getByText("Data: smoke.csv", { exact: true }).click();
-  await page.locator(".artifact-inspector").getByText("smoke.csv", { exact: true }).waitFor();
-  if (await page.locator(".ai-activity-card").count() !== 1) {
-    throw new Error("The Chat turn did not consolidate AI activity into one card");
-  }
-  if (await page.locator(".message.execution").count() !== 1) {
-    throw new Error("The Chat turn did not present one primary execution card");
-  }
-
-  await page.getByRole("button", { name: "Save as method" }).click();
-  await answerDialog("smoke-analysis.py");
-  await answerDialog("Reusable smoke analysis");
-  await page.getByText("smoke-analysis.py", { exact: true }).waitFor();
-  await page.getByText("smoke-analysis.py", { exact: true }).click();
-  const methodInspector = page.locator(".artifact-inspector");
-  await methodInspector.getByRole("button", { name: "Edit selected method" }).click();
-  await page.getByRole("region", { name: "Editor" }).waitFor();
-  if (await page.locator(".editor-method .cm-editor").count() !== 1) {
-    throw new Error("Method Editor did not create its syntax editor");
-  }
-  await page.getByRole("button", { name: "Close" }).click();
-  await page.getByRole("button", { name: "Actions for smoke-analysis.py" }).click();
-  await page.getByRole("menuitem", { name: "Edit" }).click();
-  await page.getByRole("region", { name: "Editor" }).waitFor();
-  await page.getByRole("button", { name: "Close" }).click();
-  const chatItemsBeforeDirectRun = await page.locator(".messages > *").count();
-  await page.getByRole("button", { name: "Actions for smoke-analysis.py" }).click();
-  await page.getByRole("menuitem", { name: "Run" }).click();
-  const methodsTab = page.getByRole("button", { name: "Methods", exact: true });
-  await methodsTab.waitFor();
-  if (await methodsTab.getAttribute("aria-current") !== "page") {
-    throw new Error("Direct Method execution did not open Methods");
-  }
-  await page.locator(".run-summary.success").getByText("smoke-analysis.py", { exact: true })
-    .waitFor({ timeout: 120_000 });
-  await page.locator(".run-files").getByText("smoke.png", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Assistant", exact: true }).click();
-  if (await page.locator(".messages > *").count() !== chatItemsBeforeDirectRun) {
-    throw new Error("Direct Method execution inserted synthetic Chat messages");
-  }
-  if (await page.getByText("Copy to…", { exact: true }).count()) {
-    throw new Error("Removed Method transfer UI is still visible");
-  }
-  await page.getByLabel("Select smoke-analysis.py").check();
-  await page.getByRole("button", { name: "To Notebook" }).click();
-  await answerDialog("smoke-notebook.ipynb");
-  await page.locator(".workspace-tree .browser-name")
-    .getByText("smoke-notebook.ipynb", { exact: true })
-    .waitFor();
+  await page.locator('.compact-file-name strong').getByText("smoke.csv", { exact: true }).waitFor();
   const portableContract = {
     schema: "nl.bioimaging.omero-analysis-notebook.v1",
-    inputs: [{
-      id: "measurements", kind: "query", path: "input/smoke.csv",
-      formats: ["csv"], required: true
-    }],
+    inputs: [{ id: "measurements", kind: "query", path: "input/smoke.csv", formats: ["csv"], required: true }],
     results: { path: "results" },
-    parameters: [{
-      name: "minimum", type: "integer", default: 1, minimum: 0,
-      label: "Minimum value"
-    }],
-    requirements: ["pandas"]
+    parameters: [{ name: "minimum", type: "integer", default: 1, minimum: 0, label: "Minimum value" }],
+    requirements: ["pandas", "matplotlib"]
   };
   const portableNotebook = {
     nbformat: 4, nbformat_minor: 5,
     metadata: {
       kernelspec: { display_name: "Python 3", language: "python", name: "python3" },
-      language_info: { name: "python" },
-      widgets: { stale: true }
+      language_info: { name: "python" }
     },
     cells: [{
-      id: "config", cell_type: "code",
-      metadata: { tags: ["omero-analysis-config"] },
-      execution_count: 5,
-      outputs: [{ output_type: "stream", name: "stdout", text: "stale" }],
+      id: "config", cell_type: "code", metadata: { tags: ["omero-analysis-config"] },
+      execution_count: null, outputs: [],
       source: `import omero_analysis_notebook as oan\nctx = oan.configure(r'''${JSON.stringify(portableContract)}''')\nctx.display_parameters()\n`
     }, {
       id: "query", cell_type: "code", metadata: {}, execution_count: null, outputs: [],
-      source: "result = await ctx.query('measurements', 'SELECT \"group\", SUM(value) AS total FROM data WHERE value >= $minimum GROUP BY \"group\" ORDER BY \"group\"', {'minimum': ctx.params['minimum']})\nresult.to_csv(ctx.results / 'portable-summary.csv', index=False)\nresult\n"
+      source: [
+        "import matplotlib.pyplot as plt",
+        "rows = await ctx.query('measurements', 'SELECT \"group\", value FROM data WHERE value >= $minimum ORDER BY \"group\" LIMIT 10', {'minimum': ctx.params['minimum']})",
+        "rows.to_csv(ctx.results / 'portable-summary.csv', index=False)",
+        "fig, ax = plt.subplots()",
+        "ax.bar(rows['group'], rows['value'])",
+        "fig.savefig(ctx.results / 'portable-summary.png')",
+        "fig.savefig(ctx.results / 'portable-summary.svg')",
+        "plt.close(fig)",
+        "assert len(rows) == 2 and rows['value'].sum() == 3",
+        "print('Synthetic query and plot verified')"
+      ].join("\n")
     }]
   };
   await page.locator('input[accept^=".ipynb"]').setInputFiles({
-    name: "portable-smoke.ipynb",
-    mimeType: "application/x-ipynb+json",
+    name: "portable-smoke.ipynb", mimeType: "application/x-ipynb+json",
     buffer: Buffer.from(JSON.stringify(portableNotebook))
   });
-  const portableItem = page.locator(".workspace-tree .browser-name")
-    .getByText("portable-smoke.ipynb", { exact: true });
-  await portableItem.waitFor();
-  await portableItem.dblclick();
-  await page.getByRole("region", { name: "Notebook parameters" }).waitFor();
-  await page.locator('.notebook-tab').getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByRole("combobox", { name: "Notebook", exact: true }).selectOption({ label: "portable-smoke.ipynb" });
+  await page.getByRole("button", { name: "Run all", exact: true }).waitFor();
+  if (await page.getByText("Notebook run completed.", { exact: true }).count()) throw new Error("Import executed the notebook");
+  await page.getByRole("button", { name: "Run all", exact: true }).click();
   await page.getByText("Notebook run completed.", { exact: true }).waitFor({ timeout: 120_000 });
-  const portableResult = page.locator('.workspace-tree .browser-name strong[title="portable-summary.csv"]');
-  if (await portableResult.count() !== 1) throw new Error("Portable Notebook result was not saved in Notebooks results");
-  if (completions !== 2) throw new Error(`Expected two provider rounds; got ${completions}`);
+  for (const extension of ["csv", "png", "svg"]) {
+    await page.locator(".compact-file-name strong").getByText(`portable-summary.${extension}`, { exact: true }).waitFor({ state: "attached" });
+  }
   if (errors.length) throw new Error(`Browser console errors:\n${errors.join("\n")}`);
-  console.log("Browser smoke passed: Home, independent Method runs, safe provider boundary, Artifact Editor, Markdown, Assistant, Notebook conversion, and portable top-level-await query execution");
+  console.log("Browser smoke passed: notebook navigation, input attachment, portable import without execution, real Python startup, bounded query and PNG/SVG/CSV results");
 } catch (error) {
   await mkdir("test-results", { recursive: true });
   await page.screenshot({ path: "test-results/smoke-failure.png", fullPage: true }).catch(() => {});

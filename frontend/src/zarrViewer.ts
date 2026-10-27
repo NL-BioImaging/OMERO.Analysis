@@ -475,7 +475,8 @@ export async function fetchZarrCapability(
       ? status.image_capabilities_template
       : undefined;
   if (!template) throw new Error(`ZarrViewer cannot bind an OMERO ${candidate.type}`);
-  const response = await fetch(route(template, candidate.id), { credentials: "same-origin" });
+  const url = route(template, candidate.id);
+  const response = await fetch(allowMissingUuid ? `${url}?source=image-input` : url, { credentials: "same-origin" });
   return zarrViewerCapabilityFrom(await readJson(response), allowMissingUuid);
 }
 
@@ -528,7 +529,12 @@ export function validateRecipeAgainstCapability(
   capability: ZarrViewerCapability,
   recipe: ZarrRenderRecipe
 ): void {
-  if (capability.store.uuid !== recipe.storeUuid) {
+  if (recipe.source?.kind === "image-input" || recipe.source?.kind === "current-image") {
+    if (!recipe.sourceBinding || recipe.sourceBinding !== capability.store.binding_digest ||
+        recipe.source.kind === "image-input" && recipe.source.imageId !== capability.image.id) {
+      throw new Error("The selected image changed. Choose the image input again.");
+    }
+  } else if (capability.store.uuid !== recipe.storeUuid) {
     throw new Error("The measurement database belongs to a different OME-Zarr store");
   }
   const fields = validFieldPaths(capability);
@@ -669,9 +675,16 @@ export function notebookZarrRenderRequest(preview: unknown):
   const format = value.omero_analysis_render_format ?? "png";
   if (format !== "png" && format !== "svg" && format !== "mp4") throw new Error("ZarrViewer format must be png, svg, or mp4");
   const recipe = value.omero_analysis_render_recipe as ZarrRenderRecipe;
+  const imageInput = recipe?.source?.kind === "current-image" || recipe?.source?.kind === "image-input";
+  if (recipe?.source && !imageInput) throw new Error("Unknown notebook image source");
+  if (recipe?.source?.kind === "image-input" && recipe.source.imageId != null &&
+      (!Number.isSafeInteger(recipe.source.imageId) || recipe.source.imageId < 1)) {
+    throw new Error("Image input requires a positive OMERO Image ID");
+  }
+  if (imageInput && recipe.storeUuid) throw new Error("Choose either an image input or a legacy store UUID");
   if (!recipe || typeof recipe !== "object" ||
-      (typeof recipe.storeUuid !== "string" && !(format === "mp4" && recipe.source?.kind === "current-image")) || !Array.isArray(recipe.panels) || recipe.panels.length !== 1) {
-    throw new Error("Notebook ZarrViewer request requires one render panel and a store UUID");
+      (!imageInput && typeof recipe.storeUuid !== "string") || !Array.isArray(recipe.panels) || recipe.panels.length !== 1) {
+    throw new Error("Notebook ZarrViewer request requires one render panel and an image input or legacy store UUID");
   }
   const panel = recipe.panels[0];
   const roi = panel?.roi;

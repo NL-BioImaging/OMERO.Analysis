@@ -3,6 +3,7 @@ import {
   fetchZarrCapability,
   zarrViewerCapabilityFrom,
   notebookZarrRenderRequest,
+  validateRecipeAgainstCapability,
   zarrCandidates,
   zarrFocusFromToolArgs,
   zarrRecipeFromToolArgs,
@@ -16,7 +17,28 @@ it('permits an explicit current-image movie source without inventing a UUID', ()
   const recipe = { version: 2, source: { kind: 'current-image' }, sequence: { version: 1, start: 0, end: 3 },
     panels: [{ field: '.', roi: [0, 0, 128, 128], sourceChannels: [1], t: 3, z: 0, title: 'Raw image', overlays: [] }] };
   expect(notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe, omero_analysis_render_format: 'mp4' })?.format).toBe('mp4');
-  expect(() => notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe, omero_analysis_render_format: 'png' })).toThrow();
+  expect(notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe, omero_analysis_render_format: 'png' })?.format).toBe('png');
+});
+
+it.each(['png', 'svg', 'mp4'] as const)('renders %s from a selected image independently of workflow metadata', (format) => {
+  const recipe = { version: 2 as const, source: { kind: 'image-input' as const, imageId: 205 },
+    sequence: { version: 1 as const, start: 0, end: 3 }, sourceBinding: 'current-image-digest',
+    panels: [{ field: '.', roi: [0, 0, 128, 128] as [number, number, number, number], sourceChannels: [1], t: 3, z: 0, title: 'Selected image', overlays: [] }] };
+  expect(notebookZarrRenderRequest({ omero_analysis_render_recipe: recipe, omero_analysis_render_format: format })?.format).toBe(format);
+  const capability = { image: {id: 205}, store: {uuid: 'unrelated-producer-id', binding_digest: 'current-image-digest'},
+    initial_path: '.', channels: [{index: 0}], labels: [] } as any;
+  expect(() => validateRecipeAgainstCapability(capability, recipe)).not.toThrow();
+  expect(() => validateRecipeAgainstCapability({...capability, image: {id: 213}}, recipe)).toThrow(/image changed/);
+  expect(() => validateRecipeAgainstCapability({...capability, store: {...capability.store, binding_digest: 'changed'}}, recipe)).toThrow(/image changed/);
+});
+
+it('rejects malformed, unknown and conflicting image sources', () => {
+  const panel = { field: '.', roi: [0, 0, 8, 8], sourceChannels: [1], t: 0, z: 0, overlays: [] };
+  for (const source of [{kind: 'image-input', imageId: -1}, {kind: 'image-input', imageId: '205'}, {kind: 'unknown'}]) {
+    expect(() => notebookZarrRenderRequest({omero_analysis_render_recipe: {source, panels: [panel]}})).toThrow();
+  }
+  expect(() => notebookZarrRenderRequest({omero_analysis_render_recipe: {
+    source: {kind: 'image-input'}, storeUuid, panels: [panel]}})).toThrow(/either/);
 });
 it('keeps UUID-only consumers strict and sanitizes a current-image movie capability', () => {
   const raw = { schema_version: 1, supported: true, kind: 'image', initial_path: '.', image: { id: 66, name: 'Raw image' },

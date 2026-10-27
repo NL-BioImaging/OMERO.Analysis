@@ -724,39 +724,67 @@ export class PythonRuntime {
     const sandbox = new URL(sandboxUrl(absoluteRuntimeBase));
     const loaded = new Promise<void>((resolve, reject) => {
       let settled = false;
+      let navigationStarted = false;
+      let timer: number | undefined;
+      let retryTimer: number | undefined;
+      const clearTimers = () => {
+        window.clearTimeout(timer);
+        window.clearTimeout(retryTimer);
+      };
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
-        window.clearTimeout(timer);
-        window.clearTimeout(retryTimer);
+        clearTimers();
         frame.removeEventListener("load", onLoad);
         frame.removeEventListener("error", onError);
         window.removeEventListener("message", onReady);
+        document.removeEventListener("visibilitychange", onVisibility);
         if (this.cancelFrameLoad === cancel) this.cancelFrameLoad = null;
         if (error) reject(error); else resolve();
       };
       // The document can signal readiness even when a browser delays its load
       // event. Check the sending window because the sandbox has an opaque origin.
       const onReady = (event: MessageEvent) => {
-        if (event.source === frame.contentWindow && event.data?.source === "oa-sandbox" && event.data?.type === "ready") finish();
+        if (navigationStarted && frame.contentWindow && event.source === frame.contentWindow && event.data?.source === "oa-sandbox" && event.data?.type === "ready") finish();
       };
-      const onLoad = () => finish();
+      const onLoad = () => { if (navigationStarted) finish(); };
       const onError = () => finish(new Error("The Python sandbox could not load. Retry the cell or reload Analysis."));
       // Retry one stalled document navigation before declaring the sandbox
       // unavailable. This is safe before bootstrap: no Python state exists yet.
-      const retryTimer = window.setTimeout(() => {
-        sandbox.searchParams.set("startup_retry", String(Date.now()));
+      const navigate = () => {
+        if (settled) return;
+        clearTimers();
+        if (navigationStarted) sandbox.searchParams.set("startup_retry", String(Date.now()));
+        navigationStarted = true;
+        this.report({ percent: 2, message: "Creating the secure Python sandbox…" });
         frame.src = sandbox.toString();
-      }, 5_000);
-      const timer = window.setTimeout(() => finish(new Error("The Python sandbox did not load within 60 seconds. Check the connection, then restart the kernel.")), 60_000);
+        if (!frame.isConnected) document.body.append(frame);
+        retryTimer = window.setTimeout(() => {
+          sandbox.searchParams.set("startup_retry", String(Date.now()));
+          frame.src = sandbox.toString();
+        }, 5_000);
+        timer = window.setTimeout(() => {
+          if (document.visibilityState === "hidden") onVisibility();
+          else finish(new Error("The Python sandbox did not load within 60 seconds. Check the connection, then restart the kernel."));
+        }, 60_000);
+      };
+      const onVisibility = () => {
+        if (document.visibilityState === "hidden") {
+          // Chrome can suspend frame navigation in hidden/minimized windows.
+          // No Python state exists yet: resume with a fresh navigation when
+          // the user returns, instead of caching a false startup failure.
+          clearTimers();
+          this.report({ percent: 2, message: "Open the Analysis tab to start browser Python…" });
+        } else navigate();
+      };
       const cancel = () => finish(new Error("Python execution stopped"));
       this.cancelFrameLoad = cancel;
       window.addEventListener("message", onReady);
       frame.addEventListener("load", onLoad, { once: true });
       frame.addEventListener("error", onError, { once: true });
+      document.addEventListener("visibilitychange", onVisibility);
+      onVisibility();
     });
-    frame.src = sandbox.toString();
-    document.body.append(frame);
     this.frame = frame;
     this.readyPromise = (async () => {
       await loaded;

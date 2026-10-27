@@ -9,6 +9,22 @@ export function workspaceImageCandidates(context: OmeroContext | null, hierarchy
   return available.filter(item => ids.has(`${item.type}:${item.id}`));
 }
 
+export function currentMovieImageCandidate(context: OmeroContext | null, hierarchy: OmeroHierarchy | null, selected?: HierarchyItem[]): HierarchyItem | undefined {
+  const candidates = renderImageInputCandidates(context, hierarchy, selected);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+/** User-selected images, independent of any measurement/result provenance. */
+export function renderImageInputCandidates(context: OmeroContext | null, hierarchy: OmeroHierarchy | null, selected?: HierarchyItem[]): HierarchyItem[] {
+  if (!context) return [];
+  if (selected === undefined) {
+    return context.object_type === "Image"
+      ? [{type: "Image", id: context.object_id, name: context.name, supported: true}]
+      : [];
+  }
+  return workspaceImageCandidates(context, hierarchy, selected).filter(item => item.type === "Image");
+}
+
 export function preferredZarrMatch<T extends { capability: ZarrViewerCapability }>(matches: T[]): T | undefined {
   if (matches.length === 1) return matches[0];
   // A root intensity image exposes its label layers; the label images sharing

@@ -6,9 +6,11 @@ license: AGPL-3.0-or-later
 
 # Create an Analysis Movie
 
-Use `scripts/scaffold_movie.py` to create the structured recipe. Obtain the store
-UUID, field, dimensions, channels, and frame indices from verified input/context.
-Do not invent deployment-local OMERO IDs or URLs.
+Use `scripts/scaffold_movie.py` to create the structured recipe. Use
+`source={"kind":"image-input"}` for the user-selected workspace Image input.
+Obtain field, dimensions, channels, and frame indices from approved input/context.
+Do not invent OMERO IDs or URLs. Multiple selected images open a host chooser;
+an optional actual `imageId` may select one of the workspace inputs.
 
 In a Method or Notebook, assign:
 
@@ -17,7 +19,7 @@ result = {"omero_analysis_render_format": "mp4",
           "omero_analysis_render_recipe": recipe}
 ```
 
-Analysis resolves the portable UUID; ZarrViewer reads authenticated pixels in the
+Analysis resolves the selected OMERO Image ID; ZarrViewer reads authenticated pixels in the
 browser and encodes in a worker. Python has no network access and does not invoke
 FFmpeg. Default playback is 5 FPS, independent of acquisition timing. Frame and
 Z indices are zero-based; source channels are one-based. Bounds are half-open
@@ -34,7 +36,9 @@ Limits are 2000 frames, 2048 × 2048 pixels, 256 MiB or the deployment's smaller
 upload limit. Confirm the actual MP4, poster, and provenance were produced and
 play correctly in Chrome. Do not claim success based only on the recipe.
 
-For an older raw store without a UUID, explicitly use
-`source={"kind":"current-image"}` inside an Image workspace. The host supplies the
-verified current-object binding; do not substitute an importer UUID. Portable
-multi-image/plate workflows continue to require a verified store UUID.
+Images and tracks are independent inputs. Do not require a shared UUID, workflow
+name or source/result relationship. Check dimensions, coordinates, channels and
+frame indices against the chosen image. Biological correspondence is the user's
+responsibility. `source={"kind":"current-image"}` remains a compatibility alias.
+Existing recipes may explicitly use a verified `storeUuid` instead; never combine
+that legacy mode with an image-input source.
