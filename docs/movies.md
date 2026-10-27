@@ -61,11 +61,25 @@ The movie is a FileAnnotation; the existing PNG handling applies to its poster.
 Native video controls appear in run results, Inspector, and Notebook outputs.
 Archived and synchronized workspaces retain movie provenance and references.
 
-## Older raw-image stores
+## User-selected image inputs
 
-Some older OME-Zarr stores have no store UUID. In an Image workspace a Method or
-Notebook can explicitly use `"source": {"kind": "current-image"}` in the recipe
-instead of `storeUuid`. Analysis binds the authenticated current Image and supplies
-the verified store binding. This does not guess an importer UUID or save a local
-OMERO ID in reusable code. Dataset/Plate workflows still use verified store UUIDs.
-Direct ZarrViewer export works for these older stores as well.
+Use `"source": {"kind": "image-input"}` instead of `storeUuid` to render the
+user's selected workspace Image input. One selected image is used directly;
+multiple images open a chooser. An optional `imageId` selects an actual OMERO
+Image ID, which must be one of those workspace inputs. An empty selection never
+falls back to an image elsewhere in the hierarchy. This applies to PNG, SVG and
+MP4 requests in Image, Dataset and Plate workspaces with selected Image inputs.
+
+The image and tracks are independent inputs. No database UUID, workflow name,
+importer relationship or custom producer metadata is required. The notebook must
+map table columns to native image coordinates and zero-based frames/Z. The
+renderer validates crops, channels, frame ranges and track geometry against the
+selected image; this cannot establish biological correspondence between two
+otherwise compatible inputs.
+
+The authenticated image route supplies pixel access. A runtime digest detects
+image changes during export; it is not a database/result relationship and needs
+no workflow metadata. The resolved OMERO Image ID is recorded in render
+provenance. Reusable notebooks can omit `imageId` to use the user's selection.
+`source: {kind: "current-image"}` remains an alias. Existing UUID recipes remain
+supported when that identity-based behavior is explicitly desired.

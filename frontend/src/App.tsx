@@ -1,5 +1,5 @@
 import { AnalysisHelp } from "./components/AnalysisHelp";
-import { workspaceImageCandidates, preferredZarrMatch } from "./workspaceImageInputs";
+import { workspaceImageCandidates, preferredZarrMatch, renderImageInputCandidates } from "./workspaceImageInputs";
 import { WorkspaceExplorer } from "./components/WorkspaceExplorer";
 import {
 useCallback,
@@ -2000,13 +2000,26 @@ export default function App() {
     if (!zarrViewerStatus?.available) throw new Error(zarrViewerWarning || "ZarrViewer is unavailable");
     const { recipe, format } = request;
     let capability: ZarrViewerCapability;
-    if (format === "mp4" && recipe.source?.kind === "current-image") {
+    if (recipe.source?.kind === "current-image" || recipe.source?.kind === "image-input") {
       const context = bootstrap.context;
-      if (!context || context.object_type !== "Image") throw new Error("Open an Image workspace to use the current-image movie source.");
-      capability = await fetchZarrCapability(zarrViewerStatus!, { type: "Image", id: context.object_id }, true);
-      recipe.storeUuid = capability.store.uuid;
+      const inputs = renderImageInputCandidates(context, hierarchy, workspaceRef.current?.workspace.sourceInputs);
+      const requestedId = recipe.source.kind === "image-input" ? recipe.source.imageId : undefined;
+      let source = requestedId == null ? (inputs.length === 1 ? inputs[0] : undefined)
+        : inputs.find(item => item.id === requestedId);
+      if (requestedId != null && !source) throw new Error(`Image ${requestedId} is not a selected workspace input.`);
+      if (!source && inputs.length > 1) {
+        const selectedId = await dialogs.choose("Choose the image to display",
+          inputs.map(item => ({value: String(item.id), label: item.name, description: `OMERO Image ${item.id}`})),
+          "Tracks and measurements are independent inputs. Choose the image to render underneath them.");
+        if (!selectedId) throw new DOMException("Image selection cancelled.", "AbortError");
+        source = inputs.find(item => String(item.id) === selectedId);
+      }
+      if (!source) throw new Error("Choose an Image input in the workspace before rendering.");
+      capability = await fetchZarrCapability(zarrViewerStatus!, source, true);
+      recipe.source = {kind: "image-input", imageId: source.id};
+      delete recipe.storeUuid;
       recipe.sourceBinding = capability.store.binding_digest;
-    } else ({ capability } = await resolveZarrTarget(recipe.storeUuid));
+    } else ({ capability } = await resolveZarrTarget(recipe.storeUuid!));
     const panel = recipe.panels[0];
     if ((panel.vectors || panel.timeProjection) &&
         !capability.features?.includes("zarr-review-export-v1")) {
@@ -2818,7 +2831,6 @@ export default function App() {
       {helpOpen && <AnalysisHelp onClose={() => setHelpOpen(false)} />}
       <div className="workspace notebook-layout explorer-visible" style={{"--explorer-width": `${explorerWidth}px`} as React.CSSProperties}>
         <aside className="workspace-tree">
-          <Button disabled={syncRunBarrierActive || !hierarchy} onClick={() => void chooseWorkspaceImages()}>Choose image inputs</Button>
           <WorkspaceExplorer name={workspace.name} inputs={inputFiles} notebooks={activeNotebooks}
             sources={explorerSources} selectedSourceId={selectedSource?.id}
             onSource={sourceId => { setInspectorSelection({kind: "zarr", id: sourceId}); setActiveTab("inspector"); }}
@@ -2829,6 +2841,7 @@ export default function App() {
             compatibility={notebookMatches} query={explorerQuery} onQuery={setExplorerQuery}
             onFile={fileId => { setSelectedArtifactFileId(fileId); setActiveTab("inspector"); }}
             onNotebook={notebookId => { setActiveNotebookId(notebookId); setActiveTab("notebooks"); }}
+            onChooseImages={() => void chooseWorkspaceImages()} canChooseImages={Boolean(hierarchy)}
             onAttach={() => addFilesInput.current?.click()} onRefresh={() => void refreshWorkspace()}
             onDropFiles={files => void addLocalFiles(files)} />
         </aside>

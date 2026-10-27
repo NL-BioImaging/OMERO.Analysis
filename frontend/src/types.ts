@@ -627,11 +627,11 @@ export interface ZarrVectorItem {
 export interface ZarrVectorOverlay { version: 1; items: ZarrVectorItem[] }
 
 export interface ZarrRenderRecipe {
-  source?: { kind: "current-image" };
+  source?: { kind: "current-image" } | { kind: "image-input"; imageId?: number };
   sourceBinding?: string;
   version?: 2;
   sequence?: { version: 1; start: number; end: number; step?: number; fps?: number; maxBytes?: number; trailFrames?: number };
-  storeUuid: string;
+  storeUuid?: string;
   title?: string;
   filename?: string;
   layout?: { columns: number };

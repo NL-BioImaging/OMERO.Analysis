@@ -45,6 +45,12 @@ Each check must be bounded and read-only. It passes when the query returns at le
 Do not use SELECT FALSE to signal failure: a returned row still passes the check.
 Avoid notebook widgets, shell commands, network access, arbitrary package installs,
 credentials, OMERO tokens and hard-coded server paths. Do not include executed outputs.
+For image overlays use source={"kind":"image-input"} in the render recipe.
+Analysis uses the user's selected OMERO Image input; image and table inputs are
+independent. No shared UUID, workflow metadata or source/result relationship is
+required. Check native coordinates, dimensions, channels and zero-based frames/Z.
+Legacy workflow references describing UUID navigation do not restrict this
+independent image-input mode. Multiple image inputs open a host chooser.
 
 Minimal CSV example (adapt formats and schema to the actual approved inputs):
 First code cell metadata: {"tags":["omero-analysis-config"]}

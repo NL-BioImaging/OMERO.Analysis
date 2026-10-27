@@ -21,13 +21,14 @@ function SelectionCheckbox({ label, keys, selected, busy, onChange }: {
 export interface ExplorerSource { id: string; name: string; type: string; objectId: number; }
 export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = [], selectedSourceId,
   selectedFileId, selectedNotebookId, compatibility, query, onQuery, onFile, onNotebook, onSource,
-  onAttach, onRefresh, onDropFiles, onDelete, onUndo, canUndo, busy = false }: {
+  onAttach, onChooseImages, canChooseImages = false, onRefresh, onDropFiles, onDelete, onUndo, canUndo, busy = false }: {
   name: string; inputs: WorkspaceFile[]; notebooks: NotebookRecord[]; results: WorkspaceFile[];
   sources?: ExplorerSource[]; selectedSourceId?: string | null; onSource?: (id: string) => void;
   selectedFileId: string | null; selectedNotebookId: string | null;
   compatibility: Record<string, Compatibility>; query: string; onQuery: (query: string) => void;
   onFile: (id: string) => void; onNotebook: (id: string) => void;
   onAttach: () => void; onRefresh: () => void; onDropFiles: (files: FileList) => void;
+  onChooseImages?: () => void; canChooseImages?: boolean;
   onDelete?: (items: {kind: "file" | "notebook"; id: string}[]) => void;
   onUndo?: () => void; canUndo?: boolean; busy?: boolean;
 }) {
@@ -132,6 +133,7 @@ export function WorkspaceExplorer({ name, inputs, notebooks, results, sources = 
   return <div className="compact-explorer" onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
     onDrop={event => { event.preventDefault(); onDropFiles(event.dataTransfer.files); }}>
     <div className="file-browser-heading"><h2>Explorer</h2><div className="compact-explorer-actions" role="toolbar" aria-label="Explorer actions">
+      {onChooseImages && <button title="Choose image inputs" aria-label="Choose image inputs" disabled={busy || !canChooseImages} onClick={onChooseImages}><Media size={15} aria-hidden="true" /></button>}
       <button title="Attach input" aria-label="Attach input" onClick={onAttach}><Paperclip size={15} /></button>
       <button title="Refresh workspace" aria-label="Refresh workspace" onClick={onRefresh}><Refresh size={15} /></button>
       <button title={collapsed ? "Expand folders" : "Collapse folders"} aria-label={collapsed ? "Expand folders" : "Collapse folders"} onClick={() => setCollapsed(!collapsed)}>{collapsed ? <ExpandAll size={15} /> : <CollapseAll size={15} />}</button>

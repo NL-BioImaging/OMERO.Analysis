@@ -7,6 +7,16 @@ normally when it is absent or disabled.
 
 ## Resolution model
 
+For notebook PNG, SVG and MP4 requests, use `source: {kind: "image-input"}`.
+Analysis uses the user's selected workspace Image input by its ordinary OMERO
+Image ID. With multiple inputs it opens a chooser, or accepts an optional actual
+`imageId` from that selection. Image and table inputs are independent: no store
+UUID, producer metadata or source/result relationship is required. The renderer
+checks image bounds, channels, frames and track geometry, not biological identity.
+Image choices and render settings are recorded as provenance after resolution.
+
+### Legacy UUID resolution
+
 The model never selects an OMERO ID or constructs an authenticated URL.
 Generated Python first queries the measurement database for:
 
@@ -68,10 +78,10 @@ Method.
 A notebook can request a ZarrViewer PNG or SVG by assigning a dictionary to
 `result` with `omero_analysis_render_recipe` and optional
 `omero_analysis_render_format` (`png` by default). The recipe contains one
-bounded panel with `storeUuid`, a field, ROI, channel(s), T/Z plane, optional
+bounded panel with `source: {kind: "image-input"}`, a field, ROI, channel(s), T/Z plane, optional
 raster label outlines, optional `vectors` with points or lines, and optional
 `timeProjection` (`max` or `mean`, at most 32 frames ending at panel `t`).
-Analysis resolves the UUID in the active OMERO group and sends the authenticated
+Analysis resolves the selected OMERO Image ID and sends the authenticated
 request after the Python cell runs. The returned plot is saved with the
 notebook results. ZarrViewer accepts coordinates from any source; the
 [track-projection example](examples/portable-notebooks/track-temporal-projection.ipynb)
@@ -95,8 +105,8 @@ viewer is enabled. If a preview cannot be created:
    `omero.web.apps`;
 2. confirm its authenticated `/api/analysis-skills/` provider route is
    available and advertises the canonical Agent Skills `skills` layout;
-3. confirm the selected Screen/Plate or Dataset/Image refers to the same
-   OME-Zarr store UUID recorded in the database;
+3. confirm an accessible Image is selected in workspace inputs; only legacy UUID
+   recipes need a matching store UUID;
 4. confirm the database field path, dimensions, channels, label path, and
    label value are present rather than inferred.
 

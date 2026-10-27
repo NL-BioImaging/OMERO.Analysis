@@ -6,9 +6,10 @@ from uuid import UUID
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('output', type=Path)
-    identity = parser.add_mutually_exclusive_group(required=True)
+    identity = parser.add_mutually_exclusive_group()
     identity.add_argument('--store-uuid')
     identity.add_argument('--current-image', action='store_true')
+    identity.add_argument('--image-input', action='store_true')
     parser.add_argument('--field', default='.')
     parser.add_argument('--roi', type=int, nargs=4, required=True)
     parser.add_argument('--frames', type=int, nargs=2, required=True)
@@ -26,9 +27,9 @@ def main():
               'sequence': {'version': 1, 'start': start, 'end': end, 'fps': args.fps},
               'panels': [{'field': args.field, 'roi': args.roi, 'sourceChannels': args.channels,
                           't': end, 'z': args.z, 'title': 'Temporal data', 'overlays': []}]}
-    if args.current_image:
+    if not args.store_uuid:
         recipe.pop('storeUuid')
-        recipe['source'] = {'kind': 'current-image'}
+        recipe['source'] = {'kind': 'current-image' if args.current_image else 'image-input'}
     args.output.write_text(json.dumps(recipe, indent=2) + '\n', encoding='utf-8')
     print('Created portable movie recipe; playback defaults to 5 FPS')
 
