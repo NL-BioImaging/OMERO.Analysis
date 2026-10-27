@@ -1,6 +1,8 @@
 import { parseNotebook } from "./NotebookView";
 import { parseNotebookProtocol, sanitizeProtocolNotebook } from "./notebookProtocol";
 
+export const BROWSER_TAB_GUIDANCE = "First inspect the open tabs in the signed-in Chrome browser. If OMERO.Analysis is already open on this OMERO server, including Analysis embedded in BIOMERO, reuse that tab; prefer the requested workspace by its server and workspace_id. Keep the complete notebook task in that one tab and do not open duplicate Analysis tabs. If the existing tab shows another workspace, preserve its current work before navigating to the requested workspace; ask before leaving unsaved work. Open one new tab only when no Analysis tab is already open on this server.";
+
 /** Stable workspace link; never copy credentials, launch receipts or arbitrary query parameters. */
 export function workspaceSkillsUrl(location: string, workspaceId?: string): string {
   const current = new URL(location);
@@ -16,6 +18,7 @@ export function workspaceSkillsUrl(location: string, workspaceId?: string): stri
 
 export function browserHandoffPrompt(url: string, task: string, includeSchema: boolean, client: string): string {
   return `${client === "chatgpt" ? "@Chrome " : "Use Claude in Chrome. "}Use my signed-in browser to create and import a notebook in this OMERO.Analysis workspace: ${url}\n\n` +
+    `${BROWSER_TAB_GUIDANCE}\n\n` +
     `My question: ${task.trim() || "Ask me what I want to analyse before creating the notebook."}\n\n` +
     `Open Skills, expand “Browser assistant area”, click “Read guidance”, and read the complete notebook-authoring guidance and relevant workflow references shown there. ` +
     (includeSchema ? `I allow you to enable “Share input names and table structure” and read its schema preview after clicking Read guidance to retrieve remote schemas automatically. If a local schema is still missing, ask me to inspect that input first. ` : `I have not enabled sharing the input schema. Do not inspect data or assume tables and columns; ask me if you need the schema. `) +

@@ -14,6 +14,10 @@ Build portable notebooks around the literal
 meaning while replacing machine-specific paths, direct database connections,
 and widgets with the protocol SDK.
 
+## Reuse the browser tab
+
+First inspect the open tabs in the signed-in Chrome browser. If OMERO.Analysis is already open on this OMERO server, including Analysis embedded in BIOMERO, reuse that tab; prefer the requested workspace by its server and workspace_id. Keep the complete notebook task in that one tab and do not open duplicate Analysis tabs. If the existing tab shows another workspace, preserve its current work before navigating to the requested workspace; ask before leaving unsaved work. Open one new tab only when no Analysis tab is already open on this server.
+
 ## Read or edit an open notebook
 
 Use **Notebooks → Source** for the complete Python/Markdown document with

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { runtimeInputName } from "./runtimePaths";
 import { strToU8, zipSync } from "fflate";
-import { assistantNotebook, browserHandoffPrompt, workspaceSkillsUrl } from "./browserHandoff";
+import { assistantNotebook, browserHandoffPrompt, workspaceSkillsUrl, BROWSER_TAB_GUIDANCE } from "./browserHandoff";
 import { Button } from "./components/BlueprintControls";
 import { MarkdownPreview } from "./components/WorkspacePanels";
 import type { OmeroBridge } from "./api";
@@ -9,6 +9,8 @@ import type { CompatibilitySource } from "./notebookCompatibility";
 import type { AnalysisSkillProviderCatalog, WorkflowSkillCatalog, WorkflowSkillPackage, WorkspaceFile } from "./types";
 
 export const AUTHORING_GUIDANCE = `# OMERO.Analysis notebook authoring
+
+${BROWSER_TAB_GUIDANCE}
 
 Create a Python nbformat 4 .ipynb with Markdown explanations and code cells.
 The first cell must be a code cell and have metadata.tags containing "omero-analysis-config".
