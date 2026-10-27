@@ -36,20 +36,6 @@
             "omero-data-query-v1"
           ]
         },
-        "create-omero-analysis-method": {
-          "purpose": "method-authoring",
-          "consumers": [
-            "omero-analysis"
-          ],
-          "auto_activate": false
-        },
-        "create-omero-analysis-pipeline": {
-          "purpose": "pipeline-authoring",
-          "consumers": [
-            "omero-analysis"
-          ],
-          "auto_activate": false
-        },
         "create-omero-analysis-movie": {
           "purpose": "movie-authoring",
           "consumers": [
