@@ -57,6 +57,13 @@ def marker(obj, namespace, role=None, match=None):
 
 def set_marker(conn, obj, namespace, values, role, match=None):
     annotation, current = marker(obj, namespace, role, match)
+    if annotation is not None:
+        # listAnnotations may return a wrapper cached before another marker
+        # update in this synchronization. Merge and save the current event.
+        annotation = conn.getObject("MapAnnotation", int(annotation.getId()))
+        if annotation is None:
+            raise RuntimeError("The Analysis metadata marker changed; retry synchronization.")
+        current = map_values(annotation)
     payload = {
         **current,
         **{key: str(value) for key, value in values.items()},

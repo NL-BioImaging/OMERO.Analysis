@@ -44,6 +44,7 @@ export interface OmeroContext {
   selected_notebook?: Attachment | null;
   notebooks?: Attachment[];
   selected_objects?: HierarchyItem[];
+  selected_image_inputs?: HierarchyItem[];
   data_bindings?: Record<string, "local" | "remote">;
 }
 
@@ -231,6 +232,7 @@ export interface WorkspaceRecord {
     groupId: number;
     snapshotAnnotationId?: number;
   };
+  sourceInputs?: HierarchyItem[];
   zarrBindings?: Record<string, ZarrBinding>;
   omeroSync?: {
     projectId: number;

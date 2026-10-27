@@ -30,7 +30,9 @@ def test_archive_is_byte_idempotent_and_keeps_legacy_results():
         assert "Methods/old.py" not in z.namelist()
 
 
-def test_durable_cleanup_keeps_result_bytes_and_updates_snapshot_copies(tmp_path):
+def test_durable_cleanup_keeps_result_bytes_and_updates_snapshot_copies(tmp_path, monkeypatch):
+    # Both independent ZIP migrations must use the same header timestamp.
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *_: (2026, 1, 1, 0, 0, 0, 3, 1, -1))
     backup = tmp_path / "backup"
     backup.mkdir()
     root = tmp_path / "analysis"

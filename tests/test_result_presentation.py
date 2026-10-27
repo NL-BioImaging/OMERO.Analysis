@@ -134,3 +134,25 @@ def test_file_rename_saves_description_with_an_unloaded_original_file_reference(
     assert original.name == "counts__0.csv"
     assert references == [(99, False)]
     assert "Parameters actually used" in annotation.text
+
+
+def test_large_utf8_marker_values_reference_complete_manifest_metadata():
+    import hashlib
+    from omero_analysis.workspace_sync import _manifest_for, INVENTORY_SCHEMA
+    value = item()
+    value["metadata"]["analysisProvenance"]["run"]["parameters"]["long_setting"] = "μ" * 3000
+    value["metadata"]["sources"] = [{"fileId": "source-" + str(i), "name": "source-" + str(i)} for i in range(100)]
+    original = copy.deepcopy(value)
+    markers = _item_marker_values("w", value)
+    assert all(len(str(entry).encode("utf-8")) <= 1024 for entry in markers.values())
+    for key in ("analysis_provenance", "source_references", "notebook_parameters", "parameter.long_setting"):
+        reference = json.loads(markers[key])
+        assert reference["storage"] == "workspace-manifest"
+        assert reference["item_key"] == value["key"] and reference["field"] == key
+        assert len(reference["sha256"]) == 64
+    serialized = json.dumps(value["metadata"]["analysisProvenance"], ensure_ascii=False, separators=(",", ":"))
+    assert json.loads(markers["analysis_provenance"])["sha256"] == hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    assert markers["parameter.minimum"] == "0" and markers["parameter.normalize"] == "false"
+    manifest = _manifest_for({"schema": INVENTORY_SCHEMA, "workspace": WORKSPACE, "digest": "d", "items": [value]}, 1, [value])
+    assert manifest["items"][0]["metadata"] == original["metadata"]
+    assert value == original

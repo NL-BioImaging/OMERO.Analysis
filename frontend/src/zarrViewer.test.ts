@@ -261,3 +261,15 @@ it("discards capability credentials and builds a validated deep link", async () 
   expect(url.searchParams.get("storeUuid")).toBe(storeUuid);
   expect(url.hash).toBe("");
 });
+
+
+it('accepts 2000 exported movie frames and rejects 2001', () => {
+  const recipe = {storeUuid, sequence:{version:1,start:0,end:1999,step:1,fps:5},
+    panels:[{field:'.',roi:[0,0,128,128],sourceChannels:[1],t:1999,z:0,overlays:[]}]};
+  const request=()=>notebookZarrRenderRequest({omero_analysis_render_recipe:recipe,omero_analysis_render_format:'mp4'});
+  expect(request()?.format).toBe('mp4');
+  recipe.sequence.end=2000;
+  expect(request).toThrow('2000');
+  recipe.sequence.end=3999; recipe.sequence.step=2;
+  expect(request()?.format).toBe('mp4');
+});

@@ -1,27 +1,43 @@
 import type { ZarrRenderRecipe, ZarrViewerCapability } from './types';
 
 export function renderZarrMovie(capability: ZarrViewerCapability, recipe: ZarrRenderRecipe, signal: AbortSignal,
-  progress: (completed: number, total: number) => void = () => {}): Promise<{ data: ArrayBuffer; poster: ArrayBuffer; provenance: { fps: number; frameCount: number; recipe: ZarrRenderRecipe } }> {
+  progress: (completed: number, total: number) => void = () => {},
+  mode: 'embedded' | 'window' = 'embedded'): Promise<{ data: ArrayBuffer; poster: ArrayBuffer; provenance: { fps: number; frameCount: number; recipe: ZarrRenderRecipe } }> {
   if (!capability.features?.includes('zarr-movie-v1') || !capability.store.movie_url) throw new Error('This ZarrViewer does not support browser movie export.');
   const url = new URL(capability.store.movie_url, location.href);
   if (url.origin !== location.origin) throw new Error('Movie rendering requires the authenticated local ZarrViewer.');
   signal.throwIfAborted();
   const nonce = crypto.randomUUID(); url.searchParams.set('movie', '1'); url.searchParams.set('nonce', nonce);
-  const iframe = document.createElement('iframe'); iframe.hidden = true; iframe.src = url.href;
+  const popup = mode === 'window' ? window.open(url.href, `analysis-movie-${nonce}`, 'width=720,height=240') : null;
+  if (mode === 'window' && !popup) throw new Error('The movie window was blocked. Allow this local window and retry the movie cell.');
+  const iframe = mode === 'embedded' ? document.createElement('iframe') : null;
+  if (iframe) {
+    iframe.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    iframe.loading = 'eager'; iframe.tabIndex = -1; iframe.setAttribute('aria-hidden','true');
+    iframe.title = 'OMERO ZarrViewer movie renderer'; iframe.src = url.href;
+  }
+  const target = () => popup || iframe?.contentWindow;
   return new Promise((resolve, reject) => {
-    let timer: number;
-    const cleanup = () => { clearTimeout(timer); window.removeEventListener('message', receive); signal.removeEventListener('abort', abort); iframe.remove(); };
+    let timer: number; let startupRetry: number; let startupDeadline: number; let windowPoll: number;
+    let rendering = false;
+    const cleanup = () => {
+      clearTimeout(timer); clearTimeout(startupRetry); clearTimeout(startupDeadline); clearInterval(windowPoll);
+      window.removeEventListener('message', receive); signal.removeEventListener('abort', abort);
+      iframe?.remove(); popup?.close();
+    };
     const fail = (reason: Error) => { cleanup(); reject(reason); };
     const abort = () => {
-      iframe.contentWindow?.postMessage({ source: 'analysis-movie', nonce, type: 'cancel' }, location.origin);
+      target()?.postMessage({ source: 'analysis-movie', nonce, type: 'cancel' }, location.origin);
       fail(new DOMException('Movie export stopped.', 'AbortError'));
     };
     const refreshTimer = () => { clearTimeout(timer); timer = window.setTimeout(() => fail(new Error('ZarrViewer movie rendering stopped responding.')), 120000); };
     const receive = (event: MessageEvent) => {
-      if (event.origin !== location.origin || event.source !== iframe.contentWindow || event.data?.source !== 'zarr-movie' || event.data.nonce !== nonce) return;
+      if (event.origin !== location.origin || event.source !== target() || event.data?.source !== 'zarr-movie' || event.data.nonce !== nonce) return;
       refreshTimer();
-      if (event.data.type === 'ready') iframe.contentWindow?.postMessage({ source: 'analysis-movie', nonce, type: 'render', recipe }, location.origin);
-      else if (event.data.type === 'progress') progress(event.data.value.completed, event.data.value.total);
+      if (event.data.type === 'ready' && !rendering) {
+        rendering = true; clearTimeout(startupRetry); clearTimeout(startupDeadline);
+        target()?.postMessage({ source: 'analysis-movie', nonce, type: 'render', recipe }, location.origin);
+      } else if (event.data.type === 'progress') progress(event.data.value.completed, event.data.value.total);
       else if (event.data.type === 'error') fail(new Error(String(event.data.value)));
       else if (event.data.type === 'complete') {
         const result = event.data.value;
@@ -33,8 +49,16 @@ export function renderZarrMovie(capability: ZarrViewerCapability, recipe: ZarrRe
       }
     };
     window.addEventListener('message', receive); signal.addEventListener('abort', abort, { once: true });
-    iframe.onerror = () => fail(new Error('Unable to open ZarrViewer for movie export.'));
-    refreshTimer(); document.body.appendChild(iframe);
+    startupDeadline = window.setTimeout(() => fail(new Error('ZarrViewer movie page did not load.')), 15000);
+    if (iframe) {
+      iframe.onerror = () => fail(new Error('Unable to open ZarrViewer for movie export.'));
+      startupRetry = window.setTimeout(() => {
+        url.searchParams.set('startup_retry', String(Date.now())); iframe.src = url.href;
+      }, 5000);
+      document.body.appendChild(iframe);
+    }
+    if (popup) windowPoll = window.setInterval(() => { if (popup.closed) abort(); }, 500);
+    refreshTimer();
   });
 }
 

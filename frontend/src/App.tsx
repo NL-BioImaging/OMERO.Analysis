@@ -1,4 +1,5 @@
 import { AnalysisHelp } from "./components/AnalysisHelp";
+import { workspaceImageCandidates, preferredZarrMatch } from "./workspaceImageInputs";
 import { WorkspaceExplorer } from "./components/WorkspaceExplorer";
 import {
 useCallback,
@@ -259,15 +260,25 @@ export default function App() {
   const inspectionRuntime = useMemo(() => new PythonRuntime(bootstrap.runtimeBase, bootstrap.context, 30000), [bootstrap]);
   useEffect(() => () => inspectionRuntime.dispose(), [inspectionRuntime]);
   const [notebookMatches, setNotebookMatches] = useState<Record<string, Compatibility>>({});
+  const [inspectionRevision, setInspectionRevision] = useState(0);
+  const inspectionGeneration = useRef(0);
   const compatibilityChecks = useRef(new Map<string, CompatibilitySource>());
   const inspectionQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const pendingCompatibilityChecks = useRef(new Map<string, Promise<CompatibilitySource>>());
   function inspectForNotebook(file: WorkspaceFile, input: NotebookProtocolInput) {
     const key = JSON.stringify([file.id, file.sha256, file.state, input]);
     const cached = compatibilityChecks.current.get(key);
     if (cached) return Promise.resolve(cached);
+    const pending = pendingCompatibilityChecks.current.get(key);
+    if (pending) return pending;
     const next = inspectionQueue.current.then(() => inspectInput(file, input, bridge, inspectionRuntime));
     inspectionQueue.current = next.catch(() => undefined);
-    return next.then(value => { compatibilityChecks.current.set(key, value); return value; });
+    const result = next.then(value => { compatibilityChecks.current.set(key, value); return value; })
+      .finally(() => {
+        if (pendingCompatibilityChecks.current.get(key) === result) pendingCompatibilityChecks.current.delete(key);
+      });
+    pendingCompatibilityChecks.current.set(key, result);
+    return result;
   }
   const dialogs = useDialogs();
   const [inspectedSchemas, setInspectedSchemas] = useState<Record<string, CompatibilitySource["schema"]>>({});
@@ -453,6 +464,7 @@ export default function App() {
   const activeNotebooks = (analysisWorkspace?.notebooks || []).filter(item => !item.deletedAt);
   useEffect(() => {
     let cancelled = false;
+    const generation = inspectionGeneration.current;
     void (async () => {
       const matches: Record<string, Compatibility> = {};
       for (const notebook of activeNotebooks) {
@@ -470,11 +482,11 @@ export default function App() {
           matches[notebook.id] = notebookCompatibility(contract, [...byId.values()], selectedArtifactFileId || undefined);
         } catch (error) { matches[notebook.id] = { status: "unchecked", reasons: [String(error)] }; }
       }
-      if (!cancelled) setNotebookMatches(matches);
+      if (!cancelled && generation === inspectionGeneration.current) setNotebookMatches(matches);
     })();
     return () => { cancelled = true; };
   }, [JSON.stringify(activeNotebooks.map(n => [n.id, n.document.cells.map(c => [c.metadata?.tags, c.source])])),
-      JSON.stringify(inputFiles.map(f => [f.id, f.sha256, f.state])), selectedArtifactFileId]);
+      JSON.stringify(inputFiles.map(f => [f.id, f.sha256, f.state])), selectedArtifactFileId, inspectionRevision]);
   const [browserSaving, setBrowserSaving] = useState(false);
   const [browserSaveError, setBrowserSaveError] = useState("");
   useEffect(() => {
@@ -814,6 +826,17 @@ export default function App() {
         number = Math.max(storedContextWorkspaces.length, remoteNames.length) + 1;
         while (used.has(scopedWorkspaceName(bootstrap.context, `Analysis ${number}`))) number++;
         baseWorkspace = await replaceWorkspace(renameAnalysisWorkspace(baseWorkspace, `Analysis ${number}`, now(), bootstrap.context));
+        const candidates = zarrCandidates(bootstrap.context!, loadedHierarchy);
+        const alreadyChosen = bootstrap.context?.selected_objects || (["Image", "Plate"].includes(bootstrap.context?.object_type || "") ? candidates : []);
+        const explicitInputs = bootstrap.context?.selected_image_inputs;
+        const selected = explicitInputs !== undefined ? explicitInputs.map(item => `${item.type}:${item.id}`) : alreadyChosen.length ? alreadyChosen.map(item => `${item.type}:${item.id}`) : await dialogs.chooseMany(
+          "Choose image inputs for the new workspace",
+          candidates.map(item => ({value: `${item.type}:${item.id}`, label: item.name, description: `${item.type} ${item.id}`})), [],
+          "Only the images or plates you select become inputs. Leave all unchecked for a workspace containing only the data files you selected."
+        );
+        if (selected === null) throw new Error("Workspace creation was cancelled before image inputs were selected.");
+        baseWorkspace = await replaceWorkspace({...baseWorkspace, workspace: {...baseWorkspace.workspace,
+          sourceInputs: candidates.filter(item => selected.includes(`${item.type}:${item.id}`))}});
       }
       let initial = baseWorkspace;
       let automaticRestoreMessage = "";
@@ -972,7 +995,7 @@ export default function App() {
       setVisibleZarrSources([]);
       return;
     }
-    const candidates = zarrCandidates(context, hierarchy).slice(0, 50);
+    const candidates = workspaceImageCandidates(context, hierarchy, analysisWorkspace?.workspace.sourceInputs).slice(0, 50);
     void Promise.allSettled(candidates.map(async (candidate) => {
       const cacheKey = `${candidate.type}:${candidate.id}`;
       const capability = zarrCapabilities.current.get(cacheKey) ||
@@ -986,8 +1009,8 @@ export default function App() {
         if (result.status !== "fulfilled" || !result.value.capability.store.uuid) continue;
         const { candidate, capability } = result.value;
         const storeUuid = capability.store.uuid.toLowerCase();
-        if (byUuid.has(storeUuid)) continue;
-        byUuid.set(storeUuid, {
+        const objectKey = `${candidate.type}:${candidate.id}`;
+        byUuid.set(objectKey, {
           id: storeUuid,
           name: capability.store.name || "OME-Zarr source",
           contextName: context.name,
@@ -1013,7 +1036,9 @@ export default function App() {
     bootstrap.context,
     hierarchy,
     zarrViewerStatus?.available,
-    zarrViewerStatus?.version
+    zarrViewerStatus?.version,
+    analysisWorkspace?.workspace.id,
+    JSON.stringify(analysisWorkspace?.workspace.sourceInputs)
   ]);
 
   async function prepareInputs(initial: AnalysisWorkspace): Promise<AnalysisWorkspace> {
@@ -1279,19 +1304,24 @@ export default function App() {
   }
 
   async function inspectSharedLocalInputs(): Promise<Record<string, CompatibilitySource["schema"]>> {
-    const files = workspaceRef.current?.files.filter(f => !f.deletedAt && f.state === "ready" && f.data && f.source !== "result" && f.role !== "chat-attachment") || [];
-    if (!files.length) return {};
-    await inspectionRuntime.start(files);
-    // Library inspection uses its own kernel and cannot erase notebook variables.
-    const inspected = await inspectionRuntime.profileInputs();
-    setProfiles(inspected);
-    return Object.fromEntries(files.map(file => {
-      const profile = inspected.find(p => p.path === `/input/${notebookRuntimeName(file.name)}`);
-      if (!profile || profile.error) return [file.id, undefined];
-      const summary = profile.summary;
-      return [file.id, Array.isArray(summary.tables) ? summary : Array.isArray(summary.columns)
-        ? { tables: [{ name: "data", columns: summary.columns }] } : undefined];
-    })) as Record<string, CompatibilitySource["schema"]>;
+    // All users of the shared inspection kernel must serialize input changes
+    // with their queries. Resetting it here could interrupt compatibility checks.
+    const task = inspectionQueue.current.then(async () => {
+      const files = workspaceRef.current?.files.filter(f => !f.deletedAt && f.state === "ready" && f.data && f.source !== "result" && f.role !== "chat-attachment") || [];
+      if (!files.length) return {};
+      await inspectionRuntime.syncInputs(files);
+      const inspected = await inspectionRuntime.profileInputs();
+      setProfiles(inspected);
+      return Object.fromEntries(files.map(file => {
+        const profile = inspected.find(p => p.path === `/input/${notebookRuntimeName(file.name)}`);
+        if (!profile || profile.error) return [file.id, undefined];
+        const summary = profile.summary;
+        return [file.id, Array.isArray(summary.tables) ? summary : Array.isArray(summary.columns)
+          ? { tables: [{ name: "data", columns: summary.columns }] } : undefined];
+      })) as Record<string, CompatibilitySource["schema"]>;
+    });
+    inspectionQueue.current = task.catch(() => undefined);
+    return task;
   }
 
   async function resolveRemoteBindingSource(
@@ -1440,6 +1470,19 @@ export default function App() {
     workspaceRef.current = updated;
     setWorkspace(updated);
     return persisted;
+  }
+
+  async function chooseWorkspaceImages() {
+    const current = workspaceRef.current;
+    if (!current || !bootstrap.context || !hierarchy || syncRunBarrierActive) return;
+    const candidates = zarrCandidates(bootstrap.context, hierarchy);
+    const active = workspaceImageCandidates(bootstrap.context, hierarchy, current.workspace.sourceInputs);
+    const selected = await dialogs.chooseMany("Choose image inputs", candidates.map(item => ({
+      value: `${item.type}:${item.id}`, label: item.name, description: `${item.type} ${item.id}`
+    })), active.map(item => `${item.type}:${item.id}`), "These choices affect this workspace only. Original OMERO images remain unchanged.");
+    if (selected === null) return;
+    updateWorkspaceRecord({...current.workspace, sourceInputs: candidates.filter(item => selected.includes(`${item.type}:${item.id}`)), updatedAt: now()});
+    setStatus("Workspace image inputs updated; original OMERO images are unchanged.");
   }
 
   function updateWorkspaceRecord(next: WorkspaceRecord) {
@@ -1975,8 +2018,15 @@ export default function App() {
       try {
         const boundedRecipe = { ...recipe, sequence: { ...recipe.sequence!,
           maxBytes: Math.min(recipe.sequence?.maxBytes ?? 256 * 1024 * 1024, bootstrap.context?.max_snapshot_bytes ?? 256 * 1024 * 1024) } };
-        const movie = await renderZarrMovie(capability, boundedRecipe, controller.signal,
-          (completed, total) => setStatus(`Creating movie frame ${completed} of ${total}?`));
+        const progress = (completed: number, total: number) => setStatus(`Creating movie frame ${completed} of ${total}...`);
+        let movie;
+        try { movie = await renderZarrMovie(capability, boundedRecipe, controller.signal, progress); }
+        catch (error) {
+          if (!String(error).includes("movie page did not load") || controller.signal.aborted) throw error;
+          const open = await dialogs.confirm("Open the movie renderer", "The embedded ZarrViewer did not start. Open a separate local movie window to continue this export. It closes when the movie is ready.", "Open movie window");
+          if (!open) throw new DOMException("Movie export stopped.", "AbortError");
+          movie = await renderZarrMovie(capability, boundedRecipe, controller.signal, progress, "window");
+        }
         const stem = slug(String(recipe.filename || "zarr-movie").replace(/\.mp4$/i, ""));
         const resultGroupId = id();
         return [
@@ -2158,7 +2208,7 @@ export default function App() {
       throw new Error(zarrViewerWarning || "OMERO ZarrViewer 0.3 or newer is unavailable");
     }
 
-    const candidates = zarrCandidates(context, hierarchy);
+    const candidates = workspaceImageCandidates(context, hierarchy, current.workspace.sourceInputs);
     if (!candidates.length) {
       throw new Error(
         "No compatible OMERO Image or Plate is available in the current object hierarchy"
@@ -2237,8 +2287,8 @@ export default function App() {
       );
     }
 
-    let selectedMatch = matches[0];
-    if (matches.length > 1) {
+    let selectedMatch = preferredZarrMatch(matches) || matches[0];
+    if (matches.length > 1 && !preferredZarrMatch(matches)) {
       const selected = await dialogs.choose(
         "Choose the matching OME-Zarr source",
         matches.map(({ candidate }) => ({
@@ -2697,16 +2747,13 @@ export default function App() {
   }
 
   if (!analysisWorkspace || !workspace) {
-    return <WorkspacePreparationScreen theme={theme}
+    return <>{dialogs.element}<WorkspacePreparationScreen theme={theme}
       workspaceName={bootstrap.context?.name || "Analysis Workspace"}
-      progress={workspaceProgress} error={workspaceError} />;
+      progress={workspaceProgress} error={workspaceError} /></>;
   }
   const explorerSourceMap = new Map<string, {id: string; name: string; type: string; objectId: number}>();
-  for (const item of [hierarchy?.current, ...(hierarchy?.children || []), ...(hierarchy?.parents || [])]) {
-    if (item && ["Image", "Plate"].includes(item.type)) explorerSourceMap.set(`${item.type}:${item.id}`, {id: `${item.type}:${item.id}`, name: item.name, type: item.type, objectId: item.id});
-  }
-  for (const item of visibleZarrSources) if (!explorerSourceMap.has(`${item.objectType}:${item.objectId}`)) {
-    explorerSourceMap.set(`${item.objectType}:${item.objectId}`, {id: `${item.objectType}:${item.objectId}`, name: item.zarrName, type: item.objectType, objectId: item.objectId});
+  for (const item of workspaceImageCandidates(bootstrap.context, hierarchy, workspace.sourceInputs)) {
+    explorerSourceMap.set(`${item.type}:${item.id}`, {id: `${item.type}:${item.id}`, name: item.name, type: item.type, objectId: item.id});
   }
   const explorerSources = [...explorerSourceMap.values()];
   const selectedSource = inspectorSelection?.kind === "zarr" ? explorerSourceMap.get(inspectorSelection.id) : undefined;
@@ -2771,6 +2818,7 @@ export default function App() {
       {helpOpen && <AnalysisHelp onClose={() => setHelpOpen(false)} />}
       <div className="workspace notebook-layout explorer-visible" style={{"--explorer-width": `${explorerWidth}px`} as React.CSSProperties}>
         <aside className="workspace-tree">
+          <Button disabled={syncRunBarrierActive || !hierarchy} onClick={() => void chooseWorkspaceImages()}>Choose image inputs</Button>
           <WorkspaceExplorer name={workspace.name} inputs={inputFiles} notebooks={activeNotebooks}
             sources={explorerSources} selectedSourceId={selectedSource?.id}
             onSource={sourceId => { setInspectorSelection({kind: "zarr", id: sourceId}); setActiveTab("inspector"); }}
@@ -2826,9 +2874,19 @@ export default function App() {
             runtime={runtime}
             runRequest={notebookRunRequest}
             onRunRequestConsumed={() => setNotebookRunRequest(null)}
-            onRunStateChange={(running) => setRunSyncBarrier(
-              `notebook:${activeNotebook?.id || "active"}`, running
-            )}
+            onRunStateChange={(running) => {
+              setRunSyncBarrier(`notebook:${activeNotebook?.id || "active"}`, running);
+              if (running && !inspectionRuntime.ready) {
+                // A background navigation may have stalled. Start the inspector
+                // from the explicit run action, alongside the notebook kernel.
+                inspectionGeneration.current++;
+                pendingCompatibilityChecks.current.clear();
+                if (activeNotebook) setNotebookMatches(current => ({...current, [activeNotebook.id]: {status: "unchecked", reasons: ["Checking input requirements…"]}}));
+                void inspectionRuntime.start([]).then(() => setInspectionRevision(value => value + 1)).catch(error => {
+                  console.warn("Notebook input inspector could not start", error);
+                });
+              }
+            }}
             workspaceActions={null}
             onBeforeRun={(record) => activeNotebook
               ? prepareNotebookRuntime(record)

@@ -372,6 +372,7 @@ def analysis(request, conn=None, **kwargs):
                 "selected_workspace_snapshot": selected_workspace_snapshot,
                 "selected_notebook": None,
             }
+            context.update(_image_input_context(request, object_type, object_id, obj, selected_objects))
             _apply_data_query_presentation(context)
             context["data_bindings"] = _parse_data_bindings(request, context)
             if len(selected_objects) > 1:
@@ -593,6 +594,30 @@ def _configure_panel_context(conn, obj, context):
     return context
 
 
+def _image_input_context(request, object_type, object_id, obj, selected_objects):
+    """Keep an explicit image subset separate from the logical workspace source."""
+    hierarchy = object_hierarchy(object_type, object_id, obj)
+    if len(selected_objects) > 1:
+        candidates = selected_objects
+    elif object_type in MULTI_SOURCE_TYPES:
+        candidates = [hierarchy["current"]]
+    else:
+        wanted = {"Dataset": "Image", "Screen": "Plate"}.get(object_type)
+        candidates = [item for item in hierarchy["children"]
+                      if item.get("supported") and item["type"] == wanted]
+    result = {"image_input_candidates": candidates}
+    mode = request.GET.getlist("image_inputs")
+    values = request.GET.getlist("image_input")
+    if mode or values:
+        if mode != ["selected"] or len(values) > MAX_PANEL_SELECTION:
+            raise ValueError("Invalid image input selection")
+        available = {f'{item["type"]}:{item["id"]}': item for item in candidates}
+        if any(value not in available for value in values):
+            raise ValueError("Image inputs must belong to the selected source")
+        result["selected_image_inputs"] = [available[value] for value in dict.fromkeys(values)]
+    return result
+
+
 def _launch_context(request, conn, object_type, object_id):
     object_type, object_id, obj = _panel_context_object(
         conn, object_type, object_id
@@ -609,6 +634,8 @@ def _launch_context(request, conn, object_type, object_id):
             "selection_count": len(selected_objects),
         })
     _configure_panel_context(conn, obj, context)
+    if context.get("panel_kind") == "source":
+        context.update(_image_input_context(request, object_type, object_id, obj, selected_objects))
     _apply_data_query_presentation(context)
     return context
 

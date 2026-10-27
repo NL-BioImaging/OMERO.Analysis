@@ -149,6 +149,17 @@
       </section>
     {% endif %}
 
+    <section class="oa-card oa-image-inputs">
+      <h3>Choose image inputs</h3>
+      <p class="oa-help">Only checked images or plates become inputs to the new workspace. Leave all unchecked for data files only. Existing workspaces keep their saved inputs.</p>
+      <p><button class="oa-button oa-images-all" type="button">Select all</button> <button class="oa-button oa-images-none" type="button">Clear selection</button> <span class="oa-image-count">0 selected</span></p>
+      <ul class="oa-attachments" style="max-height: 260px; overflow-y: auto">
+      {% for image in context.image_input_candidates %}
+        <li><label><input type="checkbox" class="oa-image-input" value="{{ image.type }}:{{ image.id }}" {% if context.object_type == 'Image' or context.object_type == 'Plate' %}checked{% endif %}> <strong>{{ image.name }}</strong> <small>{{ image.type }} {{ image.id }}</small></label></li>
+      {% empty %}<li>No images or plates available for this source.</li>{% endfor %}
+      </ul>
+    </section>
+
     <p class="oa-panel-status" role="status" aria-live="polite"></p>
     <div class="oa-actions">
       <button class="oa-button oa-button-primary oa-new-workspace" type="button" disabled>Start new Workspace</button>

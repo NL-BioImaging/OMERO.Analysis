@@ -51,7 +51,7 @@ coordinates to native image pixels. Missing frames remain gaps. The renderer
 does not interpolate or infer table joins. Maximum 10,000 track observations and
 1 MiB recipe data keep transfers bounded.
 
-Limits: 600 frames, 2048 × 2048 pixels, and 256 MiB or the deployment's smaller
+Limits: 2000 frames, 2048 × 2048 pixels, and 256 MiB or the deployment's smaller
 upload limit. Odd dimensions are padded on the right/bottom for AVC and recorded
 in provenance. Source imagery, labels, and scientific measurements are unchanged.
 Stop cancels loading/encoding without publishing a partial movie.

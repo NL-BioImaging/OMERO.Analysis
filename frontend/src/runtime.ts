@@ -686,9 +686,11 @@ export class PythonRuntime {
   private inputs: WorkspaceFile[] = [];
   private counter = 0;
   private readyPromise: Promise<void> | null = null;
+  private connected = false;
   private cancelFrameLoad: (() => void) | null = null;
 
   get started(): boolean { return this.readyPromise !== null; }
+  get ready(): boolean { return this.connected; }
 
   private onProgress: ((progress: RuntimeProgress) => void) | null = null;
   private notebookQueryHandler: ((request: NotebookQueryRequest) => Promise<NotebookQueryResponse>) | null = null;
@@ -707,33 +709,58 @@ export class PythonRuntime {
   ): Promise<void> {
     if (onProgress) this.onProgress = onProgress;
     this.inputs = inputs.filter((file) => file.state === "ready" && file.data);
-    this.destroyFrame();
+    this.stop();
     this.report({ percent: 2, message: "Creating the secure Python sandbox…" });
     const frame = document.createElement("iframe");
-    frame.hidden = true;
+    // Chrome can leave display:none/hidden frames without a load event.
+    // Keep the isolated runtime out of view without suppressing frame loading.
+    frame.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+    frame.tabIndex = -1;
+    frame.loading = "eager";
+    frame.title = "OMERO Analysis Python runtime";
     frame.setAttribute("sandbox", "allow-scripts");
     frame.setAttribute("aria-hidden", "true");
+    const absoluteRuntimeBase = new URL(this.runtimeBase, window.location.href).toString();
+    const sandbox = new URL(sandboxUrl(absoluteRuntimeBase));
     const loaded = new Promise<void>((resolve, reject) => {
+      let settled = false;
       const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
         window.clearTimeout(timer);
+        window.clearTimeout(retryTimer);
         frame.removeEventListener("load", onLoad);
         frame.removeEventListener("error", onError);
-        this.cancelFrameLoad = null;
+        window.removeEventListener("message", onReady);
+        if (this.cancelFrameLoad === cancel) this.cancelFrameLoad = null;
         if (error) reject(error); else resolve();
+      };
+      // The document can signal readiness even when a browser delays its load
+      // event. Check the sending window because the sandbox has an opaque origin.
+      const onReady = (event: MessageEvent) => {
+        if (event.source === frame.contentWindow && event.data?.source === "oa-sandbox" && event.data?.type === "ready") finish();
       };
       const onLoad = () => finish();
       const onError = () => finish(new Error("The Python sandbox could not load. Retry the cell or reload Analysis."));
+      // Retry one stalled document navigation before declaring the sandbox
+      // unavailable. This is safe before bootstrap: no Python state exists yet.
+      const retryTimer = window.setTimeout(() => {
+        sandbox.searchParams.set("startup_retry", String(Date.now()));
+        frame.src = sandbox.toString();
+      }, 5_000);
       const timer = window.setTimeout(() => finish(new Error("The Python sandbox did not load within 60 seconds. Check the connection, then restart the kernel.")), 60_000);
-      this.cancelFrameLoad = () => finish(new Error("Python execution stopped"));
+      const cancel = () => finish(new Error("Python execution stopped"));
+      this.cancelFrameLoad = cancel;
+      window.addEventListener("message", onReady);
       frame.addEventListener("load", onLoad, { once: true });
       frame.addEventListener("error", onError, { once: true });
     });
-    const absoluteRuntimeBase = new URL(this.runtimeBase, window.location.href).toString();
-    frame.src = sandboxUrl(absoluteRuntimeBase);
+    frame.src = sandbox.toString();
     document.body.append(frame);
     this.frame = frame;
     this.readyPromise = (async () => {
       await loaded;
+      if (this.frame !== frame) throw new Error("Python execution stopped");
       this.report({ percent: 8, message: "Connecting to the Python worker…" });
       frame.contentWindow?.postMessage(
         { source: "oa-bootstrap", value: runtimeWorker(absoluteRuntimeBase) },
@@ -754,9 +781,17 @@ export class PythonRuntime {
         const data = file.data!.slice(0);
         await this.request("file", { name: file.name, data }, 30_000, [data]);
       }
+      this.connected = true;
       this.report({ percent: 100, message: "Browser Python is ready" });
     })();
-    return this.readyPromise;
+    try {
+      await this.readyPromise;
+    } catch (error) {
+      // A rejected promise must not poison later queries/start attempts. Only
+      // clean up this attempt; a newer reset may already own another frame.
+      if (this.frame === frame) this.stop();
+      throw error;
+    }
   }
 
   async run(
@@ -907,6 +942,7 @@ except Exception:
   }
 
   private destroyFrame(): void {
+    this.connected = false;
     this.cancelFrameLoad?.();
     this.frame?.remove();
     this.frame = null;

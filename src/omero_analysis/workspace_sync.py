@@ -1155,6 +1155,18 @@ def _item_marker_values(workspace_id, item, remote=None):
             "remote_object_type": remote.get("object_type") or "",
             "remote_object_id": remote.get("object_id") or "",
         })
+    # PostgreSQL indexes each MapAnnotation value with a finite btree tuple
+    # limit. Keep complete provenance in the existing workspace manifest; use
+    # an explicit, content-verifiable reference for oversized searchable values.
+    for key, value in list(values.items()):
+        encoded = str(value).encode("utf-8")
+        if len(encoded) > 1024:
+            values[key] = json.dumps({
+                "storage": "workspace-manifest",
+                "item_key": item["key"],
+                "field": key,
+                "sha256": hashlib.sha256(encoded).hexdigest(),
+            }, separators=(",", ":"))
     return values
 
 

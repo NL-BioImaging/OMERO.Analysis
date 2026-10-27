@@ -639,3 +639,31 @@ def test_session_status_is_json_and_does_not_confuse_expiry_with_unavailability(
     assert unavailable.status_code == 503
     assert json.loads(unavailable.content)["authenticated"] is None
     assert json.loads(unavailable.content)["error"] == "session_unavailable"
+
+
+def test_image_input_subset_is_scoped_and_explicit_empty_is_preserved(monkeypatch):
+    import pytest
+    images = [{"type": "Image", "id": i, "name": f"Image {i}", "supported": True} for i in (11, 12, 13)]
+    monkeypatch.setattr(views, "object_hierarchy", lambda *_: {"children": images})
+    obj = FakeObject(object_id=8)
+    def parse(query):
+        return views._image_input_context(RequestFactory().get("/?" + query), "Dataset", 8, obj, [])
+    assert parse("")["image_input_candidates"] == images
+    assert "selected_image_inputs" not in parse("")
+    assert parse("image_inputs=selected")["selected_image_inputs"] == []
+    assert parse("image_inputs=selected&image_input=Image:12&image_input=Image:11&image_input=Image:12")["selected_image_inputs"] == [images[1], images[0]]
+    for query in ("image_inputs=selected&image_input=Image:99", "image_input=Image:11", "image_inputs=all", "image_inputs=selected&image_input=Plate:11"):
+        with pytest.raises(ValueError):
+            parse(query)
+
+
+def test_panel_and_bootstrap_expose_image_inputs_without_changing_source():
+    obj = FakeObject(object_id=11, name="Field 11")
+    conn = FakeConnection(obj)
+    response = views.panel(RequestFactory().get("/panel/Image/11/"), "Image", 11, conn=conn)
+    assert b"Choose image inputs" in response.content
+    assert b'value="Image:11"' in response.content
+    response = views.analysis(with_session(RequestFactory().get("/?type=Image&id=11&image_inputs=selected")), conn=conn)
+    assert response.status_code == 200
+    assert b'"selected_image_inputs": []' in response.content
+    assert b'"object_type": "Image"' in response.content

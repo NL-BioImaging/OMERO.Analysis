@@ -240,6 +240,9 @@ $(function () {
 
   function updateSelection(root) {
     if (root.dataset.panelKind !== "source") return;
+    var imageCount = root.querySelectorAll(".oa-image-input:checked").length;
+    var imageBadge = root.querySelector(".oa-image-count");
+    if (imageBadge) imageBadge.textContent = imageCount + " selected";
     var count = selectedAnnotationIds(root).length;
     var stagedCount = selectedStagedIds(root).length;
     var workspaceId = selectedWorkspaceId(root);
@@ -256,12 +259,12 @@ $(function () {
         ? (count + stagedCount) + " data attachment" + (count + stagedCount === 1 ? "" : "s") + " selected for the workspace."
         : selectionCount > 1
         ? selectionCount + " selected objects will define the new workspace."
-        : "Select at least one data attachment to start a new workspace.";
+        : imageCount ? imageCount + " image input(s) selected for the workspace." : "Select images or data attachments to start a new workspace.";
       if (libraryCount) status.textContent += " " + libraryCount + " reusable item" + (libraryCount === 1 ? "" : "s") + " selected for import.";
     }
     if (button) {
       button.textContent = "Start new Workspace";
-      button.disabled = count + stagedCount === 0 && selectionCount < 2;
+      button.disabled = count + stagedCount + imageCount === 0 && selectionCount < 2;
     }
   }
 
@@ -352,7 +355,7 @@ $(function () {
     }
   });
 
-  panel.on("change", ".oa-data-attachment, .oa-staged-attachment", function (event) {
+  panel.on("change", ".oa-data-attachment, .oa-staged-attachment, .oa-image-input", function (event) {
     var root = event.currentTarget.closest("[data-object-type]");
     if (root) {
       root.querySelectorAll(".oa-workspace-snapshot").forEach(function (input) {
@@ -360,6 +363,14 @@ $(function () {
       });
       updateSelection(root);
     }
+  });
+
+  panel.on("click", ".oa-images-all, .oa-images-none", function (event) {
+    var root = event.currentTarget.closest("[data-object-type]");
+    if (!root) return;
+    var checked = event.currentTarget.classList.contains("oa-images-all");
+    root.querySelectorAll(".oa-image-input").forEach(function (input) { input.checked = checked; });
+    updateSelection(root);
   });
 
   panel.on("change", ".oa-workspace-snapshot", function (event) {
@@ -395,7 +406,7 @@ $(function () {
       selectedStagedIds(root)
     ];
     var create = event.currentTarget.classList.contains("oa-new-workspace");
-    if (create && !selectedAnnotationIds(root).length && !selectedStagedIds(root).length && selectedSourceIds(root).length < 2) return;
+    if (create && !selectedAnnotationIds(root).length && !selectedStagedIds(root).length && selectedSourceIds(root).length < 2 && !root.querySelector(".oa-image-input:checked")) return;
     var workspace = event.currentTarget.dataset.workspaceId || root.dataset.workspaceId;
     if (workspace || create) launchArguments[3] = null;
     var snapshot = event.currentTarget.dataset.snapshotId;
@@ -431,7 +442,13 @@ $(function () {
     function targetUrl(integrated) {
       var url = new URL((integrated ? biomeroAnalysisUrl : analysisUrl).apply(null, launchArguments), window.location.origin);
       var prefix = integrated ? "analysis_" : "";
-      if (create) url.searchParams.set(prefix + "new_workspace", targetWorkspaceId);
+      if (create) {
+        url.searchParams.set(prefix + "new_workspace", targetWorkspaceId);
+        url.searchParams.set(prefix + "image_inputs", "selected");
+        root.querySelectorAll(".oa-image-input:checked").forEach(function (input) {
+          url.searchParams.append(prefix + "image_input", input.value);
+        });
+      }
       else if (workspace) url.searchParams.set(prefix + "workspace_id", workspace);
       return url.toString();
     }

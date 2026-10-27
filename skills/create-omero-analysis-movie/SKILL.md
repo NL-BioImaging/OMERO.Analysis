@@ -30,7 +30,7 @@ use native pixel coordinates, and state any applied coordinate transform. The
 renderer never joins across missing frames or interpolates. `sequence.trailFrames`
 controls the visible history. Label planes use the selected Z plane.
 
-Limits are 600 frames, 2048 × 2048 pixels, 256 MiB or the deployment's smaller
+Limits are 2000 frames, 2048 × 2048 pixels, 256 MiB or the deployment's smaller
 upload limit. Confirm the actual MP4, poster, and provenance were produced and
 play correctly in Chrome. Do not claim success based only on the recipe.
 

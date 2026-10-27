@@ -698,8 +698,8 @@ export function notebookZarrRenderRequest(preview: unknown):
     const sequence = recipe.sequence;
     const step = sequence?.step ?? 1, fps = sequence?.fps ?? 5;
     if (sequence?.version !== 1 || !Number.isSafeInteger(sequence.start) || !Number.isSafeInteger(sequence.end) || sequence.start < 0 || sequence.end < sequence.start ||
-        !Number.isSafeInteger(step) || step < 1 || Math.floor((sequence.end - sequence.start) / step) + 1 > 600 || !Number.isFinite(fps) || fps <= 0 || fps > 60)
-      throw new Error("Movie requires a range of at most 600 frames and a valid FPS.");
+        !Number.isSafeInteger(step) || step < 1 || Math.floor((sequence.end - sequence.start) / step) + 1 > 2000 || !Number.isFinite(fps) || fps <= 0 || fps > 60)
+      throw new Error("Movie requires a range of at most 2000 frames and a valid FPS.");
   }
   return { recipe, format };
 }

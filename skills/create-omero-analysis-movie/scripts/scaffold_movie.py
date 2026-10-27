@@ -20,7 +20,7 @@ def main():
         UUID(args.store_uuid)
     x0, y0, x1, y1 = args.roi
     start, end = args.frames
-    if min(args.roi) < 0 or not 0 < x1-x0 <= 2048 or not 0 < y1-y0 <= 2048 or not 0 <= start <= end < start+600 or not 0 < args.fps <= 60:
+    if min(args.roi) < 0 or not 0 < x1-x0 <= 2048 or not 0 < y1-y0 <= 2048 or not 0 <= start <= end < start+2000 or not 0 < args.fps <= 60:
         parser.error('Invalid crop, frame range, or FPS')
     recipe = {'version': 2, 'storeUuid': args.store_uuid,
               'sequence': {'version': 1, 'start': start, 'end': end, 'fps': args.fps},

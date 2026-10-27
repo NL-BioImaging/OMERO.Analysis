@@ -5,10 +5,11 @@ interface DialogState {
   title: string;
   description?: string;
   value?: string;
+  selected?: string[];
   confirmLabel: string;
   danger?: boolean;
   choices?: Array<{ value: string; label: string; description?: string }>;
-  mode: "text" | "confirm" | "choose" | "alert";
+  mode: "text" | "confirm" | "choose" | "multiple" | "alert";
 }
 
 export interface DialogController {
@@ -25,15 +26,17 @@ export interface DialogController {
     choices: Array<{ value: string; label: string; description?: string }>,
     description?: string
   ) => Promise<string | null>;
+  chooseMany: (title: string, choices: Array<{ value: string; label: string; description?: string }>, selected?: string[], description?: string) => Promise<string[] | null>;
   element: ReactNode;
 }
 
 export function useDialogs(): DialogController {
   const [state, setState] = useState<DialogState | null>(null);
   const [value, setValue] = useState("");
-  const resolver = useRef<((value: string | boolean | null) => void) | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const resolver = useRef<((value: any) => void) | null>(null);
 
-  const close = (result: string | boolean | null) => {
+  const close = (result: string | boolean | string[] | null) => {
     resolver.current?.(result);
     resolver.current = null;
     setState(null);
@@ -72,6 +75,13 @@ export function useDialogs(): DialogController {
     });
   });
 
+  const chooseMany: DialogController["chooseMany"] = (title, choices, initial = [], description) =>
+    new Promise(resolve => {
+      resolver.current = resolve;
+      setSelected(initial);
+      setState({title, choices, description, confirmLabel: "Use selected images", mode: "multiple"});
+    });
+
   const alert = (title: string, description: string) =>
     new Promise<void>((resolve) => {
       resolver.current = () => resolve();
@@ -98,6 +108,7 @@ export function useDialogs(): DialogController {
           close(
             state.mode === "text"
               ? value.trim() || null
+              : state.mode === "multiple" ? selected
               : state.mode === "choose"
                 ? value || null
                 : true
@@ -133,6 +144,13 @@ export function useDialogs(): DialogController {
             </select>
           </label>
         )}
+        {state.mode === "multiple" && <div style={{maxHeight: "55vh", overflowY: "auto"}}>
+          {(state.choices || []).map(choice => <label key={choice.value} style={{display: "flex", gap: "0.6em", marginBottom: "0.6em"}}>
+            <input type="checkbox" checked={selected.includes(choice.value)} onChange={event => setSelected(current => event.target.checked ? [...current, choice.value] : current.filter(value => value !== choice.value))} />
+            <span>{choice.label}{choice.description && <small> — {choice.description}</small>}</span>
+          </label>)}
+          {!state.choices?.length && <p>No images or plates are available in this source.</p>}
+        </div>}
         <div className="dialog-actions">
           {state.mode !== "alert" && (
             <Button type="button" onClick={() => close(state.mode === "confirm" ? false : null)}>
@@ -147,5 +165,5 @@ export function useDialogs(): DialogController {
     </div>
   ) : null;
 
-  return { askText, confirm, alert, choose, element };
+  return { askText, confirm, alert, choose, chooseMany, element };
 }
